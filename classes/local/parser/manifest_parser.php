@@ -33,7 +33,6 @@ use tool_canvasuplifter\local\model\item;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class manifest_parser {
-
     /** @var string Absolute path to the extracted package directory. */
     protected string $basedir;
 

@@ -28,7 +28,6 @@ use tool_canvasuplifter\local\model\item;
  * @covers     \tool_canvasuplifter\local\parser\manifest_parser
  */
 final class manifest_parser_test extends \advanced_testcase {
-
     /**
      * Write a minimal Canvas-style package to a temporary directory.
      *
@@ -53,7 +52,9 @@ final class manifest_parser_test extends \advanced_testcase {
     <resource identifier="r_page" type="webcontent" href="wiki_content/welcome.html">
       <file href="wiki_content/welcome.html"/>
     </resource>
-    <resource identifier="r_assign" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="a1/assignment_settings.xml">
+    <resource identifier="r_assign"
+              type="associatedcontent/imscc_xmlv1p1/learning-application-resource"
+              href="a1/assignment_settings.xml">
       <file href="a1/assignment_settings.xml"/>
     </resource>
   </resources>

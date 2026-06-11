@@ -30,7 +30,6 @@ require_once($CFG->libdir . '/formslib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class upload_form extends moodleform {
-
     /**
      * Define the form fields.
      *

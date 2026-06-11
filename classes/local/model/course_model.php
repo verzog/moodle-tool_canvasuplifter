@@ -24,7 +24,6 @@ namespace tool_canvasuplifter\local\model;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class course_model {
-
     /** @var string Course full name. */
     public string $fullname = '';
 

@@ -72,7 +72,8 @@ if ($report === null) {
     echo $OUTPUT->heading(get_string('reportheading', 'tool_canvasuplifter'));
 
     // Summary line.
-    $summary = html_writer::tag('p',
+    $summary = html_writer::tag(
+        'p',
         get_string('coursename', 'tool_canvasuplifter') . ': ' . s($report['coursename']) . ' &middot; ' .
         get_string('sectioncount', 'tool_canvasuplifter') . ': ' . $report['sectioncount'] . ' &middot; ' .
         get_string('itemcount', 'tool_canvasuplifter') . ': ' . $report['itemcount']

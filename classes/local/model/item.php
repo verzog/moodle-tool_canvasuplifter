@@ -27,7 +27,6 @@ namespace tool_canvasuplifter\local\model;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class item {
-
     /** Page (Canvas wiki page) -> mod_page. */
     public const KIND_PAGE = 'page';
     /** File / web resource -> course files / mod_resource. */

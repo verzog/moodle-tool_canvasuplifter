@@ -31,7 +31,6 @@ use tool_canvasuplifter\local\model\item;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class conversion_report {
-
     /** Maps cleanly and automatically. */
     public const CONFIDENCE_FULL = 'full';
     /** Maps, but some detail may be lost. */
@@ -60,15 +59,15 @@ class conversion_report {
      */
     public static function mapping_plan(): array {
         return [
-            item::KIND_PAGE         => ['target' => 'mod_page',   'confidence' => self::CONFIDENCE_FULL],
-            item::KIND_FILE         => ['target' => 'mod_resource', 'confidence' => self::CONFIDENCE_FULL],
-            item::KIND_URL          => ['target' => 'mod_url',    'confidence' => self::CONFIDENCE_FULL],
-            item::KIND_ASSIGNMENT   => ['target' => 'mod_assign', 'confidence' => self::CONFIDENCE_PARTIAL],
-            item::KIND_DISCUSSION   => ['target' => 'mod_forum',  'confidence' => self::CONFIDENCE_PARTIAL],
-            item::KIND_QUIZ         => ['target' => 'mod_quiz',   'confidence' => self::CONFIDENCE_PARTIAL],
-            item::KIND_QUESTIONBANK => ['target' => 'mod_qbank',  'confidence' => self::CONFIDENCE_PARTIAL],
-            item::KIND_LTI          => ['target' => 'mod_lti',    'confidence' => self::CONFIDENCE_MANUAL],
-            item::KIND_UNKNOWN      => ['target' => '-',          'confidence' => self::CONFIDENCE_NONE],
+            item::KIND_PAGE => ['target' => 'mod_page', 'confidence' => self::CONFIDENCE_FULL],
+            item::KIND_FILE => ['target' => 'mod_resource', 'confidence' => self::CONFIDENCE_FULL],
+            item::KIND_URL => ['target' => 'mod_url', 'confidence' => self::CONFIDENCE_FULL],
+            item::KIND_ASSIGNMENT => ['target' => 'mod_assign', 'confidence' => self::CONFIDENCE_PARTIAL],
+            item::KIND_DISCUSSION => ['target' => 'mod_forum', 'confidence' => self::CONFIDENCE_PARTIAL],
+            item::KIND_QUIZ => ['target' => 'mod_quiz', 'confidence' => self::CONFIDENCE_PARTIAL],
+            item::KIND_QUESTIONBANK => ['target' => 'mod_qbank', 'confidence' => self::CONFIDENCE_PARTIAL],
+            item::KIND_LTI => ['target' => 'mod_lti', 'confidence' => self::CONFIDENCE_MANUAL],
+            item::KIND_UNKNOWN => ['target' => '-', 'confidence' => self::CONFIDENCE_NONE],
         ];
     }
 
