@@ -52,6 +52,10 @@ class build_course_task extends adhoc_task {
 
         $jobs->mark_running($jobid);
 
+        // Build runs as the admin who queued the job so file API draft
+        // areas, capabilities and event logging are attributed correctly.
+        \core\cron::setup_user(\core_user::get_user((int) $job->userid, '*', MUST_EXIST));
+
         $extractdir = make_request_directory();
         $temppackage = null;
         try {
