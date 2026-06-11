@@ -21,11 +21,11 @@ use tool_canvasuplifter\local\model\item;
 
 /**
  * Phase 1 course builder: creates a Moodle course, its sections, and the
- * activity types implemented so far (currently mod_page and mod_url).
+ * activity types implemented so far (mod_page, mod_url, mod_resource).
  *
- * Activity types not yet implemented (mod_resource, mod_assign, mod_forum,
- * mod_quiz, mod_lti) are counted as skipped in the build report so the admin
- * can see what's still to come.
+ * Activity types not yet implemented (mod_assign, mod_forum, mod_quiz,
+ * mod_lti) are counted as skipped in the build report so the admin can see
+ * what's still to come.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -75,6 +75,7 @@ class course_builder {
 
         $pagebuilder = new page_builder($this->packageroot);
         $urlbuilder = new url_builder($this->packageroot);
+        $filebuilder = new file_builder($this->packageroot);
 
         $createdcounts = [];
         $skippedcounts = [];
@@ -95,6 +96,9 @@ class course_builder {
                         break;
                     case item::KIND_URL:
                         $cmid = $urlbuilder->build($course, $sectionnum, $modelitem);
+                        break;
+                    case item::KIND_FILE:
+                        $cmid = $filebuilder->build($course, $sectionnum, $modelitem);
                         break;
                 }
                 if ($cmid !== null) {
