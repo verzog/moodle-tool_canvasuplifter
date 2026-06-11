@@ -73,8 +73,6 @@ $string['targetcategory'] = 'Target course category';
 $string['targetcategory_help'] = 'The new course will be created in this category. '
     . 'You need the "create courses" capability in the chosen category.';
 $string['unknownheading'] = 'Unclassified resource types (debug)';
-$string['warningnoactivitiesyet'] = 'Activities are not yet created in this Phase 1 scaffold. '
-    . 'The course and section structure is in place; pages, files, URLs and assignments arrive in '
-    . 'follow-up patches.';
 $string['warningsheading'] = 'Notes and warnings';
+$string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';

@@ -58,7 +58,7 @@ class build_course_task extends adhoc_task {
             $temppackage = $this->copy_stored_file_to_temp((int) $job->fileid);
             $root = (new package())->extract($temppackage, $extractdir);
             $coursemodel = (new manifest_parser($root))->parse();
-            $report = (new course_builder((int) $job->categoryid))->build($coursemodel);
+            $report = (new course_builder((int) $job->categoryid, $root))->build($coursemodel);
             $jobs->mark_done($jobid, $report['courseid'], $report);
             mtrace("build_course_task: job $jobid built course {$report['courseid']}");
         } catch (\Throwable $e) {
