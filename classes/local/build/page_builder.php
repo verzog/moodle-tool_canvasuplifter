@@ -59,10 +59,17 @@ class page_builder {
 
         $contentpath = $this->payload_path($modelitem);
         if ($contentpath === null) {
+            mtrace(sprintf(
+                'tool_canvasuplifter: page "%s" skipped — no readable payload (href=%s, files=%s)',
+                $modelitem->title,
+                $modelitem->href,
+                implode(',', $modelitem->files)
+            ));
             return null;
         }
         $content = (string) @file_get_contents($contentpath);
         if ($content === '') {
+            mtrace("tool_canvasuplifter: page \"$modelitem->title\" skipped — empty payload at $contentpath");
             return null;
         }
 
