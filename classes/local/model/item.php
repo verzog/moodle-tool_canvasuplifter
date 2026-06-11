@@ -1,0 +1,77 @@
+<?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
+namespace tool_canvasuplifter\local\model;
+
+/**
+ * One piece of course content found in a Canvas package.
+ *
+ * This is a plain data holder with no Moodle dependencies, so it can be
+ * built and tested in isolation. Nothing here touches the database.
+ *
+ * @package    tool_canvasuplifter
+ * @copyright  2026 SCCA
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+class item {
+    /** Page (Canvas wiki page) -> mod_page. */
+    public const KIND_PAGE = 'page';
+    /** File / web resource -> course files / mod_resource. */
+    public const KIND_FILE = 'file';
+    /** Web link -> mod_url. */
+    public const KIND_URL = 'url';
+    /** Assignment -> mod_assign. */
+    public const KIND_ASSIGNMENT = 'assignment';
+    /** Quiz / assessment -> mod_quiz. */
+    public const KIND_QUIZ = 'quiz';
+    /** Question bank -> mod_qbank. */
+    public const KIND_QUESTIONBANK = 'questionbank';
+    /** Discussion topic -> mod_forum. */
+    public const KIND_DISCUSSION = 'discussion';
+    /** External (LTI) tool -> mod_lti. */
+    public const KIND_LTI = 'lti';
+    /** Could not be classified. */
+    public const KIND_UNKNOWN = 'unknown';
+
+    /** @var string Canvas resource identifier. */
+    public string $identifier = '';
+
+    /** @var string Human-readable title. */
+    public string $title = '';
+
+    /** @var string Detected kind, one of the KIND_* constants. */
+    public string $kind = self::KIND_UNKNOWN;
+
+    /** @var string Raw Common Cartridge resource type string. */
+    public string $resourcetype = '';
+
+    /** @var string Primary file path within the package, if any. */
+    public string $href = '';
+
+    /** @var string[] All file paths belonging to this resource. */
+    public array $files = [];
+
+    /**
+     * Constructor.
+     *
+     * @param string $identifier Canvas resource identifier.
+     * @param string $title Human-readable title.
+     */
+    public function __construct(string $identifier = '', string $title = '') {
+        $this->identifier = $identifier;
+        $this->title = $title;
+    }
+}
