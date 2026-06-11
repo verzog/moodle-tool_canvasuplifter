@@ -110,6 +110,20 @@ if ($report === null) {
     }
     echo html_writer::table($table);
 
+    // Debug-only breakdown of what raw CC types showed up as "unknown".
+    if (debugging() && !empty($report['unknowntypes'])) {
+        echo $OUTPUT->heading(get_string('unknownheading', 'tool_canvasuplifter'), 4);
+        $debugtable = new html_table();
+        $debugtable->head = [
+            get_string('colresourcetype', 'tool_canvasuplifter'),
+            get_string('colcount', 'tool_canvasuplifter'),
+        ];
+        foreach ($report['unknowntypes'] as $type => $count) {
+            $debugtable->data[] = [s($type), $count];
+        }
+        echo html_writer::table($debugtable);
+    }
+
     // Warnings.
     echo $OUTPUT->heading(get_string('warningsheading', 'tool_canvasuplifter'), 4);
     if (empty($report['warnings'])) {

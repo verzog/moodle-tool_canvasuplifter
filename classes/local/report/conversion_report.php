@@ -86,6 +86,29 @@ class conversion_report {
     }
 
     /**
+     * Group items by their raw Common Cartridge resource type.
+     *
+     * Useful for diagnosing why a package has "unknown" items: it shows the
+     * exact `type=` strings the manifest carried so the classifier can be
+     * tightened up.
+     *
+     * @param string|null $onlykind If set, restrict to items of this {@see item}::KIND_* value.
+     * @return array<string, int> Map of raw type -> count, ordered by descending count.
+     */
+    public function counts_by_resourcetype(?string $onlykind = null): array {
+        $counts = [];
+        foreach ($this->course->all_items() as $modelitem) {
+            if ($onlykind !== null && $modelitem->kind !== $onlykind) {
+                continue;
+            }
+            $type = $modelitem->resourcetype !== '' ? $modelitem->resourcetype : '(empty)';
+            $counts[$type] = ($counts[$type] ?? 0) + 1;
+        }
+        arsort($counts);
+        return $counts;
+    }
+
+    /**
      * Produce the full report as a structured array, ready to render.
      *
      * @return array{
@@ -128,6 +151,7 @@ class conversion_report {
             'itemcount' => count($this->course->all_items()),
             'rows' => $rows,
             'warnings' => $warnings,
+            'unknowntypes' => $this->counts_by_resourcetype(item::KIND_UNKNOWN),
         ];
     }
 }
