@@ -29,6 +29,7 @@ $string['canvasuplifter:use'] = 'Upload a Canvas package and view the conversion
 $string['colconfidence'] = 'Mapping';
 $string['colcount'] = 'Count';
 $string['colkind'] = 'Content type';
+$string['colresourcetype'] = 'Common Cartridge resource type';
 $string['coltarget'] = 'Moodle target';
 $string['confidence_full'] = 'Maps cleanly';
 $string['confidence_manual'] = 'Needs manual finishing';
@@ -55,4 +56,5 @@ $string['privacy:metadata'] = 'The Canvas Uplifter plugin does not store any per
     . 'Uploaded packages are inspected and then discarded.';
 $string['reportheading'] = 'Conversion report';
 $string['sectioncount'] = 'Sections';
+$string['unknownheading'] = 'Unclassified resource types (debug)';
 $string['warningsheading'] = 'Notes and warnings';
