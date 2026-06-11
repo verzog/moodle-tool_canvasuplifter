@@ -81,6 +81,7 @@ if ($job->status === job_manager::STATUS_DONE && $job->courseid) {
     echo html_writer::tag('p', get_string('builtcoursesummary', 'tool_canvasuplifter', [
         'sectioncount' => (int) ($report['sectioncount'] ?? 0),
         'itemcount' => (int) ($report['itemcount'] ?? 0),
+        'created' => (int) ($report['created'] ?? 0),
         'skipped' => (int) ($report['skipped'] ?? 0),
     ]));
 
