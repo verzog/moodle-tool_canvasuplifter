@@ -20,12 +20,12 @@ use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
 
 /**
- * Phase 1 course builder: creates a Moodle course and its sections from a parsed
- * Canvas package, and stubs counts for each content kind it sees.
+ * Phase 1 course builder: creates a Moodle course, its sections, and the
+ * activity types implemented so far (currently mod_page and mod_url).
  *
- * Activity creation (page, file, URL, assignment) and link rewriting are added
- * in follow-up patches; this scaffold establishes the course/section structure
- * and the build-report shape that the status page reads.
+ * Activity types not yet implemented (mod_resource, mod_assign, mod_forum,
+ * mod_quiz, mod_lti) are counted as skipped in the build report so the admin
+ * can see what's still to come.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -35,26 +35,33 @@ class course_builder {
     /** @var int Course category for the new course. */
     private int $categoryid;
 
+    /** @var string Absolute path to the extracted package root. */
+    private string $packageroot;
+
     /**
      * Constructor.
      *
      * @param int $categoryid Target category id.
+     * @param string $packageroot Absolute path to the extracted package directory.
      */
-    public function __construct(int $categoryid) {
+    public function __construct(int $categoryid, string $packageroot) {
         $this->categoryid = $categoryid;
+        $this->packageroot = rtrim($packageroot, '/');
     }
 
     /**
-     * Create the course and its sections.
+     * Create the course, its sections, and the supported activities.
      *
      * @param course_model $coursemodel Parsed package.
-     * @return array{courseid: int, sectioncount: int, itemcount: int, skipped: int, warnings: string[]}
+     * @return array Build report: courseid, sectioncount, itemcount, created, skipped, warnings.
      */
     public function build(course_model $coursemodel): array {
         global $CFG;
         require_once($CFG->dirroot . '/course/lib.php');
 
-        $fullname = $coursemodel->fullname !== '' ? $coursemodel->fullname : get_string('defaultcoursename', 'tool_canvasuplifter');
+        $fullname = $coursemodel->fullname !== ''
+            ? $coursemodel->fullname
+            : get_string('defaultcoursename', 'tool_canvasuplifter');
         $shortname = $this->unique_shortname($fullname);
 
         $courserecord = (object) [
@@ -66,40 +73,62 @@ class course_builder {
         ];
         $course = create_course($courserecord);
 
-        // Walk the parsed sections and rename each section as it is created.
+        $pagebuilder = new page_builder($this->packageroot);
+        $urlbuilder = new url_builder($this->packageroot);
+
+        $createdcounts = [];
+        $skippedcounts = [];
+
         foreach ($coursemodel->sections as $index => $sectionmodel) {
             $sectionnum = $index + 1;
             course_create_sections_if_missing($course, [$sectionnum]);
             $section = get_fast_modinfo($course)->get_section_info($sectionnum);
             if ($sectionmodel->title !== '' && $section) {
-                course_update_section($course, $section, [
-                    'name' => $sectionmodel->title,
-                ]);
+                course_update_section($course, $section, ['name' => $sectionmodel->title]);
+            }
+
+            foreach ($sectionmodel->items as $modelitem) {
+                $cmid = null;
+                switch ($modelitem->kind) {
+                    case item::KIND_PAGE:
+                        $cmid = $pagebuilder->build($course, $sectionnum, $modelitem);
+                        break;
+                    case item::KIND_URL:
+                        $cmid = $urlbuilder->build($course, $sectionnum, $modelitem);
+                        break;
+                }
+                if ($cmid !== null) {
+                    $createdcounts[$modelitem->kind] = ($createdcounts[$modelitem->kind] ?? 0) + 1;
+                } else {
+                    $skippedcounts[$modelitem->kind] = ($skippedcounts[$modelitem->kind] ?? 0) + 1;
+                }
             }
         }
 
-        // Counts for the build report. Actual activity creation will land in
-        // follow-up patches; for now everything except "section" counts as
-        // skipped-for-now so admins know nothing in the course yet.
         $itemcount = count($coursemodel->all_items());
-        $kindcounts = [];
-        foreach ($coursemodel->all_items() as $modelitem) {
-            $kindcounts[$modelitem->kind] = ($kindcounts[$modelitem->kind] ?? 0) + 1;
-        }
+        $createdtotal = array_sum($createdcounts);
+        $skippedtotal = $itemcount - $createdtotal;
 
         $warnings = [];
-        if ($itemcount > 0) {
-            $warnings[] = get_string('warningnoactivitiesyet', 'tool_canvasuplifter');
+        if ($skippedtotal > 0) {
+            $warnings[] = get_string('warningskippedfornow', 'tool_canvasuplifter', $skippedtotal);
         }
-        if (($kindcounts[item::KIND_UNKNOWN] ?? 0) > 0) {
-            $warnings[] = get_string('warningunclassified', 'tool_canvasuplifter', $kindcounts[item::KIND_UNKNOWN]);
+        if (($skippedcounts[item::KIND_UNKNOWN] ?? 0) > 0) {
+            $warnings[] = get_string(
+                'warningunclassified',
+                'tool_canvasuplifter',
+                $skippedcounts[item::KIND_UNKNOWN]
+            );
         }
 
         return [
             'courseid' => (int) $course->id,
             'sectioncount' => count($coursemodel->sections),
             'itemcount' => $itemcount,
-            'skipped' => $itemcount,
+            'created' => $createdtotal,
+            'createdcounts' => $createdcounts,
+            'skipped' => $skippedtotal,
+            'skippedcounts' => $skippedcounts,
             'warnings' => $warnings,
         ];
     }
@@ -107,7 +136,7 @@ class course_builder {
     /**
      * Derive a unique shortname from the course's full name.
      *
-     * @param string $fullname
+     * @param string $fullname Full course name.
      * @return string
      */
     private function unique_shortname(string $fullname): string {
