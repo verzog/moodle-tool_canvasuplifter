@@ -84,9 +84,35 @@ if ($job->status === job_manager::STATUS_DONE && $job->courseid) {
         'skipped' => (int) ($report['skipped'] ?? 0),
     ]));
 
+    $createdcounts = $report['createdcounts'] ?? [];
+    $skippedcounts = $report['skippedcounts'] ?? [];
+    if (!empty($createdcounts) || !empty($skippedcounts)) {
+        $resulttable = new html_table();
+        $resulttable->head = [
+            get_string('colkind', 'tool_canvasuplifter'),
+            get_string('colcreated', 'tool_canvasuplifter'),
+            get_string('colskipped', 'tool_canvasuplifter'),
+        ];
+        $kinds = array_unique(array_merge(array_keys($createdcounts), array_keys($skippedcounts)));
+        sort($kinds);
+        foreach ($kinds as $kind) {
+            $resulttable->data[] = [
+                s($kind),
+                (int) ($createdcounts[$kind] ?? 0),
+                (int) ($skippedcounts[$kind] ?? 0),
+            ];
+        }
+        echo html_writer::table($resulttable);
+    }
+
     if (!empty($report['warnings'])) {
         echo $OUTPUT->heading(get_string('warningsheading', 'tool_canvasuplifter'), 4);
         echo html_writer::alist(array_map('s', $report['warnings']));
+    }
+
+    if (debugging() && !empty($report['skipreasons'])) {
+        echo $OUTPUT->heading(get_string('skipreasonsheading', 'tool_canvasuplifter'), 4);
+        echo html_writer::alist(array_map('s', $report['skipreasons']));
     }
 
     echo $OUTPUT->single_button(
