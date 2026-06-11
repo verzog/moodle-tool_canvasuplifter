@@ -46,8 +46,37 @@ class upload_form extends moodleform {
             ['accepted_types' => ['.imscc', '.zip']]
         );
         $mform->addHelpButton('packagefile', 'packagefile', 'tool_canvasuplifter');
-        $mform->addRule('packagefile', null, 'required');
+
+        $mform->addElement(
+            'text',
+            'packageurl',
+            get_string('packageurl', 'tool_canvasuplifter'),
+            ['size' => 80, 'placeholder' => 'https://']
+        );
+        $mform->setType('packageurl', PARAM_URL);
+        $mform->addHelpButton('packageurl', 'packageurl', 'tool_canvasuplifter');
 
         $this->add_action_buttons(false, get_string('analyse', 'tool_canvasuplifter'));
+    }
+
+    /**
+     * Require exactly one of file or URL.
+     *
+     * @param array $data Submitted form data.
+     * @param array $files Submitted files.
+     * @return array Map of field name to error message.
+     */
+    public function validation($data, $files): array {
+        $errors = parent::validation($data, $files);
+        $hasfile = !empty($this->get_draft_files('packagefile'));
+        $hasurl = !empty(trim((string)($data['packageurl'] ?? '')));
+        if (!$hasfile && !$hasurl) {
+            $errors['packagefile'] = get_string('errornosource', 'tool_canvasuplifter');
+        } else if ($hasfile && $hasurl) {
+            $errors['packageurl'] = get_string('errorbothsources', 'tool_canvasuplifter');
+        } else if ($hasurl && !preg_match('#^https?://#i', $data['packageurl'])) {
+            $errors['packageurl'] = get_string('errorbadurl', 'tool_canvasuplifter');
+        }
+        return $errors;
     }
 }

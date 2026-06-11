@@ -27,6 +27,7 @@ require_once($CFG->libdir . '/adminlib.php');
 
 use tool_canvasuplifter\form\upload_form;
 use tool_canvasuplifter\local\ingest\package;
+use tool_canvasuplifter\local\ingest\url_fetcher;
 use tool_canvasuplifter\local\parser\manifest_parser;
 use tool_canvasuplifter\local\report\conversion_report;
 
@@ -41,10 +42,14 @@ $report = null;
 $error = null;
 
 if ($data = $form->get_data()) {
-    // Save the uploaded package to a temporary file, then unpack and inspect it.
-    $temppackage = $form->save_temp_file('packagefile');
     $extractdir = make_request_directory();
+    $temppackage = null;
     try {
+        if (!empty(trim((string)($data->packageurl ?? '')))) {
+            $temppackage = (new url_fetcher())->fetch(trim($data->packageurl));
+        } else {
+            $temppackage = $form->save_temp_file('packagefile');
+        }
         $root = (new package())->extract($temppackage, $extractdir);
         $course = (new manifest_parser($root))->parse();
         $report = (new conversion_report($course))->build();
@@ -55,7 +60,7 @@ if ($data = $form->get_data()) {
             ? get_string($key, 'tool_canvasuplifter')
             : $e->getMessage();
     } finally {
-        if (file_exists($temppackage)) {
+        if ($temppackage !== null && file_exists($temppackage)) {
             @unlink($temppackage);
         }
     }
