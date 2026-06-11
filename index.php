@@ -75,6 +75,10 @@ if ($data = $form->get_data()) {
         $selectedcategory = (int) $data->categoryid;
 
         if ($buildrequested) {
+            require_capability(
+                'moodle/course:create',
+                \context_coursecat::instance($selectedcategory)
+            );
             $jobs = new job_manager();
             $jobid = $jobs->create((int) $USER->id, $selectedcategory, $storedfileid);
 
@@ -109,6 +113,15 @@ $buildfromreport = optional_param('buildfromreport', 0, PARAM_INT);
 if ($buildfromreport > 0) {
     require_sesskey();
     $categoryid = required_param('categoryid', PARAM_INT);
+
+    // Enforce the same category permission the original upload form applies
+    // via make_categories_list('moodle/course:create'). The category id is
+    // user-controlled (hidden POST field), so check it server-side too.
+    require_capability(
+        'moodle/course:create',
+        \context_coursecat::instance($categoryid)
+    );
+
     $fs = get_file_storage();
     $file = $fs->get_file_by_id($buildfromreport);
     if (!$file || $file->get_component() !== 'tool_canvasuplifter' || (int) $file->get_userid() !== (int) $USER->id) {
