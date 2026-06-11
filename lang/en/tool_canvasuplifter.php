@@ -26,9 +26,9 @@ defined('MOODLE_INTERNAL') || die();
 
 $string['analyse'] = 'Analyse package';
 $string['buildcourse'] = 'Build course';
+$string['buildstatusheading'] = 'Build status';
 $string['builtcoursesummary'] = 'Built {$a->sectioncount} sections covering {$a->itemcount} items '
     . '({$a->skipped} items not yet created — coming in subsequent phases).';
-$string['buildstatusheading'] = 'Build status';
 $string['canvasuplifter:use'] = 'Upload a Canvas package and view the conversion report';
 $string['colconfidence'] = 'Mapping';
 $string['colcount'] = 'Count';

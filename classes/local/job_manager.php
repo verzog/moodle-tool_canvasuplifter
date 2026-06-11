@@ -61,6 +61,8 @@ class job_manager {
     }
 
     /**
+     * Load a job row by id.
+     *
      * @param int $jobid Job id.
      * @return \stdClass|false
      */
@@ -107,8 +109,11 @@ class job_manager {
     }
 
     /**
-     * @param int $jobid
-     * @param array<string, mixed> $fields
+     * Persist a partial update to a job row and bump timemodified.
+     *
+     * @param int $jobid Job id.
+     * @param array<string, mixed> $fields Column => value pairs to merge.
+     * @return void
      */
     private function update(int $jobid, array $fields): void {
         global $DB;

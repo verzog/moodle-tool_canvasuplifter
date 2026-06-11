@@ -36,6 +36,8 @@ class course_builder {
     private int $categoryid;
 
     /**
+     * Constructor.
+     *
      * @param int $categoryid Target category id.
      */
     public function __construct(int $categoryid) {
