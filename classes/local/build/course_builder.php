@@ -85,9 +85,17 @@ class course_builder {
             'fullname' => $fullname,
             'shortname' => $shortname,
             'visible' => 0,
+            'format' => 'topics',
             'numsections' => max(1, count($coursemodel->sections)),
         ];
         $course = create_course($courserecord);
+
+        // Re-fetch the course so we have every field add_moduleinfo() looks at
+        // (in particular 'format'); the object returned by create_course is
+        // built from the input record and can be missing defaults.
+        global $DB;
+        $course = $DB->get_record('course', ['id' => $course->id], '*', MUST_EXIST);
+
         $this->report_progress(5, get_string('progresscoursecreated', 'tool_canvasuplifter'));
 
         $pagebuilder = new page_builder($this->packageroot);
@@ -96,6 +104,7 @@ class course_builder {
 
         $createdcounts = [];
         $skippedcounts = [];
+        $skipreasons = [];
         $totalitems = max(1, count($coursemodel->all_items()));
         $processed = 0;
 
@@ -109,16 +118,40 @@ class course_builder {
 
             foreach ($sectionmodel->items as $modelitem) {
                 $cmid = null;
-                switch ($modelitem->kind) {
-                    case item::KIND_PAGE:
-                        $cmid = $pagebuilder->build($course, $sectionnum, $modelitem);
-                        break;
-                    case item::KIND_URL:
-                        $cmid = $urlbuilder->build($course, $sectionnum, $modelitem);
-                        break;
-                    case item::KIND_FILE:
-                        $cmid = $filebuilder->build($course, $sectionnum, $modelitem);
-                        break;
+                try {
+                    switch ($modelitem->kind) {
+                        case item::KIND_PAGE:
+                            $cmid = $pagebuilder->build($course, $sectionnum, $modelitem);
+                            break;
+                        case item::KIND_URL:
+                            $cmid = $urlbuilder->build($course, $sectionnum, $modelitem);
+                            break;
+                        case item::KIND_FILE:
+                            $cmid = $filebuilder->build($course, $sectionnum, $modelitem);
+                            break;
+                    }
+                } catch (\Throwable $e) {
+                    $msg = sprintf(
+                        'failed to build %s "%s": %s',
+                        $modelitem->kind,
+                        $modelitem->title,
+                        $e->getMessage()
+                    );
+                    mtrace('tool_canvasuplifter: ' . $msg);
+                    $skipreasons[] = $msg;
+                    $cmid = null;
+                }
+                $builderkinds = [item::KIND_PAGE, item::KIND_URL, item::KIND_FILE];
+                if ($cmid === null && in_array($modelitem->kind, $builderkinds, true)) {
+                    // The kind has a builder but it returned null.
+                    $skipreasons[] = sprintf(
+                        '%s "%s" (id=%s) — builder could not find payload; href="%s" files=[%s]',
+                        $modelitem->kind,
+                        $modelitem->title,
+                        $modelitem->identifier,
+                        $modelitem->href,
+                        implode(',', $modelitem->files)
+                    );
                 }
                 if ($cmid !== null) {
                     $createdcounts[$modelitem->kind] = ($createdcounts[$modelitem->kind] ?? 0) + 1;
@@ -138,6 +171,9 @@ class course_builder {
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
         $skippedtotal = $itemcount - $createdtotal;
+
+        // Make sure section caches reflect everything we just built.
+        rebuild_course_cache($course->id, true);
 
         $warnings = [];
         if ($skippedtotal > 0) {
@@ -159,6 +195,7 @@ class course_builder {
             'createdcounts' => $createdcounts,
             'skipped' => $skippedtotal,
             'skippedcounts' => $skippedcounts,
+            'skipreasons' => array_slice($skipreasons, 0, 50),
             'warnings' => $warnings,
         ];
     }

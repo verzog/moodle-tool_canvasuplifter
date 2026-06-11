@@ -28,13 +28,15 @@ $string['analyse'] = 'Analyse package';
 $string['analyseanother'] = 'Analyse another package';
 $string['buildcourse'] = 'Build course';
 $string['buildstatusheading'] = 'Build status';
-$string['builtcoursesummary'] = 'Built {$a->sectioncount} sections covering {$a->itemcount} items '
-    . '({$a->skipped} items not yet created — coming in subsequent phases).';
+$string['builtcoursesummary'] = 'Built {$a->created} of {$a->itemcount} content items across '
+    . '{$a->sectioncount} sections ({$a->skipped} skipped).';
 $string['canvasuplifter:use'] = 'Upload a Canvas package and view the conversion report';
 $string['colconfidence'] = 'Mapping';
 $string['colcount'] = 'Count';
+$string['colcreated'] = 'Created';
 $string['colkind'] = 'Content type';
 $string['colresourcetype'] = 'Common Cartridge resource type';
+$string['colskipped'] = 'Skipped';
 $string['coltarget'] = 'Moodle target';
 $string['confidence_full'] = 'Maps cleanly';
 $string['confidence_manual'] = 'Needs manual finishing';
@@ -73,6 +75,7 @@ $string['readytobuildexplain'] = 'The package has been analysed and is held read
 $string['readytobuildheading'] = 'Build this course';
 $string['reportheading'] = 'Conversion report';
 $string['sectioncount'] = 'Sections';
+$string['skipreasonsheading'] = 'Skip reasons (debug)';
 $string['status_done'] = 'Done';
 $string['status_failed'] = 'Failed';
 $string['status_queued'] = 'Queued';
