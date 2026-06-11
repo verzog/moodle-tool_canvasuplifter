@@ -29,6 +29,18 @@ class url_fetcher {
     /** @var string Error key: downloaded file exceeds the site upload limit. */
     public const ERROR_TOOBIG = 'errordownloadtoobig';
 
+    /** @var string|null Diagnostic detail from the last failed fetch. */
+    private ?string $lastdetail = null;
+
+    /**
+     * Free-form diagnostic from the most recent fetch (curl error or HTTP code).
+     *
+     * @return string|null
+     */
+    public function get_last_detail(): ?string {
+        return $this->lastdetail;
+    }
+
     /**
      * Download $url to a new temporary file and return its path.
      *
@@ -43,32 +55,60 @@ class url_fetcher {
         global $CFG;
         require_once($CFG->libdir . '/filelib.php');
 
+        $this->lastdetail = null;
         $maxbytes = (int)get_max_upload_file_size($CFG->maxbytes);
         $target = tempnam(make_request_directory(), 'canvasuplifter_');
-
-        $curl = new \curl(['ignoresecurity' => false]);
-        $options = [
-            'CURLOPT_TIMEOUT' => 600,
-            'CURLOPT_CONNECTTIMEOUT' => 30,
-            'CURLOPT_FOLLOWLOCATION' => 1,
-            'CURLOPT_MAXREDIRS' => 5,
-        ];
-        $fh = fopen($target, 'wb');
-        if ($fh === false) {
+        if ($target === false) {
+            $this->lastdetail = 'Could not create temp file';
             throw new \RuntimeException(self::ERROR_DOWNLOAD);
         }
-        try {
-            $result = $curl->download_one($url, null, ['file' => $fh] + $options);
-        } finally {
-            fclose($fh);
+
+        $fh = fopen($target, 'wb');
+        if ($fh === false) {
+            $this->lastdetail = 'Could not open temp file for writing';
+            throw new \RuntimeException(self::ERROR_DOWNLOAD);
         }
 
-        if ($result !== true || $curl->get_errno() || $curl->get_info()['http_code'] >= 400) {
+        // Use raw cURL so we don't fight Moodle's curl wrapper over option
+        // translation or response handling for streamed binary downloads.
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_FILE => $fh,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 5,
+            CURLOPT_CONNECTTIMEOUT => 30,
+            CURLOPT_TIMEOUT => 600,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_USERAGENT => 'MoodleCanvasUplifter/0.1 (+' . $CFG->wwwroot . ')',
+            CURLOPT_ACCEPT_ENCODING => '',
+        ]);
+
+        $ok = curl_exec($ch);
+        $errno = curl_errno($ch);
+        $errmsg = curl_error($ch);
+        $httpcode = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        curl_close($ch);
+        fclose($fh);
+
+        if ($ok === false || $errno !== 0) {
+            $this->lastdetail = "cURL error $errno: $errmsg";
             @unlink($target);
             throw new \RuntimeException(self::ERROR_DOWNLOAD);
         }
-
+        if ($httpcode >= 400) {
+            $this->lastdetail = "HTTP $httpcode";
+            @unlink($target);
+            throw new \RuntimeException(self::ERROR_DOWNLOAD);
+        }
+        if (filesize($target) === 0) {
+            $this->lastdetail = 'Empty response';
+            @unlink($target);
+            throw new \RuntimeException(self::ERROR_DOWNLOAD);
+        }
         if ($maxbytes > 0 && filesize($target) > $maxbytes) {
+            $this->lastdetail = 'Downloaded ' . filesize($target) . ' bytes; limit ' . $maxbytes;
             @unlink($target);
             throw new \RuntimeException(self::ERROR_TOOBIG);
         }

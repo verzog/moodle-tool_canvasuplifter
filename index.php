@@ -44,9 +44,11 @@ $error = null;
 if ($data = $form->get_data()) {
     $extractdir = make_request_directory();
     $temppackage = null;
+    $fetcher = null;
     try {
         if (!empty(trim((string)($data->packageurl ?? '')))) {
-            $temppackage = (new url_fetcher())->fetch(trim($data->packageurl));
+            $fetcher = new url_fetcher();
+            $temppackage = $fetcher->fetch(trim($data->packageurl));
         } else {
             $temppackage = $form->save_temp_file('packagefile');
         }
@@ -59,6 +61,9 @@ if ($data = $form->get_data()) {
         $error = get_string_manager()->string_exists($key, 'tool_canvasuplifter')
             ? get_string($key, 'tool_canvasuplifter')
             : $e->getMessage();
+        if ($fetcher !== null && $fetcher->get_last_detail() !== null && debugging()) {
+            $error .= ' (' . s($fetcher->get_last_detail()) . ')';
+        }
     } finally {
         if ($temppackage !== null && file_exists($temppackage)) {
             @unlink($temppackage);
