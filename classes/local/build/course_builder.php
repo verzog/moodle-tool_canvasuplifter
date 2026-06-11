@@ -141,10 +141,8 @@ class course_builder {
                     $skipreasons[] = $msg;
                     $cmid = null;
                 }
-                if ($cmid === null && !in_array($modelitem->kind, [
-                    item::KIND_ASSIGNMENT, item::KIND_DISCUSSION, item::KIND_QUIZ,
-                    item::KIND_QUESTIONBANK, item::KIND_LTI, item::KIND_UNKNOWN,
-                ], true)) {
+                $builderkinds = [item::KIND_PAGE, item::KIND_URL, item::KIND_FILE];
+                if ($cmid === null && in_array($modelitem->kind, $builderkinds, true)) {
                     // The kind has a builder but it returned null.
                     $skipreasons[] = sprintf(
                         '%s "%s" (id=%s) — builder could not find payload; href="%s" files=[%s]',
