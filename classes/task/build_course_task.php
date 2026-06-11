@@ -59,10 +59,19 @@ class build_course_task extends adhoc_task {
         $extractdir = make_request_directory();
         $temppackage = null;
         try {
+            $jobs->set_progress($jobid, 1, get_string('progressextract', 'tool_canvasuplifter'));
             $temppackage = $this->copy_stored_file_to_temp((int) $job->fileid);
             $root = (new package())->extract($temppackage, $extractdir);
+
+            $jobs->set_progress($jobid, 3, get_string('progressparse', 'tool_canvasuplifter'));
             $coursemodel = (new manifest_parser($root))->parse();
-            $report = (new course_builder((int) $job->categoryid, $root))->build($coursemodel);
+
+            $report = (new course_builder(
+                (int) $job->categoryid,
+                $root,
+                $jobs,
+                $jobid
+            ))->build($coursemodel);
             $jobs->mark_done($jobid, $report['courseid'], $report);
             mtrace("build_course_task: job $jobid built course {$report['courseid']}");
         } catch (\Throwable $e) {

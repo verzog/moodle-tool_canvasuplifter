@@ -16,6 +16,7 @@
 
 namespace tool_canvasuplifter\local\build;
 
+use tool_canvasuplifter\local\job_manager;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
 
@@ -38,15 +39,30 @@ class course_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var job_manager|null Used to report progress; null in tests. */
+    private ?job_manager $jobs;
+
+    /** @var int Job id whose progress this builder reports against. */
+    private int $jobid;
+
     /**
      * Constructor.
      *
      * @param int $categoryid Target category id.
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param job_manager|null $jobs Optional, used to report progress.
+     * @param int $jobid Job id, required when $jobs is set.
      */
-    public function __construct(int $categoryid, string $packageroot) {
+    public function __construct(
+        int $categoryid,
+        string $packageroot,
+        ?job_manager $jobs = null,
+        int $jobid = 0
+    ) {
         $this->categoryid = $categoryid;
         $this->packageroot = rtrim($packageroot, '/');
+        $this->jobs = $jobs;
+        $this->jobid = $jobid;
     }
 
     /**
@@ -72,6 +88,7 @@ class course_builder {
             'numsections' => max(1, count($coursemodel->sections)),
         ];
         $course = create_course($courserecord);
+        $this->report_progress(5, get_string('progresscoursecreated', 'tool_canvasuplifter'));
 
         $pagebuilder = new page_builder($this->packageroot);
         $urlbuilder = new url_builder($this->packageroot);
@@ -79,6 +96,8 @@ class course_builder {
 
         $createdcounts = [];
         $skippedcounts = [];
+        $totalitems = max(1, count($coursemodel->all_items()));
+        $processed = 0;
 
         foreach ($coursemodel->sections as $index => $sectionmodel) {
             $sectionnum = $index + 1;
@@ -106,6 +125,13 @@ class course_builder {
                 } else {
                     $skippedcounts[$modelitem->kind] = ($skippedcounts[$modelitem->kind] ?? 0) + 1;
                 }
+                $processed++;
+                $percent = 5 + (int) round(90 * $processed / $totalitems);
+                $this->report_progress($percent, get_string('progressitem', 'tool_canvasuplifter', [
+                    'done' => $processed,
+                    'total' => $totalitems,
+                    'kind' => $modelitem->kind,
+                ]));
             }
         }
 
@@ -135,6 +161,19 @@ class course_builder {
             'skippedcounts' => $skippedcounts,
             'warnings' => $warnings,
         ];
+    }
+
+    /**
+     * Forward a progress update to the job_manager, if one was supplied.
+     *
+     * @param int $percent 0-100.
+     * @param string $message Short status message.
+     * @return void
+     */
+    private function report_progress(int $percent, string $message): void {
+        if ($this->jobs !== null && $this->jobid > 0) {
+            $this->jobs->set_progress($this->jobid, $percent, $message);
+        }
     }
 
     /**

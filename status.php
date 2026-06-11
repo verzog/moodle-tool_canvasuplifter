@@ -53,6 +53,25 @@ echo $OUTPUT->heading(get_string('buildstatusheading', 'tool_canvasuplifter'));
 $statuslabel = get_string('status_' . $job->status, 'tool_canvasuplifter');
 echo html_writer::tag('p', get_string('jobstatusis', 'tool_canvasuplifter', $statuslabel));
 
+// Progress bar — shown for queued/running and as a completed bar on done.
+$percent = (int) $job->progress;
+if ($job->status === job_manager::STATUS_DONE) {
+    $percent = 100;
+}
+$progresslabel = trim((string) $job->progressmessage);
+if ($progresslabel === '') {
+    $progresslabel = $statuslabel;
+}
+$bar = html_writer::div('', 'progress-bar bg-primary', [
+    'role' => 'progressbar',
+    'style' => 'width: ' . $percent . '%;',
+    'aria-valuenow' => $percent,
+    'aria-valuemin' => 0,
+    'aria-valuemax' => 100,
+]);
+echo html_writer::div($bar, 'progress', ['style' => 'height: 1.25rem;']);
+echo html_writer::tag('p', s($progresslabel) . ' (' . $percent . '%)', ['class' => 'text-muted mt-2']);
+
 if ($job->status === job_manager::STATUS_FAILED) {
     echo $OUTPUT->notification(format_text($job->errormsg, FORMAT_PLAIN), \core\output\notification::NOTIFY_ERROR);
 }

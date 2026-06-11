@@ -81,6 +81,21 @@ class job_manager {
     }
 
     /**
+     * Record the task's current progress percentage and message.
+     *
+     * @param int $jobid Job id.
+     * @param int $percent 0-100.
+     * @param string $message Short status message.
+     * @return void
+     */
+    public function set_progress(int $jobid, int $percent, string $message): void {
+        $this->update($jobid, [
+            'progress' => max(0, min(100, $percent)),
+            'progressmessage' => $message,
+        ]);
+    }
+
+    /**
      * Mark the job done and store the course id and report.
      *
      * @param int $jobid
@@ -92,6 +107,8 @@ class job_manager {
             'status' => self::STATUS_DONE,
             'courseid' => $courseid,
             'report' => json_encode($report),
+            'progress' => 100,
+            'progressmessage' => '',
         ]);
     }
 
