@@ -42,6 +42,8 @@ $PAGE->set_heading(get_string('pluginname', 'tool_canvasuplifter'));
 $form = new upload_form();
 $report = null;
 $error = null;
+$storedfileid = null;
+$selectedcategory = null;
 
 if ($data = $form->get_data()) {
     $extractdir = make_request_directory();
@@ -56,21 +58,25 @@ if ($data = $form->get_data()) {
             $temppackage = $form->save_temp_file('packagefile');
         }
 
-        if ($buildrequested) {
-            // Persist the package in the file API so the adhoc task can read it.
-            $fs = get_file_storage();
-            $filerecord = (object) [
-                'contextid' => context_system::instance()->id,
-                'component' => 'tool_canvasuplifter',
-                'filearea' => 'packages',
-                'itemid' => $USER->id,
-                'filepath' => '/',
-                'filename' => 'canvas-' . time() . '.imscc',
-            ];
-            $storedfile = $fs->create_file_from_pathname($filerecord, $temppackage);
+        // Always persist the package: lets the report page offer a "Build"
+        // button without re-uploading, and lets the adhoc task read it.
+        $fs = get_file_storage();
+        $filerecord = (object) [
+            'contextid' => context_system::instance()->id,
+            'component' => 'tool_canvasuplifter',
+            'filearea' => 'packages',
+            'itemid' => $USER->id,
+            'filepath' => '/',
+            'filename' => 'canvas-' . time() . '.imscc',
+            'userid' => $USER->id,
+        ];
+        $storedfile = $fs->create_file_from_pathname($filerecord, $temppackage);
+        $storedfileid = (int) $storedfile->get_id();
+        $selectedcategory = (int) $data->categoryid;
 
+        if ($buildrequested) {
             $jobs = new job_manager();
-            $jobid = $jobs->create((int) $USER->id, (int) $data->categoryid, (int) $storedfile->get_id());
+            $jobid = $jobs->create((int) $USER->id, $selectedcategory, $storedfileid);
 
             $task = new build_course_task();
             $task->set_custom_data(['jobid' => $jobid]);
@@ -96,6 +102,24 @@ if ($data = $form->get_data()) {
             @unlink($temppackage);
         }
     }
+}
+
+// Handle the "Build this course" button on the report page.
+$buildfromreport = optional_param('buildfromreport', 0, PARAM_INT);
+if ($buildfromreport > 0) {
+    require_sesskey();
+    $categoryid = required_param('categoryid', PARAM_INT);
+    $fs = get_file_storage();
+    $file = $fs->get_file_by_id($buildfromreport);
+    if (!$file || $file->get_component() !== 'tool_canvasuplifter' || (int) $file->get_userid() !== (int) $USER->id) {
+        throw new \moodle_exception('errorjobnotfound', 'tool_canvasuplifter');
+    }
+    $jobs = new job_manager();
+    $jobid = $jobs->create((int) $USER->id, $categoryid, $buildfromreport);
+    $task = new build_course_task();
+    $task->set_custom_data(['jobid' => $jobid]);
+    \core\task\manager::queue_adhoc_task($task);
+    redirect(new moodle_url('/admin/tool/canvasuplifter/status.php', ['jobid' => $jobid]));
 }
 
 echo $OUTPUT->header();
@@ -160,8 +184,58 @@ if ($report === null) {
         echo html_writer::alist($items);
     }
 
-    // Let the user analyse another package.
-    echo $OUTPUT->continue_button(new moodle_url('/admin/tool/canvasuplifter/index.php'));
+    // Offer to build the course from this same package without re-uploading.
+    if ($storedfileid !== null) {
+        echo $OUTPUT->heading(get_string('readytobuildheading', 'tool_canvasuplifter'), 4);
+        echo html_writer::tag('p', get_string('readytobuildexplain', 'tool_canvasuplifter'));
+
+        $categories = \core_course_category::make_categories_list('moodle/course:create');
+        $form = html_writer::start_tag('form', [
+            'method' => 'post',
+            'action' => new moodle_url('/admin/tool/canvasuplifter/index.php'),
+            'class' => 'mform',
+        ]);
+        $form .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+        $form .= html_writer::empty_tag('input', [
+            'type' => 'hidden',
+            'name' => 'buildfromreport',
+            'value' => $storedfileid,
+        ]);
+        $form .= html_writer::start_div('form-group row mb-2');
+        $form .= html_writer::tag(
+            'label',
+            get_string('targetcategory', 'tool_canvasuplifter'),
+            ['for' => 'reportcategoryid', 'class' => 'col-md-3 col-form-label']
+        );
+        $form .= html_writer::start_div('col-md-9');
+        $form .= html_writer::select(
+            $categories,
+            'categoryid',
+            $selectedcategory,
+            false,
+            ['id' => 'reportcategoryid', 'class' => 'form-control']
+        );
+        $form .= html_writer::end_div();
+        $form .= html_writer::end_div();
+        $form .= html_writer::div(
+            html_writer::empty_tag('input', [
+                'type' => 'submit',
+                'value' => get_string('buildcourse', 'tool_canvasuplifter'),
+                'class' => 'btn btn-primary',
+            ])
+            . ' '
+            . html_writer::link(
+                new moodle_url('/admin/tool/canvasuplifter/index.php'),
+                get_string('analyseanother', 'tool_canvasuplifter'),
+                ['class' => 'btn btn-secondary']
+            ),
+            'mt-3'
+        );
+        $form .= html_writer::end_tag('form');
+        echo $form;
+    } else {
+        echo $OUTPUT->continue_button(new moodle_url('/admin/tool/canvasuplifter/index.php'));
+    }
 }
 
 echo $OUTPUT->footer();

@@ -40,5 +40,21 @@ function xmldb_tool_canvasuplifter_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026061101, 'tool', 'canvasuplifter');
     }
 
+    if ($oldversion < 2026061104) {
+        $table = new xmldb_table('tool_canvasuplifter_jobs');
+
+        $progress = new xmldb_field('progress', XMLDB_TYPE_INTEGER, '3', null, XMLDB_NOTNULL, null, '0', 'errormsg');
+        if (!$dbman->field_exists($table, $progress)) {
+            $dbman->add_field($table, $progress);
+        }
+
+        $progressmessage = new xmldb_field('progressmessage', XMLDB_TYPE_CHAR, '255', null, null, null, null, 'progress');
+        if (!$dbman->field_exists($table, $progressmessage)) {
+            $dbman->add_field($table, $progressmessage);
+        }
+
+        upgrade_plugin_savepoint(true, 2026061104, 'tool', 'canvasuplifter');
+    }
+
     return true;
 }

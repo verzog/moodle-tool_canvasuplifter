@@ -25,6 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $string['analyse'] = 'Analyse package';
+$string['analyseanother'] = 'Analyse another package';
 $string['buildcourse'] = 'Build course';
 $string['buildstatusheading'] = 'Build status';
 $string['builtcoursesummary'] = 'Built {$a->sectioncount} sections covering {$a->itemcount} items '
@@ -63,6 +64,13 @@ $string['packageurl_help'] = 'Alternatively, paste an HTTPS link to a Canvas .im
 $string['pluginname'] = 'Canvas Uplifter';
 $string['privacy:metadata'] = 'The Canvas Uplifter plugin does not store any personal data. '
     . 'Uploaded packages are inspected, used to build a course, and then discarded.';
+$string['progresscoursecreated'] = 'Course created. Building activities…';
+$string['progressextract'] = 'Extracting package…';
+$string['progressitem'] = 'Built {$a->done} of {$a->total} items ({$a->kind})…';
+$string['progressparse'] = 'Parsing manifest…';
+$string['readytobuildexplain'] = 'The package has been analysed and is held ready. '
+    . 'Choose a category and click Build course to create the course in Moodle.';
+$string['readytobuildheading'] = 'Build this course';
 $string['reportheading'] = 'Conversion report';
 $string['sectioncount'] = 'Sections';
 $string['status_done'] = 'Done';
