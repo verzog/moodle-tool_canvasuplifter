@@ -151,6 +151,10 @@ class manifest_parser {
         if (preg_match('#imsbasiclti_xmlv1p\d#', $type)) {
             return item::KIND_LTI;
         }
+        // IMS Common Cartridge 1.3 assignment profile (used by non-Canvas exporters).
+        if (preg_match('#assignment_xmlv1p\d#', $type)) {
+            return item::KIND_ASSIGNMENT;
+        }
         // QTI assessment or question bank.
         if (str_contains($type, 'question-bank')) {
             return item::KIND_QUESTIONBANK;
