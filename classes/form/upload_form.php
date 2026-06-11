@@ -53,7 +53,7 @@ class upload_form extends moodleform {
             get_string('packageurl', 'tool_canvasuplifter'),
             ['size' => 80, 'placeholder' => 'https://']
         );
-        $mform->setType('packageurl', PARAM_URL);
+        $mform->setType('packageurl', PARAM_RAW_TRIMMED);
         $mform->addHelpButton('packageurl', 'packageurl', 'tool_canvasuplifter');
 
         $this->add_action_buttons(false, get_string('analyse', 'tool_canvasuplifter'));
