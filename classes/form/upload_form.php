@@ -56,7 +56,22 @@ class upload_form extends moodleform {
         $mform->setType('packageurl', PARAM_RAW_TRIMMED);
         $mform->addHelpButton('packageurl', 'packageurl', 'tool_canvasuplifter');
 
-        $this->add_action_buttons(false, get_string('analyse', 'tool_canvasuplifter'));
+        $categories = \core_course_category::make_categories_list('moodle/course:create');
+        $mform->addElement(
+            'select',
+            'categoryid',
+            get_string('targetcategory', 'tool_canvasuplifter'),
+            $categories
+        );
+        $mform->addHelpButton('categoryid', 'targetcategory', 'tool_canvasuplifter');
+
+        $buttons = [
+            $mform->createElement('submit', 'analysebutton', get_string('analyse', 'tool_canvasuplifter')),
+            $mform->createElement('submit', 'buildbutton', get_string('buildcourse', 'tool_canvasuplifter')),
+            $mform->createElement('cancel'),
+        ];
+        $mform->addGroup($buttons, 'buttonar', '', [' '], false);
+        $mform->closeHeaderBefore('buttonar');
     }
 
     /**

@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Plugin version and metadata.
+ * Upgrade steps.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -24,9 +24,21 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026061101;      // YYYYMMDDXX. This release.
-$plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
-$plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Phase 1: course build scaffold.
-$plugin->release   = '0.2.0';
+/**
+ * @param int $oldversion Previously-installed version.
+ * @return bool
+ */
+function xmldb_tool_canvasuplifter_upgrade(int $oldversion): bool {
+    global $DB;
+    $dbman = $DB->get_manager();
+
+    if ($oldversion < 2026061101) {
+        $table = new xmldb_table('tool_canvasuplifter_jobs');
+        if (!$dbman->table_exists($table)) {
+            $dbman->install_one_table_from_xmldb_file(__DIR__ . '/install.xml', 'tool_canvasuplifter_jobs');
+        }
+        upgrade_plugin_savepoint(true, 2026061101, 'tool', 'canvasuplifter');
+    }
+
+    return true;
+}

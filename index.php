@@ -28,8 +28,10 @@ require_once($CFG->libdir . '/adminlib.php');
 use tool_canvasuplifter\form\upload_form;
 use tool_canvasuplifter\local\ingest\package;
 use tool_canvasuplifter\local\ingest\url_fetcher;
+use tool_canvasuplifter\local\job_manager;
 use tool_canvasuplifter\local\parser\manifest_parser;
 use tool_canvasuplifter\local\report\conversion_report;
+use tool_canvasuplifter\task\build_course_task;
 
 admin_externalpage_setup('tool_canvasuplifter');
 require_capability('tool/canvasuplifter:use', context_system::instance());
@@ -45,6 +47,7 @@ if ($data = $form->get_data()) {
     $extractdir = make_request_directory();
     $temppackage = null;
     $fetcher = null;
+    $buildrequested = !empty($data->buildbutton);
     try {
         if (!empty(trim((string)($data->packageurl ?? '')))) {
             $fetcher = new url_fetcher();
@@ -52,6 +55,30 @@ if ($data = $form->get_data()) {
         } else {
             $temppackage = $form->save_temp_file('packagefile');
         }
+
+        if ($buildrequested) {
+            // Persist the package in the file API so the adhoc task can read it.
+            $fs = get_file_storage();
+            $filerecord = (object) [
+                'contextid' => context_system::instance()->id,
+                'component' => 'tool_canvasuplifter',
+                'filearea' => 'packages',
+                'itemid' => $USER->id,
+                'filepath' => '/',
+                'filename' => 'canvas-' . time() . '.imscc',
+            ];
+            $storedfile = $fs->create_file_from_pathname($filerecord, $temppackage);
+
+            $jobs = new job_manager();
+            $jobid = $jobs->create((int) $USER->id, (int) $data->categoryid, (int) $storedfile->get_id());
+
+            $task = new build_course_task();
+            $task->set_custom_data(['jobid' => $jobid]);
+            \core\task\manager::queue_adhoc_task($task);
+
+            redirect(new moodle_url('/admin/tool/canvasuplifter/status.php', ['jobid' => $jobid]));
+        }
+
         $root = (new package())->extract($temppackage, $extractdir);
         $course = (new manifest_parser($root))->parse();
         $report = (new conversion_report($course))->build();

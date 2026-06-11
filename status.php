@@ -1,0 +1,81 @@
+<?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
+/**
+ * Show the state of a queued/running/finished build job.
+ *
+ * @package    tool_canvasuplifter
+ * @copyright  2026 SCCA
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+
+require(__DIR__ . '/../../../config.php');
+require_once($CFG->libdir . '/adminlib.php');
+
+use tool_canvasuplifter\local\job_manager;
+
+$jobid = required_param('jobid', PARAM_INT);
+
+admin_externalpage_setup('tool_canvasuplifter');
+require_capability('tool/canvasuplifter:use', context_system::instance());
+
+$PAGE->set_url(new moodle_url('/admin/tool/canvasuplifter/status.php', ['jobid' => $jobid]));
+$PAGE->set_title(get_string('pluginname', 'tool_canvasuplifter'));
+$PAGE->set_heading(get_string('pluginname', 'tool_canvasuplifter'));
+
+$jobs = new job_manager();
+$job = $jobs->get($jobid);
+if (!$job) {
+    throw new \moodle_exception('errorjobnotfound', 'tool_canvasuplifter');
+}
+
+// Auto-refresh while the build is in flight.
+if (in_array($job->status, [job_manager::STATUS_QUEUED, job_manager::STATUS_RUNNING], true)) {
+    $PAGE->set_periodic_refresh_delay(5);
+}
+
+echo $OUTPUT->header();
+echo $OUTPUT->heading(get_string('buildstatusheading', 'tool_canvasuplifter'));
+
+$statuslabel = get_string('status_' . $job->status, 'tool_canvasuplifter');
+echo html_writer::tag('p', get_string('jobstatusis', 'tool_canvasuplifter', $statuslabel));
+
+if ($job->status === job_manager::STATUS_FAILED) {
+    echo $OUTPUT->notification(format_text($job->errormsg, FORMAT_PLAIN), \core\output\notification::NOTIFY_ERROR);
+}
+
+if ($job->status === job_manager::STATUS_DONE && $job->courseid) {
+    $report = json_decode((string) $job->report, true) ?: [];
+    echo html_writer::tag('p', get_string('builtcoursesummary', 'tool_canvasuplifter', [
+        'sectioncount' => (int) ($report['sectioncount'] ?? 0),
+        'itemcount' => (int) ($report['itemcount'] ?? 0),
+        'skipped' => (int) ($report['skipped'] ?? 0),
+    ]));
+
+    if (!empty($report['warnings'])) {
+        echo $OUTPUT->heading(get_string('warningsheading', 'tool_canvasuplifter'), 4);
+        echo html_writer::alist(array_map('s', $report['warnings']));
+    }
+
+    echo $OUTPUT->single_button(
+        new moodle_url('/course/view.php', ['id' => $job->courseid]),
+        get_string('openbuiltcourse', 'tool_canvasuplifter')
+    );
+}
+
+echo $OUTPUT->continue_button(new moodle_url('/admin/tool/canvasuplifter/index.php'));
+
+echo $OUTPUT->footer();

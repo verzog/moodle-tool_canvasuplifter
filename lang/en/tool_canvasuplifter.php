@@ -25,6 +25,10 @@
 defined('MOODLE_INTERNAL') || die();
 
 $string['analyse'] = 'Analyse package';
+$string['buildcourse'] = 'Build course';
+$string['builtcoursesummary'] = 'Built {$a->sectioncount} sections covering {$a->itemcount} items '
+    . '({$a->skipped} items not yet created — coming in subsequent phases).';
+$string['buildstatusheading'] = 'Build status';
 $string['canvasuplifter:use'] = 'Upload a Canvas package and view the conversion report';
 $string['colconfidence'] = 'Mapping';
 $string['colcount'] = 'Count';
@@ -36,25 +40,41 @@ $string['confidence_manual'] = 'Needs manual finishing';
 $string['confidence_none'] = 'Cannot map yet';
 $string['confidence_partial'] = 'Maps, some detail may be lost';
 $string['coursename'] = 'Course name';
+$string['defaultcoursename'] = 'Imported Canvas course';
 $string['errorbadurl'] = 'The download URL must start with http:// or https://.';
 $string['errorbothsources'] = 'Provide either a file or a URL, not both.';
 $string['errordownloadfailed'] = 'The Canvas package could not be downloaded from that URL.';
 $string['errordownloadtoobig'] = 'The downloaded file is larger than the site upload limit.';
+$string['errorjobnotfound'] = 'That build job no longer exists.';
 $string['errornomanifest'] = 'No imsmanifest.xml was found, so this is not a valid Canvas package.';
 $string['errornosource'] = 'Provide a Canvas export file or a download URL.';
 $string['errornotzip'] = 'That file could not be opened as a Common Cartridge (zip) package.';
 $string['itemcount'] = 'Content items';
+$string['jobstatusis'] = 'Status: {$a}.';
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';
+$string['openbuiltcourse'] = 'Open the built course';
 $string['packagefile'] = 'Canvas export (.imscc)';
 $string['packagefile_help'] = 'Upload a course exported from Canvas as a Common Cartridge file. '
-    . 'In Phase 0 the file is only inspected; nothing is created in Moodle.';
+    . 'Analyse-only inspects the file; Build course creates a new Moodle course.';
 $string['packageurl'] = 'Download URL';
 $string['packageurl_help'] = 'Alternatively, paste an HTTPS link to a Canvas .imscc file '
-    . '(for example a signed S3 link or a direct download URL). The site upload limit applies.';
+    . '(for example a signed S3 link or a direct download URL). The site upload limit applies. '
+    . 'Note: signed CloudFront / S3 URLs are often IP-pinned and will fail when fetched server-side.';
 $string['pluginname'] = 'Canvas Uplifter';
 $string['privacy:metadata'] = 'The Canvas Uplifter plugin does not store any personal data. '
-    . 'Uploaded packages are inspected and then discarded.';
+    . 'Uploaded packages are inspected, used to build a course, and then discarded.';
 $string['reportheading'] = 'Conversion report';
 $string['sectioncount'] = 'Sections';
+$string['status_done'] = 'Done';
+$string['status_failed'] = 'Failed';
+$string['status_queued'] = 'Queued';
+$string['status_running'] = 'Running';
+$string['targetcategory'] = 'Target course category';
+$string['targetcategory_help'] = 'The new course will be created in this category. '
+    . 'You need the "create courses" capability in the chosen category.';
 $string['unknownheading'] = 'Unclassified resource types (debug)';
+$string['warningnoactivitiesyet'] = 'Activities are not yet created in this Phase 1 scaffold. '
+    . 'The course and section structure is in place; pages, files, URLs and assignments arrive in '
+    . 'follow-up patches.';
 $string['warningsheading'] = 'Notes and warnings';
+$string['warningunclassified'] = '{$a} unclassified resources will be skipped.';
