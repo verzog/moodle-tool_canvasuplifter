@@ -28,8 +28,8 @@ $string['analyse'] = 'Analyse package';
 $string['analyseanother'] = 'Analyse another package';
 $string['buildcourse'] = 'Build course';
 $string['buildstatusheading'] = 'Build status';
-$string['builtcoursesummary'] = 'Built {$a->sectioncount} sections covering {$a->itemcount} items '
-    . '({$a->skipped} items not yet created — coming in subsequent phases).';
+$string['builtcoursesummary'] = 'Built {$a->created} of {$a->itemcount} content items across '
+    . '{$a->sectioncount} sections ({$a->skipped} skipped).';
 $string['canvasuplifter:use'] = 'Upload a Canvas package and view the conversion report';
 $string['colconfidence'] = 'Mapping';
 $string['colcount'] = 'Count';
