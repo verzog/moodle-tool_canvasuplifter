@@ -35,13 +35,21 @@ $string['confidence_manual'] = 'Needs manual finishing';
 $string['confidence_none'] = 'Cannot map yet';
 $string['confidence_partial'] = 'Maps, some detail may be lost';
 $string['coursename'] = 'Course name';
+$string['errorbadurl'] = 'The download URL must start with http:// or https://.';
+$string['errorbothsources'] = 'Provide either a file or a URL, not both.';
+$string['errordownloadfailed'] = 'The Canvas package could not be downloaded from that URL.';
+$string['errordownloadtoobig'] = 'The downloaded file is larger than the site upload limit.';
 $string['errornomanifest'] = 'No imsmanifest.xml was found, so this is not a valid Canvas package.';
+$string['errornosource'] = 'Provide a Canvas export file or a download URL.';
 $string['errornotzip'] = 'That file could not be opened as a Common Cartridge (zip) package.';
 $string['itemcount'] = 'Content items';
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';
 $string['packagefile'] = 'Canvas export (.imscc)';
 $string['packagefile_help'] = 'Upload a course exported from Canvas as a Common Cartridge file. '
     . 'In Phase 0 the file is only inspected; nothing is created in Moodle.';
+$string['packageurl'] = 'Download URL';
+$string['packageurl_help'] = 'Alternatively, paste an HTTPS link to a Canvas .imscc file '
+    . '(for example a signed S3 link or a direct download URL). The site upload limit applies.';
 $string['pluginname'] = 'Canvas Uplifter';
 $string['privacy:metadata'] = 'The Canvas Uplifter plugin does not store any personal data. '
     . 'Uploaded packages are inspected and then discarded.';
