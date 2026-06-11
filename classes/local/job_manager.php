@@ -112,7 +112,7 @@ class job_manager {
      * Persist a partial update to a job row and bump timemodified.
      *
      * @param int $jobid Job id.
-     * @param array<string, mixed> $fields Column => value pairs to merge.
+     * @param array $fields Column => value pairs to merge.
      * @return void
      */
     private function update(int $jobid, array $fields): void {
