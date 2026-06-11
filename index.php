@@ -23,6 +23,7 @@
  */
 
 require(__DIR__ . '/../../../config.php');
+require_once($CFG->libdir . '/adminlib.php');
 
 use tool_canvasuplifter\form\upload_form;
 use tool_canvasuplifter\local\ingest\package;
