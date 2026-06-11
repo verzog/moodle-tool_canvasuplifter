@@ -16,8 +16,6 @@
 
 namespace tool_canvasuplifter\local\ingest;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Downloads a Canvas .imscc package from a URL to a temporary file.
  *
