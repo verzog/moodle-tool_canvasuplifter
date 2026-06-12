@@ -44,6 +44,7 @@ $string['confidence_none'] = 'Cannot map yet';
 $string['confidence_partial'] = 'Maps, some detail may be lost';
 $string['coursename'] = 'Course name';
 $string['defaultcoursename'] = 'Imported Canvas course';
+$string['errorbadmanifestxml'] = 'The imsmanifest.xml file could not be parsed as XML.';
 $string['errorbadurl'] = 'The download URL must start with http:// or https://.';
 $string['errorbothsources'] = 'Provide either a file or a URL, not both.';
 $string['errordownloadfailed'] = 'The Canvas package could not be downloaded from that URL.';
@@ -64,8 +65,15 @@ $string['packageurl_help'] = 'Alternatively, paste an HTTPS link to a Canvas .im
     . '(for example a signed S3 link or a direct download URL). The site upload limit applies. '
     . 'Note: signed CloudFront / S3 URLs are often IP-pinned and will fail when fetched server-side.';
 $string['pluginname'] = 'Canvas Uplifter';
-$string['privacy:metadata'] = 'The Canvas Uplifter plugin does not store any personal data. '
-    . 'Uploaded packages are inspected, used to build a course, and then discarded.';
+$string['privacy:jobspath'] = 'Canvas Uplifter build jobs';
+$string['privacy:metadata:tool_canvasuplifter_jobs'] = 'Details of each Canvas-to-Moodle build run started by a user.';
+$string['privacy:metadata:tool_canvasuplifter_jobs:categoryid'] = 'The course category the build targeted.';
+$string['privacy:metadata:tool_canvasuplifter_jobs:courseid'] = 'The course created by the build, if any.';
+$string['privacy:metadata:tool_canvasuplifter_jobs:errormsg'] = 'Any error message recorded if the build failed.';
+$string['privacy:metadata:tool_canvasuplifter_jobs:status'] = 'The state of the build (queued, running, done or failed).';
+$string['privacy:metadata:tool_canvasuplifter_jobs:timecreated'] = 'The time the build was started.';
+$string['privacy:metadata:tool_canvasuplifter_jobs:timemodified'] = 'The time the build was last updated.';
+$string['privacy:metadata:tool_canvasuplifter_jobs:userid'] = 'The user who started the build.';
 $string['progresscoursecreated'] = 'Course created. Building activities…';
 $string['progressextract'] = 'Extracting package…';
 $string['progressitem'] = 'Built {$a->done} of {$a->total} items ({$a->kind})…';
@@ -87,3 +95,6 @@ $string['unknownheading'] = 'Unclassified resource types (debug)';
 $string['warningsheading'] = 'Notes and warnings';
 $string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';
+$string['warnreportlti'] = 'External (LTI) tools need their keys reconfigured by hand after import.';
+$string['warnreportquiz'] = 'Quiz questions depend on type support; check the question-type matrix.';
+$string['warnreportunclassified'] = 'Some resources could not be classified and will be skipped.';

@@ -48,6 +48,18 @@ class package {
         if ($zip->open($zippath) !== true) {
             throw new \RuntimeException(self::ERROR_NOT_ZIP);
         }
+        // Reject zip-slip entries (absolute paths or ".." segments) before
+        // extracting, so a crafted archive cannot write outside $targetdir.
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if ($name === false) {
+                continue;
+            }
+            if ($name[0] === '/' || $name[0] === '\\' || preg_match('#(^|[\\\\/])\.\.([\\\\/]|$)#', $name)) {
+                $zip->close();
+                throw new \RuntimeException(self::ERROR_NOT_ZIP);
+            }
+        }
         if (!$zip->extractTo($targetdir)) {
             $zip->close();
             throw new \RuntimeException(self::ERROR_NOT_ZIP);

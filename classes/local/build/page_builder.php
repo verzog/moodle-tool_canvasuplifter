@@ -56,6 +56,7 @@ class page_builder {
         global $CFG;
         require_once($CFG->dirroot . '/course/modlib.php');
         require_once($CFG->dirroot . '/mod/page/lib.php');
+        require_once($CFG->libdir . '/resourcelib.php');
 
         $contentpath = $this->payload_path($modelitem);
         if ($contentpath === null) {
@@ -119,8 +120,8 @@ class page_builder {
             $candidates[] = $modelitem->href;
         }
         foreach ($candidates as $relative) {
-            $absolute = $this->packageroot . '/' . ltrim($relative, '/');
-            if (is_readable($absolute)) {
+            $absolute = safe_path::within($this->packageroot, $relative);
+            if ($absolute !== null && is_readable($absolute)) {
                 return $absolute;
             }
         }

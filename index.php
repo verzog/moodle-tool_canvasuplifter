@@ -193,7 +193,11 @@ if ($report === null) {
     if (empty($report['warnings'])) {
         echo html_writer::tag('p', get_string('nowarnings', 'tool_canvasuplifter'));
     } else {
-        $items = array_map('s', $report['warnings']);
+        // Report warnings are language string keys; resolve them here.
+        $items = array_map(
+            fn($key) => get_string($key, 'tool_canvasuplifter'),
+            $report['warnings']
+        );
         echo html_writer::alist($items);
     }
 

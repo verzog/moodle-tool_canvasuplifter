@@ -56,6 +56,7 @@ class file_builder {
         global $CFG, $DB, $USER;
         require_once($CFG->dirroot . '/course/modlib.php');
         require_once($CFG->libdir . '/filelib.php');
+        require_once($CFG->libdir . '/resourcelib.php');
 
         $sourcepath = $this->source_path($modelitem);
         if ($sourcepath === null) {
@@ -137,8 +138,8 @@ class file_builder {
             $candidates[] = $modelitem->href;
         }
         foreach ($candidates as $relative) {
-            $absolute = $this->packageroot . '/' . ltrim($relative, '/');
-            if (is_file($absolute) && is_readable($absolute)) {
+            $absolute = safe_path::within($this->packageroot, $relative);
+            if ($absolute !== null && is_file($absolute) && is_readable($absolute)) {
                 return $absolute;
             }
         }
