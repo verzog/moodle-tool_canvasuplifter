@@ -155,24 +155,92 @@ if ($report === null) {
     );
     echo $summary;
 
+    // How much of the package the builder creates in the current phase.
+    echo html_writer::tag('p', get_string('buildsnowsummary', 'tool_canvasuplifter', [
+        'now' => $report['buildsnowtotal'],
+        'later' => $report['latertotal'],
+    ]), ['class' => 'alert alert-info']);
+
     // Mapping table.
     $table = new html_table();
     $table->head = [
         get_string('colkind', 'tool_canvasuplifter'),
         get_string('colcount', 'tool_canvasuplifter'),
         get_string('coltarget', 'tool_canvasuplifter'),
+        get_string('colbuildsnow', 'tool_canvasuplifter'),
         get_string('colconfidence', 'tool_canvasuplifter'),
+        get_string('colnote', 'tool_canvasuplifter'),
     ];
     foreach ($report['rows'] as $row) {
-        $confidencekey = 'confidence_' . $row['confidence'];
         $table->data[] = [
             s($row['kind']),
             $row['count'],
             s($row['target']),
-            get_string($confidencekey, 'tool_canvasuplifter'),
+            get_string($row['buildsnow'] ? 'buildsnow_yes' : 'buildsnow_later', 'tool_canvasuplifter'),
+            get_string('confidence_' . $row['confidence'], 'tool_canvasuplifter'),
+            get_string($row['note'], 'tool_canvasuplifter'),
         ];
     }
     echo html_writer::table($table);
+
+    // Item-by-item detail, collapsed per section to stay manageable.
+    if (!empty($report['sections'])) {
+        echo $OUTPUT->heading(get_string('itemdetailheading', 'tool_canvasuplifter'), 4);
+        foreach ($report['sections'] as $section) {
+            if (empty($section['items'])) {
+                continue;
+            }
+            $detailtable = new html_table();
+            $detailtable->head = [
+                get_string('coltitle', 'tool_canvasuplifter'),
+                get_string('coltarget', 'tool_canvasuplifter'),
+                get_string('colbuildsnow', 'tool_canvasuplifter'),
+                get_string('colconfidence', 'tool_canvasuplifter'),
+            ];
+            foreach ($section['items'] as $detailitem) {
+                $title = $detailitem['title'] !== '' ? $detailitem['title'] : $detailitem['kind'];
+                $detailtable->data[] = [
+                    s($title),
+                    s($detailitem['target']),
+                    get_string($detailitem['buildsnow'] ? 'buildsnow_yes' : 'buildsnow_later', 'tool_canvasuplifter'),
+                    get_string('confidence_' . $detailitem['confidence'], 'tool_canvasuplifter'),
+                ];
+            }
+            $sectiontitle = $section['title'] !== ''
+                ? $section['title']
+                : get_string('untitledsection', 'tool_canvasuplifter');
+            $summarytext = get_string('sectionitemscount', 'tool_canvasuplifter', [
+                'title' => $sectiontitle,
+                'count' => count($section['items']),
+            ]);
+            echo html_writer::tag(
+                'details',
+                html_writer::tag('summary', s($summarytext)) . html_writer::table($detailtable)
+            );
+        }
+    }
+
+    // Resources present in the package but not linked from any module.
+    if (!empty($report['orphans'])) {
+        echo $OUTPUT->heading(get_string('orphansheading', 'tool_canvasuplifter'), 4);
+        echo html_writer::tag('p', get_string('orphansexplain', 'tool_canvasuplifter'));
+        $orphantable = new html_table();
+        $orphantable->head = [
+            get_string('coltitle', 'tool_canvasuplifter'),
+            get_string('colkind', 'tool_canvasuplifter'),
+            get_string('coltarget', 'tool_canvasuplifter'),
+            get_string('colresourcetype', 'tool_canvasuplifter'),
+        ];
+        foreach ($report['orphans'] as $orphan) {
+            $orphantable->data[] = [
+                s($orphan['title']),
+                s($orphan['kind']),
+                s($orphan['target']),
+                s($orphan['resourcetype'] !== '' ? $orphan['resourcetype'] : '-'),
+            ];
+        }
+        echo html_writer::table($orphantable);
+    }
 
     // Debug-only breakdown of what raw CC types showed up as "unknown".
     if (debugging() && !empty($report['unknowntypes'])) {

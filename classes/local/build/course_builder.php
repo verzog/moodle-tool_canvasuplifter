@@ -33,6 +33,9 @@ use tool_canvasuplifter\local\model\item;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class course_builder {
+    /** @var string[] Item kinds the builder can create in the current phase. */
+    public const BUILDS_NOW = [item::KIND_PAGE, item::KIND_URL, item::KIND_FILE];
+
     /** @var int Course category for the new course. */
     private int $categoryid;
 
@@ -141,8 +144,7 @@ class course_builder {
                     $skipreasons[] = $msg;
                     $cmid = null;
                 }
-                $builderkinds = [item::KIND_PAGE, item::KIND_URL, item::KIND_FILE];
-                if ($cmid === null && in_array($modelitem->kind, $builderkinds, true)) {
+                if ($cmid === null && in_array($modelitem->kind, self::BUILDS_NOW, true)) {
                     // The kind has a builder but it returned null.
                     $skipreasons[] = sprintf(
                         '%s "%s" (id=%s) — builder could not find payload; href="%s" files=[%s]',
