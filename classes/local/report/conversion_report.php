@@ -16,6 +16,7 @@
 
 namespace tool_canvasuplifter\local\report;
 
+use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
 
@@ -59,20 +60,47 @@ class conversion_report {
     /**
      * The planned Moodle target for each item kind.
      *
-     * @return array<string, array{target: string, confidence: string}>
+     * The 'note' value is a language string key describing conversion caveats.
+     *
+     * @return array<string, array{target: string, confidence: string, note: string}>
      */
     public static function mapping_plan(): array {
+        $full = self::CONFIDENCE_FULL;
+        $partial = self::CONFIDENCE_PARTIAL;
+        $manual = self::CONFIDENCE_MANUAL;
+        $none = self::CONFIDENCE_NONE;
         return [
-            item::KIND_PAGE => ['target' => 'mod_page', 'confidence' => self::CONFIDENCE_FULL],
-            item::KIND_FILE => ['target' => 'mod_resource', 'confidence' => self::CONFIDENCE_FULL],
-            item::KIND_URL => ['target' => 'mod_url', 'confidence' => self::CONFIDENCE_FULL],
-            item::KIND_ASSIGNMENT => ['target' => 'mod_assign', 'confidence' => self::CONFIDENCE_PARTIAL],
-            item::KIND_DISCUSSION => ['target' => 'mod_forum', 'confidence' => self::CONFIDENCE_PARTIAL],
-            item::KIND_QUIZ => ['target' => 'mod_quiz', 'confidence' => self::CONFIDENCE_PARTIAL],
-            item::KIND_QUESTIONBANK => ['target' => 'mod_qbank', 'confidence' => self::CONFIDENCE_PARTIAL],
-            item::KIND_LTI => ['target' => 'mod_lti', 'confidence' => self::CONFIDENCE_MANUAL],
-            item::KIND_UNKNOWN => ['target' => '-', 'confidence' => self::CONFIDENCE_NONE],
+            item::KIND_PAGE => ['target' => 'mod_page', 'confidence' => $full, 'note' => 'note_page'],
+            item::KIND_FILE => ['target' => 'mod_resource', 'confidence' => $full, 'note' => 'note_file'],
+            item::KIND_URL => ['target' => 'mod_url', 'confidence' => $full, 'note' => 'note_url'],
+            item::KIND_ASSIGNMENT => ['target' => 'mod_assign', 'confidence' => $partial, 'note' => 'note_assignment'],
+            item::KIND_DISCUSSION => ['target' => 'mod_forum', 'confidence' => $partial, 'note' => 'note_discussion'],
+            item::KIND_QUIZ => ['target' => 'mod_quiz', 'confidence' => $partial, 'note' => 'note_quiz'],
+            item::KIND_QUESTIONBANK => ['target' => 'mod_qbank', 'confidence' => $partial, 'note' => 'note_questionbank'],
+            item::KIND_LTI => ['target' => 'mod_lti', 'confidence' => $manual, 'note' => 'note_lti'],
+            item::KIND_UNKNOWN => ['target' => '-', 'confidence' => $none, 'note' => 'note_unknown'],
         ];
+    }
+
+    /**
+     * Whether the builder can create this item kind in the current phase.
+     *
+     * @param string $kind One of the item::KIND_* constants.
+     * @return bool
+     */
+    public static function builds_now(string $kind): bool {
+        return in_array($kind, course_builder::BUILDS_NOW, true);
+    }
+
+    /**
+     * Look up the mapping plan entry for a kind, with a safe default.
+     *
+     * @param string $kind One of the item::KIND_* constants.
+     * @return array{target: string, confidence: string, note: string}
+     */
+    protected function plan_for(string $kind): array {
+        $plan = self::mapping_plan();
+        return $plan[$kind] ?? ['target' => '-', 'confidence' => self::CONFIDENCE_NONE, 'note' => 'note_unknown'];
     }
 
     /**
@@ -115,27 +143,33 @@ class conversion_report {
     /**
      * Produce the full report as a structured array, ready to render.
      *
-     * @return array{
-     *     coursename: string,
-     *     sectioncount: int,
-     *     itemcount: int,
-     *     rows: array<int, array{kind: string, count: int, target: string, confidence: string}>,
-     *     warnings: string[]
-     * }
+     * Includes aggregate rows (with builds-now status and a note key), a
+     * per-section item breakdown, unreferenced resources, and warning keys.
+     *
+     * @return array<string, mixed>
      */
     public function build(): array {
-        $plan = self::mapping_plan();
         $counts = $this->counts_by_kind();
 
         $rows = [];
+        $buildsnowtotal = 0;
+        $latertotal = 0;
         foreach ($counts as $kind => $count) {
-            $entry = $plan[$kind] ?? ['target' => '-', 'confidence' => self::CONFIDENCE_NONE];
+            $entry = $this->plan_for($kind);
+            $buildsnow = self::builds_now($kind);
             $rows[] = [
                 'kind' => $kind,
                 'count' => $count,
                 'target' => $entry['target'],
                 'confidence' => $entry['confidence'],
+                'note' => $entry['note'],
+                'buildsnow' => $buildsnow,
             ];
+            if ($buildsnow) {
+                $buildsnowtotal += $count;
+            } else {
+                $latertotal += $count;
+            }
         }
 
         // Warnings are language string keys, resolved to text by the caller.
@@ -154,9 +188,57 @@ class conversion_report {
             'coursename' => $this->course->fullname,
             'sectioncount' => count($this->course->sections),
             'itemcount' => count($this->course->all_items()),
+            'buildsnowtotal' => $buildsnowtotal,
+            'latertotal' => $latertotal,
             'rows' => $rows,
+            'sections' => $this->section_detail(),
+            'orphans' => $this->orphan_detail(),
             'warnings' => $warnings,
             'unknowntypes' => $this->counts_by_resourcetype(item::KIND_UNKNOWN),
         ];
+    }
+
+    /**
+     * Per-section, per-item detail for the drill-down view.
+     *
+     * @return array<int, array{title: string, items: array<int, array{
+     *     title: string, kind: string, target: string, confidence: string, buildsnow: bool}>}>
+     */
+    protected function section_detail(): array {
+        $sections = [];
+        foreach ($this->course->sections as $sectionmodel) {
+            $items = [];
+            foreach ($sectionmodel->items as $modelitem) {
+                $entry = $this->plan_for($modelitem->kind);
+                $items[] = [
+                    'title' => $modelitem->title,
+                    'kind' => $modelitem->kind,
+                    'target' => $entry['target'],
+                    'confidence' => $entry['confidence'],
+                    'buildsnow' => self::builds_now($modelitem->kind),
+                ];
+            }
+            $sections[] = ['title' => $sectionmodel->title, 'items' => $items];
+        }
+        return $sections;
+    }
+
+    /**
+     * Resources present in the package but not referenced by any module.
+     *
+     * @return array<int, array{title: string, kind: string, target: string, resourcetype: string}>
+     */
+    protected function orphan_detail(): array {
+        $orphans = [];
+        foreach ($this->course->orphans as $modelitem) {
+            $entry = $this->plan_for($modelitem->kind);
+            $orphans[] = [
+                'title' => $modelitem->title !== '' ? $modelitem->title : $modelitem->identifier,
+                'kind' => $modelitem->kind,
+                'target' => $entry['target'],
+                'resourcetype' => $modelitem->resourcetype,
+            ];
+        }
+        return $orphans;
     }
 }
