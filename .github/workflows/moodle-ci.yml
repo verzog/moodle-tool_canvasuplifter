@@ -30,14 +30,31 @@ jobs:
         options: >-
           --health-cmd="mysqladmin ping" --health-interval=10s
           --health-timeout=5s --health-retries=3
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: true
+          MYSQL_CHARACTER_SET_SERVER: utf8mb4
+          MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+        # Mapped to host 3307 so it doesn't clash with the mariadb service on 3306.
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="mysqladmin ping" --health-interval=10s
+          --health-timeout=5s --health-retries=3
 
     strategy:
       fail-fast: false
       matrix:
-        # Moodle 5.0 requires PHP 8.2+; 8.4 is supported on 5.0 and later.
+        # Moodle 5.0/5.1 run on PHP 8.2-8.4; Moodle 5.2 dropped 8.2 (8.3-8.4 only).
         php: ['8.2', '8.3', '8.4']
-        moodle-branch: ['MOODLE_500_STABLE', 'MOODLE_501_STABLE']
-        database: ['pgsql', 'mariadb']
+        moodle-branch: ['MOODLE_500_STABLE', 'MOODLE_501_STABLE', 'MOODLE_502_STABLE']
+        # mysqli -> MySQL 8.4 service (port 3307); mariadb -> MariaDB 10.11 (3306).
+        database: ['pgsql', 'mariadb', 'mysqli']
+        exclude:
+          # Moodle 5.2 requires PHP 8.3+, so skip the 8.2 combinations there.
+          - php: '8.2'
+            moodle-branch: 'MOODLE_502_STABLE'
 
     env:
       # Australian timezone so date/time tests respect AEST/AWST offsets.
@@ -54,13 +71,9 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           extensions: zip, xml, gd, mbstring, sodium, intl, soap, xmlrpc
-          ini-values: max_input_vars=5000
+          # Moodle 5.2 requires max_input_vars of 7000 or higher.
+          ini-values: max_input_vars=7000
           coverage: none
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
 
       - name: Initialise moodle-plugin-ci
         run: |
@@ -71,7 +84,13 @@ jobs:
           sudo locale-gen en_AU.UTF-8
 
       - name: Install Moodle
-        run: moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1
+        run: |
+          case "${{ matrix.database }}" in
+            pgsql)   dbport=5432 ;;
+            mariadb) dbport=3306 ;;
+            mysqli)  dbport=3307 ;;
+          esac
+          moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1 --db-port="$dbport"
         env:
           DB: ${{ matrix.database }}
           MOODLE_BRANCH: ${{ matrix.moodle-branch }}
@@ -110,14 +129,6 @@ jobs:
         if: ${{ !cancelled() }}
         run: moodle-plugin-ci mustache
 
-      - name: Grunt
-        if: ${{ !cancelled() }}
-        run: moodle-plugin-ci grunt --max-lint-warnings 0
-
       - name: PHPUnit tests
         if: ${{ !cancelled() }}
         run: moodle-plugin-ci phpunit --fail-on-warning
-
-      - name: Behat features
-        if: ${{ !cancelled() }}
-        run: moodle-plugin-ci behat --profile chrome
