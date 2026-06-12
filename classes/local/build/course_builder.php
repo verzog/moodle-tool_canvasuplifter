@@ -238,7 +238,7 @@ class course_builder {
      * their wiki slug (the source file's base name), which is how
      * $WIKI_REFERENCE$ links address them.
      *
-     * @param array<string, string> $urlmap Link map being built (modified in place).
+     * @param array $urlmap Link map being built (modified in place).
      * @param item $modelitem The built item.
      * @param int $cmid Its course module id.
      * @return void
@@ -283,7 +283,7 @@ class course_builder {
      * Rewrite internal links in every built page once all targets exist.
      *
      * @param int[] $pagecmids Course module ids of the pages to process.
-     * @param array<string, string> $urlmap Canvas reference key => URL.
+     * @param array $urlmap Canvas reference key => URL.
      * @return void
      */
     private function rewrite_internal_links(array $pagecmids, array $urlmap): void {

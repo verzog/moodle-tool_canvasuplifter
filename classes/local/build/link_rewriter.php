@@ -78,7 +78,7 @@ class link_rewriter {
      * so no information is lost.
      *
      * @param string $html The page HTML.
-     * @param array<string, string> $urlmap Keys like "wiki:<slug>" or "id:<identifier>" mapped to URLs.
+     * @param array $urlmap Keys like "wiki:<slug>" or "id:<identifier>" mapped to URLs.
      * @return string The rewritten HTML.
      */
     public function rewrite_internal_links(string $html, array $urlmap): string {

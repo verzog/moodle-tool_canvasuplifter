@@ -129,7 +129,6 @@ class page_builder {
 
         $context = \context_module::instance($cmid);
         $fs = get_file_storage();
-        $imported = 0;
         foreach ($result['files'] as $file) {
             $exists = $fs->file_exists(
                 $context->id,
@@ -150,11 +149,9 @@ class page_builder {
                 'filepath' => $file['filepath'],
                 'filename' => $file['filename'],
             ], $file['package']);
-            $imported++;
         }
 
         $DB->set_field('page', 'content', $result['html'], ['id' => $instanceid]);
-        mtrace("tool_canvasuplifter: embedded $imported file(s) into page cmid $cmid");
     }
 
     /**
