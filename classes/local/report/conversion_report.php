@@ -65,16 +65,20 @@ class conversion_report {
      * @return array<string, array{target: string, confidence: string, note: string}>
      */
     public static function mapping_plan(): array {
+        $full = self::CONFIDENCE_FULL;
+        $partial = self::CONFIDENCE_PARTIAL;
+        $manual = self::CONFIDENCE_MANUAL;
+        $none = self::CONFIDENCE_NONE;
         return [
-            item::KIND_PAGE => ['target' => 'mod_page', 'confidence' => self::CONFIDENCE_FULL, 'note' => 'note_page'],
-            item::KIND_FILE => ['target' => 'mod_resource', 'confidence' => self::CONFIDENCE_FULL, 'note' => 'note_file'],
-            item::KIND_URL => ['target' => 'mod_url', 'confidence' => self::CONFIDENCE_FULL, 'note' => 'note_url'],
-            item::KIND_ASSIGNMENT => ['target' => 'mod_assign', 'confidence' => self::CONFIDENCE_PARTIAL, 'note' => 'note_assignment'],
-            item::KIND_DISCUSSION => ['target' => 'mod_forum', 'confidence' => self::CONFIDENCE_PARTIAL, 'note' => 'note_discussion'],
-            item::KIND_QUIZ => ['target' => 'mod_quiz', 'confidence' => self::CONFIDENCE_PARTIAL, 'note' => 'note_quiz'],
-            item::KIND_QUESTIONBANK => ['target' => 'mod_qbank', 'confidence' => self::CONFIDENCE_PARTIAL, 'note' => 'note_questionbank'],
-            item::KIND_LTI => ['target' => 'mod_lti', 'confidence' => self::CONFIDENCE_MANUAL, 'note' => 'note_lti'],
-            item::KIND_UNKNOWN => ['target' => '-', 'confidence' => self::CONFIDENCE_NONE, 'note' => 'note_unknown'],
+            item::KIND_PAGE => ['target' => 'mod_page', 'confidence' => $full, 'note' => 'note_page'],
+            item::KIND_FILE => ['target' => 'mod_resource', 'confidence' => $full, 'note' => 'note_file'],
+            item::KIND_URL => ['target' => 'mod_url', 'confidence' => $full, 'note' => 'note_url'],
+            item::KIND_ASSIGNMENT => ['target' => 'mod_assign', 'confidence' => $partial, 'note' => 'note_assignment'],
+            item::KIND_DISCUSSION => ['target' => 'mod_forum', 'confidence' => $partial, 'note' => 'note_discussion'],
+            item::KIND_QUIZ => ['target' => 'mod_quiz', 'confidence' => $partial, 'note' => 'note_quiz'],
+            item::KIND_QUESTIONBANK => ['target' => 'mod_qbank', 'confidence' => $partial, 'note' => 'note_questionbank'],
+            item::KIND_LTI => ['target' => 'mod_lti', 'confidence' => $manual, 'note' => 'note_lti'],
+            item::KIND_UNKNOWN => ['target' => '-', 'confidence' => $none, 'note' => 'note_unknown'],
         ];
     }
 

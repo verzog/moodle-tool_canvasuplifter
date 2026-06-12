@@ -29,7 +29,8 @@ $string['analyseanother'] = 'Analyse another package';
 $string['buildcourse'] = 'Build course';
 $string['buildsnow_later'] = 'Later phase';
 $string['buildsnow_yes'] = 'Yes';
-$string['buildsnowsummary'] = '{$a->now} items will be built into the course now; {$a->later} are reported for a later phase and will be skipped.';
+$string['buildsnowsummary'] = '{$a->now} items will be built into the course now; '
+    . '{$a->later} are reported for a later phase and will be skipped.';
 $string['buildstatusheading'] = 'Build status';
 $string['builtcoursesummary'] = 'Built {$a->created} of {$a->itemcount} content items across '
     . '{$a->sectioncount} sections ({$a->skipped} skipped).';
@@ -66,7 +67,8 @@ $string['note_assignment'] = 'Name, instructions and due dates will convert; rub
 $string['note_discussion'] = 'Discussion topics will become forums; not every thread or reply may carry across.';
 $string['note_file'] = 'Files convert directly to file resources.';
 $string['note_lti'] = 'Imported as a placeholder; keys and secrets must be reconfigured per site.';
-$string['note_page'] = 'Pages convert. Embedded images and internal Canvas links are not yet rewritten, so some images may not display.';
+$string['note_page'] = 'Pages convert. Embedded images and internal Canvas links '
+    . 'are not yet rewritten, so some images may not display.';
 $string['note_questionbank'] = 'Imported as question bank (mod_qbank) activities.';
 $string['note_quiz'] = 'Questions convert only where the QTI question type is supported.';
 $string['note_unknown'] = 'Resource type not recognised; these are skipped.';
