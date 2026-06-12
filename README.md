@@ -2,10 +2,12 @@
 
 Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 
-> **Status: Phase 0 — read-only.** This release inspects a Canvas package and
-> reports what it contains and how cleanly each part will map to Moodle. It does
-> **not** create any course content yet. Phase 0 exists so you can point the tool
-> at real exports and see exactly what's inside before the builder is written.
+> **Status: Phase 1 — early build.** This release can both *analyse* a Canvas
+> package (report what it contains and how cleanly each part maps to Moodle)
+> and *build* a new Moodle course from it. The builder currently creates
+> sections plus pages (`mod_page`), files (`mod_resource`) and URLs
+> (`mod_url`); other content types (assignments, forums, quizzes, LTI) are
+> reported as skipped and will land in later phases. See the Roadmap below.
 
 ## Requirements
 
@@ -19,14 +21,25 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 2. Visit *Site administration > Notifications* to complete installation.
 3. Open *Site administration > Courses > Canvas Uplifter*.
 
-## Using it (Phase 0)
+## Using it
 
 1. In Canvas, export the course as a Common Cartridge (`.imscc`).
-2. Upload that file on the Canvas Uplifter page.
-3. Read the conversion report: section/item counts, the planned Moodle target
-   for each content type, mapping confidence, and any warnings.
+2. Upload that file (or paste a download URL) on the Canvas Uplifter page,
+   and choose a target course category.
+3. **Analyse package** shows a conversion report: section/item counts, the
+   planned Moodle target for each content type, mapping confidence, and any
+   warnings. Nothing is written in this mode.
+4. **Build course** queues a background task that creates a new (hidden) course
+   in the chosen category and builds the supported content into it. A status
+   page shows progress and a summary of what was created or skipped.
 
-Nothing is written to your site — the uploaded file is inspected and discarded.
+### Known limitations (Phase 1)
+
+- Embedded images and internal Canvas links inside pages are not yet rewritten,
+  so a page that references package files may show broken images until a later
+  phase adds link rewriting and file-area import.
+- Assignments, forums, quizzes, question banks and LTI tools are reported but
+  not yet built.
 
 ## How it's built
 

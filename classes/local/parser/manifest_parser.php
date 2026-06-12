@@ -54,17 +54,19 @@ class manifest_parser {
     public function parse(): course_model {
         $manifestpath = $this->basedir . '/imsmanifest.xml';
         if (!is_readable($manifestpath)) {
-            throw new \RuntimeException('imsmanifest.xml not found in package.');
+            // Message is a lang string key resolved by the calling page.
+            throw new \RuntimeException('errornomanifest');
         }
 
         $dom = new DOMDocument();
         // Suppress libxml warnings; we validate the structure ourselves below.
+        // LIBXML_NONET blocks any network access while parsing untrusted XML.
         $previous = libxml_use_internal_errors(true);
-        $loaded = $dom->load($manifestpath);
+        $loaded = $dom->load($manifestpath, LIBXML_NONET);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
         if (!$loaded) {
-            throw new \RuntimeException('imsmanifest.xml could not be parsed as XML.');
+            throw new \RuntimeException('errorbadmanifestxml');
         }
 
         $course = new course_model();
@@ -281,7 +283,7 @@ class manifest_parser {
             return '';
         }
         $previous = libxml_use_internal_errors(true);
-        $xml = simplexml_load_file($path);
+        $xml = simplexml_load_file($path, 'SimpleXMLElement', LIBXML_NONET);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
         if ($xml === false) {

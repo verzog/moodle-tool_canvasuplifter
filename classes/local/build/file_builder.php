@@ -137,8 +137,8 @@ class file_builder {
             $candidates[] = $modelitem->href;
         }
         foreach ($candidates as $relative) {
-            $absolute = $this->packageroot . '/' . ltrim($relative, '/');
-            if (is_file($absolute) && is_readable($absolute)) {
+            $absolute = safe_path::within($this->packageroot, $relative);
+            if ($absolute !== null && is_file($absolute) && is_readable($absolute)) {
                 return $absolute;
             }
         }

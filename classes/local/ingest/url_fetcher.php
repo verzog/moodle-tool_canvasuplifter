@@ -69,31 +69,26 @@ class url_fetcher {
             throw new \RuntimeException(self::ERROR_DOWNLOAD);
         }
 
-        // Use raw cURL so we don't fight Moodle's curl wrapper over option
-        // translation or response handling for streamed binary downloads.
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_FILE => $fh,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 5,
-            CURLOPT_CONNECTTIMEOUT => 30,
-            CURLOPT_TIMEOUT => 600,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_USERAGENT => 'MoodleCanvasUplifter/0.1 (+' . $CFG->wwwroot . ')',
-            CURLOPT_ACCEPT_ENCODING => '',
+        // Use Moodle's curl wrapper, which enforces the site's
+        // curlsecurityblockedhosts / allowed-ports policy on every redirect
+        // hop. This prevents server-side request forgery to internal services
+        // or cloud-metadata endpoints, including via a redirect from an
+        // otherwise-allowed host.
+        $curl = new \curl();
+        $result = $curl->download_one($url, null, [
+            'CURLOPT_FILE' => $fh,
+            'CURLOPT_FOLLOWLOCATION' => 1,
+            'CURLOPT_MAXREDIRS' => 5,
+            'CURLOPT_CONNECTTIMEOUT' => 30,
+            'CURLOPT_TIMEOUT' => 600,
+            'CURLOPT_SSL_VERIFYPEER' => 1,
+            'CURLOPT_SSL_VERIFYHOST' => 2,
         ]);
-
-        $ok = curl_exec($ch);
-        $errno = curl_errno($ch);
-        $errmsg = curl_error($ch);
-        $httpcode = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        curl_close($ch);
         fclose($fh);
 
-        if ($ok === false || $errno !== 0) {
-            $this->lastdetail = "cURL error $errno: $errmsg";
+        $httpcode = (int) ($curl->info['http_code'] ?? 0);
+        if ($result !== true || !empty($curl->errno)) {
+            $this->lastdetail = $curl->error !== '' ? $curl->error : 'download failed';
             @unlink($target);
             throw new \RuntimeException(self::ERROR_DOWNLOAD);
         }

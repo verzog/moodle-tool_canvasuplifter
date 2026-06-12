@@ -100,12 +100,12 @@ class url_builder {
             $candidates[] = $modelitem->href;
         }
         foreach ($candidates as $relative) {
-            $absolute = $this->packageroot . '/' . ltrim($relative, '/');
-            if (!is_readable($absolute)) {
+            $absolute = safe_path::within($this->packageroot, $relative);
+            if ($absolute === null || !is_readable($absolute)) {
                 continue;
             }
             $previous = libxml_use_internal_errors(true);
-            $xml = simplexml_load_file($absolute);
+            $xml = simplexml_load_file($absolute, 'SimpleXMLElement', LIBXML_NONET);
             libxml_clear_errors();
             libxml_use_internal_errors($previous);
             if ($xml === false) {

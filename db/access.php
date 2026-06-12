@@ -27,7 +27,8 @@ defined('MOODLE_INTERNAL') || die();
 $capabilities = [
     // Allows a user to upload a Canvas package and view the conversion report.
     'tool/canvasuplifter:use' => [
-        'riskbitmask'  => RISK_SPAM,
+        // Imported Canvas pages become HTML page content, so this carries an XSS risk.
+        'riskbitmask'  => RISK_SPAM | RISK_XSS,
         'captype'      => 'write',
         'contextlevel' => CONTEXT_SYSTEM,
         'archetypes'   => [

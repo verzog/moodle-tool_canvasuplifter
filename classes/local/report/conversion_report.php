@@ -22,9 +22,13 @@ use tool_canvasuplifter\local\model\item;
 /**
  * Builds a read-only "what is in this package" report from a course model.
  *
- * In Phase 0 this is the plugin's only output: it tells an administrator what
- * the package contains and how cleanly each part will map to Moodle, without
- * creating anything.
+ * This is the analyse-only output: it tells an administrator what the package
+ * contains and how cleanly each part will map to Moodle, without creating
+ * anything. The actual build is handled separately by the course builder.
+ *
+ * Warnings are returned as language string keys (not text) so this class keeps
+ * no Moodle dependency and stays unit-testable; the rendering page resolves
+ * them with get_string().
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -134,15 +138,16 @@ class conversion_report {
             ];
         }
 
+        // Warnings are language string keys, resolved to text by the caller.
         $warnings = [];
         if (($counts[item::KIND_UNKNOWN] ?? 0) > 0) {
-            $warnings[] = 'Some resources could not be classified and will be skipped.';
+            $warnings[] = 'warnreportunclassified';
         }
         if (($counts[item::KIND_LTI] ?? 0) > 0) {
-            $warnings[] = 'External (LTI) tools need their keys reconfigured by hand after import.';
+            $warnings[] = 'warnreportlti';
         }
         if (($counts[item::KIND_QUIZ] ?? 0) > 0 || ($counts[item::KIND_QUESTIONBANK] ?? 0) > 0) {
-            $warnings[] = 'Quiz questions depend on type support; check the question-type matrix.';
+            $warnings[] = 'warnreportquiz';
         }
 
         return [
