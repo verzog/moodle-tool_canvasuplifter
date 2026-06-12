@@ -53,7 +53,7 @@ class page_builder {
      * @return int|null Created course module id, or null if the page payload was missing.
      */
     public function build(stdClass $course, int $sectionnum, item $modelitem): ?int {
-        global $CFG;
+        global $CFG, $DB;
         require_once($CFG->dirroot . '/course/modlib.php');
         require_once($CFG->dirroot . '/mod/page/lib.php');
         require_once($CFG->libdir . '/resourcelib.php');
@@ -101,7 +101,57 @@ class page_builder {
         ];
 
         $created = add_moduleinfo($moduleinfo, $course);
-        return (int) $created->coursemodule;
+        $cmid = (int) $created->coursemodule;
+
+        // Import any files the page embeds and rewrite the references so they
+        // resolve through pluginfile.php instead of 404ing.
+        $this->embed_files($cmid, (int) $created->instance, $content);
+
+        return $cmid;
+    }
+
+    /**
+     * Import package files referenced by the page and rewrite the stored
+     * content to @@PLUGINFILE@@ references.
+     *
+     * @param int $cmid Course module id of the new page.
+     * @param int $instanceid The page instance id.
+     * @param string $content The original page HTML.
+     * @return void
+     */
+    private function embed_files(int $cmid, int $instanceid, string $content): void {
+        global $DB;
+
+        $result = (new link_rewriter())->rewrite_files($content, $this->packageroot);
+        if (empty($result['files'])) {
+            return;
+        }
+
+        $context = \context_module::instance($cmid);
+        $fs = get_file_storage();
+        foreach ($result['files'] as $file) {
+            $exists = $fs->file_exists(
+                $context->id,
+                'mod_page',
+                'content',
+                0,
+                $file['filepath'],
+                $file['filename']
+            );
+            if ($exists) {
+                continue;
+            }
+            $fs->create_file_from_pathname([
+                'contextid' => $context->id,
+                'component' => 'mod_page',
+                'filearea' => 'content',
+                'itemid' => 0,
+                'filepath' => $file['filepath'],
+                'filename' => $file['filename'],
+            ], $file['package']);
+        }
+
+        $DB->set_field('page', 'content', $result['html'], ['id' => $instanceid]);
     }
 
     /**

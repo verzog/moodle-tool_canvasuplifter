@@ -36,6 +36,13 @@ class course_builder {
     /** @var string[] Item kinds the builder can create in the current phase. */
     public const BUILDS_NOW = [item::KIND_PAGE, item::KIND_URL, item::KIND_FILE];
 
+    /** @var array<string, string> Maps an item kind to its Moodle module name. */
+    private const KIND_TO_MOD = [
+        item::KIND_PAGE => 'page',
+        item::KIND_URL => 'url',
+        item::KIND_FILE => 'resource',
+    ];
+
     /** @var int Course category for the new course. */
     private int $categoryid;
 
@@ -108,6 +115,8 @@ class course_builder {
         $createdcounts = [];
         $skippedcounts = [];
         $skipreasons = [];
+        $urlmap = [];          // Canvas reference key => Moodle activity URL.
+        $builtpagecmids = [];   // Course module ids of pages, for the link pass.
         $totalitems = max(1, count($coursemodel->all_items()));
         $processed = 0;
 
@@ -157,6 +166,10 @@ class course_builder {
                 }
                 if ($cmid !== null) {
                     $createdcounts[$modelitem->kind] = ($createdcounts[$modelitem->kind] ?? 0) + 1;
+                    $this->record_link_target($urlmap, $modelitem, $cmid);
+                    if ($modelitem->kind === item::KIND_PAGE) {
+                        $builtpagecmids[] = $cmid;
+                    }
                 } else {
                     $skippedcounts[$modelitem->kind] = ($skippedcounts[$modelitem->kind] ?? 0) + 1;
                 }
@@ -169,6 +182,9 @@ class course_builder {
                 ]));
             }
         }
+
+        // Second pass: rewrite internal page links now that every target exists.
+        $this->rewrite_internal_links($builtpagecmids, $urlmap);
 
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
@@ -212,6 +228,83 @@ class course_builder {
     private function report_progress(int $percent, string $message): void {
         if ($this->jobs !== null && $this->jobid > 0) {
             $this->jobs->set_progress($this->jobid, $percent, $message);
+        }
+    }
+
+    /**
+     * Record a built activity's URL so internal Canvas links can resolve to it.
+     *
+     * Items are keyed by their Canvas identifier, and pages additionally by
+     * their wiki slug (the source file's base name), which is how
+     * $WIKI_REFERENCE$ links address them.
+     *
+     * @param array $urlmap Link map being built (modified in place).
+     * @param item $modelitem The built item.
+     * @param int $cmid Its course module id.
+     * @return void
+     */
+    private function record_link_target(array &$urlmap, item $modelitem, int $cmid): void {
+        $mod = self::KIND_TO_MOD[$modelitem->kind] ?? null;
+        if ($mod === null) {
+            return;
+        }
+        $url = (new \moodle_url('/mod/' . $mod . '/view.php', ['id' => $cmid]))->out(false);
+        if ($modelitem->identifier !== '') {
+            $urlmap['id:' . $modelitem->identifier] = $url;
+        }
+        if ($modelitem->kind === item::KIND_PAGE) {
+            $slug = $this->slug_for($modelitem);
+            if ($slug !== '') {
+                $urlmap['wiki:' . $slug] = $url;
+            }
+        }
+    }
+
+    /**
+     * Derive a page's wiki slug from its source file (base name without extension).
+     *
+     * @param item $modelitem The page item.
+     * @return string The slug, or '' if it has no source path.
+     */
+    private function slug_for(item $modelitem): string {
+        $source = $modelitem->files[0] ?? '';
+        if ($source === '') {
+            $source = $modelitem->href;
+        }
+        if ($source === '') {
+            return '';
+        }
+        $base = basename($source);
+        $dot = strrpos($base, '.');
+        return $dot === false ? $base : substr($base, 0, $dot);
+    }
+
+    /**
+     * Rewrite internal links in every built page once all targets exist.
+     *
+     * @param int[] $pagecmids Course module ids of the pages to process.
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_internal_links(array $pagecmids, array $urlmap): void {
+        global $DB;
+        if (empty($pagecmids) || empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        foreach ($pagecmids as $cmid) {
+            $cm = get_coursemodule_from_id('page', $cmid, 0, false, IGNORE_MISSING);
+            if (!$cm) {
+                continue;
+            }
+            $page = $DB->get_record('page', ['id' => $cm->instance]);
+            if (!$page) {
+                continue;
+            }
+            $newcontent = $rewriter->rewrite_internal_links((string) $page->content, $urlmap);
+            if ($newcontent !== $page->content) {
+                $DB->set_field('page', 'content', $newcontent, ['id' => $page->id]);
+            }
         }
     }
 

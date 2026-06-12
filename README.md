@@ -35,9 +35,11 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 
 ### Known limitations (Phase 1)
 
-- Embedded images and internal Canvas links inside pages are not yet rewritten,
-  so a page that references package files may show broken images until a later
-  phase adds link rewriting and file-area import.
+- Page link rewriting covers embedded files (`$IMS-CC-FILEBASE$`) and internal
+  links to other pages/activities (`$WIKI_REFERENCE$`,
+  `$CANVAS_OBJECT_REFERENCE$`). Links whose target isn't built yet (e.g. an
+  assignment) can't be resolved until that content type is supported, so those
+  references are left unchanged rather than pointed at a broken URL.
 - Assignments, forums, quizzes, question banks and LTI tools are reported but
   not yet built.
 
