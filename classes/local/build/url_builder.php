@@ -55,6 +55,7 @@ class url_builder {
     public function build(stdClass $course, int $sectionnum, item $modelitem): ?int {
         global $CFG, $DB;
         require_once($CFG->dirroot . '/course/modlib.php');
+        require_once($CFG->libdir . '/resourcelib.php');
 
         $externalurl = $this->extract_url($modelitem);
         if ($externalurl === null) {

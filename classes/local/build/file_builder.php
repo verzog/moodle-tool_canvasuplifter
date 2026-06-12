@@ -56,6 +56,7 @@ class file_builder {
         global $CFG, $DB, $USER;
         require_once($CFG->dirroot . '/course/modlib.php');
         require_once($CFG->libdir . '/filelib.php');
+        require_once($CFG->libdir . '/resourcelib.php');
 
         $sourcepath = $this->source_path($modelitem);
         if ($sourcepath === null) {
