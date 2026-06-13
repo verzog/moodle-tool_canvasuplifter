@@ -233,12 +233,30 @@ class conversion_report {
         foreach ($this->course->orphans as $modelitem) {
             $entry = $this->plan_for($modelitem->kind);
             $orphans[] = [
-                'title' => $modelitem->title !== '' ? $modelitem->title : $modelitem->identifier,
+                'title' => $this->display_title($modelitem),
                 'kind' => $modelitem->kind,
                 'target' => $entry['target'],
                 'resourcetype' => $modelitem->resourcetype,
             ];
         }
         return $orphans;
+    }
+
+    /**
+     * Best available display title: explicit title, else source file name,
+     * else the raw identifier.
+     *
+     * @param item $modelitem The resource.
+     * @return string
+     */
+    protected function display_title(item $modelitem): string {
+        if ($modelitem->title !== '') {
+            return $modelitem->title;
+        }
+        $source = $modelitem->files[0] ?? ($modelitem->href !== '' ? $modelitem->href : '');
+        if ($source !== '') {
+            return basename($source);
+        }
+        return $modelitem->identifier;
     }
 }

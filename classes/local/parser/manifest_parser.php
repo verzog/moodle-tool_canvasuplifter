@@ -91,7 +91,64 @@ class manifest_parser {
             }
         }
 
+        // Resources not referenced by the organisation tree have no title; recover
+        // a human-readable one from the HTML payload so the report and the built
+        // activities don't show raw Canvas identifiers.
+        foreach ($resources as $resourceitem) {
+            if ($resourceitem->title === '') {
+                $resourceitem->title = $this->derive_title($resourceitem);
+            }
+        }
+
         return $course;
+    }
+
+    /**
+     * Derive a title for an untitled resource from its HTML <title> element.
+     *
+     * @param item $modelitem The resource.
+     * @return string The decoded title, or '' if none could be read.
+     */
+    protected function derive_title(item $modelitem): string {
+        $candidates = $modelitem->files;
+        if ($modelitem->href !== '') {
+            $candidates[] = $modelitem->href;
+        }
+        foreach ($candidates as $relative) {
+            if (!preg_match('/\.html?$/i', $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within($relative);
+            if ($absolute === null) {
+                continue;
+            }
+            $html = (string) @file_get_contents($absolute);
+            if (preg_match('/<title[^>]*>(.*?)<\/title>/is', $html, $matches)) {
+                $title = trim(html_entity_decode(strip_tags($matches[1]), ENT_QUOTES | ENT_HTML5));
+                if ($title !== '') {
+                    return $title;
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Resolve a package-relative path to a readable file inside the base dir.
+     *
+     * @param string $relative Package-relative path.
+     * @return string|null Absolute path, or null if missing or outside the package.
+     */
+    protected function resolve_within(string $relative): ?string {
+        $absolute = realpath($this->basedir . '/' . ltrim($relative, '/'));
+        $root = realpath($this->basedir);
+        if ($absolute === false || $root === false) {
+            return null;
+        }
+        if ($absolute !== $root && strpos($absolute, $root . DIRECTORY_SEPARATOR) !== 0) {
+            return null;
+        }
+        return is_readable($absolute) ? $absolute : null;
     }
 
     /**

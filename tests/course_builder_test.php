@@ -277,4 +277,84 @@ XML;
         $this->assertSame('Additional resources', $sectionname);
         $this->assertEquals(2, $resourcecm->sectionnum);
     }
+
+    /**
+     * Write a package whose only syllabus + a stray file are unreferenced.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_syllabus_fixture(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/welcome.html', '<p>Welcome</p>');
+        file_put_contents(
+            $dir . '/wiki_content/g0658_syllabus.html',
+            '<html><head><title>Course Syllabus</title></head><body><p>The syllabus.</p></body></html>'
+        );
+        mkdir($dir . '/web_resources');
+        file_put_contents($dir . '/web_resources/handout.pdf', '%PDF-1.4 test');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i1" identifierref="r_page"><title>Welcome</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_page" type="webcontent" href="wiki_content/welcome.html">
+      <file href="wiki_content/welcome.html"/>
+    </resource>
+    <resource identifier="r_syllabus" type="webcontent" href="wiki_content/g0658_syllabus.html">
+      <file href="wiki_content/g0658_syllabus.html"/>
+    </resource>
+    <resource identifier="r_handout" type="webcontent" href="web_resources/handout.pdf">
+      <file href="web_resources/handout.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * The syllabus lands in the top section with its real title; other orphans
+     * go to "Additional resources".
+     *
+     * @return void
+     */
+    public function test_build_places_syllabus_at_top(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_syllabus_fixture();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        // Original section + the "Additional resources" section (syllabus sits in section 0).
+        $this->assertSame(2, $report['sectioncount']);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $syllabus = null;
+        foreach ($modinfo->get_instances_of('page') as $cm) {
+            if ($cm->get_name() === 'Course Syllabus') {
+                $syllabus = $cm;
+            }
+        }
+        $this->assertNotNull($syllabus, 'syllabus page should be created with its HTML title');
+        $this->assertEquals(0, $syllabus->sectionnum);
+
+        // The stray file is not treated as syllabus; it goes to Additional resources.
+        $resources = $modinfo->get_instances_of('resource');
+        $this->assertCount(1, $resources);
+        $this->assertEquals(2, reset($resources)->sectionnum);
+    }
 }
