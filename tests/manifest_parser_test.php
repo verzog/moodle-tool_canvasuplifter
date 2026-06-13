@@ -209,6 +209,46 @@ XML;
     }
 
     /**
+     * A QTI assessment names itself in an <assessment title="..."> attribute, so
+     * an untitled quiz/bank resource takes that name instead of its filename.
+     *
+     * @return void
+     */
+    public function test_derives_quiz_title_from_qti_assessment(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        file_put_contents(
+            $dir . '/quiz/qti_0eec1982.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Section 1.1 Homework"><section ident="s1"/></assessment>'
+            . '</questestinterop>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment" href="quiz/qti_0eec1982.xml">
+      <file href="quiz/qti_0eec1982.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('quiz', $course->orphans[0]->kind);
+        $this->assertSame('Section 1.1 Homework', $course->orphans[0]->title);
+    }
+
+    /**
      * Learning-application resources without an HTML payload (Canvas discussion
      * topicMeta, quiz meta, canvas_export.txt) are not treated as pages; the
      * syllabus (HTML, intendeduse="syllabus") is, and carries its hint.

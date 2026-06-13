@@ -100,6 +100,41 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * An orphan assessment is reported as a question bank (mod_qbank), matching
+     * the builder, while a referenced one stays a quiz (mod_quiz).
+     *
+     * @return void
+     */
+    public function test_orphan_quiz_reports_as_question_bank(): void {
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $linked = new item('q_ref', 'Chapter Quiz');
+        $linked->kind = item::KIND_QUIZ;
+        $section->add_item($linked);
+        $course->add_section($section);
+        $orphan = new item('q_orphan', 'Homework Bank');
+        $orphan->kind = item::KIND_QUIZ;
+        $course->orphans[] = $orphan;
+
+        $report = (new conversion_report($course))->build();
+
+        // The unreferenced assessment is reported as a question bank.
+        $this->assertSame('mod_qbank', $report['orphans'][0]['target']);
+        // The referenced one keeps the quiz target in the section drill-down.
+        $this->assertSame('mod_quiz', $report['sections'][0]['items'][0]['target']);
+
+        // The aggregate splits the quiz content type by its real targets.
+        $targets = [];
+        foreach ($report['rows'] as $row) {
+            if ($row['kind'] === 'quiz') {
+                $targets[$row['target']] = $row['count'];
+            }
+        }
+        $this->assertSame(1, $targets['mod_quiz'] ?? 0);
+        $this->assertSame(1, $targets['mod_qbank'] ?? 0);
+    }
+
+    /**
      * Given a package root, the matrix tallies supported question types and
      * lists unsupported ones by their Canvas profile.
      *

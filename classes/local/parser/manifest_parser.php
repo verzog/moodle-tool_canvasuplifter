@@ -114,9 +114,14 @@ class manifest_parser {
         if ($modelitem->href !== '') {
             $candidates[] = $modelitem->href;
         }
-        // Discussion (imsdt) and LTI (imsbasiclti) resources are XML but carry a
-        // <title> element naming the topic/tool, so read those too.
-        $allowxml = in_array($modelitem->kind, [item::KIND_DISCUSSION, item::KIND_LTI], true);
+        // Discussion (imsdt), LTI (imsbasiclti) and QTI assessment resources are
+        // XML but name themselves inside the file, so read those too.
+        $allowxml = in_array(
+            $modelitem->kind,
+            [item::KIND_DISCUSSION, item::KIND_LTI, item::KIND_QUIZ, item::KIND_QUESTIONBANK],
+            true
+        );
+        $isqti = in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true);
         foreach ($candidates as $relative) {
             $ishtml = (bool) preg_match('/\.html?$/i', $relative);
             $isxml = $allowxml && (bool) preg_match('/\.xml$/i', $relative);
@@ -128,6 +133,13 @@ class manifest_parser {
                 continue;
             }
             $html = (string) @file_get_contents($absolute);
+            // QTI assessments name themselves in an <assessment title="..."> attribute.
+            if ($isqti && preg_match('/<assessment\b[^>]*\btitle="([^"]*)"/i', $html, $qm)) {
+                $title = trim(html_entity_decode($qm[1], ENT_QUOTES | ENT_HTML5));
+                if ($title !== '') {
+                    return $title;
+                }
+            }
             // Allow an optional namespace prefix: LTI cartridges name the tool in
             // <blti:title>, while discussions use a plain <title>.
             if (preg_match('#<(?:[\w.-]+:)?title[^>]*>(.*?)</(?:[\w.-]+:)?title>#is', $html, $matches)) {

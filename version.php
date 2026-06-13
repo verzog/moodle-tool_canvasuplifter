@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026061307;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026061308;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Phase 2.5: LTI titles + accurate matrix counts.
-$plugin->release   = '0.15.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Phase 2.6: report mirrors orphan->bank routing + QTI titles.
+$plugin->release   = '0.16.0';
