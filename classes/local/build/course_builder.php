@@ -314,12 +314,17 @@ class course_builder {
             }
         }
         if ($cmid === null && in_array($modelitem->kind, self::BUILDS_NOW, true)) {
-            // The kind has a builder but it returned null.
+            // The kind has a builder but it returned null. Prefer the builder's
+            // own explanation when it left one.
+            $reason = ($builder !== null && property_exists($builder, 'skipreason') && $builder->skipreason !== null)
+                ? $builder->skipreason
+                : 'builder could not find payload';
             $skipreasons[] = sprintf(
-                '%s "%s" (id=%s) — builder could not find payload; href="%s" files=[%s]',
+                '%s "%s" (id=%s) — %s; href="%s" files=[%s]',
                 $modelitem->kind,
                 $modelitem->title,
                 $modelitem->identifier,
+                $reason,
                 $modelitem->href,
                 implode(',', $modelitem->files)
             );

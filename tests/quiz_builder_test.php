@@ -179,6 +179,67 @@ XML;
     }
 
     /**
+     * Write a package whose referenced assessment has only unconvertible
+     * questions (a lone single-option choice).
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_unconvertible_fixture(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        mkdir($dir . '/quiz/a3');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a3" title="Readiness Quiz"><section ident="s1">'
+            . $this->singleoptionitem()
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/a3/qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Readiness Quiz</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/a3/qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A quiz with no convertible questions is skipped with a reason that names
+     * the unconvertible content, not a misleading "could not find payload".
+     *
+     * @return void
+     */
+    public function test_quiz_with_no_convertible_questions_is_skipped_with_reason(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_unconvertible_fixture();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(0, $report['createdcounts']['quiz'] ?? 0);
+        $this->assertCount(0, get_fast_modinfo($report['courseid'])->get_instances_of('quiz'));
+        $joined = implode("\n", $report['skipreasons']);
+        $this->assertStringContainsString('no convertible questions', $joined);
+    }
+
+    /**
      * A single unsaveable question must not abort the whole quiz: the other
      * questions still convert and the quiz is created.
      *
