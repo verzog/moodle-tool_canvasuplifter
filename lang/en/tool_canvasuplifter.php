@@ -42,6 +42,7 @@ $string['colcount'] = 'Count';
 $string['colcreated'] = 'Created';
 $string['colkind'] = 'Content type';
 $string['colnote'] = 'Notes';
+$string['colplacement'] = 'Placed in';
 $string['colresourcetype'] = 'Common Cartridge resource type';
 $string['colskipped'] = 'Skipped';
 $string['coltarget'] = 'Moodle target';
@@ -64,6 +65,13 @@ $string['errornotzip'] = 'That file could not be opened as a Common Cartridge (z
 $string['itemcount'] = 'Content items';
 $string['itemdetailheading'] = 'Item-by-item detail';
 $string['jobstatusis'] = 'Status: {$a}.';
+$string['matrixcolsupported'] = 'Converts';
+$string['matrixcoltype'] = 'Question type';
+$string['matrixexplain'] = '{$a->supported} of {$a->total} questions are of a type that will convert. '
+    . 'Unsupported types are listed by their Canvas profile and will be skipped.';
+$string['matrixheading'] = 'Question-type matrix';
+$string['matrixsupported_no'] = 'Skipped';
+$string['matrixsupported_yes'] = 'Yes';
 $string['note_assignment'] = 'Name, instructions and due dates will convert; rubrics and advanced grading will not.';
 $string['note_discussion'] = 'Discussion topics will become forums; not every thread or reply may carry across.';
 $string['note_file'] = 'Files convert directly to file resources.';
@@ -77,7 +85,8 @@ $string['note_url'] = 'External links convert directly.';
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';
 $string['openbuiltcourse'] = 'Open the built course';
 $string['orphansexplain'] = 'These resources are in the package but are not linked from any module. '
-    . 'They are imported into an "Additional resources" section so nothing is lost.';
+    . 'Each is still imported — most into an "Additional resources" section, with the syllabus '
+    . 'surfaced at the top of the course — so nothing is lost.';
 $string['orphansheading'] = 'Unreferenced resources';
 $string['packagefile'] = 'Canvas export (.imscc)';
 $string['packagefile_help'] = 'Upload a course exported from Canvas as a Common Cartridge file. '
@@ -86,6 +95,8 @@ $string['packageurl'] = 'Download URL';
 $string['packageurl_help'] = 'Alternatively, paste an HTTPS link to a Canvas .imscc file '
     . '(for example a signed S3 link or a direct download URL). The site upload limit applies. '
     . 'Note: signed CloudFront / S3 URLs are often IP-pinned and will fail when fetched server-side.';
+$string['placement_extras'] = 'Additional resources section';
+$string['placement_top'] = 'Top of course';
 $string['pluginname'] = 'Canvas Uplifter';
 $string['privacy:jobspath'] = 'Canvas Uplifter build jobs';
 $string['privacy:metadata:tool_canvasuplifter_jobs'] = 'Details of each Canvas-to-Moodle build run started by a user.';
@@ -100,6 +111,11 @@ $string['progresscoursecreated'] = 'Course created. Building activities…';
 $string['progressextract'] = 'Extracting package…';
 $string['progressitem'] = 'Built {$a->done} of {$a->total} items ({$a->kind})…';
 $string['progressparse'] = 'Parsing manifest…';
+$string['qtype_essay'] = 'Essay';
+$string['qtype_multianswer'] = 'Multiple response';
+$string['qtype_multichoice'] = 'Multiple choice';
+$string['qtype_shortanswer'] = 'Fill in the blank / short answer';
+$string['qtype_truefalse'] = 'True/false';
 $string['readytobuildexplain'] = 'The package has been analysed and is held ready. '
     . 'Choose a category and click Build course to create the course in Moodle.';
 $string['readytobuildheading'] = 'Build this course';

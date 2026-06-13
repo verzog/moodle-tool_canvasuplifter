@@ -91,7 +91,7 @@ if ($data = $form->get_data()) {
 
         $root = (new package())->extract($temppackage, $extractdir);
         $course = (new manifest_parser($root))->parse();
-        $report = (new conversion_report($course))->build();
+        $report = (new conversion_report($course, $root))->build();
     } catch (\RuntimeException $e) {
         // The exception message is one of the package::ERROR_* string keys.
         $key = $e->getMessage();
@@ -183,6 +183,34 @@ if ($report === null) {
     }
     echo html_writer::table($table);
 
+    // Question-type matrix for any quiz/question-bank packages.
+    if (!empty($report['questionmatrix'])) {
+        $matrix = $report['questionmatrix'];
+        echo $OUTPUT->heading(get_string('matrixheading', 'tool_canvasuplifter'), 4);
+        echo html_writer::tag('p', get_string('matrixexplain', 'tool_canvasuplifter', [
+            'supported' => $matrix['supported'],
+            'total' => $matrix['total'],
+        ]));
+        $matrixtable = new html_table();
+        $matrixtable->head = [
+            get_string('matrixcoltype', 'tool_canvasuplifter'),
+            get_string('colcount', 'tool_canvasuplifter'),
+            get_string('matrixcolsupported', 'tool_canvasuplifter'),
+        ];
+        foreach ($matrix['rows'] as $mrow) {
+            $typekey = 'qtype_' . $mrow['label'];
+            $typelabel = $mrow['supported'] && get_string_manager()->string_exists($typekey, 'tool_canvasuplifter')
+                ? get_string($typekey, 'tool_canvasuplifter')
+                : $mrow['label'];
+            $matrixtable->data[] = [
+                s($typelabel),
+                $mrow['count'],
+                get_string($mrow['supported'] ? 'matrixsupported_yes' : 'matrixsupported_no', 'tool_canvasuplifter'),
+            ];
+        }
+        echo html_writer::table($matrixtable);
+    }
+
     // Item-by-item detail, collapsed per section to stay manageable.
     if (!empty($report['sections'])) {
         echo $OUTPUT->heading(get_string('itemdetailheading', 'tool_canvasuplifter'), 4);
@@ -230,13 +258,16 @@ if ($report === null) {
             get_string('colkind', 'tool_canvasuplifter'),
             get_string('coltarget', 'tool_canvasuplifter'),
             get_string('colresourcetype', 'tool_canvasuplifter'),
+            get_string('colplacement', 'tool_canvasuplifter'),
         ];
         foreach ($report['orphans'] as $orphan) {
+            $placement = ($orphan['placement'] ?? 'extras') === 'top' ? 'placement_top' : 'placement_extras';
             $orphantable->data[] = [
                 s($orphan['title']),
                 s($orphan['kind']),
                 s($orphan['target']),
                 s($orphan['resourcetype'] !== '' ? $orphan['resourcetype'] : '-'),
+                get_string($placement, 'tool_canvasuplifter'),
             ];
         }
         echo html_writer::table($orphantable);

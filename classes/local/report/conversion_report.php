@@ -19,6 +19,8 @@ namespace tool_canvasuplifter\local\report;
 use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
+use tool_canvasuplifter\local\model\qti_question;
+use tool_canvasuplifter\local\parser\qti_parser;
 
 /**
  * Builds a read-only "what is in this package" report from a course model.
@@ -48,13 +50,18 @@ class conversion_report {
     /** @var course_model The parsed course. */
     protected course_model $course;
 
+    /** @var string|null Extracted package root, for reading QTI files; null if unavailable. */
+    protected ?string $packageroot;
+
     /**
      * Constructor.
      *
      * @param course_model $course The parsed course model.
+     * @param string|null $packageroot Extracted package root, enabling the question-type matrix.
      */
-    public function __construct(course_model $course) {
+    public function __construct(course_model $course, ?string $packageroot = null) {
         $this->course = $course;
+        $this->packageroot = $packageroot !== null ? rtrim($packageroot, '/') : null;
     }
 
     /**
@@ -195,7 +202,93 @@ class conversion_report {
             'orphans' => $this->orphan_detail(),
             'warnings' => $warnings,
             'unknowntypes' => $this->counts_by_resourcetype(item::KIND_UNKNOWN),
+            'questionmatrix' => $this->question_type_matrix(),
         ];
+    }
+
+    /**
+     * Tally the question types across all quiz/question-bank packages.
+     *
+     * Requires a package root (set in the constructor); without it the matrix is
+     * empty. Supported types are listed by Moodle question type; anything we
+     * can't convert is listed by its raw Canvas cc_profile so it's obvious what
+     * will be skipped.
+     *
+     * @return array Empty, or {total:int, supported:int, rows: array} of rows
+     *               {label:string, count:int, supported:bool}.
+     */
+    public function question_type_matrix(): array {
+        if ($this->packageroot === null) {
+            return [];
+        }
+        $supported = [];
+        $unsupported = [];
+        $total = 0;
+        foreach ($this->course->all_items() as $modelitem) {
+            if (!in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
+                continue;
+            }
+            $path = $this->resolve_qti($modelitem);
+            if ($path === null) {
+                continue;
+            }
+            $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
+            foreach ($parsed['questions'] as $question) {
+                $total++;
+                if ($question->type === qti_question::TYPE_UNSUPPORTED) {
+                    $label = $question->profile !== '' ? $question->profile : '(unknown)';
+                    $unsupported[$label] = ($unsupported[$label] ?? 0) + 1;
+                } else {
+                    $supported[$question->type] = ($supported[$question->type] ?? 0) + 1;
+                }
+            }
+        }
+        if ($total === 0) {
+            return [];
+        }
+        ksort($supported);
+        arsort($unsupported);
+        $rows = [];
+        $supportedtotal = 0;
+        foreach ($supported as $type => $count) {
+            $rows[] = ['label' => $type, 'count' => $count, 'supported' => true];
+            $supportedtotal += $count;
+        }
+        foreach ($unsupported as $profile => $count) {
+            $rows[] = ['label' => $profile, 'count' => $count, 'supported' => false];
+        }
+        return ['total' => $total, 'supported' => $supportedtotal, 'rows' => $rows];
+    }
+
+    /**
+     * Resolve the QTI assessment XML for a quiz/question-bank item, safely
+     * within the package root.
+     *
+     * @param item $modelitem The item.
+     * @return string|null Absolute path, or null.
+     */
+    protected function resolve_qti(item $modelitem): ?string {
+        if ($this->packageroot === null) {
+            return null;
+        }
+        $root = realpath($this->packageroot);
+        if ($root === false) {
+            return null;
+        }
+        $candidates = $modelitem->files;
+        if ($modelitem->href !== '') {
+            $candidates[] = $modelitem->href;
+        }
+        foreach ($candidates as $relative) {
+            if (!preg_match('/\.xml$/i', $relative)) {
+                continue;
+            }
+            $absolute = realpath($this->packageroot . '/' . ltrim($relative, '/'));
+            if ($absolute !== false && str_starts_with($absolute, $root) && is_readable($absolute)) {
+                return $absolute;
+            }
+        }
+        return null;
     }
 
     /**
@@ -237,6 +330,8 @@ class conversion_report {
                 'kind' => $modelitem->kind,
                 'target' => $entry['target'],
                 'resourcetype' => $modelitem->resourcetype,
+                // The syllabus is lifted to the course top, not the extras section.
+                'placement' => $modelitem->is_syllabus() ? 'top' : 'extras',
             ];
         }
         return $orphans;
