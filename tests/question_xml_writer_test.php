@@ -116,4 +116,153 @@ final class question_xml_writer_test extends \advanced_testcase {
         $dom = new \DOMDocument();
         $this->assertTrue($dom->loadXML($xml));
     }
+
+    /**
+     * Bundled video/audio is inlined like images; external embeds and in-page
+     * anchors are left untouched.
+     *
+     * @return void
+     */
+    public function test_embeds_media_and_leaves_external_embeds(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/clip.mp4', 'FAKEMP4BYTES');
+
+        $q = $this->choice();
+        $q->questiontext = '<p>Watch <video src="clip.mp4" poster="clip.mp4"></video></p>'
+            . '<iframe src="https://www.youtube.com/embed/abc"></iframe>'
+            . '<a href="#section">jump</a>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
+
+        // The bundled video is rewritten and inlined.
+        $this->assertStringContainsString('src="@@PLUGINFILE@@/clip.mp4"', $xml);
+        $this->assertStringContainsString('poster="@@PLUGINFILE@@/clip.mp4"', $xml);
+        $this->assertStringContainsString('<file name="clip.mp4" path="/" encoding="base64">', $xml);
+        $this->assertStringContainsString(base64_encode('FAKEMP4BYTES'), $xml);
+        // External embeds and in-page anchors are preserved as-is.
+        $this->assertStringContainsString('https://www.youtube.com/embed/abc', $xml);
+        $this->assertStringContainsString('href="#section"', $xml);
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
+
+    /**
+     * Single-quoted/spaced attributes are matched; same-named files in different
+     * folders stay distinct; URL suffixes survive; and attribute-looking text in
+     * a code sample is not rewritten.
+     *
+     * @return void
+     */
+    public function test_media_edge_cases(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/audio');
+        mkdir($dir . '/audio/en');
+        mkdir($dir . '/audio/es');
+        file_put_contents($dir . '/audio/en/clip.mp3', 'ENBYTES');
+        file_put_contents($dir . '/audio/es/clip.mp3', 'ESBYTES');
+        file_put_contents($dir . '/slides.pdf', 'PDF');
+        file_put_contents($dir . '/index.html', '<html></html>');
+
+        $q = $this->choice();
+        $q->questiontext =
+            "<p><audio src = 'audio/en/clip.mp3'></audio></p>"
+            . '<p><audio src="audio/es/clip.mp3"></audio></p>'
+            . '<p><a href="slides.pdf#page=4">slides</a></p>'
+            . '<p><code>href="index.html"</code></p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
+
+        // Single-quoted + spaced attribute is matched, subdir preserved.
+        $this->assertStringContainsString("src='@@PLUGINFILE@@/audio/en/clip.mp3'", $xml);
+        $this->assertStringContainsString('src="@@PLUGINFILE@@/audio/es/clip.mp3"', $xml);
+        // Same basename in different folders -> two distinct stored files.
+        $this->assertStringContainsString('<file name="clip.mp3" path="/audio/en/"', $xml);
+        $this->assertStringContainsString('<file name="clip.mp3" path="/audio/es/"', $xml);
+        $this->assertStringContainsString(base64_encode('ENBYTES'), $xml);
+        $this->assertStringContainsString(base64_encode('ESBYTES'), $xml);
+        // The #page=4 fragment is carried onto the rewritten URL.
+        $this->assertStringContainsString('@@PLUGINFILE@@/slides.pdf#page=4', $xml);
+        // Attribute-looking text inside a code sample is left untouched.
+        $this->assertStringContainsString('href="index.html"', $xml);
+        $this->assertStringNotContainsString('@@PLUGINFILE@@/index.html', $xml);
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
+
+    /**
+     * Reserved characters in preserved subdirectories are percent-encoded in the
+     * pluginfile URL (but stored literally), and a sibling folder sharing a name
+     * prefix is not treated as inside the assessment folder.
+     *
+     * @return void
+     */
+    public function test_media_url_encoding_and_traversal(): void {
+        $base = make_request_directory();
+        // The assessment folder and a sibling that shares its name prefix.
+        mkdir($base . '/a1');
+        mkdir($base . '/a1/sub dir');
+        mkdir($base . '/a10');
+        file_put_contents($base . '/a1/sub dir/clip.mp3', 'OK');
+        file_put_contents($base . '/a10/secret.pdf', 'SECRET');
+
+        $q = $this->choice();
+        $q->questiontext = '<p><audio src="sub%20dir/clip.mp3"></audio>'
+            . '<a href="../a10/secret.pdf">leak</a></p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $base . '/a1');
+
+        // The space is encoded in the URL but the stored path keeps it literal.
+        $this->assertStringContainsString('src="@@PLUGINFILE@@/sub%20dir/clip.mp3"', $xml);
+        $this->assertStringContainsString('<file name="clip.mp3" path="/sub dir/"', $xml);
+        // The sibling-folder file is NOT imported; the link is left untouched.
+        $this->assertStringContainsString('href="../a10/secret.pdf"', $xml);
+        $this->assertStringNotContainsString('secret.pdf" path', $xml);
+        $this->assertStringNotContainsString(base64_encode('SECRET'), $xml);
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
+
+    /**
+     * Dot segments resolve to the canonical file; HTML entities and quotes in
+     * filenames are handled; and a quoted '>' in an earlier attribute doesn't
+     * hide a later media reference.
+     *
+     * @return void
+     */
+    public function test_media_canonical_paths_and_entities(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/sub');
+        file_put_contents($dir . '/clip.mp3', 'CLIP');
+        file_put_contents($dir . '/Tom & Jerry.pdf', 'TJ');
+        file_put_contents($dir . '/a"b.pdf', 'QUOTE');
+        file_put_contents($dir . '/slides.pdf', 'SLIDES');
+
+        $q = $this->choice();
+        $q->questiontext =
+            '<p><audio src="sub/../clip.mp3"></audio></p>'
+            . '<p><a href="Tom%20&amp;%20Jerry.pdf">tj</a></p>'
+            . '<p><a href="a%22b.pdf">q</a></p>'
+            . '<p><a title="2 > 1" href="slides.pdf">s</a></p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
+
+        // Dot segments collapse to the canonical root-level file.
+        $this->assertStringContainsString('src="@@PLUGINFILE@@/clip.mp3"', $xml);
+        $this->assertStringContainsString('<file name="clip.mp3" path="/"', $xml);
+        $this->assertStringNotContainsString('/sub/../', $xml);
+        // An HTML entity in the filename is decoded for lookup and the file imported.
+        $this->assertStringContainsString('@@PLUGINFILE@@/Tom%20%26%20Jerry.pdf', $xml);
+        $this->assertStringContainsString(base64_encode('TJ'), $xml);
+        // A quote in the stored name is XML-escaped, keeping the document well-formed.
+        $this->assertStringContainsString('a&quot;b.pdf', $xml);
+        $this->assertStringContainsString(base64_encode('QUOTE'), $xml);
+        // A quoted '>' earlier in the tag doesn't hide the later href.
+        $this->assertStringContainsString('@@PLUGINFILE@@/slides.pdf', $xml);
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
 }

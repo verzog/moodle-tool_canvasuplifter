@@ -23,9 +23,11 @@ use tool_canvasuplifter\local\model\qti_question;
  *
  * The output is consumed by Moodle's own qformat_xml importer, so we reuse
  * Moodle's battle-tested question creation rather than building questions by
- * hand. Images referenced by a question (relative files in the assessment
- * folder) are inlined as base64 <file> elements and the src rewritten to a
- * pluginfile placeholder. No Moodle dependencies, so it's unit-testable.
+ * hand. Media referenced by a question (images, video, audio and attachments
+ * stored as relative files in the assessment folder) are inlined as base64
+ * <file> elements and the reference rewritten to a pluginfile placeholder.
+ * External URLs (e.g. YouTube embeds) are left untouched. No Moodle
+ * dependencies, so it's unit-testable.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -131,7 +133,8 @@ class question_xml_writer {
 
     /**
      * Render an HTML-bearing element (questiontext/feedback/answer text) with any
-     * embedded images inlined as base64 <file> siblings.
+     * referenced media (images, video, audio, attachments) inlined as base64
+     * <file> siblings.
      *
      * @param string $tag Element name; "__text" emits a bare <text> (for answers).
      * @param string $html The HTML.
@@ -141,11 +144,12 @@ class question_xml_writer {
      */
     protected function htmlblock(string $tag, string $html, ?string $imagedir, bool $bare = false): string {
         $files = [];
-        $rewritten = $this->embed_images($html, $imagedir, $files);
+        $rewritten = $this->embed_files($html, $imagedir, $files);
         $textandfiles = "<text>" . $this->cdata($rewritten) . "</text>";
-        foreach ($files as $name => $base64) {
-            $textandfiles .= "\n      <file name=\"" . htmlspecialchars($name, ENT_XML1)
-                . "\" path=\"/\" encoding=\"base64\">" . $base64 . "</file>";
+        foreach ($files as $file) {
+            $textandfiles .= "\n      <file name=\"" . htmlspecialchars($file['name'], ENT_QUOTES | ENT_XML1)
+                . "\" path=\"" . htmlspecialchars($file['path'], ENT_QUOTES | ENT_XML1)
+                . "\" encoding=\"base64\">" . $file['base64'] . "</file>";
         }
         if ($bare || $tag === '__text') {
             return $textandfiles;
@@ -154,33 +158,89 @@ class question_xml_writer {
     }
 
     /**
-     * Rewrite relative <img src> to @@PLUGINFILE@@ and collect the base64 bytes.
+     * Rewrite relative media references (src/poster/href/data on media-bearing
+     * tags: img, video, audio, source, track, anchors, embed, object) to the
+     * Moodle pluginfile placeholder and collect the base64 bytes of each
+     * referenced package file. The match is anchored to real tags so
+     * attribute-looking text in a code sample is left alone; external URLs, data
+     * URIs and in-page anchors are untouched, as is any reference that doesn't
+     * resolve to a bundled file.
      *
      * @param string $html The HTML.
-     * @param string|null $imagedir Folder to resolve images, or null to skip.
-     * @param array $files Collected name => base64 (modified in place).
+     * @param string|null $imagedir Folder to resolve referenced files, or null to skip.
+     * @param array $files Collected, keyed by path+name => {path, name, base64} (modified in place).
      * @return string Rewritten HTML.
      */
-    protected function embed_images(string $html, ?string $imagedir, array &$files): string {
-        if ($imagedir === null || $html === '' || stripos($html, '<img') === false) {
+    protected function embed_files(string $html, ?string $imagedir, array &$files): string {
+        if ($imagedir === null || $html === '') {
             return $html;
         }
-        return preg_replace_callback('/(<img\b[^>]*?\bsrc=")([^"]+)(")/i', function ($m) use ($imagedir, &$files) {
-            $raw = $m[2];
-            if (preg_match('#^(https?:|data:|@@PLUGINFILE@@)#i', $raw)) {
-                return $m[0];
-            }
-            $rel = rawurldecode(preg_replace('/[?#].*$/', '', $raw));
-            $abs = $this->safe_join($imagedir, $rel);
-            if ($abs === null || !is_file($abs)) {
-                return $m[0];
-            }
-            $name = basename($rel);
-            if (!isset($files[$name])) {
-                $files[$name] = base64_encode((string) file_get_contents($abs));
-            }
-            return $m[1] . '@@PLUGINFILE@@/' . rawurlencode($name) . $m[3];
-        }, $html);
+        return preg_replace_callback(
+            '~<(?:img|video|audio|source|track|a|embed|object)\b(?:"[^"]*"|\'[^\']*\'|[^>])*>~i',
+            function ($tag) use ($imagedir, &$files) {
+                return $this->rewrite_tag_refs($tag[0], $imagedir, $files);
+            },
+            $html
+        );
+    }
+
+    /**
+     * Rewrite the media attributes of a single opening tag.
+     *
+     * @param string $tag The matched opening tag, e.g. '<video src="clip.mp4">'.
+     * @param string $imagedir Folder to resolve referenced files.
+     * @param array $files Collected files (modified in place).
+     * @return string The rewritten tag.
+     */
+    protected function rewrite_tag_refs(string $tag, string $imagedir, array &$files): string {
+        return preg_replace_callback(
+            '/\b(src|poster|href|data)\s*=\s*("([^"]*)"|\'([^\']*)\')/i',
+            function ($m) use ($imagedir, &$files) {
+                $quote = $m[2][0];
+                $value = $quote === '"' ? $m[3] : ($m[4] ?? '');
+                // The attribute is HTML, so decode entities before treating it as a URL.
+                $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5);
+                if ($value === '' || preg_match('~^(https?:|data:|mailto:|tel:|@@PLUGINFILE@@|#)~i', $value)) {
+                    return $m[0];
+                }
+                // Keep any ?query/#fragment suffix off the file lookup but back on the URL.
+                $suffix = '';
+                $path = $value;
+                if (preg_match('/^([^?#]*)([?#].*)$/', $value, $sm)) {
+                    $path = $sm[1];
+                    $suffix = $sm[2];
+                }
+                $abs = $this->safe_join($imagedir, rawurldecode($path));
+                if ($abs === null || !is_file($abs)) {
+                    return $m[0];
+                }
+                // Derive the name and subdirectory from the canonical path inside
+                // the assessment folder, so dot segments resolve consistently in
+                // both the stored <file path> and the rewritten URL.
+                $root = realpath($imagedir);
+                $relcanon = str_replace('\\', '/', ltrim(substr($abs, strlen((string) $root)), '/\\'));
+                $name = basename($relcanon);
+                $subdir = trim(dirname($relcanon), '/');
+                $subdir = ($subdir === '' || $subdir === '.') ? '' : $subdir;
+                $filepath = $subdir === '' ? '/' : '/' . $subdir . '/';
+                $key = $filepath . $name;
+                if (!isset($files[$key])) {
+                    $files[$key] = [
+                        'path' => $filepath,
+                        'name' => $name,
+                        'base64' => base64_encode((string) file_get_contents($abs)),
+                    ];
+                }
+                // Percent-encode each path segment for the URL while the stored
+                // <file path> keeps the literal directory names.
+                $urlpath = $subdir === ''
+                    ? '/'
+                    : '/' . implode('/', array_map('rawurlencode', explode('/', $subdir))) . '/';
+                $url = '@@PLUGINFILE@@' . $urlpath . rawurlencode($name) . $suffix;
+                return $m[1] . '=' . $quote . $url . $quote;
+            },
+            $tag
+        );
     }
 
     /**
@@ -196,7 +256,12 @@ class question_xml_writer {
         if ($abs === false || $root === false) {
             return null;
         }
-        return strpos($abs, $root) === 0 ? $abs : null;
+        // Require an exact match or a directory-boundary match so a sibling
+        // folder sharing a name prefix (e.g. /a10 next to /a1) is not accepted.
+        if ($abs !== $root && !str_starts_with($abs, $root . DIRECTORY_SEPARATOR)) {
+            return null;
+        }
+        return $abs;
     }
 
     /**
