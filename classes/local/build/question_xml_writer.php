@@ -157,14 +157,20 @@ class question_xml_writer {
         return "<$tag format=\"html\">" . $textandfiles . "</$tag>";
     }
 
+    /** @var string[] Tags whose URL attributes may point at bundled media. */
+    private const MEDIA_TAGS = ['img', 'video', 'audio', 'source', 'track', 'a', 'embed', 'object', 'iframe'];
+
+    /** @var string[] Attributes that can carry a media reference. */
+    private const MEDIA_ATTRS = ['src', 'poster', 'href', 'data'];
+
     /**
      * Rewrite relative media references (src/poster/href/data on media-bearing
-     * tags: img, video, audio, source, track, anchors, embed, object) to the
-     * Moodle pluginfile placeholder and collect the base64 bytes of each
-     * referenced package file. The match is anchored to real tags so
-     * attribute-looking text in a code sample is left alone; external URLs, data
-     * URIs and in-page anchors are untouched, as is any reference that doesn't
-     * resolve to a bundled file.
+     * tags) to the Moodle pluginfile placeholder and collect the base64 bytes of
+     * each referenced package file. The HTML is parsed with DOMDocument so only
+     * real attributes are touched (not attribute-looking text), and quoting,
+     * nesting and entities are handled by the parser. External URLs, data URIs
+     * and in-page anchors are left untouched, as is anything that doesn't resolve
+     * to a bundled file.
      *
      * @param string $html The HTML.
      * @param string|null $imagedir Folder to resolve referenced files, or null to skip.
@@ -175,72 +181,102 @@ class question_xml_writer {
         if ($imagedir === null || $html === '') {
             return $html;
         }
-        return preg_replace_callback(
-            '~<(?:img|video|audio|source|track|a|embed|object)\b(?:"[^"]*"|\'[^\']*\'|[^>])*>~i',
-            function ($tag) use ($imagedir, &$files) {
-                return $this->rewrite_tag_refs($tag[0], $imagedir, $files);
-            },
-            $html
+        // Fast path: nothing to do unless a media-bearing tag is present, and this
+        // avoids reserialising plain text through the DOM.
+        if (!preg_match('~<(?:' . implode('|', self::MEDIA_TAGS) . ')\b~i', $html)) {
+            return $html;
+        }
+
+        $dom = new \DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        // The meta charset forces UTF-8 parsing; we serialise only the body's
+        // children afterwards so the implied html/head/body wrappers don't leak.
+        $loaded = $dom->loadHTML(
+            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">' . $html,
+            LIBXML_NONET
         );
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        $body = $loaded ? $dom->getElementsByTagName('body')->item(0) : null;
+        if ($body === null) {
+            return $html;
+        }
+
+        foreach (self::MEDIA_TAGS as $tag) {
+            foreach (iterator_to_array($dom->getElementsByTagName($tag)) as $element) {
+                foreach (self::MEDIA_ATTRS as $attr) {
+                    if (!$element->hasAttribute($attr)) {
+                        continue;
+                    }
+                    $rewritten = $this->rewrite_ref($element->getAttribute($attr), $imagedir, $files);
+                    if ($rewritten !== null) {
+                        $element->setAttribute($attr, $rewritten);
+                    }
+                }
+            }
+        }
+
+        $out = '';
+        foreach (iterator_to_array($body->childNodes) as $child) {
+            $out .= $dom->saveHTML($child);
+        }
+        return $out;
     }
 
     /**
-     * Rewrite the media attributes of a single opening tag.
+     * Resolve a single media reference: if it points at a bundled file, import it
+     * (collecting its base64 bytes) and return the @@PLUGINFILE@@ URL; otherwise
+     * return null to leave the reference unchanged. The value is the decoded
+     * attribute (DOMDocument has already resolved HTML entities).
      *
-     * @param string $tag The matched opening tag, e.g. '<video src="clip.mp4">'.
+     * @param string $value The attribute value.
      * @param string $imagedir Folder to resolve referenced files.
      * @param array $files Collected files (modified in place).
-     * @return string The rewritten tag.
+     * @return string|null The rewritten URL, or null to leave it alone.
      */
-    protected function rewrite_tag_refs(string $tag, string $imagedir, array &$files): string {
-        return preg_replace_callback(
-            '/\b(src|poster|href|data)\s*=\s*("([^"]*)"|\'([^\']*)\')/i',
-            function ($m) use ($imagedir, &$files) {
-                $quote = $m[2][0];
-                $value = $quote === '"' ? $m[3] : ($m[4] ?? '');
-                // The attribute is HTML, so decode entities before treating it as a URL.
-                $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5);
-                if ($value === '' || preg_match('~^(https?:|data:|mailto:|tel:|@@PLUGINFILE@@|#)~i', $value)) {
-                    return $m[0];
-                }
-                // Keep any ?query/#fragment suffix off the file lookup but back on the URL.
-                $suffix = '';
-                $path = $value;
-                if (preg_match('/^([^?#]*)([?#].*)$/', $value, $sm)) {
-                    $path = $sm[1];
-                    $suffix = $sm[2];
-                }
-                $abs = $this->safe_join($imagedir, rawurldecode($path));
-                if ($abs === null || !is_file($abs)) {
-                    return $m[0];
-                }
-                // Derive the name and subdirectory from the canonical path inside
-                // the assessment folder, so dot segments resolve consistently in
-                // both the stored <file path> and the rewritten URL.
-                $root = realpath($imagedir);
-                $relcanon = str_replace('\\', '/', ltrim(substr($abs, strlen((string) $root)), '/\\'));
-                $name = basename($relcanon);
-                $subdir = trim(dirname($relcanon), '/');
-                $subdir = ($subdir === '' || $subdir === '.') ? '' : $subdir;
-                $filepath = $subdir === '' ? '/' : '/' . $subdir . '/';
-                $key = $filepath . $name;
-                if (!isset($files[$key])) {
-                    $files[$key] = [
-                        'path' => $filepath,
-                        'name' => $name,
-                        'base64' => base64_encode((string) file_get_contents($abs)),
-                    ];
-                }
-                // Percent-encode each path segment for the URL while the stored
-                // <file path> keeps the literal directory names.
-                $urlpath = $subdir === ''
-                    ? '/'
-                    : '/' . implode('/', array_map('rawurlencode', explode('/', $subdir))) . '/';
-                $url = '@@PLUGINFILE@@' . $urlpath . rawurlencode($name) . $suffix;
-                return $m[1] . '=' . $quote . $url . $quote;
-            },
-            $tag
-        );
+    protected function rewrite_ref(string $value, string $imagedir, array &$files): ?string {
+        if ($value === '' || preg_match('~^(https?:|data:|mailto:|tel:|@@PLUGINFILE@@|#)~i', $value)) {
+            return null;
+        }
+        // Keep any ?query/#fragment suffix off the file lookup but back on the URL.
+        $suffix = '';
+        $path = $value;
+        if (preg_match('/^([^?#]*)([?#].*)$/', $value, $sm)) {
+            $path = $sm[1];
+            $suffix = $sm[2];
+        }
+        $rel = rawurldecode($path);
+        // Null bytes make realpath() throw on PHP 8; refuse them.
+        if ($rel === '' || strpos($rel, "\0") !== false) {
+            return null;
+        }
+        $abs = $this->safe_join($imagedir, $rel);
+        if ($abs === null || !is_file($abs)) {
+            return null;
+        }
+        // Derive the name and subdirectory from the canonical path inside the
+        // assessment folder, so dot segments resolve consistently in both the
+        // stored <file path> and the rewritten URL.
+        $root = realpath($imagedir);
+        $relcanon = str_replace('\\', '/', ltrim(substr($abs, strlen((string) $root)), '/\\'));
+        $name = basename($relcanon);
+        $subdir = trim(dirname($relcanon), '/');
+        $subdir = ($subdir === '' || $subdir === '.') ? '' : $subdir;
+        $filepath = $subdir === '' ? '/' : '/' . $subdir . '/';
+        $key = $filepath . $name;
+        if (!isset($files[$key])) {
+            $files[$key] = [
+                'path' => $filepath,
+                'name' => $name,
+                'base64' => base64_encode((string) file_get_contents($abs)),
+            ];
+        }
+        // Percent-encode each path segment for the URL while the stored <file
+        // path> keeps the literal directory names.
+        $urlpath = $subdir === ''
+            ? '/'
+            : '/' . implode('/', array_map('rawurlencode', explode('/', $subdir))) . '/';
+        return '@@PLUGINFILE@@' . $urlpath . rawurlencode($name) . $suffix;
     }
 
     /**

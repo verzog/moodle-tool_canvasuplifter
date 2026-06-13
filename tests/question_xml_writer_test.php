@@ -174,7 +174,7 @@ final class question_xml_writer_test extends \advanced_testcase {
         $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
 
         // Single-quoted + spaced attribute is matched, subdir preserved.
-        $this->assertStringContainsString("src='@@PLUGINFILE@@/audio/en/clip.mp3'", $xml);
+        $this->assertStringContainsString('src="@@PLUGINFILE@@/audio/en/clip.mp3"', $xml);
         $this->assertStringContainsString('src="@@PLUGINFILE@@/audio/es/clip.mp3"', $xml);
         // Same basename in different folders -> two distinct stored files.
         $this->assertStringContainsString('<file name="clip.mp3" path="/audio/en/"', $xml);
@@ -261,6 +261,42 @@ final class question_xml_writer_test extends \advanced_testcase {
         $this->assertStringContainsString(base64_encode('QUOTE'), $xml);
         // A quoted '>' earlier in the tag doesn't hide the later href.
         $this->assertStringContainsString('@@PLUGINFILE@@/slides.pdf', $xml);
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
+
+    /**
+     * DOM parsing handles bundled iframes, attribute-looking text inside another
+     * attribute's value, and null-byte references without aborting.
+     *
+     * @return void
+     */
+    public function test_media_dom_edge_cases(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/worksheet.html', '<p>hi</p>');
+        file_put_contents($dir . '/index.html', 'x');
+        file_put_contents($dir . '/slides.pdf', 'PDF');
+
+        $q = $this->choice();
+        $q->questiontext =
+            '<p><iframe src="worksheet.html"></iframe></p>'
+            . '<p><iframe src="https://example.com/embed"></iframe></p>'
+            . '<p><a title=\'x href="index.html"\' href="slides.pdf">s</a></p>'
+            . '<p><a href="bad%00.pdf">nul</a></p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
+
+        // A bundled iframe is imported; an external one is preserved.
+        $this->assertStringContainsString('src="@@PLUGINFILE@@/worksheet.html"', $xml);
+        $this->assertStringContainsString('<file name="worksheet.html" path="/"', $xml);
+        $this->assertStringContainsString('https://example.com/embed', $xml);
+        // Only the real href is rewritten, not attribute-looking text in the title.
+        $this->assertStringContainsString('@@PLUGINFILE@@/slides.pdf', $xml);
+        $this->assertStringNotContainsString('@@PLUGINFILE@@/index.html', $xml);
+        // A null byte in a reference is left alone and doesn't abort generation.
+        $this->assertStringContainsString('bad%00.pdf', $xml);
+        $this->assertStringNotContainsString('@@PLUGINFILE@@/bad', $xml);
 
         $dom = new \DOMDocument();
         $this->assertTrue($dom->loadXML($xml));
