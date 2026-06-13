@@ -95,6 +95,17 @@ install_ci_tool() {
     ( cd "$WORKSPACE" && composer create-project -n --no-dev --prefer-dist \
         moodlehq/moodle-plugin-ci ci "$CI_VERSION" )
   fi
+  register_phpcs_standards
+}
+
+# composer create-project doesn't run the phpcodesniffer-composer-installer
+# plugin, so register the moodle/Universal/etc. standard paths by hand.
+register_phpcs_standards() {
+  local v="$WORKSPACE/ci/vendor"
+  [ -x "$v/bin/phpcs" ] || return 0
+  "$v/bin/phpcs" --config-set installed_paths \
+    "$v/moodlehq/moodle-cs,$v/phpcsstandards/phpcsextra,$v/phpcsstandards/phpcsutils" \
+    >/dev/null 2>&1 || true
 }
 
 install_moodle() {
