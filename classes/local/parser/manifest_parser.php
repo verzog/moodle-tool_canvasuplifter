@@ -128,7 +128,9 @@ class manifest_parser {
                 continue;
             }
             $html = (string) @file_get_contents($absolute);
-            if (preg_match('/<title[^>]*>(.*?)<\/title>/is', $html, $matches)) {
+            // Allow an optional namespace prefix: LTI cartridges name the tool in
+            // <blti:title>, while discussions use a plain <title>.
+            if (preg_match('#<(?:[\w.-]+:)?title[^>]*>(.*?)</(?:[\w.-]+:)?title>#is', $html, $matches)) {
                 $title = trim(html_entity_decode(strip_tags($matches[1]), ENT_QUOTES | ENT_HTML5));
                 if ($title !== '') {
                     return $title;

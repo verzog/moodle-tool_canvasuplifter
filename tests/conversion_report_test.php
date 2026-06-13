@@ -136,6 +136,60 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * A recognised question type Moodle would reject (a single-option choice) is
+     * counted as not converting, so the "will convert" total stays honest.
+     *
+     * @return void
+     */
+    public function test_matrix_counts_unsaveable_question_as_not_converting(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Quiz"><section ident="s1">'
+            . $this->profileitem('cc.multiple_choice.v0p1', 'B')
+            . $this->oneoptionitem('cc.multiple_choice.v0p1')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/a1.xml', $qti);
+
+        $course = new course_model();
+        $quiz = new item('q1', 'Quiz');
+        $quiz->kind = item::KIND_QUIZ;
+        $quiz->files = ['quiz/a1.xml'];
+        $course->orphans[] = $quiz;
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        $this->assertSame(2, $matrix['total']);
+        // Only the well-formed multichoice converts.
+        $this->assertSame(1, $matrix['supported']);
+        $converting = array_filter($matrix['rows'], fn($r) => $r['label'] === 'multichoice' && $r['supported']);
+        $notconverting = array_filter($matrix['rows'], fn($r) => $r['label'] === 'multichoice' && !$r['supported']);
+        $this->assertSame(1, (int) (reset($converting)['count'] ?? 0));
+        $this->assertSame(1, (int) (reset($notconverting)['count'] ?? 0));
+    }
+
+    /**
+     * A single-option choice item: a recognised multichoice type, but Moodle
+     * needs at least two answers, so it cannot actually be saved.
+     *
+     * @param string $profile The cc_profile value.
+     * @return string
+     */
+    private function oneoptionitem(string $profile): string {
+        return '<item ident="i_one_' . md5($profile) . '"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>cc_profile</fieldlabel><fieldentry>' . $profile . '</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>Q?</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext>only</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
      * A minimal single-choice QTI item carrying the given profile and correct id.
      *
      * @param string $profile The cc_profile value.

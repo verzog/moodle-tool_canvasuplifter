@@ -221,8 +221,9 @@ class conversion_report {
         if ($this->packageroot === null) {
             return [];
         }
-        $supported = [];
-        $unsupported = [];
+        $supported = [];     // Importable, keyed by Moodle question type.
+        $incomplete = [];    // Supported type Moodle would reject, keyed by type.
+        $unsupported = [];   // Unrecognised, keyed by Canvas cc_profile.
         $total = 0;
         foreach ($this->course->all_items() as $modelitem) {
             if (!in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
@@ -235,11 +236,15 @@ class conversion_report {
             $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
             foreach ($parsed['questions'] as $question) {
                 $total++;
-                if ($question->type === qti_question::TYPE_UNSUPPORTED) {
+                if ($question->is_importable()) {
+                    $supported[$question->type] = ($supported[$question->type] ?? 0) + 1;
+                } else if ($question->type === qti_question::TYPE_UNSUPPORTED) {
                     $label = $question->profile !== '' ? $question->profile : '(unknown)';
                     $unsupported[$label] = ($unsupported[$label] ?? 0) + 1;
                 } else {
-                    $supported[$question->type] = ($supported[$question->type] ?? 0) + 1;
+                    // A recognised type that Moodle can't actually save (e.g. a
+                    // choice question with fewer than two answers).
+                    $incomplete[$question->type] = ($incomplete[$question->type] ?? 0) + 1;
                 }
             }
         }
@@ -247,12 +252,16 @@ class conversion_report {
             return [];
         }
         ksort($supported);
+        ksort($incomplete);
         arsort($unsupported);
         $rows = [];
         $supportedtotal = 0;
         foreach ($supported as $type => $count) {
             $rows[] = ['label' => $type, 'count' => $count, 'supported' => true];
             $supportedtotal += $count;
+        }
+        foreach ($incomplete as $type => $count) {
+            $rows[] = ['label' => $type, 'count' => $count, 'supported' => false];
         }
         foreach ($unsupported as $profile => $count) {
             $rows[] = ['label' => $profile, 'count' => $count, 'supported' => false];

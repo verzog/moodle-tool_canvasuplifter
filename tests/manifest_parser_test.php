@@ -168,6 +168,47 @@ XML;
     }
 
     /**
+     * An LTI cartridge names the tool in a namespaced <blti:title>, which the
+     * title extractor should read rather than falling back to the filename.
+     *
+     * @return void
+     */
+    public function test_derives_lti_title_from_blti_title(): void {
+        $dir = make_request_directory();
+        file_put_contents(
+            $dir . '/i96b51e0093f6f84b4eed4e674c2d6aec.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p0" '
+            . 'xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0">'
+            . '<blti:title>Publisher Courseware</blti:title>'
+            . '<blti:launch_url>https://example.com/lti</blti:launch_url>'
+            . '</cartridge_basiclti_link>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_lti" type="imsbasiclti_xmlv1p0" href="i96b51e0093f6f84b4eed4e674c2d6aec.xml">
+      <file href="i96b51e0093f6f84b4eed4e674c2d6aec.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('lti', $course->orphans[0]->kind);
+        $this->assertSame('Publisher Courseware', $course->orphans[0]->title);
+    }
+
+    /**
      * Learning-application resources without an HTML payload (Canvas discussion
      * topicMeta, quiz meta, canvas_export.txt) are not treated as pages; the
      * syllabus (HTML, intendeduse="syllabus") is, and carries its hint.
