@@ -111,6 +111,47 @@ class conversion_report {
     }
 
     /**
+     * The plan the builder will actually follow for an item, accounting for the
+     * referenced/orphan split: an unreferenced (orphan) assessment is built as a
+     * question bank, while one linked in the course becomes a quiz.
+     *
+     * @param item $modelitem The item.
+     * @param bool $referenced Whether it is linked from the course.
+     * @return array Plan {target, confidence, note}.
+     */
+    protected function effective_plan(item $modelitem, bool $referenced): array {
+        if ($modelitem->kind === item::KIND_QUIZ && !$referenced) {
+            return $this->plan_for(item::KIND_QUESTIONBANK);
+        }
+        return $this->plan_for($modelitem->kind);
+    }
+
+    /**
+     * Add an item to the aggregate map, grouped by content type and the Moodle
+     * target it will actually build into.
+     *
+     * @param array $grouped Accumulator keyed by "kind|target" (modified in place).
+     * @param item $modelitem The item.
+     * @param bool $referenced Whether it is linked from the course.
+     * @return void
+     */
+    protected function accumulate(array &$grouped, item $modelitem, bool $referenced): void {
+        $plan = $this->effective_plan($modelitem, $referenced);
+        $key = $modelitem->kind . '|' . $plan['target'];
+        if (!isset($grouped[$key])) {
+            $grouped[$key] = [
+                'kind' => $modelitem->kind,
+                'count' => 0,
+                'target' => $plan['target'],
+                'confidence' => $plan['confidence'],
+                'note' => $plan['note'],
+                'buildsnow' => self::builds_now($modelitem->kind),
+            ];
+        }
+        $grouped[$key]['count']++;
+    }
+
+    /**
      * Count how many items there are of each kind.
      *
      * @return array<string, int> Keyed by item kind.
@@ -158,24 +199,29 @@ class conversion_report {
     public function build(): array {
         $counts = $this->counts_by_kind();
 
+        // Group by content type and the target it will actually build into, so a
+        // kind that splits by reference (e.g. quiz -> mod_quiz when linked,
+        // mod_qbank when orphaned) is reported honestly.
+        $grouped = [];
+        foreach ($this->course->sections as $sectionmodel) {
+            foreach ($sectionmodel->items as $modelitem) {
+                $this->accumulate($grouped, $modelitem, true);
+            }
+        }
+        foreach ($this->course->orphans as $modelitem) {
+            $this->accumulate($grouped, $modelitem, false);
+        }
+        ksort($grouped);
+
         $rows = [];
         $buildsnowtotal = 0;
         $latertotal = 0;
-        foreach ($counts as $kind => $count) {
-            $entry = $this->plan_for($kind);
-            $buildsnow = self::builds_now($kind);
-            $rows[] = [
-                'kind' => $kind,
-                'count' => $count,
-                'target' => $entry['target'],
-                'confidence' => $entry['confidence'],
-                'note' => $entry['note'],
-                'buildsnow' => $buildsnow,
-            ];
-            if ($buildsnow) {
-                $buildsnowtotal += $count;
+        foreach ($grouped as $row) {
+            $rows[] = $row;
+            if ($row['buildsnow']) {
+                $buildsnowtotal += $row['count'];
             } else {
-                $latertotal += $count;
+                $latertotal += $row['count'];
             }
         }
 
@@ -311,7 +357,7 @@ class conversion_report {
         foreach ($this->course->sections as $sectionmodel) {
             $items = [];
             foreach ($sectionmodel->items as $modelitem) {
-                $entry = $this->plan_for($modelitem->kind);
+                $entry = $this->effective_plan($modelitem, true);
                 $items[] = [
                     'title' => $modelitem->title,
                     'kind' => $modelitem->kind,
@@ -333,7 +379,7 @@ class conversion_report {
     protected function orphan_detail(): array {
         $orphans = [];
         foreach ($this->course->orphans as $modelitem) {
-            $entry = $this->plan_for($modelitem->kind);
+            $entry = $this->effective_plan($modelitem, false);
             $orphans[] = [
                 'title' => $this->display_title($modelitem),
                 'kind' => $modelitem->kind,
