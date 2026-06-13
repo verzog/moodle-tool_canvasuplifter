@@ -116,4 +116,34 @@ final class question_xml_writer_test extends \advanced_testcase {
         $dom = new \DOMDocument();
         $this->assertTrue($dom->loadXML($xml));
     }
+
+    /**
+     * Bundled video/audio is inlined like images; external embeds and in-page
+     * anchors are left untouched.
+     *
+     * @return void
+     */
+    public function test_embeds_media_and_leaves_external_embeds(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/clip.mp4', 'FAKEMP4BYTES');
+
+        $q = $this->choice();
+        $q->questiontext = '<p>Watch <video src="clip.mp4" poster="clip.mp4"></video></p>'
+            . '<iframe src="https://www.youtube.com/embed/abc"></iframe>'
+            . '<a href="#section">jump</a>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
+
+        // The bundled video is rewritten and inlined.
+        $this->assertStringContainsString('src="@@PLUGINFILE@@/clip.mp4"', $xml);
+        $this->assertStringContainsString('poster="@@PLUGINFILE@@/clip.mp4"', $xml);
+        $this->assertStringContainsString('<file name="clip.mp4" path="/" encoding="base64">', $xml);
+        $this->assertStringContainsString(base64_encode('FAKEMP4BYTES'), $xml);
+        // External embeds and in-page anchors are preserved as-is.
+        $this->assertStringContainsString('https://www.youtube.com/embed/abc', $xml);
+        $this->assertStringContainsString('href="#section"', $xml);
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
 }

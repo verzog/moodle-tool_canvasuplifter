@@ -46,11 +46,13 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 - Resources not linked from any module are imported into an "Additional
   resources" section so nothing is lost.
 - Canvas QTI assessments convert their questions — multiple choice, multiple
-  response, fill-in-blank, true/false and essay, with question images. An
-  assessment **linked in the course** becomes a Moodle quiz (`mod_quiz`) with the
-  questions as slots; a **standalone/unreferenced** assessment becomes a question
-  bank (`mod_qbank`). Unsupported question types are skipped, and multi-blank
-  fill-in-blank collapses to a single short-answer.
+  response, fill-in-blank, true/false and essay. Bundled media in question text
+  (images, video, audio and attachments) is imported with the question; external
+  embeds such as YouTube are left as-is. An assessment **linked in the course**
+  becomes a Moodle quiz (`mod_quiz`) with the questions as slots; a
+  **standalone/unreferenced** assessment becomes a question bank (`mod_qbank`).
+  Unsupported question types are skipped, and multi-blank fill-in-blank collapses
+  to a single short-answer.
 - Forums and LTI tools are reported but not yet built.
 
 ## How it's built
