@@ -94,4 +94,39 @@ XML;
         $this->expectException(\RuntimeException::class);
         (new manifest_parser($dir))->parse();
     }
+
+    /**
+     * An unreferenced page with no manifest title gets one from its HTML <title>.
+     *
+     * @return void
+     */
+    public function test_derives_orphan_title_from_html(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        file_put_contents(
+            $dir . '/wiki_content/g0658_syllabus.html',
+            '<html><head><title>Course Syllabus</title></head><body><p>Body</p></body></html>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_syllabus" type="webcontent" href="wiki_content/g0658_syllabus.html">
+      <file href="wiki_content/g0658_syllabus.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('Course Syllabus', $course->orphans[0]->title);
+    }
 }

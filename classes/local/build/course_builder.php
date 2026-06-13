@@ -138,12 +138,32 @@ class course_builder {
             }
         }
 
-        // Unreferenced resources are imported into a dedicated section so nothing is lost.
+        // The Canvas syllabus is exported unlinked; surface it as a "Syllabus"
+        // page in the top section instead of burying it among extras. Everything
+        // else unreferenced goes into a dedicated "Additional resources" section.
+        $extras = [];
+        foreach ($coursemodel->orphans as $modelitem) {
+            if ($this->is_syllabus($modelitem)) {
+                if ($modelitem->title === '') {
+                    $modelitem->title = get_string('syllabuspage', 'tool_canvasuplifter');
+                }
+                $cmid = $this->build_one($course, 0, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons);
+                $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
+                $this->report_progress($this->item_percent(++$processed, $totalitems), get_string(
+                    'progressitem',
+                    'tool_canvasuplifter',
+                    ['done' => $processed, 'total' => $totalitems, 'kind' => $modelitem->kind]
+                ));
+            } else {
+                $extras[] = $modelitem;
+            }
+        }
+
         $orphansection = 0;
-        if (!empty($coursemodel->orphans)) {
+        if (!empty($extras)) {
             $orphansection = count($coursemodel->sections) + 1;
             $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
-            foreach ($coursemodel->orphans as $modelitem) {
+            foreach ($extras as $modelitem) {
                 $cmid = $this->build_one($course, $orphansection, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons);
                 $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
                 $this->report_progress($this->item_percent(++$processed, $totalitems), get_string(
@@ -327,6 +347,28 @@ class course_builder {
                 $urlmap['wiki:' . $slug] = $url;
             }
         }
+    }
+
+    /**
+     * Whether an item looks like the Canvas course syllabus page.
+     *
+     * Canvas exports the syllabus as an unlinked wiki page whose identifier or
+     * file path contains "syllabus".
+     *
+     * @param item $modelitem The item to test.
+     * @return bool
+     */
+    private function is_syllabus(item $modelitem): bool {
+        if ($modelitem->kind !== item::KIND_PAGE) {
+            return false;
+        }
+        $haystacks = array_merge([$modelitem->identifier, $modelitem->href], $modelitem->files);
+        foreach ($haystacks as $haystack) {
+            if ($haystack !== '' && stripos($haystack, 'syllabus') !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -111,6 +111,7 @@ $string['status_done'] = 'Done';
 $string['status_failed'] = 'Failed';
 $string['status_queued'] = 'Queued';
 $string['status_running'] = 'Running';
+$string['syllabuspage'] = 'Syllabus';
 $string['targetcategory'] = 'Target course category';
 $string['targetcategory_help'] = 'The new course will be created in this category. '
     . 'You need the "create courses" capability in the chosen category.';
