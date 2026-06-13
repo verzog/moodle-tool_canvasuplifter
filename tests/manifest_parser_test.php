@@ -178,4 +178,40 @@ XML;
         $this->assertSame('syllabus', $orphan->intendeduse);
         $this->assertSame('Syllabus', $orphan->title);
     }
+
+    /**
+     * Webcontent assets under quiz/ (QTI question images) are skipped, while a
+     * genuine course file is kept.
+     *
+     * @return void
+     */
+    public function test_skips_quiz_assets(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_asset" type="webcontent">
+      <file href="quiz/q1/diagram.png"/>
+    </resource>
+    <resource identifier="r_doc" type="webcontent" href="web_resources/handout.pdf">
+      <file href="web_resources/handout.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Only the real file survives; the quiz asset is skipped.
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('r_doc', $course->orphans[0]->identifier);
+        $this->assertSame(item::KIND_FILE, $course->orphans[0]->kind);
+    }
 }

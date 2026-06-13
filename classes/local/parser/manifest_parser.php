@@ -237,12 +237,41 @@ class manifest_parser {
         }
         // Plain web content: an HTML page under wiki_content is a page, else a file.
         if ($type === 'webcontent' || str_contains($type, 'webcontent')) {
+            // Assets under quiz/ are images/resources embedded in QTI questions,
+            // not standalone course files; skip them (the question bank owns them).
+            if ($this->is_quiz_asset($href, $files)) {
+                return item::KIND_UNKNOWN;
+            }
             if (str_contains($href, 'wiki_content/')) {
                 return item::KIND_PAGE;
             }
             return item::KIND_FILE;
         }
         return item::KIND_UNKNOWN;
+    }
+
+    /**
+     * Whether every path of the resource lives under the package's quiz/ folder
+     * (i.e. it's an asset belonging to a QTI question, not a course file).
+     *
+     * @param string $href The primary href.
+     * @param string[] $files All file hrefs.
+     * @return bool
+     */
+    protected function is_quiz_asset(string $href, array $files): bool {
+        $paths = $files;
+        if ($href !== '') {
+            $paths[] = $href;
+        }
+        if (empty($paths)) {
+            return false;
+        }
+        foreach ($paths as $path) {
+            if (!preg_match('#^/?quiz/#i', $path)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
