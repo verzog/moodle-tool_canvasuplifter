@@ -135,6 +135,13 @@ sync_plugin() {
     | ( cd "$dest" && tar -xf - )
 }
 
+# Re-initialise the Moodle PHPUnit environment, needed after the plugin's
+# version or schema changes.
+reinit_phpunit() {
+  log "Re-initialising the PHPUnit environment."
+  ( cd "$WORKSPACE/moodle" && php admin/tool/phpunit/cli/init.php >/dev/null ) || true
+}
+
 run_step() {
   local step="$1"
   log "moodle-plugin-ci ${step}"
@@ -178,8 +185,10 @@ main() {
     shift || true
     arg="${1:-}"
   else
-    # Reusing an existing Moodle: refresh the plugin from the working tree.
+    # Reusing an existing Moodle: refresh the plugin from the working tree and
+    # re-initialise the test environment (the plugin version may have changed).
     sync_plugin
+    reinit_phpunit
   fi
 
   if [ -n "$arg" ]; then
