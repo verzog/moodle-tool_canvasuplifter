@@ -146,4 +146,48 @@ final class question_xml_writer_test extends \advanced_testcase {
         $dom = new \DOMDocument();
         $this->assertTrue($dom->loadXML($xml));
     }
+
+    /**
+     * Single-quoted/spaced attributes are matched; same-named files in different
+     * folders stay distinct; URL suffixes survive; and attribute-looking text in
+     * a code sample is not rewritten.
+     *
+     * @return void
+     */
+    public function test_media_edge_cases(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/audio');
+        mkdir($dir . '/audio/en');
+        mkdir($dir . '/audio/es');
+        file_put_contents($dir . '/audio/en/clip.mp3', 'ENBYTES');
+        file_put_contents($dir . '/audio/es/clip.mp3', 'ESBYTES');
+        file_put_contents($dir . '/slides.pdf', 'PDF');
+        file_put_contents($dir . '/index.html', '<html></html>');
+
+        $q = $this->choice();
+        $q->questiontext =
+            "<p><audio src = 'audio/en/clip.mp3'></audio></p>"
+            . '<p><audio src="audio/es/clip.mp3"></audio></p>'
+            . '<p><a href="slides.pdf#page=4">slides</a></p>'
+            . '<p><code>href="index.html"</code></p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
+
+        // Single-quoted + spaced attribute is matched, subdir preserved.
+        $this->assertStringContainsString("src='@@PLUGINFILE@@/audio/en/clip.mp3'", $xml);
+        $this->assertStringContainsString('src="@@PLUGINFILE@@/audio/es/clip.mp3"', $xml);
+        // Same basename in different folders -> two distinct stored files.
+        $this->assertStringContainsString('<file name="clip.mp3" path="/audio/en/"', $xml);
+        $this->assertStringContainsString('<file name="clip.mp3" path="/audio/es/"', $xml);
+        $this->assertStringContainsString(base64_encode('ENBYTES'), $xml);
+        $this->assertStringContainsString(base64_encode('ESBYTES'), $xml);
+        // The #page=4 fragment is carried onto the rewritten URL.
+        $this->assertStringContainsString('@@PLUGINFILE@@/slides.pdf#page=4', $xml);
+        // Attribute-looking text inside a code sample is left untouched.
+        $this->assertStringContainsString('href="index.html"', $xml);
+        $this->assertStringNotContainsString('@@PLUGINFILE@@/index.html', $xml);
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
 }

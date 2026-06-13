@@ -146,9 +146,10 @@ class question_xml_writer {
         $files = [];
         $rewritten = $this->embed_files($html, $imagedir, $files);
         $textandfiles = "<text>" . $this->cdata($rewritten) . "</text>";
-        foreach ($files as $name => $base64) {
-            $textandfiles .= "\n      <file name=\"" . htmlspecialchars($name, ENT_XML1)
-                . "\" path=\"/\" encoding=\"base64\">" . $base64 . "</file>";
+        foreach ($files as $file) {
+            $textandfiles .= "\n      <file name=\"" . htmlspecialchars($file['name'], ENT_XML1)
+                . "\" path=\"" . htmlspecialchars($file['path'], ENT_XML1)
+                . "\" encoding=\"base64\">" . $file['base64'] . "</file>";
         }
         if ($bare || $tag === '__text') {
             return $textandfiles;
@@ -157,37 +158,77 @@ class question_xml_writer {
     }
 
     /**
-     * Rewrite relative media references (src/poster/href on img, video, audio,
-     * source, track, anchors, etc.) to @@PLUGINFILE@@ and collect the base64
-     * bytes of each referenced package file. External URLs and in-page anchors
-     * are left untouched, as is any reference that doesn't resolve to a real
-     * bundled file.
+     * Rewrite relative media references (src/poster/href/data on media-bearing
+     * tags: img, video, audio, source, track, anchors, embed, object) to the
+     * Moodle pluginfile placeholder and collect the base64 bytes of each
+     * referenced package file. The match is anchored to real tags so
+     * attribute-looking text in a code sample is left alone; external URLs, data
+     * URIs and in-page anchors are untouched, as is any reference that doesn't
+     * resolve to a bundled file.
      *
      * @param string $html The HTML.
      * @param string|null $imagedir Folder to resolve referenced files, or null to skip.
-     * @param array $files Collected name => base64 (modified in place).
+     * @param array $files Collected, keyed by path+name => {path, name, base64} (modified in place).
      * @return string Rewritten HTML.
      */
     protected function embed_files(string $html, ?string $imagedir, array &$files): string {
         if ($imagedir === null || $html === '') {
             return $html;
         }
-        return preg_replace_callback('/\b(src|poster|href)="([^"]+)"/i', function ($m) use ($imagedir, &$files) {
-            $raw = $m[2];
-            if (preg_match('~^(https?:|data:|mailto:|tel:|@@PLUGINFILE@@|#)~i', $raw)) {
-                return $m[0];
-            }
-            $rel = rawurldecode(preg_replace('/[?#].*$/', '', $raw));
-            $abs = $this->safe_join($imagedir, $rel);
-            if ($abs === null || !is_file($abs)) {
-                return $m[0];
-            }
-            $name = basename($rel);
-            if (!isset($files[$name])) {
-                $files[$name] = base64_encode((string) file_get_contents($abs));
-            }
-            return $m[1] . '="@@PLUGINFILE@@/' . rawurlencode($name) . '"';
-        }, $html);
+        return preg_replace_callback(
+            '~<(?:img|video|audio|source|track|a|embed|object)\b[^>]*>~i',
+            function ($tag) use ($imagedir, &$files) {
+                return $this->rewrite_tag_refs($tag[0], $imagedir, $files);
+            },
+            $html
+        );
+    }
+
+    /**
+     * Rewrite the media attributes of a single opening tag.
+     *
+     * @param string $tag The matched opening tag, e.g. '<video src="clip.mp4">'.
+     * @param string $imagedir Folder to resolve referenced files.
+     * @param array $files Collected files (modified in place).
+     * @return string The rewritten tag.
+     */
+    protected function rewrite_tag_refs(string $tag, string $imagedir, array &$files): string {
+        return preg_replace_callback(
+            '/\b(src|poster|href|data)\s*=\s*("([^"]*)"|\'([^\']*)\')/i',
+            function ($m) use ($imagedir, &$files) {
+                $quote = $m[2][0];
+                $value = $quote === '"' ? $m[3] : ($m[4] ?? '');
+                if ($value === '' || preg_match('~^(https?:|data:|mailto:|tel:|@@PLUGINFILE@@|#)~i', $value)) {
+                    return $m[0];
+                }
+                // Keep any ?query/#fragment suffix off the file lookup but back on the URL.
+                $suffix = '';
+                $path = $value;
+                if (preg_match('/^([^?#]*)([?#].*)$/', $value, $sm)) {
+                    $path = $sm[1];
+                    $suffix = $sm[2];
+                }
+                $rel = rawurldecode($path);
+                $abs = $this->safe_join($imagedir, $rel);
+                if ($abs === null || !is_file($abs)) {
+                    return $m[0];
+                }
+                $name = basename($rel);
+                $subdir = trim(str_replace('\\', '/', dirname($rel)), '/');
+                $filepath = ($subdir === '' || $subdir === '.') ? '/' : '/' . $subdir . '/';
+                $key = $filepath . $name;
+                if (!isset($files[$key])) {
+                    $files[$key] = [
+                        'path' => $filepath,
+                        'name' => $name,
+                        'base64' => base64_encode((string) file_get_contents($abs)),
+                    ];
+                }
+                $url = '@@PLUGINFILE@@' . $filepath . rawurlencode($name) . $suffix;
+                return $m[1] . '=' . $quote . $url . $quote;
+            },
+            $tag
+        );
     }
 
     /**
