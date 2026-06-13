@@ -113,12 +113,15 @@ install_moodle() {
 # code-only change can be retested without a full reinstall.
 sync_plugin() {
   local dest="$WORKSPACE/moodle/admin/tool/canvasuplifter"
-  if [ -d "$WORKSPACE/moodle" ] && [ ! -L "$dest" ]; then
-    log "Syncing plugin source into the Moodle tree."
-    rm -rf "$dest"
-    mkdir -p "$dest"
-    rsync -a --delete --exclude='.git' --exclude='tooling' "$PLUGIN_DIR/" "$dest/"
-  fi
+  [ -d "$WORKSPACE/moodle" ] || return 0
+  # If the installer symlinked the plugin, edits are already live.
+  [ -L "$dest" ] && return 0
+  log "Syncing plugin source into the Moodle tree."
+  rm -rf "$dest"
+  mkdir -p "$dest"
+  # tar copy (rsync isn't guaranteed to be installed), skipping VCS and tooling.
+  ( cd "$PLUGIN_DIR" && tar --exclude=./.git --exclude=./tooling -cf - . ) \
+    | ( cd "$dest" && tar -xf - )
 }
 
 run_step() {
@@ -145,11 +148,14 @@ main() {
 
   local arg="${1:-}"
   if [ "$arg" = "--reinstall" ] || [ ! -d "$WORKSPACE/moodle" ]; then
+    # A fresh install already places the current working-tree plugin.
     install_moodle
     shift || true
     arg="${1:-}"
+  else
+    # Reusing an existing Moodle: refresh the plugin from the working tree.
+    sync_plugin
   fi
-  sync_plugin
 
   if [ -n "$arg" ]; then
     run_step "$@"
