@@ -40,7 +40,7 @@ class course_builder {
     ];
 
     /** @var string[] Kinds that must be created in section 0 (question banks). */
-    private const SECTION_ZERO_KINDS = [item::KIND_QUIZ, item::KIND_QUESTIONBANK];
+    private const SECTION_ZERO_KINDS = [item::KIND_QUESTIONBANK];
 
     /** @var array<string, string> Maps an item kind to its Moodle module name. */
     private const KIND_TO_MOD = [
@@ -48,7 +48,7 @@ class course_builder {
         item::KIND_URL => 'url',
         item::KIND_FILE => 'resource',
         item::KIND_ASSIGNMENT => 'assign',
-        item::KIND_QUIZ => 'qbank',
+        item::KIND_QUIZ => 'quiz',
         item::KIND_QUESTIONBANK => 'qbank',
     ];
 
@@ -117,14 +117,13 @@ class course_builder {
 
         $this->report_progress(5, get_string('progresscoursecreated', 'tool_canvasuplifter'));
 
-        $questionbankbuilder = new questionbank_builder($this->packageroot);
         $builders = [
             item::KIND_PAGE => new page_builder($this->packageroot),
             item::KIND_URL => new url_builder($this->packageroot),
             item::KIND_FILE => new file_builder($this->packageroot),
             item::KIND_ASSIGNMENT => new assign_builder($this->packageroot),
-            item::KIND_QUIZ => $questionbankbuilder,
-            item::KIND_QUESTIONBANK => $questionbankbuilder,
+            item::KIND_QUIZ => new quiz_builder($this->packageroot),
+            item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot),
         ];
 
         $createdcounts = [];
@@ -158,7 +157,7 @@ class course_builder {
                 if ($modelitem->title === '') {
                     $modelitem->title = get_string('syllabuspage', 'tool_canvasuplifter');
                 }
-                $cmid = $this->build_one($course, 0, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons);
+                $cmid = $this->build_one($course, 0, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons, false);
                 $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
                 $this->report_progress($this->item_percent(++$processed, $totalitems), get_string(
                     'progressitem',
@@ -175,7 +174,16 @@ class course_builder {
             $orphansection = count($coursemodel->sections) + 1;
             $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
             foreach ($extras as $modelitem) {
-                $cmid = $this->build_one($course, $orphansection, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons);
+                $cmid = $this->build_one(
+                    $course,
+                    $orphansection,
+                    $modelitem,
+                    $builders,
+                    $urlmap,
+                    $builtpagecmids,
+                    $skipreasons,
+                    false
+                );
                 $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
                 $this->report_progress($this->item_percent(++$processed, $totalitems), get_string(
                     'progressitem',
@@ -271,6 +279,7 @@ class course_builder {
      * @param array $urlmap Link map (modified in place).
      * @param int[] $builtpagecmids Page cmids collected for the link pass (modified in place).
      * @param string[] $skipreasons Diagnostic messages (modified in place).
+     * @param bool $referenced Whether the item is linked in the course (vs an orphan).
      * @return int|null Created course module id, or null if it could not be built.
      */
     private function build_one(
@@ -280,12 +289,18 @@ class course_builder {
         array $builders,
         array &$urlmap,
         array &$builtpagecmids,
-        array &$skipreasons
+        array &$skipreasons,
+        bool $referenced = true
     ): ?int {
         $cmid = null;
-        $builder = $builders[$modelitem->kind] ?? null;
-        // Question banks can only live in section 0.
-        if (in_array($modelitem->kind, self::SECTION_ZERO_KINDS, true)) {
+        $kind = $modelitem->kind;
+        $builder = $builders[$kind] ?? null;
+        // Orphan (unreferenced) assessments become question banks rather than
+        // quizzes; banks can only live in section 0.
+        if ($kind === item::KIND_QUIZ && !$referenced) {
+            $builder = $builders[item::KIND_QUESTIONBANK] ?? $builder;
+            $sectionnum = 0;
+        } else if (in_array($kind, self::SECTION_ZERO_KINDS, true)) {
             $sectionnum = 0;
         }
         if ($builder !== null) {

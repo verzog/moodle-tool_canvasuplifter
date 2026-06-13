@@ -18,22 +18,21 @@ namespace tool_canvasuplifter\local\build;
 
 use stdClass;
 use tool_canvasuplifter\local\model\item;
+use tool_canvasuplifter\local\model\qti_question;
 use tool_canvasuplifter\local\parser\qti_parser;
 
 /**
- * Creates a mod_qbank activity from a Canvas QTI assessment and imports its
- * questions into the bank.
+ * Creates a mod_quiz activity from a Canvas QTI assessment.
  *
- * The QTI is parsed (see {@see qti_parser}) and rendered to Moodle import XML
- * (see {@see question_xml_writer}), then loaded through Moodle's own qformat_xml
- * importer into the new bank's default question category. Question banks must be
- * created in section 0, so the section number is ignored.
+ * The questions are imported into the quiz's own context (see
+ * {@see question_importer}) and then added to the quiz as slots. Unsupported
+ * question types are skipped; if none remain, no quiz is created.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class questionbank_builder {
+class quiz_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -47,16 +46,17 @@ class questionbank_builder {
     }
 
     /**
-     * Create a mod_qbank and import the assessment's questions.
+     * Create a mod_quiz and add the assessment's questions.
      *
      * @param stdClass $course Course record.
-     * @param int $sectionnum Ignored; question banks are created in section 0.
-     * @param item $modelitem The quiz/question-bank item.
+     * @param int $sectionnum Section to place the quiz in.
+     * @param item $modelitem The quiz item.
      * @return int|null Created course module id, or null if there's nothing to import.
      */
     public function build(stdClass $course, int $sectionnum, item $modelitem): ?int {
         global $CFG, $DB;
         require_once($CFG->dirroot . '/course/modlib.php');
+        require_once($CFG->dirroot . '/mod/quiz/locallib.php');
 
         $qtipath = $this->locate_qti($modelitem);
         if ($qtipath === null) {
@@ -65,37 +65,92 @@ class questionbank_builder {
         $parsed = (new qti_parser())->parse((string) @file_get_contents($qtipath));
         $supported = array_filter(
             $parsed['questions'],
-            fn($q) => $q->type !== \tool_canvasuplifter\local\model\qti_question::TYPE_UNSUPPORTED
+            fn($q) => $q->type !== qti_question::TYPE_UNSUPPORTED
         );
         if (empty($supported)) {
             return null;
         }
 
         $name = $modelitem->title !== '' ? $modelitem->title
-            : ($parsed['title'] !== '' ? $parsed['title'] : 'Question bank');
+            : ($parsed['title'] !== '' ? $parsed['title'] : 'Quiz');
 
-        $module = $DB->get_record('modules', ['name' => 'qbank']);
+        $module = $DB->get_record('modules', ['name' => 'quiz']);
         if (!$module) {
             return null;
         }
 
-        $moduleinfo = (object) [
-            'modulename' => 'qbank',
+        $moduleinfo = (object) array_merge($this->quiz_defaults(), [
+            'modulename' => 'quiz',
             'module' => $module->id,
             'course' => $course->id,
-            'section' => 0,
+            'section' => $sectionnum,
             'visible' => 1,
+            'cmidnumber' => '',
             'name' => $name,
             'intro' => '',
             'introformat' => FORMAT_HTML,
-            'type' => \core_question\local\bank\question_bank_helper::TYPE_STANDARD,
-        ];
+        ]);
         $created = add_moduleinfo($moduleinfo, $course);
         $cmid = (int) $created->coursemodule;
 
         $context = \context_module::instance($cmid);
-        (new question_importer())->import($course, $context, $supported, dirname($qtipath));
+        $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath));
+
+        $quiz = $DB->get_record('quiz', ['id' => $created->instance], '*', MUST_EXIST);
+        $quiz->cmid = $cmid;
+        foreach ($questionids as $questionid) {
+            quiz_add_quiz_question((int) $questionid, $quiz);
+        }
+        \mod_quiz\quiz_settings::create((int) $quiz->id)->get_grade_calculator()->recompute_quiz_sumgrades();
         return $cmid;
+    }
+
+    /**
+     * Default quiz settings for a freshly imported quiz.
+     *
+     * Mirrors mod_quiz's own test generator defaults: sensible review options,
+     * deferred feedback, unlimited attempts and a 100-point maximum grade.
+     * add_moduleinfo() processes the per-state review flags into bitmasks.
+     *
+     * @return array
+     */
+    private function quiz_defaults(): array {
+        $fields = ['attempt', 'correctness', 'maxmarks', 'marks',
+            'specificfeedback', 'generalfeedback', 'rightanswer', 'overallfeedback'];
+        $review = [];
+        foreach (['during', 'immediately', 'open', 'closed'] as $when) {
+            foreach ($fields as $field) {
+                $review[$field . $when] = 1;
+            }
+        }
+        // These are off by default in mod_quiz: no during/closed overall feedback etc.
+        $review['overallfeedbackduring'] = 0;
+        return array_merge($review, [
+            'timeopen' => 0,
+            'timeclose' => 0,
+            'timelimit' => 0,
+            'overduehandling' => 'autosubmit',
+            'graceperiod' => 86400,
+            'preferredbehaviour' => 'deferredfeedback',
+            'canredoquestions' => 0,
+            'attempts' => 0,
+            'attemptonlast' => 0,
+            'grademethod' => QUIZ_GRADEHIGHEST,
+            'decimalpoints' => 2,
+            'questiondecimalpoints' => -1,
+            'questionsperpage' => 1,
+            'navmethod' => QUIZ_NAVMETHOD_FREE,
+            'shuffleanswers' => 1,
+            'sumgrades' => 0,
+            'grade' => 100,
+            'quizpassword' => '',
+            'subnet' => '',
+            'browsersecurity' => '',
+            'delay1' => 0,
+            'delay2' => 0,
+            'showuserpicture' => 0,
+            'showblocks' => 0,
+        ]);
     }
 
     /**
