@@ -58,6 +58,9 @@ class item {
     /** @var string Raw Common Cartridge resource type string. */
     public string $resourcetype = '';
 
+    /** @var string Canvas "intendeduse" hint, e.g. "syllabus" or "assignment". */
+    public string $intendeduse = '';
+
     /** @var string Primary file path within the package, if any. */
     public string $href = '';
 

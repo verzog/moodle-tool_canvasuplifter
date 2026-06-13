@@ -174,6 +174,7 @@ class manifest_parser {
             $modelitem = new item($identifier);
             $modelitem->resourcetype = $type;
             $modelitem->href = $href;
+            $modelitem->intendeduse = strtolower($resource->getAttribute('intendeduse'));
 
             // Collect every <file href="..."> child.
             $files = $resource->getElementsByTagNameNS('*', 'file');
@@ -221,23 +222,72 @@ class manifest_parser {
         if (preg_match('#imsqti#', $type) || str_contains($type, 'assessment')) {
             return item::KIND_QUIZ;
         }
-        // Canvas "learning application" resources: assignments and pages live here.
+        // Canvas "learning application" resources: assignments and pages live here,
+        // but so do metadata-only companions (discussion topicMeta, quiz
+        // assessment_meta, canvas_export.txt). Only treat one as a page when it
+        // actually carries an HTML payload; otherwise it's the dedicated
+        // discussion/quiz/etc. resource that owns the content, so skip it.
         if (str_contains($type, 'learning-application-resource')) {
             foreach ($files as $file) {
                 if (str_contains($file, 'assignment_settings.xml')) {
                     return item::KIND_ASSIGNMENT;
                 }
             }
-            return item::KIND_PAGE;
+            return $this->has_html($href, $files) ? item::KIND_PAGE : item::KIND_UNKNOWN;
         }
         // Plain web content: an HTML page under wiki_content is a page, else a file.
         if ($type === 'webcontent' || str_contains($type, 'webcontent')) {
+            // Assets under quiz/ are images/resources embedded in QTI questions,
+            // not standalone course files; skip them (the question bank owns them).
+            if ($this->is_quiz_asset($href, $files)) {
+                return item::KIND_UNKNOWN;
+            }
             if (str_contains($href, 'wiki_content/')) {
                 return item::KIND_PAGE;
             }
             return item::KIND_FILE;
         }
         return item::KIND_UNKNOWN;
+    }
+
+    /**
+     * Whether every path of the resource lives under the package's quiz/ folder
+     * (i.e. it's an asset belonging to a QTI question, not a course file).
+     *
+     * @param string $href The primary href.
+     * @param string[] $files All file hrefs.
+     * @return bool
+     */
+    protected function is_quiz_asset(string $href, array $files): bool {
+        $paths = $files;
+        if ($href !== '') {
+            $paths[] = $href;
+        }
+        if (empty($paths)) {
+            return false;
+        }
+        foreach ($paths as $path) {
+            if (!preg_match('#^/?quiz/#i', $path)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Whether any of the resource's paths is an HTML file.
+     *
+     * @param string $href The primary href.
+     * @param string[] $files All file hrefs.
+     * @return bool
+     */
+    protected function has_html(string $href, array $files): bool {
+        foreach (array_merge([$href], $files) as $path) {
+            if ($path !== '' && preg_match('/\.html?$/i', $path)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

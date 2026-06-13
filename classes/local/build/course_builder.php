@@ -350,10 +350,10 @@ class course_builder {
     }
 
     /**
-     * Whether an item looks like the Canvas course syllabus page.
+     * Whether an item is the Canvas course syllabus page.
      *
-     * Canvas exports the syllabus as an unlinked wiki page whose identifier or
-     * file path contains "syllabus".
+     * Canvas marks it authoritatively with intendeduse="syllabus"; we also fall
+     * back to a "syllabus" hint in the identifier/href for exporters that omit it.
      *
      * @param item $modelitem The item to test.
      * @return bool
@@ -361,6 +361,9 @@ class course_builder {
     private function is_syllabus(item $modelitem): bool {
         if ($modelitem->kind !== item::KIND_PAGE) {
             return false;
+        }
+        if ($modelitem->intendeduse === 'syllabus') {
+            return true;
         }
         $haystacks = array_merge([$modelitem->identifier, $modelitem->href], $modelitem->files);
         foreach ($haystacks as $haystack) {
