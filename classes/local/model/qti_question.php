@@ -1,0 +1,65 @@
+<?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
+namespace tool_canvasuplifter\local\model;
+
+/**
+ * One question parsed from a Canvas/CC QTI assessment.
+ *
+ * Plain data holder with no Moodle dependencies, so the QTI parser and the
+ * Moodle-XML writer can be unit-tested in isolation.
+ *
+ * @package    tool_canvasuplifter
+ * @copyright  2026 SCCA
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+class qti_question {
+    /** Single-answer multiple choice -> Moodle multichoice (single). */
+    public const TYPE_MULTICHOICE = 'multichoice';
+    /** Multiple-answer multiple choice -> Moodle multichoice (multiple). */
+    public const TYPE_MULTIANSWER = 'multianswer';
+    /** Fill-in-the-blank / pattern match -> Moodle shortanswer. */
+    public const TYPE_SHORTANSWER = 'shortanswer';
+    /** True/false -> Moodle truefalse. */
+    public const TYPE_TRUEFALSE = 'truefalse';
+    /** Essay -> Moodle essay. */
+    public const TYPE_ESSAY = 'essay';
+    /** Recognised QTI item we can't yet convert. */
+    public const TYPE_UNSUPPORTED = 'unsupported';
+
+    /** @var string One of the TYPE_* constants. */
+    public string $type = self::TYPE_UNSUPPORTED;
+
+    /** @var string Short question name. */
+    public string $name = '';
+
+    /** @var string Question text (HTML). */
+    public string $questiontext = '';
+
+    /** @var float Default mark/weighting. */
+    public float $defaultmark = 1.0;
+
+    /**
+     * @var array Answer rows. Each: ['text' => string, 'fraction' => float, 'feedback' => string].
+     */
+    public array $answers = [];
+
+    /** @var string General feedback (HTML), shown after answering. */
+    public string $generalfeedback = '';
+
+    /** @var string The raw CC profile, e.g. "cc.fib.v0p1" (for the support matrix). */
+    public string $profile = '';
+}

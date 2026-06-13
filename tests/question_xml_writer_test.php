@@ -1,0 +1,119 @@
+<?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
+namespace tool_canvasuplifter;
+
+use tool_canvasuplifter\local\build\question_xml_writer;
+use tool_canvasuplifter\local\model\qti_question;
+
+/**
+ * Tests for the Moodle question XML writer.
+ *
+ * @package    tool_canvasuplifter
+ * @copyright  2026 SCCA
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @covers     \tool_canvasuplifter\local\build\question_xml_writer
+ */
+final class question_xml_writer_test extends \advanced_testcase {
+    /**
+     * Make a multiple-choice question model.
+     *
+     * @return qti_question
+     */
+    private function choice(): qti_question {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_MULTICHOICE;
+        $q->name = 'Sample';
+        $q->questiontext = '<p>Pick one</p>';
+        $q->answers = [
+            ['text' => 'right', 'fraction' => 100.0, 'feedback' => 'Yes'],
+            ['text' => 'wrong', 'fraction' => 0.0, 'feedback' => ''],
+        ];
+        return $q;
+    }
+
+    /**
+     * The writer emits a well-formed Moodle XML document with a category and
+     * the supported question types.
+     *
+     * @return void
+     */
+    public function test_writes_wellformed_xml(): void {
+        $short = new qti_question();
+        $short->type = qti_question::TYPE_SHORTANSWER;
+        $short->name = 'Blank';
+        $short->questiontext = '<p>2+2=?</p>';
+        $short->answers = [['text' => '4', 'fraction' => 100.0, 'feedback' => '']];
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$this->choice(), $short], '$course$/Imported/Bank');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml), 'output should be well-formed XML');
+
+        $types = [];
+        foreach ($dom->getElementsByTagName('question') as $q) {
+            $types[] = $q->getAttribute('type');
+        }
+        $this->assertSame(['category', 'multichoice', 'shortanswer'], $types);
+        $this->assertStringContainsString('<single>true</single>', $xml);
+        $this->assertStringContainsString('<usecase>0</usecase>', $xml);
+        $this->assertStringContainsString('fraction="100"', $xml);
+    }
+
+    /**
+     * Unsupported questions are dropped from the output.
+     *
+     * @return void
+     */
+    public function test_skips_unsupported(): void {
+        $bad = new qti_question();
+        $bad->type = qti_question::TYPE_UNSUPPORTED;
+        $bad->name = 'Nope';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$bad, $this->choice()], 'cat');
+        $dom = new \DOMDocument();
+        $dom->loadXML($xml);
+        // Only the category and the one supported question.
+        $this->assertSame(2, $dom->getElementsByTagName('question')->length);
+    }
+
+    /**
+     * A relative image is inlined as base64 and the src rewritten to pluginfile.
+     *
+     * @return void
+     */
+    public function test_embeds_images(): void {
+        $dir = make_request_directory();
+        // 1x1 transparent PNG.
+        $png = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+        );
+        file_put_contents($dir . '/pic.png', $png);
+
+        $q = $this->choice();
+        $q->questiontext = '<p>See <img src="pic.png" alt="x"></p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
+
+        $this->assertStringContainsString('@@PLUGINFILE@@/pic.png', $xml);
+        $this->assertStringContainsString('<file name="pic.png" path="/" encoding="base64">', $xml);
+        $this->assertStringContainsString(base64_encode($png), $xml);
+        $this->assertStringNotContainsString('src="pic.png"', $xml);
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
+}
