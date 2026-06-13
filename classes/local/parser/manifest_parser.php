@@ -114,8 +114,13 @@ class manifest_parser {
         if ($modelitem->href !== '') {
             $candidates[] = $modelitem->href;
         }
+        // Discussion (imsdt) and LTI (imsbasiclti) resources are XML but carry a
+        // <title> element naming the topic/tool, so read those too.
+        $allowxml = in_array($modelitem->kind, [item::KIND_DISCUSSION, item::KIND_LTI], true);
         foreach ($candidates as $relative) {
-            if (!preg_match('/\.html?$/i', $relative)) {
+            $ishtml = (bool) preg_match('/\.html?$/i', $relative);
+            $isxml = $allowxml && (bool) preg_match('/\.xml$/i', $relative);
+            if (!$ishtml && !$isxml) {
                 continue;
             }
             $absolute = $this->resolve_within($relative);

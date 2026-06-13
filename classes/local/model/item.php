@@ -77,4 +77,29 @@ class item {
         $this->identifier = $identifier;
         $this->title = $title;
     }
+
+    /**
+     * Whether this item is the Canvas course syllabus page.
+     *
+     * Canvas marks it authoritatively with intendeduse="syllabus"; we also fall
+     * back to a "syllabus" hint in the identifier/href/files for exporters that
+     * omit it.
+     *
+     * @return bool
+     */
+    public function is_syllabus(): bool {
+        if ($this->kind !== self::KIND_PAGE) {
+            return false;
+        }
+        if ($this->intendeduse === 'syllabus') {
+            return true;
+        }
+        $haystacks = array_merge([$this->identifier, $this->href], $this->files);
+        foreach ($haystacks as $haystack) {
+            if ($haystack !== '' && stripos($haystack, 'syllabus') !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

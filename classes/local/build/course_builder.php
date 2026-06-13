@@ -374,19 +374,7 @@ class course_builder {
      * @return bool
      */
     private function is_syllabus(item $modelitem): bool {
-        if ($modelitem->kind !== item::KIND_PAGE) {
-            return false;
-        }
-        if ($modelitem->intendeduse === 'syllabus') {
-            return true;
-        }
-        $haystacks = array_merge([$modelitem->identifier, $modelitem->href], $modelitem->files);
-        foreach ($haystacks as $haystack) {
-            if ($haystack !== '' && stripos($haystack, 'syllabus') !== false) {
-                return true;
-            }
-        }
-        return false;
+        return $modelitem->is_syllabus();
     }
 
     /**
