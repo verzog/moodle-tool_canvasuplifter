@@ -103,6 +103,109 @@ XML;
     }
 
     /**
+     * A two-option multiple-choice item (Canvas style, no cc_profile).
+     *
+     * @param string $ident Item identifier.
+     * @param string $correct The ident of the correct option (A or B).
+     * @return string
+     */
+    private function mc(string $ident, string $correct): string {
+        return '<item ident="' . $ident . '" title="MC ' . $ident . '"><presentation>'
+            . '<material><mattext texttype="text/html">&lt;p&gt;Pick one&lt;/p&gt;</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext>Alpha</mattext></material></response_label>'
+            . '<response_label ident="B"><material><mattext>Beta</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">' . $correct . '</varequal>'
+            . '</conditionvar><setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
+     * A choice item with a single option. Moodle rejects multiple-choice
+     * questions with fewer than two answers, which historically aborted the
+     * whole import batch (and crashed the quiz build with "Invalid question type").
+     *
+     * @return string
+     */
+    private function singleoptionitem(): string {
+        return '<item ident="qbad" title="Bad"><presentation>'
+            . '<material><mattext texttype="text/html">&lt;p&gt;Only one&lt;/p&gt;</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext>Only</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
+     * Write a package whose referenced assessment mixes good questions with a
+     * single-option choice item that Moodle cannot save.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_mixed_fixture(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        mkdir($dir . '/quiz/a2');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a2" title="Readiness Quiz"><section ident="s1">'
+            . $this->mc('qa', 'B') . $this->singleoptionitem() . $this->mc('qc', 'A')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/a2/qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Readiness Quiz</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/a2/qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A single unsaveable question must not abort the whole quiz: the other
+     * questions still convert and the quiz is created.
+     *
+     * @return void
+     */
+    public function test_bad_question_does_not_abort_quiz(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_mixed_fixture();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        $quiz = $DB->get_record('quiz', ['id' => $quizcm->instance], '*', MUST_EXIST);
+        // The two well-formed questions convert; the single-option one is skipped.
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
+    }
+
+    /**
      * A referenced assessment builds a mod_quiz with both questions as slots.
      *
      * @return void

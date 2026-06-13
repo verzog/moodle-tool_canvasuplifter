@@ -55,6 +55,7 @@ class quiz_builder {
      */
     public function build(stdClass $course, int $sectionnum, item $modelitem): ?int {
         global $CFG, $DB;
+        require_once($CFG->dirroot . '/course/lib.php');
         require_once($CFG->dirroot . '/course/modlib.php');
         require_once($CFG->dirroot . '/mod/quiz/locallib.php');
 
@@ -95,6 +96,12 @@ class quiz_builder {
 
         $context = \context_module::instance($cmid);
         $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath));
+        if (empty($questionids)) {
+            // Nothing imported (every question was unsupported or unsaveable);
+            // don't leave an empty quiz behind.
+            course_delete_module($cmid);
+            return null;
+        }
 
         $quiz = $DB->get_record('quiz', ['id' => $created->instance], '*', MUST_EXIST);
         $quiz->cmid = $cmid;

@@ -56,6 +56,7 @@ class questionbank_builder {
      */
     public function build(stdClass $course, int $sectionnum, item $modelitem): ?int {
         global $CFG, $DB;
+        require_once($CFG->dirroot . '/course/lib.php');
         require_once($CFG->dirroot . '/course/modlib.php');
 
         $qtipath = $this->locate_qti($modelitem);
@@ -94,7 +95,12 @@ class questionbank_builder {
         $cmid = (int) $created->coursemodule;
 
         $context = \context_module::instance($cmid);
-        (new question_importer())->import($course, $context, $supported, dirname($qtipath));
+        $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath));
+        if (empty($questionids)) {
+            // Every question was unsaveable; don't leave an empty bank behind.
+            course_delete_module($cmid);
+            return null;
+        }
         return $cmid;
     }
 
