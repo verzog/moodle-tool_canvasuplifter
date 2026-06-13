@@ -129,6 +129,7 @@ class assign_builder {
             'course' => $course->id,
             'section' => $sectionnum,
             'visible' => 1,
+            'cmidnumber' => '',
             'name' => $name,
             'intro' => $intro,
             'introformat' => FORMAT_HTML,
@@ -138,7 +139,7 @@ class assign_builder {
             'nosubmissions' => 0,
             // Grading: point grade when Canvas gives points, otherwise ungraded.
             'grade' => $settings->points > 0 ? $settings->points : 0,
-            // Dates (0 = unset).
+            // Dates default to zero when Canvas leaves them unset.
             'duedate' => $settings->duedate,
             'allowsubmissionsfromdate' => $settings->allowfrom,
             'cutoffdate' => $settings->cutoff,

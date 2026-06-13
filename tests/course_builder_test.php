@@ -275,6 +275,6 @@ XML;
             'section' => 2,
         ]);
         $this->assertSame('Additional resources', $sectionname);
-        $this->assertSame(2, $resourcecm->sectionnum);
+        $this->assertEquals(2, $resourcecm->sectionnum);
     }
 }

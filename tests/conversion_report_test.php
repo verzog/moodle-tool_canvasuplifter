@@ -55,16 +55,16 @@ final class conversion_report_test extends \advanced_testcase {
 
         $report = (new conversion_report($course))->build();
 
-        // Page + the orphan file build now (2); the assignment is for later (1).
-        $this->assertSame(2, $report['buildsnowtotal']);
-        $this->assertSame(1, $report['latertotal']);
+        // Page, the orphan file and the assignment all build now (3).
+        $this->assertSame(3, $report['buildsnowtotal']);
+        $this->assertSame(0, $report['latertotal']);
 
         $bykind = [];
         foreach ($report['rows'] as $row) {
             $bykind[$row['kind']] = $row;
         }
         $this->assertTrue($bykind['page']['buildsnow']);
-        $this->assertFalse($bykind['assignment']['buildsnow']);
+        $this->assertTrue($bykind['assignment']['buildsnow']);
         $this->assertSame('note_assignment', $bykind['assignment']['note']);
 
         // Per-section drill-down.
