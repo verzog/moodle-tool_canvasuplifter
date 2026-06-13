@@ -176,4 +176,105 @@ XML;
         $context = \context_module::instance($welcomecm->id);
         $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/', 'logo.png'));
     }
+
+    /**
+     * Write a package with one assignment and one unreferenced (orphan) file.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_assignment_fixture(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        file_put_contents(
+            $dir . '/a1/assignment_settings.xml',
+            '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Essay 1</title><points_possible>50</points_possible>'
+            . '<grading_type>points</grading_type>'
+            . '<submission_types>online_text_entry,online_upload</submission_types>'
+            . '<due_at>2030-01-01T00:00:00Z</due_at></assignment>'
+        );
+        file_put_contents($dir . '/a1/a1.html', '<p>Write an essay.</p>');
+        mkdir($dir . '/web_resources');
+        file_put_contents($dir . '/web_resources/handout.pdf', '%PDF-1.4 test');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i1" identifierref="r_assign"><title>Essay 1</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_assign" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="a1/a1.html">
+      <file href="a1/a1.html"/>
+      <file href="a1/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="r_handout" type="webcontent" href="web_resources/handout.pdf">
+      <file href="web_resources/handout.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * The build creates an assignment and imports orphans into a spare section.
+     *
+     * @return void
+     */
+    public function test_build_creates_assignment_and_imports_orphans(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_assignment_fixture();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['assignment'] ?? 0);
+        $this->assertSame(1, $report['createdcounts']['file'] ?? 0);
+        // The original section plus the synthetic "Additional resources" section.
+        $this->assertSame(2, $report['sectioncount']);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $assigns = $modinfo->get_instances_of('assign');
+        $this->assertCount(1, $assigns);
+        $assigncm = reset($assigns);
+        $assign = $DB->get_record('assign', ['id' => $assigncm->instance]);
+        $this->assertSame('Essay 1', $assign->name);
+        $this->assertStringContainsString('Write an essay', $assign->intro);
+        $this->assertEquals(50, $assign->grade);
+        $this->assertEquals(strtotime('2030-01-01T00:00:00Z'), $assign->duedate);
+
+        // Both requested submission plugins are enabled.
+        $enabled = function (string $plugin) use ($DB, $assign): string {
+            return (string) $DB->get_field('assign_plugin_config', 'value', [
+                'assignment' => $assign->id,
+                'subtype' => 'assignsubmission',
+                'plugin' => $plugin,
+                'name' => 'enabled',
+            ]);
+        };
+        $this->assertSame('1', $enabled('onlinetext'));
+        $this->assertSame('1', $enabled('file'));
+
+        // The orphan file became a resource in the "Additional resources" section.
+        $resources = $modinfo->get_instances_of('resource');
+        $this->assertCount(1, $resources);
+        $resourcecm = reset($resources);
+        $sectionname = $DB->get_field('course_sections', 'name', [
+            'course' => $report['courseid'],
+            'section' => 2,
+        ]);
+        $this->assertSame('Additional resources', $sectionname);
+        $this->assertSame(2, $resourcecm->sectionnum);
+    }
 }

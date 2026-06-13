@@ -5,9 +5,9 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 > **Status: Phase 1 — early build.** This release can both *analyse* a Canvas
 > package (report what it contains and how cleanly each part maps to Moodle)
 > and *build* a new Moodle course from it. The builder currently creates
-> sections plus pages (`mod_page`), files (`mod_resource`) and URLs
-> (`mod_url`); other content types (assignments, forums, quizzes, LTI) are
-> reported as skipped and will land in later phases. See the Roadmap below.
+> sections plus pages (`mod_page`), files (`mod_resource`), URLs (`mod_url`)
+> and assignments (`mod_assign`); other content types (forums, quizzes, LTI)
+> are reported as skipped and will land in later phases. See the Roadmap below.
 
 ## Requirements
 
@@ -37,11 +37,15 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 
 - Page link rewriting covers embedded files (`$IMS-CC-FILEBASE$`) and internal
   links to other pages/activities (`$WIKI_REFERENCE$`,
-  `$CANVAS_OBJECT_REFERENCE$`). Links whose target isn't built yet (e.g. an
-  assignment) can't be resolved until that content type is supported, so those
+  `$CANVAS_OBJECT_REFERENCE$`). Links whose target isn't built yet (e.g. a
+  quiz) can't be resolved until that content type is supported, so those
   references are left unchanged rather than pointed at a broken URL.
-- Assignments, forums, quizzes, question banks and LTI tools are reported but
-  not yet built.
+- Assignments convert name, description, due/availability dates, points grade
+  and online-text/file-upload submission types. Rubrics and advanced grading
+  are not carried across.
+- Resources not linked from any module are imported into an "Additional
+  resources" section so nothing is lost.
+- Forums, quizzes, question banks and LTI tools are reported but not yet built.
 
 ## How it's built
 
