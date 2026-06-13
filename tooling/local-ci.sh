@@ -27,6 +27,19 @@ CI_VERSION="^4"
 
 log() { printf '\n\033[1;36m[local-ci]\033[0m %s\n' "$*"; }
 
+# Moodle's PHPUnit init requires max_input_vars >= 5000 (CI sets 7000). Drop a
+# conf.d ini into the CLI SAPI so local runs match.
+ensure_php_ini() {
+  local confd
+  confd="$(php -i 2>/dev/null | sed -n 's/^Scan this dir for additional .ini files => //p' \
+    | tr ',' '\n' | grep -m1 cli || true)"
+  [ -z "$confd" ] && confd="/etc/php/$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')/cli/conf.d"
+  if [ -d "$confd" ] && [ -w "$confd" ]; then
+    printf 'max_input_vars=7000\nmemory_limit=512M\n' > "$confd/99-moodle-ci.ini"
+    log "Set CLI max_input_vars=7000 via $confd/99-moodle-ci.ini"
+  fi
+}
+
 db_up() {
   PGPASSWORD="$PGPASS" psql -h 127.0.0.1 -p "$PGPORT" -U "$PGUSER" -tAc 'select 1' >/dev/null 2>&1
 }
@@ -123,6 +136,7 @@ run_all() {
 }
 
 main() {
+  ensure_php_ini
   start_postgres
   install_ci_tool
 
