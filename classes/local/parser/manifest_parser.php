@@ -174,6 +174,7 @@ class manifest_parser {
             $modelitem = new item($identifier);
             $modelitem->resourcetype = $type;
             $modelitem->href = $href;
+            $modelitem->intendeduse = strtolower($resource->getAttribute('intendeduse'));
 
             // Collect every <file href="..."> child.
             $files = $resource->getElementsByTagNameNS('*', 'file');
@@ -221,14 +222,18 @@ class manifest_parser {
         if (preg_match('#imsqti#', $type) || str_contains($type, 'assessment')) {
             return item::KIND_QUIZ;
         }
-        // Canvas "learning application" resources: assignments and pages live here.
+        // Canvas "learning application" resources: assignments and pages live here,
+        // but so do metadata-only companions (discussion topicMeta, quiz
+        // assessment_meta, canvas_export.txt). Only treat one as a page when it
+        // actually carries an HTML payload; otherwise it's the dedicated
+        // discussion/quiz/etc. resource that owns the content, so skip it.
         if (str_contains($type, 'learning-application-resource')) {
             foreach ($files as $file) {
                 if (str_contains($file, 'assignment_settings.xml')) {
                     return item::KIND_ASSIGNMENT;
                 }
             }
-            return item::KIND_PAGE;
+            return $this->has_html($href, $files) ? item::KIND_PAGE : item::KIND_UNKNOWN;
         }
         // Plain web content: an HTML page under wiki_content is a page, else a file.
         if ($type === 'webcontent' || str_contains($type, 'webcontent')) {
@@ -238,6 +243,22 @@ class manifest_parser {
             return item::KIND_FILE;
         }
         return item::KIND_UNKNOWN;
+    }
+
+    /**
+     * Whether any of the resource's paths is an HTML file.
+     *
+     * @param string $href The primary href.
+     * @param string[] $files All file hrefs.
+     * @return bool
+     */
+    protected function has_html(string $href, array $files): bool {
+        foreach (array_merge([$href], $files) as $path) {
+            if ($path !== '' && preg_match('/\.html?$/i', $path)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

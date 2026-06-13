@@ -129,4 +129,53 @@ XML;
         $this->assertCount(1, $course->orphans);
         $this->assertSame('Course Syllabus', $course->orphans[0]->title);
     }
+
+    /**
+     * Learning-application resources without an HTML payload (Canvas discussion
+     * topicMeta, quiz meta, canvas_export.txt) are not treated as pages; the
+     * syllabus (HTML, intendeduse="syllabus") is, and carries its hint.
+     *
+     * @return void
+     */
+    public function test_skips_metadata_only_resources(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        file_put_contents(
+            $dir . '/course_settings/syllabus.html',
+            '<html><head><title>Syllabus</title></head><body>Hi</body></html>'
+        );
+        file_put_contents($dir . '/topic.xml', '<topicMeta><title>Discussion 1</title></topicMeta>');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_syllabus"
+              type="associatedcontent/imscc_xmlv1p1/learning-application-resource"
+              href="course_settings/syllabus.html" intendeduse="syllabus">
+      <file href="course_settings/syllabus.html"/>
+    </resource>
+    <resource identifier="r_topicmeta"
+              type="associatedcontent/imscc_xmlv1p1/learning-application-resource"
+              href="topic.xml">
+      <file href="topic.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Only the syllabus survives as an (orphan) page; the topicMeta is skipped.
+        $this->assertCount(1, $course->orphans);
+        $orphan = $course->orphans[0];
+        $this->assertSame(item::KIND_PAGE, $orphan->kind);
+        $this->assertSame('syllabus', $orphan->intendeduse);
+        $this->assertSame('Syllabus', $orphan->title);
+    }
 }
