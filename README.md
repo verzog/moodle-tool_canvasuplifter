@@ -61,6 +61,23 @@ A five-stage pipeline, kept in separate, testable pieces:
 The parser, model and report have **no Moodle dependencies**, so they can be
 unit-tested in isolation (see `tests/`).
 
+### Running the checks locally
+
+`tooling/local-ci.sh` mirrors `.github/workflows/moodle-ci.yml`: it provisions
+`moodle-plugin-ci` + Moodle + a PostgreSQL database (using Docker if a daemon is
+available, otherwise a locally installed cluster) and runs the same steps —
+`phplint`, `phpcs`, `phpdoc`, `validate`, `savepoints`, `mustache` and
+`phpunit`.
+
+```
+tooling/local-ci.sh            # first run provisions, then runs all checks
+tooling/local-ci.sh phpunit    # re-run a single step against the installed Moodle
+tooling/local-ci.sh --reinstall
+MOODLE_BRANCH=MOODLE_502_STABLE tooling/local-ci.sh
+```
+
+Everything lives under `~/.moodle-plugin-ci` (outside the repo).
+
 ## Roadmap
 
 | Phase | Adds |
