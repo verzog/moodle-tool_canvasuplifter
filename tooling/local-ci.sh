@@ -100,6 +100,9 @@ install_ci_tool() {
 install_moodle() {
   log "Installing Moodle ${MOODLE_BRANCH} (pgsql) — this downloads Moodle and builds the test DB."
   rm -rf "$WORKSPACE/moodle" "$WORKSPACE/moodledata"*
+  log "Dropping any existing test database."
+  PGPASSWORD="$PGPASS" psql -h 127.0.0.1 -p "$PGPORT" -U "$PGUSER" -d postgres \
+    -c 'DROP DATABASE IF EXISTS moodle;' >/dev/null 2>&1 || true
   ( cd "$WORKSPACE" && DB=pgsql MOODLE_BRANCH="$MOODLE_BRANCH" \
       "$WORKSPACE/ci/bin/moodle-plugin-ci" install \
         --plugin "$PLUGIN_DIR" --db-host=127.0.0.1 --db-port="$PGPORT" \
