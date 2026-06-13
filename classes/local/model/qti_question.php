@@ -62,4 +62,35 @@ class qti_question {
 
     /** @var string The raw CC profile, e.g. "cc.fib.v0p1" (for the support matrix). */
     public string $profile = '';
+
+    /**
+     * Whether Moodle's question importer can save this question as it stands.
+     *
+     * Moodle rejects — and rolls the whole import batch back on — choice
+     * questions with fewer than two answers and short-answer questions with no
+     * answer, so callers should drop questions this returns false for before
+     * importing. No Moodle dependency, so it stays unit-testable.
+     *
+     * @return bool
+     */
+    public function is_importable(): bool {
+        if ($this->type === self::TYPE_UNSUPPORTED) {
+            return false;
+        }
+        if ($this->type === self::TYPE_ESSAY) {
+            return true;
+        }
+        $nonempty = 0;
+        foreach ($this->answers as $answer) {
+            if (trim((string) ($answer['text'] ?? '')) !== '') {
+                $nonempty++;
+            }
+        }
+        if ($this->type === self::TYPE_SHORTANSWER) {
+            return $nonempty >= 1;
+        }
+        // Multichoice, multianswer and true/false all import as Moodle
+        // multichoice, which requires at least two answers.
+        return $nonempty >= 2;
+    }
 }

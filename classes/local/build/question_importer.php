@@ -41,10 +41,19 @@ class question_importer {
      * @return array The ids of the questions created, in import order.
      */
     public function import(stdClass $course, \context $context, array $questions, string $imagedir): array {
-        global $CFG;
+        global $CFG, $DB;
         require_once($CFG->libdir . '/questionlib.php');
         require_once($CFG->dirroot . '/question/format.php');
         require_once($CFG->dirroot . '/question/format/xml/format.php');
+
+        // Drop questions Moodle's importer would reject (e.g. a choice question
+        // with fewer than two answers). One rejected question makes qformat_xml
+        // roll the in-progress transaction back and abandon the rest of the
+        // batch, so filtering them out up front keeps the good questions.
+        $questions = array_values(array_filter($questions, fn($q) => $q->is_importable()));
+        if (empty($questions)) {
+            return [];
+        }
 
         $category = question_get_default_category($context->id, true);
         $contexts = new \core_question\local\bank\question_edit_contexts($context);
@@ -75,6 +84,14 @@ class question_importer {
         } finally {
             ob_end_clean();
         }
-        return $qformat->questionids;
+        // The qformat importer can leave ids of rolled-back questions in its
+        // list; only return ids that correspond to a stored question.
+        $ids = [];
+        foreach ($qformat->questionids as $id) {
+            if ($DB->record_exists('question', ['id' => $id])) {
+                $ids[] = (int) $id;
+            }
+        }
+        return $ids;
     }
 }
