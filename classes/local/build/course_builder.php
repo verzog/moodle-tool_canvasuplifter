@@ -34,7 +34,13 @@ use tool_canvasuplifter\local\model\item;
  */
 class course_builder {
     /** @var string[] Item kinds the builder can create in the current phase. */
-    public const BUILDS_NOW = [item::KIND_PAGE, item::KIND_URL, item::KIND_FILE, item::KIND_ASSIGNMENT];
+    public const BUILDS_NOW = [
+        item::KIND_PAGE, item::KIND_URL, item::KIND_FILE, item::KIND_ASSIGNMENT,
+        item::KIND_QUIZ, item::KIND_QUESTIONBANK,
+    ];
+
+    /** @var string[] Kinds that must be created in section 0 (question banks). */
+    private const SECTION_ZERO_KINDS = [item::KIND_QUIZ, item::KIND_QUESTIONBANK];
 
     /** @var array<string, string> Maps an item kind to its Moodle module name. */
     private const KIND_TO_MOD = [
@@ -42,6 +48,8 @@ class course_builder {
         item::KIND_URL => 'url',
         item::KIND_FILE => 'resource',
         item::KIND_ASSIGNMENT => 'assign',
+        item::KIND_QUIZ => 'qbank',
+        item::KIND_QUESTIONBANK => 'qbank',
     ];
 
     /** @var int Course category for the new course. */
@@ -109,11 +117,14 @@ class course_builder {
 
         $this->report_progress(5, get_string('progresscoursecreated', 'tool_canvasuplifter'));
 
+        $questionbankbuilder = new questionbank_builder($this->packageroot);
         $builders = [
             item::KIND_PAGE => new page_builder($this->packageroot),
             item::KIND_URL => new url_builder($this->packageroot),
             item::KIND_FILE => new file_builder($this->packageroot),
             item::KIND_ASSIGNMENT => new assign_builder($this->packageroot),
+            item::KIND_QUIZ => $questionbankbuilder,
+            item::KIND_QUESTIONBANK => $questionbankbuilder,
         ];
 
         $createdcounts = [];
@@ -273,6 +284,10 @@ class course_builder {
     ): ?int {
         $cmid = null;
         $builder = $builders[$modelitem->kind] ?? null;
+        // Question banks can only live in section 0.
+        if (in_array($modelitem->kind, self::SECTION_ZERO_KINDS, true)) {
+            $sectionnum = 0;
+        }
         if ($builder !== null) {
             try {
                 $cmid = $builder->build($course, $sectionnum, $modelitem);
