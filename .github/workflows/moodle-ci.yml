@@ -1,6 +1,16 @@
 name: Moodle CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel an in-progress run when a newer commit lands on the same ref; combined
+# with the push filter above (PRs already cover feature branches) this stops
+# every commit from launching two full matrices and stacking up the queue.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
