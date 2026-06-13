@@ -33,6 +33,9 @@ use tool_canvasuplifter\local\parser\qti_parser;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class quiz_builder {
+    /** @var string|null Why the last build() returned null, for the skip report. */
+    public ?string $skipreason = null;
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -59,16 +62,19 @@ class quiz_builder {
         require_once($CFG->dirroot . '/course/modlib.php');
         require_once($CFG->dirroot . '/mod/quiz/locallib.php');
 
+        $this->skipreason = null;
+
         $qtipath = $this->locate_qti($modelitem);
         if ($qtipath === null) {
+            $this->skipreason = 'no QTI assessment file found';
             return null;
         }
         $parsed = (new qti_parser())->parse((string) @file_get_contents($qtipath));
-        $supported = array_filter(
-            $parsed['questions'],
-            fn($q) => $q->type !== qti_question::TYPE_UNSUPPORTED
-        );
-        if (empty($supported)) {
+        $questions = $parsed['questions'];
+        $supported = array_filter($questions, fn($q) => $q->type !== qti_question::TYPE_UNSUPPORTED);
+        $importable = array_filter($supported, fn($q) => $q->is_importable());
+        if (empty($importable)) {
+            $this->skipreason = question_importer::describe_unconvertible($questions, $supported);
             return null;
         }
 
@@ -97,9 +103,13 @@ class quiz_builder {
         $context = \context_module::instance($cmid);
         $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath));
         if (empty($questionids)) {
-            // Nothing imported (every question was unsupported or unsaveable);
-            // don't leave an empty quiz behind.
+            // Nothing imported despite some questions looking convertible; don't
+            // leave an empty quiz behind.
             course_delete_module($cmid);
+            $this->skipreason = sprintf(
+                "Moodle's importer rejected all %d convertible question(s)",
+                count($importable)
+            );
             return null;
         }
 
