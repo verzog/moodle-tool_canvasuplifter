@@ -190,4 +190,38 @@ final class question_xml_writer_test extends \advanced_testcase {
         $dom = new \DOMDocument();
         $this->assertTrue($dom->loadXML($xml));
     }
+
+    /**
+     * Reserved characters in preserved subdirectories are percent-encoded in the
+     * pluginfile URL (but stored literally), and a sibling folder sharing a name
+     * prefix is not treated as inside the assessment folder.
+     *
+     * @return void
+     */
+    public function test_media_url_encoding_and_traversal(): void {
+        $base = make_request_directory();
+        // The assessment folder and a sibling that shares its name prefix.
+        mkdir($base . '/a1');
+        mkdir($base . '/a1/sub dir');
+        mkdir($base . '/a10');
+        file_put_contents($base . '/a1/sub dir/clip.mp3', 'OK');
+        file_put_contents($base . '/a10/secret.pdf', 'SECRET');
+
+        $q = $this->choice();
+        $q->questiontext = '<p><audio src="sub%20dir/clip.mp3"></audio>'
+            . '<a href="../a10/secret.pdf">leak</a></p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $base . '/a1');
+
+        // The space is encoded in the URL but the stored path keeps it literal.
+        $this->assertStringContainsString('src="@@PLUGINFILE@@/sub%20dir/clip.mp3"', $xml);
+        $this->assertStringContainsString('<file name="clip.mp3" path="/sub dir/"', $xml);
+        // The sibling-folder file is NOT imported; the link is left untouched.
+        $this->assertStringContainsString('href="../a10/secret.pdf"', $xml);
+        $this->assertStringNotContainsString('secret.pdf" path', $xml);
+        $this->assertStringNotContainsString(base64_encode('SECRET'), $xml);
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
 }

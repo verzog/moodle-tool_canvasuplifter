@@ -224,7 +224,13 @@ class question_xml_writer {
                         'base64' => base64_encode((string) file_get_contents($abs)),
                     ];
                 }
-                $url = '@@PLUGINFILE@@' . $filepath . rawurlencode($name) . $suffix;
+                // Percent-encode each path segment for the URL while the stored
+                // <file path> keeps the literal (decoded) directory names.
+                $urlpath = '/';
+                if ($subdir !== '' && $subdir !== '.') {
+                    $urlpath = '/' . implode('/', array_map('rawurlencode', explode('/', $subdir))) . '/';
+                }
+                $url = '@@PLUGINFILE@@' . $urlpath . rawurlencode($name) . $suffix;
                 return $m[1] . '=' . $quote . $url . $quote;
             },
             $tag
@@ -244,7 +250,12 @@ class question_xml_writer {
         if ($abs === false || $root === false) {
             return null;
         }
-        return strpos($abs, $root) === 0 ? $abs : null;
+        // Require an exact match or a directory-boundary match so a sibling
+        // folder sharing a name prefix (e.g. /a10 next to /a1) is not accepted.
+        if ($abs !== $root && !str_starts_with($abs, $root . DIRECTORY_SEPARATOR)) {
+            return null;
+        }
+        return $abs;
     }
 
     /**
