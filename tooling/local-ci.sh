@@ -152,8 +152,22 @@ run_all() {
   log "All checks passed."
 }
 
+# Moodle's English language pack uses the en_AU.UTF-8 locale, which PHPUnit
+# refuses to run without (CI runs locale-gen for this reason).
+ensure_locale() {
+  if locale -a 2>/dev/null | grep -qiE 'en_AU\.utf'; then
+    return 0
+  fi
+  if [ "$(id -u)" = "0" ] && command -v locale-gen >/dev/null 2>&1; then
+    log "Generating the en_AU.UTF-8 locale."
+    apt-get install -y --no-install-recommends locales >/dev/null 2>&1 || true
+    locale-gen en_AU.UTF-8 >/dev/null 2>&1 || true
+  fi
+}
+
 main() {
   ensure_php_ini
+  ensure_locale
   start_postgres
   install_ci_tool
 
