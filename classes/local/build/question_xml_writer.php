@@ -147,8 +147,8 @@ class question_xml_writer {
         $rewritten = $this->embed_files($html, $imagedir, $files);
         $textandfiles = "<text>" . $this->cdata($rewritten) . "</text>";
         foreach ($files as $file) {
-            $textandfiles .= "\n      <file name=\"" . htmlspecialchars($file['name'], ENT_XML1)
-                . "\" path=\"" . htmlspecialchars($file['path'], ENT_XML1)
+            $textandfiles .= "\n      <file name=\"" . htmlspecialchars($file['name'], ENT_QUOTES | ENT_XML1)
+                . "\" path=\"" . htmlspecialchars($file['path'], ENT_QUOTES | ENT_XML1)
                 . "\" encoding=\"base64\">" . $file['base64'] . "</file>";
         }
         if ($bare || $tag === '__text') {
@@ -176,7 +176,7 @@ class question_xml_writer {
             return $html;
         }
         return preg_replace_callback(
-            '~<(?:img|video|audio|source|track|a|embed|object)\b[^>]*>~i',
+            '~<(?:img|video|audio|source|track|a|embed|object)\b(?:"[^"]*"|\'[^\']*\'|[^>])*>~i',
             function ($tag) use ($imagedir, &$files) {
                 return $this->rewrite_tag_refs($tag[0], $imagedir, $files);
             },
@@ -198,6 +198,8 @@ class question_xml_writer {
             function ($m) use ($imagedir, &$files) {
                 $quote = $m[2][0];
                 $value = $quote === '"' ? $m[3] : ($m[4] ?? '');
+                // The attribute is HTML, so decode entities before treating it as a URL.
+                $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5);
                 if ($value === '' || preg_match('~^(https?:|data:|mailto:|tel:|@@PLUGINFILE@@|#)~i', $value)) {
                     return $m[0];
                 }
@@ -208,14 +210,19 @@ class question_xml_writer {
                     $path = $sm[1];
                     $suffix = $sm[2];
                 }
-                $rel = rawurldecode($path);
-                $abs = $this->safe_join($imagedir, $rel);
+                $abs = $this->safe_join($imagedir, rawurldecode($path));
                 if ($abs === null || !is_file($abs)) {
                     return $m[0];
                 }
-                $name = basename($rel);
-                $subdir = trim(str_replace('\\', '/', dirname($rel)), '/');
-                $filepath = ($subdir === '' || $subdir === '.') ? '/' : '/' . $subdir . '/';
+                // Derive the name and subdirectory from the canonical path inside
+                // the assessment folder, so dot segments resolve consistently in
+                // both the stored <file path> and the rewritten URL.
+                $root = realpath($imagedir);
+                $relcanon = str_replace('\\', '/', ltrim(substr($abs, strlen((string) $root)), '/\\'));
+                $name = basename($relcanon);
+                $subdir = trim(dirname($relcanon), '/');
+                $subdir = ($subdir === '' || $subdir === '.') ? '' : $subdir;
+                $filepath = $subdir === '' ? '/' : '/' . $subdir . '/';
                 $key = $filepath . $name;
                 if (!isset($files[$key])) {
                     $files[$key] = [
@@ -225,11 +232,10 @@ class question_xml_writer {
                     ];
                 }
                 // Percent-encode each path segment for the URL while the stored
-                // <file path> keeps the literal (decoded) directory names.
-                $urlpath = '/';
-                if ($subdir !== '' && $subdir !== '.') {
-                    $urlpath = '/' . implode('/', array_map('rawurlencode', explode('/', $subdir))) . '/';
-                }
+                // <file path> keeps the literal directory names.
+                $urlpath = $subdir === ''
+                    ? '/'
+                    : '/' . implode('/', array_map('rawurlencode', explode('/', $subdir))) . '/';
                 $url = '@@PLUGINFILE@@' . $urlpath . rawurlencode($name) . $suffix;
                 return $m[1] . '=' . $quote . $url . $quote;
             },

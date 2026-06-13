@@ -224,4 +224,45 @@ final class question_xml_writer_test extends \advanced_testcase {
         $dom = new \DOMDocument();
         $this->assertTrue($dom->loadXML($xml));
     }
+
+    /**
+     * Dot segments resolve to the canonical file; HTML entities and quotes in
+     * filenames are handled; and a quoted '>' in an earlier attribute doesn't
+     * hide a later media reference.
+     *
+     * @return void
+     */
+    public function test_media_canonical_paths_and_entities(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/sub');
+        file_put_contents($dir . '/clip.mp3', 'CLIP');
+        file_put_contents($dir . '/Tom & Jerry.pdf', 'TJ');
+        file_put_contents($dir . '/a"b.pdf', 'QUOTE');
+        file_put_contents($dir . '/slides.pdf', 'SLIDES');
+
+        $q = $this->choice();
+        $q->questiontext =
+            '<p><audio src="sub/../clip.mp3"></audio></p>'
+            . '<p><a href="Tom%20&amp;%20Jerry.pdf">tj</a></p>'
+            . '<p><a href="a%22b.pdf">q</a></p>'
+            . '<p><a title="2 > 1" href="slides.pdf">s</a></p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
+
+        // Dot segments collapse to the canonical root-level file.
+        $this->assertStringContainsString('src="@@PLUGINFILE@@/clip.mp3"', $xml);
+        $this->assertStringContainsString('<file name="clip.mp3" path="/"', $xml);
+        $this->assertStringNotContainsString('/sub/../', $xml);
+        // An HTML entity in the filename is decoded for lookup and the file imported.
+        $this->assertStringContainsString('@@PLUGINFILE@@/Tom%20%26%20Jerry.pdf', $xml);
+        $this->assertStringContainsString(base64_encode('TJ'), $xml);
+        // A quote in the stored name is XML-escaped, keeping the document well-formed.
+        $this->assertStringContainsString('a&quot;b.pdf', $xml);
+        $this->assertStringContainsString(base64_encode('QUOTE'), $xml);
+        // A quoted '>' earlier in the tag doesn't hide the later href.
+        $this->assertStringContainsString('@@PLUGINFILE@@/slides.pdf', $xml);
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
 }
