@@ -20,35 +20,59 @@ PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKSPACE="${WORKSPACE:-$HOME/.moodle-plugin-ci}"
 MOODLE_BRANCH="${MOODLE_BRANCH:-MOODLE_500_STABLE}"
 PGPORT="${PGPORT:-5432}"
+PGUSER="postgres"
+PGPASS="postgres"
 PGCONTAINER="mpci-postgres"
 CI_VERSION="^4"
 
 log() { printf '\n\033[1;36m[local-ci]\033[0m %s\n' "$*"; }
 
+db_up() {
+  PGPASSWORD="$PGPASS" psql -h 127.0.0.1 -p "$PGPORT" -U "$PGUSER" -tAc 'select 1' >/dev/null 2>&1
+}
+
+# Prefer a Docker Postgres (matches CI exactly); fall back to a locally
+# installed cluster when no Docker daemon is available (e.g. this sandbox).
 start_postgres() {
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "docker is required to run the database; not found." >&2
-    exit 1
+  if db_up; then
+    log "Postgres already accepting connections on ${PGPORT}."
+    return 0
   fi
-  if [ -n "$(docker ps -q -f "name=^${PGCONTAINER}$")" ]; then
-    log "Postgres container already running."
+  if docker info >/dev/null 2>&1; then
+    start_postgres_docker
   else
-    docker rm -f "$PGCONTAINER" >/dev/null 2>&1 || true
-    log "Starting Postgres 16 (container ${PGCONTAINER}, port ${PGPORT})."
-    docker run -d --name "$PGCONTAINER" \
-      -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
-      -e POSTGRES_HOST_AUTH_METHOD=trust \
-      -p "${PGPORT}:5432" postgres:16 >/dev/null
+    start_postgres_local
   fi
   log "Waiting for Postgres to accept connections."
   for _ in $(seq 1 30); do
-    if docker exec "$PGCONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
-      return 0
-    fi
+    db_up && return 0
     sleep 1
   done
   echo "Postgres did not become ready in time." >&2
   exit 1
+}
+
+start_postgres_docker() {
+  docker rm -f "$PGCONTAINER" >/dev/null 2>&1 || true
+  log "Starting Postgres 16 (container ${PGCONTAINER}, port ${PGPORT})."
+  docker run -d --name "$PGCONTAINER" \
+    -e POSTGRES_USER="$PGUSER" -e POSTGRES_PASSWORD="$PGPASS" \
+    -p "${PGPORT}:5432" postgres:16 >/dev/null
+}
+
+start_postgres_local() {
+  if [ "$(id -u)" != "0" ]; then
+    echo "No Docker daemon and not root: cannot provision Postgres locally." >&2
+    exit 1
+  fi
+  if ! ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; then
+    log "No Docker daemon; installing PostgreSQL via apt."
+    apt-get update -qq && apt-get install -y --no-install-recommends postgresql
+  fi
+  log "Starting the local PostgreSQL cluster."
+  service postgresql start || true
+  # Give the bundled 'postgres' role a known password so TCP auth works.
+  sudo -u postgres psql -tAc "ALTER USER ${PGUSER} PASSWORD '${PGPASS}';" >/dev/null 2>&1 || true
 }
 
 install_ci_tool() {
@@ -65,7 +89,8 @@ install_moodle() {
   rm -rf "$WORKSPACE/moodle" "$WORKSPACE/moodledata"*
   ( cd "$WORKSPACE" && DB=pgsql MOODLE_BRANCH="$MOODLE_BRANCH" \
       "$WORKSPACE/ci/bin/moodle-plugin-ci" install \
-        --plugin "$PLUGIN_DIR" --db-host=127.0.0.1 --db-port="$PGPORT" )
+        --plugin "$PLUGIN_DIR" --db-host=127.0.0.1 --db-port="$PGPORT" \
+        --db-user="$PGUSER" --db-pass="$PGPASS" )
 }
 
 # Keep the installed copy of the plugin in sync with the working tree so a
