@@ -34,13 +34,14 @@ use tool_canvasuplifter\local\model\item;
  */
 class course_builder {
     /** @var string[] Item kinds the builder can create in the current phase. */
-    public const BUILDS_NOW = [item::KIND_PAGE, item::KIND_URL, item::KIND_FILE];
+    public const BUILDS_NOW = [item::KIND_PAGE, item::KIND_URL, item::KIND_FILE, item::KIND_ASSIGNMENT];
 
     /** @var array<string, string> Maps an item kind to its Moodle module name. */
     private const KIND_TO_MOD = [
         item::KIND_PAGE => 'page',
         item::KIND_URL => 'url',
         item::KIND_FILE => 'resource',
+        item::KIND_ASSIGNMENT => 'assign',
     ];
 
     /** @var int Course category for the new course. */
@@ -108,9 +109,12 @@ class course_builder {
 
         $this->report_progress(5, get_string('progresscoursecreated', 'tool_canvasuplifter'));
 
-        $pagebuilder = new page_builder($this->packageroot);
-        $urlbuilder = new url_builder($this->packageroot);
-        $filebuilder = new file_builder($this->packageroot);
+        $builders = [
+            item::KIND_PAGE => new page_builder($this->packageroot),
+            item::KIND_URL => new url_builder($this->packageroot),
+            item::KIND_FILE => new file_builder($this->packageroot),
+            item::KIND_ASSIGNMENT => new assign_builder($this->packageroot),
+        ];
 
         $createdcounts = [];
         $skippedcounts = [];
@@ -122,64 +126,31 @@ class course_builder {
 
         foreach ($coursemodel->sections as $index => $sectionmodel) {
             $sectionnum = $index + 1;
-            course_create_sections_if_missing($course, [$sectionnum]);
-            $section = get_fast_modinfo($course)->get_section_info($sectionnum);
-            if ($sectionmodel->title !== '' && $section) {
-                course_update_section($course, $section, ['name' => $sectionmodel->title]);
-            }
-
+            $this->prepare_section($course, $sectionnum, $sectionmodel->title);
             foreach ($sectionmodel->items as $modelitem) {
-                $cmid = null;
-                try {
-                    switch ($modelitem->kind) {
-                        case item::KIND_PAGE:
-                            $cmid = $pagebuilder->build($course, $sectionnum, $modelitem);
-                            break;
-                        case item::KIND_URL:
-                            $cmid = $urlbuilder->build($course, $sectionnum, $modelitem);
-                            break;
-                        case item::KIND_FILE:
-                            $cmid = $filebuilder->build($course, $sectionnum, $modelitem);
-                            break;
-                    }
-                } catch (\Throwable $e) {
-                    $msg = sprintf(
-                        'failed to build %s "%s": %s',
-                        $modelitem->kind,
-                        $modelitem->title,
-                        $e->getMessage()
-                    );
-                    mtrace('tool_canvasuplifter: ' . $msg);
-                    $skipreasons[] = $msg;
-                    $cmid = null;
-                }
-                if ($cmid === null && in_array($modelitem->kind, self::BUILDS_NOW, true)) {
-                    // The kind has a builder but it returned null.
-                    $skipreasons[] = sprintf(
-                        '%s "%s" (id=%s) — builder could not find payload; href="%s" files=[%s]',
-                        $modelitem->kind,
-                        $modelitem->title,
-                        $modelitem->identifier,
-                        $modelitem->href,
-                        implode(',', $modelitem->files)
-                    );
-                }
-                if ($cmid !== null) {
-                    $createdcounts[$modelitem->kind] = ($createdcounts[$modelitem->kind] ?? 0) + 1;
-                    $this->record_link_target($urlmap, $modelitem, $cmid);
-                    if ($modelitem->kind === item::KIND_PAGE) {
-                        $builtpagecmids[] = $cmid;
-                    }
-                } else {
-                    $skippedcounts[$modelitem->kind] = ($skippedcounts[$modelitem->kind] ?? 0) + 1;
-                }
-                $processed++;
-                $percent = 5 + (int) round(90 * $processed / $totalitems);
-                $this->report_progress($percent, get_string('progressitem', 'tool_canvasuplifter', [
-                    'done' => $processed,
-                    'total' => $totalitems,
-                    'kind' => $modelitem->kind,
-                ]));
+                $cmid = $this->build_one($course, $sectionnum, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons);
+                $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
+                $this->report_progress($this->item_percent(++$processed, $totalitems), get_string(
+                    'progressitem',
+                    'tool_canvasuplifter',
+                    ['done' => $processed, 'total' => $totalitems, 'kind' => $modelitem->kind]
+                ));
+            }
+        }
+
+        // Unreferenced resources are imported into a dedicated section so nothing is lost.
+        $orphansection = 0;
+        if (!empty($coursemodel->orphans)) {
+            $orphansection = count($coursemodel->sections) + 1;
+            $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
+            foreach ($coursemodel->orphans as $modelitem) {
+                $cmid = $this->build_one($course, $orphansection, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons);
+                $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
+                $this->report_progress($this->item_percent(++$processed, $totalitems), get_string(
+                    'progressitem',
+                    'tool_canvasuplifter',
+                    ['done' => $processed, 'total' => $totalitems, 'kind' => $modelitem->kind]
+                ));
             }
         }
 
@@ -189,6 +160,7 @@ class course_builder {
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
         $skippedtotal = $itemcount - $createdtotal;
+        $sectioncount = count($coursemodel->sections) + ($orphansection > 0 ? 1 : 0);
 
         // Make sure section caches reflect everything we just built.
         rebuild_course_cache($course->id, true);
@@ -207,7 +179,7 @@ class course_builder {
 
         return [
             'courseid' => (int) $course->id,
-            'sectioncount' => count($coursemodel->sections),
+            'sectioncount' => $sectioncount,
             'itemcount' => $itemcount,
             'created' => $createdtotal,
             'createdcounts' => $createdcounts,
@@ -228,6 +200,103 @@ class course_builder {
     private function report_progress(int $percent, string $message): void {
         if ($this->jobs !== null && $this->jobid > 0) {
             $this->jobs->set_progress($this->jobid, $percent, $message);
+        }
+    }
+
+    /**
+     * Map item progress (5%..95%) for a processed count.
+     *
+     * @param int $processed Items processed so far.
+     * @param int $total Total items.
+     * @return int Percentage 0-100.
+     */
+    private function item_percent(int $processed, int $total): int {
+        return 5 + (int) round(90 * $processed / max(1, $total));
+    }
+
+    /**
+     * Create the section if needed and set its name.
+     *
+     * @param \stdClass $course Course record.
+     * @param int $sectionnum Section number.
+     * @param string $title Section title (ignored when empty).
+     * @return void
+     */
+    private function prepare_section(\stdClass $course, int $sectionnum, string $title): void {
+        course_create_sections_if_missing($course, [$sectionnum]);
+        $section = get_fast_modinfo($course)->get_section_info($sectionnum);
+        if ($title !== '' && $section) {
+            course_update_section($course, $section, ['name' => $title]);
+        }
+    }
+
+    /**
+     * Build a single item, recording link targets and skip reasons.
+     *
+     * @param \stdClass $course Course record.
+     * @param int $sectionnum Section number to place it in.
+     * @param item $modelitem The item to build.
+     * @param array $builders Map of kind => builder object exposing build().
+     * @param array $urlmap Link map (modified in place).
+     * @param int[] $builtpagecmids Page cmids collected for the link pass (modified in place).
+     * @param string[] $skipreasons Diagnostic messages (modified in place).
+     * @return int|null Created course module id, or null if it could not be built.
+     */
+    private function build_one(
+        \stdClass $course,
+        int $sectionnum,
+        item $modelitem,
+        array $builders,
+        array &$urlmap,
+        array &$builtpagecmids,
+        array &$skipreasons
+    ): ?int {
+        $cmid = null;
+        $builder = $builders[$modelitem->kind] ?? null;
+        if ($builder !== null) {
+            try {
+                $cmid = $builder->build($course, $sectionnum, $modelitem);
+            } catch (\Throwable $e) {
+                $msg = sprintf('failed to build %s "%s": %s', $modelitem->kind, $modelitem->title, $e->getMessage());
+                mtrace('tool_canvasuplifter: ' . $msg);
+                $skipreasons[] = $msg;
+                $cmid = null;
+            }
+        }
+        if ($cmid === null && in_array($modelitem->kind, self::BUILDS_NOW, true)) {
+            // The kind has a builder but it returned null.
+            $skipreasons[] = sprintf(
+                '%s "%s" (id=%s) — builder could not find payload; href="%s" files=[%s]',
+                $modelitem->kind,
+                $modelitem->title,
+                $modelitem->identifier,
+                $modelitem->href,
+                implode(',', $modelitem->files)
+            );
+        }
+        if ($cmid !== null) {
+            $this->record_link_target($urlmap, $modelitem, $cmid);
+            if ($modelitem->kind === item::KIND_PAGE) {
+                $builtpagecmids[] = $cmid;
+            }
+        }
+        return $cmid;
+    }
+
+    /**
+     * Increment the created or skipped counter for an item kind.
+     *
+     * @param int|null $cmid The build result (null = skipped).
+     * @param string $kind The item kind.
+     * @param array $createdcounts Created tallies (modified in place).
+     * @param array $skippedcounts Skipped tallies (modified in place).
+     * @return void
+     */
+    private function tally(?int $cmid, string $kind, array &$createdcounts, array &$skippedcounts): void {
+        if ($cmid !== null) {
+            $createdcounts[$kind] = ($createdcounts[$kind] ?? 0) + 1;
+        } else {
+            $skippedcounts[$kind] = ($skippedcounts[$kind] ?? 0) + 1;
         }
     }
 

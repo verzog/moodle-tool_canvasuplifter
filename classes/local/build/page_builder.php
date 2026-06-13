@@ -122,36 +122,11 @@ class page_builder {
     private function embed_files(int $cmid, int $instanceid, string $content): void {
         global $DB;
 
-        $result = (new link_rewriter())->rewrite_files($content, $this->packageroot);
-        if (empty($result['files'])) {
-            return;
-        }
-
         $context = \context_module::instance($cmid);
-        $fs = get_file_storage();
-        foreach ($result['files'] as $file) {
-            $exists = $fs->file_exists(
-                $context->id,
-                'mod_page',
-                'content',
-                0,
-                $file['filepath'],
-                $file['filename']
-            );
-            if ($exists) {
-                continue;
-            }
-            $fs->create_file_from_pathname([
-                'contextid' => $context->id,
-                'component' => 'mod_page',
-                'filearea' => 'content',
-                'itemid' => 0,
-                'filepath' => $file['filepath'],
-                'filename' => $file['filename'],
-            ], $file['package']);
+        $newcontent = (new file_embedder($this->packageroot))->embed($context->id, 'mod_page', 'content', $content);
+        if ($newcontent !== $content) {
+            $DB->set_field('page', 'content', $newcontent, ['id' => $instanceid]);
         }
-
-        $DB->set_field('page', 'content', $result['html'], ['id' => $instanceid]);
     }
 
     /**

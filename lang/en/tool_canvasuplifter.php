@@ -24,6 +24,7 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+$string['additionalresources'] = 'Additional resources';
 $string['analyse'] = 'Analyse package';
 $string['analyseanother'] = 'Analyse another package';
 $string['buildcourse'] = 'Build course';
@@ -67,15 +68,16 @@ $string['note_assignment'] = 'Name, instructions and due dates will convert; rub
 $string['note_discussion'] = 'Discussion topics will become forums; not every thread or reply may carry across.';
 $string['note_file'] = 'Files convert directly to file resources.';
 $string['note_lti'] = 'Imported as a placeholder; keys and secrets must be reconfigured per site.';
-$string['note_page'] = 'Pages convert. Embedded images and internal Canvas links '
-    . 'are not yet rewritten, so some images may not display.';
+$string['note_page'] = 'Pages convert, including embedded images and internal links to other '
+    . 'pages, files and URLs. Links to content types that are not built yet are left unchanged.';
 $string['note_questionbank'] = 'Imported as question bank (mod_qbank) activities.';
 $string['note_quiz'] = 'Questions convert only where the QTI question type is supported.';
 $string['note_unknown'] = 'Resource type not recognised; these are skipped.';
 $string['note_url'] = 'External links convert directly.';
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';
 $string['openbuiltcourse'] = 'Open the built course';
-$string['orphansexplain'] = 'These resources are in the package but are not linked from any module, so they will be skipped.';
+$string['orphansexplain'] = 'These resources are in the package but are not linked from any module. '
+    . 'They are imported into an "Additional resources" section so nothing is lost.';
 $string['orphansheading'] = 'Unreferenced resources';
 $string['packagefile'] = 'Canvas export (.imscc)';
 $string['packagefile_help'] = 'Upload a course exported from Canvas as a Common Cartridge file. '
