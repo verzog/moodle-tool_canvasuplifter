@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter\local\build;
 
 use stdClass;
+use tool_canvasuplifter\local\model\qti_question;
 
 /**
  * Imports parsed QTI questions into a Moodle question category.
@@ -31,6 +32,37 @@ use stdClass;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class question_importer {
+    /**
+     * Summarise why a set of parsed questions yielded nothing importable, for
+     * the skip report: how many were parsed, how many were a supported Moodle
+     * type, and the Canvas profiles (or types) of those that can't convert.
+     *
+     * @param array $all All parsed qti_question objects.
+     * @param array $supported Those of a supported Moodle type.
+     * @return string
+     */
+    public static function describe_unconvertible(array $all, array $supported): string {
+        $profiles = [];
+        foreach ($all as $question) {
+            if ($question->is_importable()) {
+                continue;
+            }
+            $label = $question->profile !== '' ? $question->profile
+                : ($question->type !== qti_question::TYPE_UNSUPPORTED ? $question->type : '(unknown)');
+            $profiles[$label] = ($profiles[$label] ?? 0) + 1;
+        }
+        $parts = [];
+        foreach ($profiles as $label => $count) {
+            $parts[] = $label . ' (' . $count . ')';
+        }
+        return sprintf(
+            'no convertible questions: %d parsed, %d of a supported type, 0 importable; unconvertible: %s',
+            count($all),
+            count($supported),
+            $parts ? implode(', ', $parts) : 'none'
+        );
+    }
+
     /**
      * Import questions into the default category of a context.
      *
