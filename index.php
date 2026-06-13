@@ -199,7 +199,7 @@ if ($report === null) {
         ];
         foreach ($matrix['rows'] as $mrow) {
             $typekey = 'qtype_' . $mrow['label'];
-            $typelabel = $mrow['supported'] && get_string_manager()->string_exists($typekey, 'tool_canvasuplifter')
+            $typelabel = get_string_manager()->string_exists($typekey, 'tool_canvasuplifter')
                 ? get_string($typekey, 'tool_canvasuplifter')
                 : $mrow['label'];
             $matrixtable->data[] = [
