@@ -38,11 +38,16 @@ class qti_parser {
     /**
      * Parse an assessment XML document.
      *
+     * The 'unresolved' count is how many items are bare references — an ident
+     * with no presentation, i.e. a question whose body Canvas did not export
+     * into the package (common with New Quizzes). It lets callers tell genuine
+     * data loss apart from a truly empty assessment.
+     *
      * @param string $xml The QTI assessment document.
-     * @return array{title: string, questions: array} Title and an array of {@see qti_question}.
+     * @return array{title: string, questions: array, unresolved: int} Title, parsed questions and bare-reference count.
      */
     public function parse(string $xml): array {
-        $result = ['title' => '', 'questions' => []];
+        $result = ['title' => '', 'questions' => [], 'unresolved' => 0];
         if (trim($xml) === '') {
             return $result;
         }
@@ -64,8 +69,13 @@ class qti_parser {
             if (!($itemnode instanceof DOMElement)) {
                 continue;
             }
-            // Skip bare references (exam shells point at items with no presentation).
+            // A bare reference (an ident with no presentation) points at a
+            // question whose body is not in this file; count it so callers can
+            // report missing content rather than an empty assessment.
             if ($this->first_child_element($itemnode, 'presentation') === null) {
+                if ($itemnode->getAttribute('ident') !== '') {
+                    $result['unresolved']++;
+                }
                 continue;
             }
             $result['questions'][] = $this->build_question($itemnode);
