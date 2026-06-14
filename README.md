@@ -5,9 +5,10 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 > **Status: Phase 1 — early build.** This release can both *analyse* a Canvas
 > package (report what it contains and how cleanly each part maps to Moodle)
 > and *build* a new Moodle course from it. The builder currently creates
-> sections plus pages (`mod_page`), files (`mod_resource`), URLs (`mod_url`)
-> and assignments (`mod_assign`); other content types (forums, quizzes, LTI)
-> are reported as skipped and will land in later phases. See the Roadmap below.
+> sections plus pages (`mod_page`), files (`mod_resource`), URLs (`mod_url`),
+> assignments (`mod_assign`), quizzes and question banks (`mod_quiz` /
+> `mod_qbank`) and forums (`mod_forum`); remaining content types (LTI) are
+> reported as skipped and will land in later phases. See the Roadmap below.
 
 ## Requirements
 
@@ -53,7 +54,10 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
   **standalone/unreferenced** assessment becomes a question bank (`mod_qbank`).
   Unsupported question types are skipped, and multi-blank fill-in-blank collapses
   to a single short-answer.
-- Forums and LTI tools are reported but not yet built.
+- Discussion topics build as forums, seeded with the Canvas prompt as the
+  opening post. Canvas does not export the replies, so existing threads do not
+  carry across.
+- LTI tools are reported but not yet built.
 
 ### Canvas quiz exports (QTI 1.2)
 

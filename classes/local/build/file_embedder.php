@@ -46,15 +46,17 @@ class file_embedder {
     /**
      * Import referenced files into a module file area and rewrite the HTML.
      *
-     * Files are stored at itemid 0 (the convention for intro/content areas).
+     * Files default to itemid 0 (the convention for intro/content areas); pass an
+     * explicit itemid for areas keyed by record (e.g. a forum post).
      *
      * @param int $contextid Module context id.
      * @param string $component Frankenstyle component, e.g. "mod_page".
      * @param string $filearea File area, e.g. "content" or "intro".
      * @param string $html The HTML to scan and rewrite.
+     * @param int $itemid File area item id (default 0).
      * @return string The rewritten HTML (unchanged if nothing was embedded).
      */
-    public function embed(int $contextid, string $component, string $filearea, string $html): string {
+    public function embed(int $contextid, string $component, string $filearea, string $html, int $itemid = 0): string {
         $result = (new link_rewriter())->rewrite_files($html, $this->packageroot);
         if (empty($result['files'])) {
             return $html;
@@ -66,7 +68,7 @@ class file_embedder {
                 $contextid,
                 $component,
                 $filearea,
-                0,
+                $itemid,
                 $file['filepath'],
                 $file['filename']
             );
@@ -77,7 +79,7 @@ class file_embedder {
                 'contextid' => $contextid,
                 'component' => $component,
                 'filearea' => $filearea,
-                'itemid' => 0,
+                'itemid' => $itemid,
                 'filepath' => $file['filepath'],
                 'filename' => $file['filename'],
             ], $file['package']);
