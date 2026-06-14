@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter\local\build;
 
 use DOMDocument;
+use DOMElement;
 use stdClass;
 use tool_canvasuplifter\local\model\item;
 
@@ -76,7 +77,7 @@ class forum_builder {
         $created = add_moduleinfo($moduleinfo, $course);
         $cmid = (int) $created->coursemodule;
 
-        $this->seed_discussion($course, (int) $created->instance, $cmid, $name, $topic['text']);
+        $this->seed_discussion($course, (int) $created->instance, $cmid, $name, $topic);
 
         return $cmid;
     }
@@ -89,19 +90,30 @@ class forum_builder {
      * @param int $forumid The created forum instance id.
      * @param int $cmid The forum course module id.
      * @param string $name The thread subject.
-     * @param string $prompt The prompt HTML (may be empty).
+     * @param array $topic Parsed topic: text, plain (bool), attachments (string[]).
      * @return void
      */
-    private function seed_discussion(stdClass $course, int $forumid, int $cmid, string $name, string $prompt): void {
+    private function seed_discussion(stdClass $course, int $forumid, int $cmid, string $name, array $topic): void {
         global $DB;
 
-        $message = trim($prompt) !== '' ? $prompt : ('<p>' . s($name) . '</p>');
+        $prompt = (string) ($topic['text'] ?? '');
+        $plain = !empty($topic['plain']);
+        // Honour a plain-text prompt so angle brackets and line breaks survive;
+        // an empty prompt falls back to the title as HTML.
+        if (trim($prompt) !== '') {
+            $message = $prompt;
+            $format = $plain ? FORMAT_PLAIN : FORMAT_HTML;
+        } else {
+            $message = '<p>' . s($name) . '</p>';
+            $format = FORMAT_HTML;
+        }
+
         $discussion = (object) [
             'course' => $course->id,
             'forum' => $forumid,
             'name' => shorten_text($name, 255),
             'message' => $message,
-            'messageformat' => FORMAT_HTML,
+            'messageformat' => $format,
             'messagetrust' => 0,
             'mailnow' => 0,
             'groupid' => -1,
@@ -111,15 +123,58 @@ class forum_builder {
             return;
         }
 
-        // Import prompt media into the first post's file area and rewrite refs.
         $firstpostid = (int) $DB->get_field('forum_discussions', 'firstpost', ['id' => $discussionid]);
-        if ($firstpostid > 0) {
-            $context = \context_module::instance($cmid);
+        if ($firstpostid <= 0) {
+            return;
+        }
+        $context = \context_module::instance($cmid);
+
+        // Import prompt media (HTML only) into the first post and rewrite refs.
+        if ($format === FORMAT_HTML) {
             $newmessage = (new file_embedder($this->packageroot))
                 ->embed($context->id, 'mod_forum', 'post', $message, $firstpostid);
             if ($newmessage !== $message) {
                 $DB->set_field('forum_posts', 'message', $newmessage, ['id' => $firstpostid]);
             }
+        }
+
+        $this->import_attachments($context->id, $firstpostid, (array) ($topic['attachments'] ?? []));
+    }
+
+    /**
+     * Import the topic's declared attachment files as forum post attachments.
+     *
+     * @param int $contextid The forum module context id.
+     * @param int $postid The first post's id.
+     * @param string[] $hrefs Package-relative attachment paths.
+     * @return void
+     */
+    private function import_attachments(int $contextid, int $postid, array $hrefs): void {
+        global $DB;
+        $fs = get_file_storage();
+        $stored = 0;
+        foreach ($hrefs as $href) {
+            $absolute = safe_path::within($this->packageroot, $href);
+            if ($absolute === null || !is_file($absolute)) {
+                continue;
+            }
+            $filename = clean_param(basename($href), PARAM_FILE);
+            if ($filename === '' || $fs->file_exists($contextid, 'mod_forum', 'attachment', $postid, '/', $filename)) {
+                continue;
+            }
+            $fs->create_file_from_pathname([
+                'contextid' => $contextid,
+                'component' => 'mod_forum',
+                'filearea' => 'attachment',
+                'itemid' => $postid,
+                'filepath' => '/',
+                'filename' => $filename,
+            ], $absolute);
+            $stored++;
+        }
+        if ($stored > 0) {
+            // Match mod_forum, which flags a post carrying attachments with "1".
+            $DB->set_field('forum_posts', 'attachment', '1', ['id' => $postid]);
         }
     }
 
@@ -179,7 +234,7 @@ class forum_builder {
      * namespace-agnostically with DOMDocument.
      *
      * @param item $modelitem The discussion item.
-     * @return array|null ['title' => string, 'text' => string] or null if unreadable.
+     * @return array|null ['title','text','plain'=>bool,'attachments'=>string[]] or null if unreadable.
      */
     private function read_topic(item $modelitem): ?array {
         $candidates = $modelitem->files;
@@ -206,7 +261,7 @@ class forum_builder {
      * Parse a Common Cartridge discussion-topic XML document.
      *
      * @param string $xml The topic XML.
-     * @return array|null ['title' => string, 'text' => string] or null if not a topic.
+     * @return array|null ['title','text','plain'=>bool,'attachments'=>string[]] or null if not a topic.
      */
     private function parse_topic(string $xml): ?array {
         if (trim($xml) === '') {
@@ -226,9 +281,24 @@ class forum_builder {
         }
         $titles = $dom->getElementsByTagNameNS('*', 'title');
         $texts = $dom->getElementsByTagNameNS('*', 'text');
+        $text = $texts->item(0);
+        // Treat the body as plain text only when the schema says so explicitly;
+        // Canvas marks HTML as texttype="text/html" and omitting it is rare.
+        $plain = $text instanceof DOMElement
+            && strtolower(trim($text->getAttribute('texttype'))) === 'text/plain';
+
+        $attachments = [];
+        foreach ($dom->getElementsByTagNameNS('*', 'attachment') as $att) {
+            if ($att instanceof DOMElement && trim($att->getAttribute('href')) !== '') {
+                $attachments[] = trim($att->getAttribute('href'));
+            }
+        }
+
         return [
             'title' => $titles->length > 0 ? trim($titles->item(0)->textContent) : '',
-            'text' => $texts->length > 0 ? trim($texts->item(0)->textContent) : '',
+            'text' => $text !== null ? trim($text->textContent) : '',
+            'plain' => $plain,
+            'attachments' => $attachments,
         ];
     }
 }

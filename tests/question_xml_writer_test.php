@@ -148,6 +148,55 @@ final class question_xml_writer_test extends \advanced_testcase {
     }
 
     /**
+     * A fragment that starts with a media element (which libxml would otherwise
+     * hoist out of the body) keeps the element and still embeds the file.
+     *
+     * @return void
+     */
+    public function test_leading_media_is_preserved_and_embedded(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/clip.mp4', 'FAKEMP4');
+
+        $q = $this->choice();
+        $q->questiontext = '<video src="clip.mp4"></video><p>watch</p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
+
+        $this->assertStringContainsString('src="@@PLUGINFILE@@/clip.mp4"', $xml);
+        $this->assertStringContainsString('<file name="clip.mp4" path="/" encoding="base64">', $xml);
+        $this->assertStringContainsString('watch', $xml);
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
+
+    /**
+     * HTML5 named entities survive the media round-trip: in text they are kept
+     * faithfully, and in a bundled URL they are decoded so the file resolves.
+     *
+     * @return void
+     */
+    public function test_html5_entities_survive_media_roundtrip(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/sub');
+        file_put_contents($dir . '/sub/pic.png', 'PNG');
+
+        $q = $this->choice();
+        // Uses &rightarrow; in the text and &sol; (HTML5 "/") inside the bundled URL.
+        $q->questiontext = '<p>A &rightarrow; B <img src="sub&sol;pic.png"></p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
+
+        // The arrow is preserved (as the character or a numeric ref), never as
+        // the broken "&amp;rightarrow;".
+        $this->assertStringNotContainsString('&amp;rightarrow;', $xml);
+        // The &sol; entity resolved to "/" so the subfolder file was found.
+        $this->assertStringContainsString('@@PLUGINFILE@@/sub/pic.png', $xml);
+        $this->assertStringContainsString('<file name="pic.png" path="/sub/" encoding="base64">', $xml);
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+    }
+
+    /**
      * Single-quoted/spaced attributes are matched; same-named files in different
      * folders stay distinct; URL suffixes survive; and attribute-looking text in
      * a code sample is not rewritten.

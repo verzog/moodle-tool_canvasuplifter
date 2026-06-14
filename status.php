@@ -106,6 +106,14 @@ if ($job->status === job_manager::STATUS_DONE && $job->courseid) {
         echo html_writer::table($resulttable);
     }
 
+    if (!empty($report['extraquizzes'])) {
+        echo html_writer::tag('p', get_string(
+            'extraquizzesbuilt',
+            'tool_canvasuplifter',
+            (int) $report['extraquizzes']
+        ));
+    }
+
     if (!empty($report['warnings'])) {
         echo $OUTPUT->heading(get_string('warningsheading', 'tool_canvasuplifter'), 4);
         echo html_writer::alist(array_map('s', $report['warnings']));

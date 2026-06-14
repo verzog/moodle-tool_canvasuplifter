@@ -83,7 +83,7 @@ if ($data = $form->get_data()) {
             $jobid = $jobs->create((int) $USER->id, $selectedcategory, $storedfileid);
 
             $task = new build_course_task();
-            $task->set_custom_data(['jobid' => $jobid]);
+            $task->set_custom_data(['jobid' => $jobid, 'quizfrombank' => empty($data->quizfrombank) ? 0 : 1]);
             \core\task\manager::queue_adhoc_task($task);
 
             redirect(new moodle_url('/admin/tool/canvasuplifter/status.php', ['jobid' => $jobid]));
@@ -127,10 +127,11 @@ if ($buildfromreport > 0) {
     if (!$file || $file->get_component() !== 'tool_canvasuplifter' || (int) $file->get_userid() !== (int) $USER->id) {
         throw new \moodle_exception('errorjobnotfound', 'tool_canvasuplifter');
     }
+    $quizfrombank = optional_param('quizfrombank', 0, PARAM_INT);
     $jobs = new job_manager();
     $jobid = $jobs->create((int) $USER->id, $categoryid, $buildfromreport);
     $task = new build_course_task();
-    $task->set_custom_data(['jobid' => $jobid]);
+    $task->set_custom_data(['jobid' => $jobid, 'quizfrombank' => $quizfrombank ? 1 : 0]);
     \core\task\manager::queue_adhoc_task($task);
     redirect(new moodle_url('/admin/tool/canvasuplifter/status.php', ['jobid' => $jobid]));
 }
@@ -338,6 +339,20 @@ if ($report === null) {
             ['id' => 'reportcategoryid', 'class' => 'form-control']
         );
         $form .= html_writer::end_div();
+        $form .= html_writer::end_div();
+        $form .= html_writer::start_div('form-check mb-2');
+        $form .= html_writer::empty_tag('input', [
+            'type' => 'checkbox',
+            'name' => 'quizfrombank',
+            'value' => '1',
+            'id' => 'quizfrombank',
+            'class' => 'form-check-input',
+        ]);
+        $form .= html_writer::tag(
+            'label',
+            get_string('quizfrombank', 'tool_canvasuplifter'),
+            ['for' => 'quizfrombank', 'class' => 'form-check-label']
+        );
         $form .= html_writer::end_div();
         $form .= html_writer::div(
             html_writer::empty_tag('input', [

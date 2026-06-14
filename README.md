@@ -66,8 +66,9 @@ Background on how Canvas ships quizzes — and why some arrive without questions
 - **Canvas only exports quizzes as QTI 1.2**, wrapped in the `.imscc` package.
   This holds for Classic Quizzes and, through the standard Canvas UI, New Quizzes
   too; native QTI 2.1/3.0 export is a long-standing community request but is not
-  yet available. A package built strictly on QTI 3.0 would have to be
-  down-converted to 2.1/1.2 before Canvas — or this tool — could read it.
+  yet available. This tool reads the **QTI 1.2 / Common Cartridge** shape only
+  (`<item>`/`<presentation>`, `cc.*` profiles); a package built on QTI 2.1 or 3.0
+  parses as zero questions, so down-convert it to **QTI 1.2** before importing.
 - **Question types that convert:** multiple choice (`render_choice`), true/false,
   fill-in-the-blank / short answer (`render_fib` / string matching), multiple
   answers, and essay. Other interaction types are reported and skipped.

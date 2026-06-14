@@ -97,5 +97,154 @@ XML;
         $post = $DB->get_record('forum_posts', ['id' => $discussion->firstpost]);
         $this->assertNotEmpty($post);
         $this->assertStringContainsString('Introduce yourself here.', $post->message);
+        $this->assertEquals(FORMAT_HTML, $post->messageformat);
+    }
+
+    /**
+     * Build a package containing one referenced discussion whose topic XML is
+     * supplied, plus (optionally) extra resource/organisation XML.
+     *
+     * @param string $topicxml The <topic>…</topic> body.
+     * @param string $extraresources Extra <resource> entries.
+     * @param string $extraitems Extra organisation <item> entries under Module 1.
+     * @return string Package root path.
+     */
+    private function package_with_topic(string $topicxml, string $extraresources = '', string $extraitems = ''): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/discussion');
+        file_put_contents($dir . '/discussion/d1.xml', '<?xml version="1.0" encoding="utf-8"?>' . $topicxml);
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_disc" identifierref="r_disc"><title>Class Discussion</title></item>'
+            . $extraitems
+            . '</item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_disc" type="imsdt_xmlv1p1"><file href="discussion/d1.xml"/></resource>'
+            . $extraresources
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * The first post of the built forum.
+     *
+     * @param int $courseid The course id.
+     * @return \stdClass
+     */
+    private function first_post(int $courseid): \stdClass {
+        global $DB;
+        $forum = $DB->get_record('forum', ['course' => $courseid, 'type' => 'general'], '*', MUST_EXIST);
+        $discussion = $DB->get_record('forum_discussions', ['forum' => $forum->id], '*', MUST_EXIST);
+        return $DB->get_record('forum_posts', ['id' => $discussion->firstpost], '*', MUST_EXIST);
+    }
+
+    /**
+     * A plain-text prompt (texttype="text/plain") is stored as plain text, not HTML.
+     *
+     * @return void
+     */
+    public function test_plain_text_prompt_kept_as_plain(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $topic = '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Plain</title><text texttype="text/plain">Use &lt; and &gt; freely.</text></topic>';
+        $root = $this->package_with_topic($topic);
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($this->getDataGenerator()->create_category()->id, $root))->build($coursemodel);
+
+        $post = $this->first_post($report['courseid']);
+        $this->assertEquals(FORMAT_PLAIN, $post->messageformat);
+        $this->assertStringContainsString('Use < and > freely.', $post->message);
+    }
+
+    /**
+     * A topic attachment is imported as a forum post attachment.
+     *
+     * @return void
+     */
+    public function test_topic_attachment_is_imported(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = make_request_directory();
+        mkdir($root . '/discussion');
+        file_put_contents($root . '/discussion/brief.pdf', 'PDFBYTES');
+        $topic = '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>With file</title><text texttype="text/html">&lt;p&gt;See brief&lt;/p&gt;</text>'
+            . '<attachments><attachment href="discussion/brief.pdf"/></attachments></topic>';
+        file_put_contents($root . '/discussion/d1.xml', '<?xml version="1.0" encoding="utf-8"?>' . $topic);
+        file_put_contents($root . '/imsmanifest.xml', '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>M1</title>'
+            . '<item identifier="i_disc" identifierref="r_disc"><title>With file</title></item>'
+            . '</item></item></organization></organizations>'
+            . '<resources><resource identifier="r_disc" type="imsdt_xmlv1p1">'
+            . '<file href="discussion/d1.xml"/><file href="discussion/brief.pdf"/></resource></resources></manifest>');
+
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($this->getDataGenerator()->create_category()->id, $root))->build($coursemodel);
+
+        $post = $this->first_post($report['courseid']);
+        $this->assertSame('1', (string) $post->attachment);
+        $context = \context_module::instance(get_coursemodule_from_instance(
+            'forum',
+            $DB->get_field('forum_discussions', 'forum', ['firstpost' => $post->id])
+        )->id);
+        $files = get_file_storage()->get_area_files(
+            $context->id,
+            'mod_forum',
+            'attachment',
+            $post->id,
+            'itemid',
+            false
+        );
+        $this->assertCount(1, $files);
+        $this->assertSame('brief.pdf', reset($files)->get_filename());
+    }
+
+    /**
+     * Canvas internal-link placeholders in a prompt are resolved to the built
+     * activity's URL in the second pass, like page links.
+     *
+     * @return void
+     */
+    public function test_prompt_internal_links_are_rewritten(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/discussion');
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/intro.html', '<html><head><title>Intro</title></head><body>Hi</body></html>');
+        $topic = '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Linky</title><text texttype="text/html">'
+            . '&lt;p&gt;&lt;a href="$CANVAS_OBJECT_REFERENCE$/pages/r_page"&gt;go&lt;/a&gt;&lt;/p&gt;</text></topic>';
+        file_put_contents($dir . '/discussion/d1.xml', '<?xml version="1.0" encoding="utf-8"?>' . $topic);
+        file_put_contents($dir . '/imsmanifest.xml', '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>M1</title>'
+            . '<item identifier="i_page" identifierref="r_page"><title>Intro</title></item>'
+            . '<item identifier="i_disc" identifierref="r_disc"><title>Linky</title></item>'
+            . '</item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_page" type="webcontent" href="wiki_content/intro.html">'
+            . '<file href="wiki_content/intro.html"/></resource>'
+            . '<resource identifier="r_disc" type="imsdt_xmlv1p1"><file href="discussion/d1.xml"/></resource>'
+            . '</resources></manifest>');
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($this->getDataGenerator()->create_category()->id, $dir))->build($coursemodel);
+
+        $post = $this->first_post($report['courseid']);
+        $this->assertStringContainsString('/mod/page/view.php', $post->message);
+        $this->assertStringNotContainsString('CANVAS_OBJECT_REFERENCE', $post->message);
     }
 }

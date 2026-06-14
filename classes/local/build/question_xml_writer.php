@@ -187,23 +187,32 @@ class question_xml_writer {
             return $html;
         }
 
+        // The HTML parser (libxml) only knows the HTML4 entity set, so HTML5
+        // named entities (e.g. &rightarrow;, &sol;) would otherwise be corrupted
+        // on the round-trip. Pre-convert them to numeric references, which it
+        // preserves both in text and in attribute values.
+        $prepared = $this->numericise_html5_entities($html);
+
         $dom = new \DOMDocument();
         $previous = libxml_use_internal_errors(true);
-        // The meta charset forces UTF-8 parsing; we serialise only the body's
-        // children afterwards so the implied html/head/body wrappers don't leak.
+        // The meta charset forces UTF-8 parsing. A wrapper <div> keeps media-only
+        // and leading-media fragments (e.g. a leading <video>/<audio>) inside the
+        // body rather than being hoisted out and lost; we serialise its children.
         $loaded = $dom->loadHTML(
-            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">' . $html,
+            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8"><div>' . $prepared . '</div>',
             LIBXML_NONET
         );
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
         $body = $loaded ? $dom->getElementsByTagName('body')->item(0) : null;
-        if ($body === null) {
+        $wrapper = $body !== null ? $body->getElementsByTagName('div')->item(0) : null;
+        if ($wrapper === null) {
             return $html;
         }
 
+        $changed = false;
         foreach (self::MEDIA_TAGS as $tag) {
-            foreach (iterator_to_array($dom->getElementsByTagName($tag)) as $element) {
+            foreach (iterator_to_array($wrapper->getElementsByTagName($tag)) as $element) {
                 foreach (self::MEDIA_ATTRS as $attr) {
                     if (!$element->hasAttribute($attr)) {
                         continue;
@@ -211,16 +220,46 @@ class question_xml_writer {
                     $rewritten = $this->rewrite_ref($element->getAttribute($attr), $imagedir, $files);
                     if ($rewritten !== null) {
                         $element->setAttribute($attr, $rewritten);
+                        $changed = true;
                     }
                 }
             }
         }
 
+        // Nothing bundled was rewritten: return the original untouched so the
+        // surrounding question HTML is never reserialised (and never altered).
+        if (!$changed) {
+            return $html;
+        }
+
         $out = '';
-        foreach (iterator_to_array($body->childNodes) as $child) {
+        foreach (iterator_to_array($wrapper->childNodes) as $child) {
             $out .= $dom->saveHTML($child);
         }
         return $out;
+    }
+
+    /**
+     * Convert HTML5 named entities to numeric character references, leaving the
+     * five XML predefined entities (lt, gt, amp, quot, apos) and unknown entities
+     * untouched. This lets libxml's HTML4-only parser round-trip HTML5 entities
+     * faithfully, in both text and attribute values.
+     *
+     * @param string $html The HTML.
+     * @return string
+     */
+    protected function numericise_html5_entities(string $html): string {
+        $result = preg_replace_callback('/&([a-zA-Z][a-zA-Z0-9]{1,31});/', function (array $m): string {
+            if (in_array(strtolower($m[1]), ['lt', 'gt', 'amp', 'quot', 'apos'], true)) {
+                return $m[0];
+            }
+            $decoded = html_entity_decode($m[0], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if ($decoded === $m[0]) {
+                return $m[0];
+            }
+            return mb_encode_numericentity($decoded, [0x0, 0x10ffff, 0, 0x10ffff], 'UTF-8');
+        }, $html);
+        return $result ?? $html;
     }
 
     /**
