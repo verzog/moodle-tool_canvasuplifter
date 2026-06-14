@@ -16,6 +16,8 @@
 
 namespace tool_canvasuplifter\local\build;
 
+use DOMDocument;
+use DOMElement;
 use stdClass;
 use tool_canvasuplifter\local\model\item;
 
@@ -105,16 +107,46 @@ class url_builder {
             if ($absolute === null || !is_readable($absolute)) {
                 continue;
             }
-            $previous = libxml_use_internal_errors(true);
-            $xml = simplexml_load_file($absolute, 'SimpleXMLElement', LIBXML_NONET);
-            libxml_clear_errors();
-            libxml_use_internal_errors($previous);
-            if ($xml === false) {
+            $url = self::url_from_weblink_xml((string) @file_get_contents($absolute));
+            if ($url !== null) {
+                return $url;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Read the target URL out of an IMS web-link XML document.
+     *
+     * Common Cartridge web links store the target in a <url href="..."/> element,
+     * occasionally as the element's text content. The webLink/url elements may sit
+     * in a default namespace or a prefixed one (e.g. <wl:url>), so this parses
+     * namespace-agnostically with DOMDocument rather than SimpleXML, whose
+     * property access silently misses prefixed-namespace children. Kept Moodle-free
+     * and static so it can be unit-tested directly from XML strings.
+     *
+     * @param string $xml The web-link XML document.
+     * @return string|null Validated http(s) URL, or null.
+     */
+    public static function url_from_weblink_xml(string $xml): ?string {
+        if (trim($xml) === '') {
+            return null;
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded) {
+            return null;
+        }
+        foreach ($dom->getElementsByTagNameNS('*', 'url') as $node) {
+            if (!($node instanceof DOMElement)) {
                 continue;
             }
-            $url = (string) ($xml->url['href'] ?? '');
-            if ($url === '' && isset($xml->url)) {
-                $url = trim((string) $xml->url);
+            $url = trim($node->getAttribute('href'));
+            if ($url === '') {
+                $url = trim($node->textContent);
             }
             if (preg_match('#^https?://#i', $url)) {
                 return $url;

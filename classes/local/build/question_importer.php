@@ -42,6 +42,12 @@ class question_importer {
      * @return string
      */
     public static function describe_unconvertible(array $all, array $supported): string {
+        // An assessment that exported no questions at all (e.g. a Canvas exam
+        // shell with an empty <section/>) is not a conversion failure; say so
+        // plainly rather than implying we dropped unconvertible content.
+        if (count($all) === 0) {
+            return 'assessment contains no questions';
+        }
         $profiles = [];
         foreach ($all as $question) {
             if ($question->is_importable()) {
