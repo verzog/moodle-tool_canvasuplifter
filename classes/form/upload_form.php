@@ -65,6 +65,10 @@ class upload_form extends moodleform {
         );
         $mform->addHelpButton('categoryid', 'targetcategory', 'tool_canvasuplifter');
 
+        $mform->addElement('advcheckbox', 'quizfrombank', get_string('quizfrombank', 'tool_canvasuplifter'));
+        $mform->setDefault('quizfrombank', 0);
+        $mform->addHelpButton('quizfrombank', 'quizfrombank', 'tool_canvasuplifter');
+
         $buttons = [
             $mform->createElement('submit', 'analysebutton', get_string('analyse', 'tool_canvasuplifter')),
             $mform->createElement('submit', 'buildbutton', get_string('buildcourse', 'tool_canvasuplifter')),

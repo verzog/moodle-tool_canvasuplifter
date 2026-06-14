@@ -62,6 +62,7 @@ $string['errorjobnotfound'] = 'That build job no longer exists.';
 $string['errornomanifest'] = 'No imsmanifest.xml was found, so this is not a valid Canvas package.';
 $string['errornosource'] = 'Provide a Canvas export file or a download URL.';
 $string['errornotzip'] = 'That file could not be opened as a Common Cartridge (zip) package.';
+$string['extraquizzesbuilt'] = 'Also built {$a} runnable quiz(zes) from standalone question banks (in "Additional resources").';
 $string['itemcount'] = 'Content items';
 $string['itemdetailheading'] = 'Item-by-item detail';
 $string['jobstatusis'] = 'Status: {$a}.';
@@ -119,6 +120,8 @@ $string['qtype_multianswer'] = 'Multiple response';
 $string['qtype_multichoice'] = 'Multiple choice';
 $string['qtype_shortanswer'] = 'Fill in the blank / short answer';
 $string['qtype_truefalse'] = 'True/false';
+$string['quizfrombank'] = 'Also build a runnable quiz from each standalone question bank';
+$string['quizfrombank_help'] = 'Standalone assessments (not linked anywhere in the Canvas course) import as reusable question banks. Tick this to also create a runnable quiz from each one, placed in the "Additional resources" section. Quizzes linked within the course are always built as quizzes regardless of this setting.';
 $string['readytobuildexplain'] = 'The package has been analysed and is held ready. '
     . 'Choose a category and click Build course to create the course in Moodle.';
 $string['readytobuildheading'] = 'Build this course';

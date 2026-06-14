@@ -65,6 +65,9 @@ class course_builder {
     /** @var int Job id whose progress this builder reports against. */
     private int $jobid;
 
+    /** @var bool Also build a runnable quiz from each standalone (orphan) assessment. */
+    private bool $quizfrombank;
+
     /**
      * Constructor.
      *
@@ -72,17 +75,20 @@ class course_builder {
      * @param string $packageroot Absolute path to the extracted package directory.
      * @param job_manager|null $jobs Optional, used to report progress.
      * @param int $jobid Job id, required when $jobs is set.
+     * @param bool $quizfrombank Also build a runnable quiz from each standalone assessment.
      */
     public function __construct(
         int $categoryid,
         string $packageroot,
         ?job_manager $jobs = null,
-        int $jobid = 0
+        int $jobid = 0,
+        bool $quizfrombank = false
     ) {
         $this->categoryid = $categoryid;
         $this->packageroot = rtrim($packageroot, '/');
         $this->jobs = $jobs;
         $this->jobid = $jobid;
+        $this->quizfrombank = $quizfrombank;
     }
 
     /**
@@ -133,6 +139,7 @@ class course_builder {
         $skipreasons = [];
         $urlmap = [];          // Canvas reference key => Moodle activity URL.
         $builtpagecmids = [];   // Course module ids of pages, for the link pass.
+        $extraquizzes = 0;      // Runnable quizzes built from standalone banks (toggle).
         $totalitems = max(1, count($coursemodel->all_items()));
         $processed = 0;
 
@@ -187,6 +194,13 @@ class course_builder {
                     false
                 );
                 $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
+                // With the toggle on, a standalone assessment built above as a
+                // reusable question bank also gets a runnable quiz here.
+                if ($this->quizfrombank && $cmid !== null && $modelitem->kind === item::KIND_QUIZ) {
+                    if ($this->build_standalone_quiz($course, $orphansection, $modelitem, $builders, $urlmap)) {
+                        $extraquizzes++;
+                    }
+                }
                 $this->report_progress($this->item_percent(++$processed, $totalitems), get_string(
                     'progressitem',
                     'tool_canvasuplifter',
@@ -227,8 +241,50 @@ class course_builder {
             'skipped' => $skippedtotal,
             'skippedcounts' => $skippedcounts,
             'skipreasons' => array_slice($skipreasons, 0, 50),
+            'extraquizzes' => $extraquizzes,
             'warnings' => $warnings,
         ];
+    }
+
+    /**
+     * Build a runnable quiz from a standalone assessment (in addition to the
+     * question bank already created for it), recording it as the item's link
+     * target. Counted separately from per-item tallies, since it is an extra
+     * activity rather than another model item.
+     *
+     * @param \stdClass $course Course record.
+     * @param int $sectionnum Section to place the quiz in.
+     * @param item $modelitem The assessment item.
+     * @param array $builders Map of kind => builder object.
+     * @param array $urlmap Link map (modified in place).
+     * @return bool Whether a quiz was created.
+     */
+    private function build_standalone_quiz(
+        \stdClass $course,
+        int $sectionnum,
+        item $modelitem,
+        array $builders,
+        array &$urlmap
+    ): bool {
+        $builder = $builders[item::KIND_QUIZ] ?? null;
+        if ($builder === null) {
+            return false;
+        }
+        try {
+            $cmid = $builder->build($course, $sectionnum, $modelitem);
+        } catch (\Throwable $e) {
+            mtrace('tool_canvasuplifter: ' . sprintf(
+                'failed to build standalone quiz "%s": %s',
+                $modelitem->title,
+                $e->getMessage()
+            ));
+            return false;
+        }
+        if ($cmid === null) {
+            return false;
+        }
+        $this->record_link_target($urlmap, $modelitem, $cmid);
+        return true;
     }
 
     /**

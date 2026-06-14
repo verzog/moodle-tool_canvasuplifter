@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026061401;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026061402;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Phase 2.11: discussions build as forums.
-$plugin->release   = '0.21.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Phase 2.12: optional quizzes from standalone banks.
+$plugin->release   = '0.22.0';
