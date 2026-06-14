@@ -211,6 +211,7 @@ class course_builder {
 
         // Second pass: rewrite internal page links now that every target exists.
         $this->rewrite_internal_links($builtpagecmids, $urlmap);
+        $this->rewrite_forum_links((int) $course->id, $urlmap);
 
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
@@ -499,6 +500,36 @@ class course_builder {
             $newcontent = $rewriter->rewrite_internal_links((string) $page->content, $urlmap);
             if ($newcontent !== $page->content) {
                 $DB->set_field('page', 'content', $newcontent, ['id' => $page->id]);
+            }
+        }
+    }
+
+    /**
+     * Rewrite internal Canvas links in built forum opening posts.
+     *
+     * Forum prompts are stored during the first pass, before every link target
+     * exists, so their $WIKI_REFERENCE$/$CANVAS_OBJECT_REFERENCE$ placeholders are
+     * resolved here once the URL map is complete (mirroring the page pass).
+     *
+     * @param int $courseid The built course id.
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_forum_links(int $courseid, array $urlmap): void {
+        global $DB;
+        if (empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        $sql = "SELECT p.id, p.message
+                  FROM {forum_posts} p
+                  JOIN {forum_discussions} d ON d.firstpost = p.id
+                  JOIN {forum} f ON f.id = d.forum
+                 WHERE f.course = :courseid";
+        foreach ($DB->get_records_sql($sql, ['courseid' => $courseid]) as $post) {
+            $newmessage = $rewriter->rewrite_internal_links((string) $post->message, $urlmap);
+            if ($newmessage !== $post->message) {
+                $DB->set_field('forum_posts', 'message', $newmessage, ['id' => $post->id]);
             }
         }
     }
