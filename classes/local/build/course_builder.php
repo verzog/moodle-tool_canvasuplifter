@@ -21,12 +21,12 @@ use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
 
 /**
- * Phase 1 course builder: creates a Moodle course, its sections, and the
- * activity types implemented so far (mod_page, mod_url, mod_resource).
+ * Course builder: creates a Moodle course, its sections, and the activity types
+ * implemented so far (mod_page, mod_url, mod_resource, mod_assign, mod_quiz,
+ * mod_qbank and mod_forum).
  *
- * Activity types not yet implemented (mod_assign, mod_forum, mod_quiz,
- * mod_lti) are counted as skipped in the build report so the admin can see
- * what's still to come.
+ * Activity types not yet implemented (e.g. mod_lti) are counted as skipped in the
+ * build report so the admin can see what's still to come.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -36,7 +36,7 @@ class course_builder {
     /** @var string[] Item kinds the builder can create in the current phase. */
     public const BUILDS_NOW = [
         item::KIND_PAGE, item::KIND_URL, item::KIND_FILE, item::KIND_ASSIGNMENT,
-        item::KIND_QUIZ, item::KIND_QUESTIONBANK,
+        item::KIND_QUIZ, item::KIND_QUESTIONBANK, item::KIND_DISCUSSION,
     ];
 
     /** @var string[] Kinds that must be created in section 0 (question banks). */
@@ -50,6 +50,7 @@ class course_builder {
         item::KIND_ASSIGNMENT => 'assign',
         item::KIND_QUIZ => 'quiz',
         item::KIND_QUESTIONBANK => 'qbank',
+        item::KIND_DISCUSSION => 'forum',
     ];
 
     /** @var int Course category for the new course. */
@@ -124,6 +125,7 @@ class course_builder {
             item::KIND_ASSIGNMENT => new assign_builder($this->packageroot),
             item::KIND_QUIZ => new quiz_builder($this->packageroot),
             item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot),
+            item::KIND_DISCUSSION => new forum_builder($this->packageroot),
         ];
 
         $createdcounts = [];
