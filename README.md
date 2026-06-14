@@ -55,6 +55,32 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
   to a single short-answer.
 - Forums and LTI tools are reported but not yet built.
 
+### Canvas quiz exports (QTI 1.2)
+
+Background on how Canvas ships quizzes — and why some arrive without questions:
+
+- **Canvas only exports quizzes as QTI 1.2**, wrapped in the `.imscc` package.
+  This holds for Classic Quizzes and, through the standard Canvas UI, New Quizzes
+  too; native QTI 2.1/3.0 export is a long-standing community request but is not
+  yet available. A package built strictly on QTI 3.0 would have to be
+  down-converted to 2.1/1.2 before Canvas — or this tool — could read it.
+- **Question types that convert:** multiple choice (`render_choice`), true/false,
+  fill-in-the-blank / short answer (`render_fib` / string matching), multiple
+  answers, and essay. Other interaction types are reported and skipped.
+- **"Referenced but not present" quizzes:** when a quiz draws its questions from a
+  randomised group or an external question pool/bank instead of hard-coding them
+  inside the `<section>`, Canvas may export only the shell — a bare
+  `<item ident="…"/>` with no body — and leave the pool items out of the package.
+  The bodies are then genuinely absent, so the quiz is skipped and reported as
+  *"references N question(s) whose content is not present in the package"*. To
+  recover these, re-export from Canvas with the item banks included, or migrate
+  the New Quizzes to Classic Quizzes first.
+- **Re-importing into Canvas (`ident` reuse):** many authoring tools reuse
+  assessment/item `ident`s, and Canvas treats matching ids as separate objects
+  unless you tick **"Overwrite assessment content with matching IDs"** during the
+  GUI import. This doesn't affect importing *into Moodle*, but matters if you ever
+  round-trip content back to Canvas.
+
 ## How it's built
 
 A five-stage pipeline, kept in separate, testable pieces:
