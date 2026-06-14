@@ -39,13 +39,23 @@ class question_importer {
      *
      * @param array $all All parsed qti_question objects.
      * @param array $supported Those of a supported Moodle type.
+     * @param int $unresolved Count of bare item references whose body is absent.
      * @return string
      */
-    public static function describe_unconvertible(array $all, array $supported): string {
-        // An assessment that exported no questions at all (e.g. a Canvas exam
-        // shell with an empty <section/>) is not a conversion failure; say so
-        // plainly rather than implying we dropped unconvertible content.
+    public static function describe_unconvertible(array $all, array $supported, int $unresolved = 0): string {
         if (count($all) === 0) {
+            // Bare references mean Canvas listed questions but did not export
+            // their bodies (typical of New Quizzes); say so rather than calling
+            // the assessment empty, so the data loss is visible.
+            if ($unresolved > 0) {
+                return sprintf(
+                    'references %d question(s) whose content is not present in the package '
+                        . '(not exported by Canvas)',
+                    $unresolved
+                );
+            }
+            // A truly empty assessment (e.g. an exam shell with an empty
+            // <section/>) is not a conversion failure; say so plainly.
             return 'assessment contains no questions';
         }
         $profiles = [];

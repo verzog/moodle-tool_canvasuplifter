@@ -75,7 +75,7 @@ class questionbank_builder {
         $supported = array_filter($questions, fn($q) => $q->type !== qti_question::TYPE_UNSUPPORTED);
         $importable = array_filter($supported, fn($q) => $q->is_importable());
         if (empty($importable)) {
-            $this->skipreason = question_importer::describe_unconvertible($questions, $supported);
+            $this->skipreason = question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
             return null;
         }
 

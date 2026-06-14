@@ -143,6 +143,43 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A bare item reference (an ident with no presentation, as Canvas New
+     * Quizzes export) yields no question but is counted as unresolved, so the
+     * builder can report missing content rather than an empty assessment.
+     *
+     * @return void
+     */
+    public function test_bare_item_reference_is_counted_unresolved(): void {
+        $xml = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Shell"><section ident="s1">'
+            . '<item ident="iabc-missing-body" />'
+            . '</section></assessment></questestinterop>';
+
+        $r = (new qti_parser())->parse($xml);
+
+        $this->assertCount(0, $r['questions']);
+        $this->assertSame(1, $r['unresolved']);
+    }
+
+    /**
+     * A genuinely empty assessment (no items at all) reports zero unresolved
+     * references, distinct from one that lost its question bodies.
+     *
+     * @return void
+     */
+    public function test_empty_section_has_no_unresolved(): void {
+        $xml = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Empty"><section ident="s1"/></assessment></questestinterop>';
+
+        $r = (new qti_parser())->parse($xml);
+
+        $this->assertCount(0, $r['questions']);
+        $this->assertSame(0, $r['unresolved']);
+    }
+
+    /**
      * Multiple response: each of two correct options gets an even split.
      *
      * @return void

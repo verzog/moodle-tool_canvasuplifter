@@ -42,6 +42,19 @@ final class question_importer_test extends \basic_testcase {
     }
 
     /**
+     * Bare item references (questions Canvas listed but did not export) are
+     * reported as missing content, not as an empty assessment.
+     *
+     * @return void
+     */
+    public function test_unresolved_references_reason(): void {
+        $reason = question_importer::describe_unconvertible([], [], 3);
+
+        $this->assertStringContainsString('references 3 question(s)', $reason);
+        $this->assertStringContainsString('not present in the package', $reason);
+    }
+
+    /**
      * When questions parsed but none are importable, the reason names the
      * unconvertible profiles and the counts.
      *
