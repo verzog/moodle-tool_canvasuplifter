@@ -197,15 +197,21 @@ if ($report === null) {
             get_string('colcount', 'tool_canvasuplifter'),
             get_string('matrixcolsupported', 'tool_canvasuplifter'),
         ];
+        $statuskeys = [
+            'yes' => 'matrixsupported_yes',
+            'incomplete' => 'matrixsupported_incomplete',
+            'unsupported' => 'matrixsupported_no',
+        ];
         foreach ($matrix['rows'] as $mrow) {
             $typekey = 'qtype_' . $mrow['label'];
             $typelabel = get_string_manager()->string_exists($typekey, 'tool_canvasuplifter')
                 ? get_string($typekey, 'tool_canvasuplifter')
                 : $mrow['label'];
+            $status = $mrow['status'] ?? ($mrow['supported'] ? 'yes' : 'unsupported');
             $matrixtable->data[] = [
                 s($typelabel),
                 $mrow['count'],
-                get_string($mrow['supported'] ? 'matrixsupported_yes' : 'matrixsupported_no', 'tool_canvasuplifter'),
+                get_string($statuskeys[$status] ?? 'matrixsupported_no', 'tool_canvasuplifter'),
             ];
         }
         echo html_writer::table($matrixtable);

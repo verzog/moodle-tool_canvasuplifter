@@ -166,7 +166,9 @@ final class conversion_report_test extends \advanced_testcase {
             $bylabel[$row['label']] = $row;
         }
         $this->assertTrue($bylabel['multichoice']['supported']);
+        $this->assertSame('yes', $bylabel['multichoice']['status']);
         $this->assertFalse($bylabel['cc.numeric.v0p1']['supported']);
+        $this->assertSame('unsupported', $bylabel['cc.numeric.v0p1']['status']);
         $this->assertSame(1, $bylabel['cc.numeric.v0p1']['count']);
     }
 
@@ -202,6 +204,9 @@ final class conversion_report_test extends \advanced_testcase {
         $notconverting = array_filter($matrix['rows'], fn($r) => $r['label'] === 'multichoice' && !$r['supported']);
         $this->assertSame(1, (int) (reset($converting)['count'] ?? 0));
         $this->assertSame(1, (int) (reset($notconverting)['count'] ?? 0));
+        // The single-option ("only") choice is a recognised type we can't
+        // complete, so it is flagged incomplete rather than unsupported.
+        $this->assertSame('incomplete', reset($notconverting)['status']);
     }
 
     /**

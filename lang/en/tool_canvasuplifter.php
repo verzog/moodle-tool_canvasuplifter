@@ -67,9 +67,12 @@ $string['itemdetailheading'] = 'Item-by-item detail';
 $string['jobstatusis'] = 'Status: {$a}.';
 $string['matrixcolsupported'] = 'Converts';
 $string['matrixcoltype'] = 'Question type';
-$string['matrixexplain'] = '{$a->supported} of {$a->total} questions are of a type that will convert. '
-    . 'Unsupported types are listed by their Canvas profile and will be skipped.';
+$string['matrixexplain'] = '{$a->supported} of {$a->total} questions will convert. '
+    . 'Questions of a supported type that are missing data Moodle needs (for example a single-option '
+    . 'question we could not complete) are listed by type; types we cannot map are listed by their '
+    . 'Canvas profile. Both are skipped.';
 $string['matrixheading'] = 'Question-type matrix';
+$string['matrixsupported_incomplete'] = 'Skipped (incomplete)';
 $string['matrixsupported_no'] = 'Skipped';
 $string['matrixsupported_yes'] = 'Yes';
 $string['note_assignment'] = 'Name, instructions and due dates will convert; rubrics and advanced grading will not.';

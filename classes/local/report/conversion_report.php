@@ -261,7 +261,10 @@ class conversion_report {
      * will be skipped.
      *
      * @return array Empty, or {total:int, supported:int, rows: array} of rows
-     *               {label:string, count:int, supported:bool}.
+     *               {label:string, count:int, supported:bool, status:string}.
+     *               status is 'yes' (imports), 'incomplete' (a supported type
+     *               missing data Moodle needs, e.g. a single-option choice) or
+     *               'unsupported' (a type we cannot map).
      */
     public function question_type_matrix(): array {
         if ($this->packageroot === null) {
@@ -303,14 +306,14 @@ class conversion_report {
         $rows = [];
         $supportedtotal = 0;
         foreach ($supported as $type => $count) {
-            $rows[] = ['label' => $type, 'count' => $count, 'supported' => true];
+            $rows[] = ['label' => $type, 'count' => $count, 'supported' => true, 'status' => 'yes'];
             $supportedtotal += $count;
         }
         foreach ($incomplete as $type => $count) {
-            $rows[] = ['label' => $type, 'count' => $count, 'supported' => false];
+            $rows[] = ['label' => $type, 'count' => $count, 'supported' => false, 'status' => 'incomplete'];
         }
         foreach ($unsupported as $profile => $count) {
-            $rows[] = ['label' => $profile, 'count' => $count, 'supported' => false];
+            $rows[] = ['label' => $profile, 'count' => $count, 'supported' => false, 'status' => 'unsupported'];
         }
         return ['total' => $total, 'supported' => $supportedtotal, 'rows' => $rows];
     }
