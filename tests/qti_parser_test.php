@@ -94,6 +94,55 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A Canvas acknowledgment question (a single correct "YES" option) gains a
+     * synthesised "No" distractor so Moodle, which needs two options, can save it.
+     *
+     * @return void
+     */
+    public function test_single_option_acknowledgment_gets_no_distractor(): void {
+        $pres = '<presentation><material><mattext>I understand the syllabus.</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext texttype="text/plain">YES</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+        $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+        $q = $r['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_MULTICHOICE, $q->type);
+        $this->assertCount(2, $q->answers);
+        $this->assertSame('YES', trim($q->answers[0]['text']));
+        $this->assertSame(100.0, $q->answers[0]['fraction']);
+        $this->assertSame('No', $q->answers[1]['text']);
+        $this->assertSame(0.0, $q->answers[1]['fraction']);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A single-option question that is not an affirmation is left untouched (we
+     * do not guess a distractor); it stays unimportable for human review.
+     *
+     * @return void
+     */
+    public function test_single_option_non_affirmative_is_left_alone(): void {
+        $pres = '<presentation><material><mattext>Capital of France?</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext>Paris</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+        $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+        $q = $r['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
      * Multiple response: each of two correct options gets an even split.
      *
      * @return void

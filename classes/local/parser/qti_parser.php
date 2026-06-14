@@ -97,6 +97,7 @@ class qti_parser {
             case qti_question::TYPE_MULTIANSWER:
             case qti_question::TYPE_TRUEFALSE:
                 $this->fill_choice_answers($item, $presentation, $question);
+                $this->recover_acknowledgment($question);
                 break;
             case qti_question::TYPE_SHORTANSWER:
                 $this->fill_text_answers($item, $question);
@@ -173,6 +174,60 @@ class qti_parser {
                 'feedback' => $feedback[$ident] ?? '',
             ];
         }
+    }
+
+    /**
+     * Recover Canvas acknowledgment questions so Moodle can save them.
+     *
+     * Canvas "readiness"/honor-code quizzes author each item as a statement with
+     * a single correct affirmative option ("I understand ... -> YES"). Moodle
+     * multiple choice needs at least two options, so such items would otherwise
+     * be dropped. When a single-answer choice has exactly one non-empty option,
+     * that option is correct, and it reads as an affirmation, add the obvious
+     * complementary "No" distractor. We deliberately do not guess for other
+     * single-option questions, which stay flagged for human review.
+     *
+     * @param qti_question $question The question being built (modified in place).
+     * @return void
+     */
+    protected function recover_acknowledgment(qti_question $question): void {
+        if ($question->type !== qti_question::TYPE_MULTICHOICE) {
+            return;
+        }
+        $nonempty = [];
+        foreach ($question->answers as $answer) {
+            if (trim((string) ($answer['text'] ?? '')) !== '') {
+                $nonempty[] = $answer;
+            }
+        }
+        if (count($nonempty) !== 1) {
+            return;
+        }
+        $only = $nonempty[0];
+        if ((float) ($only['fraction'] ?? 0) <= 0 || !$this->looks_affirmative((string) $only['text'])) {
+            return;
+        }
+        $question->answers[] = ['text' => 'No', 'fraction' => 0.0, 'feedback' => ''];
+    }
+
+    /**
+     * Whether an answer's text reads as an affirmation (yes / I agree / etc.).
+     *
+     * @param string $html The answer HTML.
+     * @return bool
+     */
+    protected function looks_affirmative(string $html): bool {
+        $text = strtolower(trim(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5)));
+        $text = trim((string) preg_replace('/\s+/', ' ', $text));
+        if ($text === '') {
+            return false;
+        }
+        $affirmations = ['yes', 'y', 'true', 't', 'agree', 'i agree', 'i understand', 'i do', 'ok', 'okay', 'correct'];
+        if (in_array($text, $affirmations, true)) {
+            return true;
+        }
+        return str_starts_with($text, 'yes') || str_starts_with($text, 'i agree')
+            || str_starts_with($text, 'i understand');
     }
 
     /**
