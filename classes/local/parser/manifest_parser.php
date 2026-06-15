@@ -75,6 +75,16 @@ class manifest_parser {
         // Build a lookup of every resource by identifier.
         $resources = $this->read_resources($dom);
 
+        // Derive titles up front so module_meta clones inherit the recovered name
+        // when their module item leaves the title blank, instead of falling back
+        // to file slugs. The manifest-organisation path also benefits because
+        // attach_resource() only overwrites when the <item> title is non-empty.
+        foreach ($resources as $resourceitem) {
+            if ($resourceitem->title === '') {
+                $resourceitem->title = $this->derive_title($resourceitem);
+            }
+        }
+
         // Canvas exports a richer per-module structure in course_settings/module_meta.xml,
         // including published state, in-module subheaders and inline ExternalUrl items;
         // prefer it when present, otherwise fall back to the manifest's <organization>.
@@ -92,15 +102,6 @@ class manifest_parser {
         foreach ($resources as $identifier => $resourceitem) {
             if (empty($placed[$identifier]) && $resourceitem->kind !== item::KIND_UNKNOWN) {
                 $course->orphans[] = $resourceitem;
-            }
-        }
-
-        // Resources not referenced by the organisation tree have no title; recover
-        // a human-readable one from the HTML payload so the report and the built
-        // activities don't show raw Canvas identifiers.
-        foreach ($resources as $resourceitem) {
-            if ($resourceitem->title === '') {
-                $resourceitem->title = $this->derive_title($resourceitem);
             }
         }
 
