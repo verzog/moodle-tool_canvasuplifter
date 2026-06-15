@@ -279,6 +279,105 @@ XML;
     }
 
     /**
+     * Write a package whose section structure comes from module_meta.xml and
+     * carries an unpublished page, a ContextModuleSubHeader and an inline
+     * ExternalUrl with no imswl resource.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_module_meta_fixture(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        mkdir($dir . '/course_settings');
+        file_put_contents($dir . '/wiki_content/welcome.html', '<p>Welcome</p>');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1"><item identifier="root"/></organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_page" type="webcontent" href="wiki_content/welcome.html">
+      <file href="wiki_content/welcome.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="mod1">
+    <title>Week 1</title>
+    <items>
+      <item identifier="mi_page">
+        <content_type>WikiPage</content_type>
+        <workflow_state>unpublished</workflow_state>
+        <title>Welcome</title>
+        <identifierref>r_page</identifierref>
+      </item>
+      <item identifier="mi_sub">
+        <content_type>ContextModuleSubHeader</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Before Class</title>
+      </item>
+      <item identifier="mi_url">
+        <content_type>ExternalUrl</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Lecture Videos</title>
+        <identifierref>mi_url</identifierref>
+        <url>https://www.youtube.com/</url>
+      </item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+        return $dir;
+    }
+
+    /**
+     * Builds the module_meta.xml fixture: the page is hidden (unpublished), the
+     * subheader becomes a mod_label, and the inline ExternalUrl becomes a mod_url.
+     *
+     * @return void
+     */
+    public function test_build_honours_module_meta_visibility_subheader_and_inline_url(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_module_meta_fixture();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['page'] ?? 0);
+        $this->assertSame(1, $report['createdcounts']['subheader'] ?? 0);
+        $this->assertSame(1, $report['createdcounts']['url'] ?? 0);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The unpublished page is built but hidden on the course page.
+        $pages = $modinfo->get_instances_of('page');
+        $this->assertCount(1, $pages);
+        $this->assertEquals(0, reset($pages)->visible);
+
+        // The subheader landed as a label carrying its title.
+        $labels = $modinfo->get_instances_of('label');
+        $this->assertCount(1, $labels);
+        $label = $DB->get_record('label', ['id' => reset($labels)->instance]);
+        $this->assertStringContainsString('Before Class', $label->intro);
+
+        // The inline ExternalUrl created a mod_url pointing at YouTube.
+        $urls = $modinfo->get_instances_of('url');
+        $this->assertCount(1, $urls);
+        $url = $DB->get_record('url', ['id' => reset($urls)->instance]);
+        $this->assertSame('https://www.youtube.com/', $url->externalurl);
+    }
+
+    /**
      * Write a package whose only syllabus + a stray file are unreferenced.
      *
      * @return string Path to the package root.

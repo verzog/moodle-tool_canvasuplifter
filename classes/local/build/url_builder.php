@@ -92,12 +92,16 @@ class url_builder {
     }
 
     /**
-     * Read the target URL out of the IMS web-link XML file.
+     * Read the target URL out of the IMS web-link XML file, or use the inline
+     * URL when the item carries one (Canvas ExternalUrl items).
      *
      * @param item $modelitem
      * @return string|null Validated http(s) URL, or null.
      */
     private function extract_url(item $modelitem): ?string {
+        if ($modelitem->url !== '' && preg_match('#^https?://#i', $modelitem->url)) {
+            return $modelitem->url;
+        }
         $candidates = $modelitem->files;
         if ($modelitem->href !== '') {
             $candidates[] = $modelitem->href;
