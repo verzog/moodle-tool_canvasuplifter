@@ -551,6 +551,62 @@ XML;
     }
 
     /**
+     * When module_meta.xml omits the per-item <title>, the cloned section item
+     * should inherit the title derived from the resource's HTML <title> instead
+     * of falling back to the file slug. Title recovery has to happen before the
+     * clone, otherwise it only updates the unused canonical resource.
+     *
+     * @return void
+     */
+    public function test_module_meta_clones_inherit_derived_title(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/wiki_content');
+        file_put_contents(
+            $dir . '/wiki_content/g1234_welcome.html',
+            '<html><head><title>Welcome to the Course</title></head><body><p>Hi</p></body></html>'
+        );
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1"><item identifier="root"/></organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_page" type="webcontent" href="wiki_content/g1234_welcome.html">
+      <file href="wiki_content/g1234_welcome.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        // The module item has no <title>, so the parser must reach the HTML title.
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="mod1">
+    <title>Week 1</title>
+    <items>
+      <item identifier="mi_page">
+        <content_type>WikiPage</content_type>
+        <workflow_state>active</workflow_state>
+        <identifierref>r_page</identifierref>
+      </item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->sections);
+        $this->assertSame('Welcome to the Course', $course->sections[0]->items[0]->title);
+    }
+
+    /**
      * Webcontent assets under quiz/ (QTI question images) are skipped, while a
      * genuine course file is kept.
      *
