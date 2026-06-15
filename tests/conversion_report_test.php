@@ -83,6 +83,31 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * Canvas ContextModuleSubHeader items count towards "builds now" (they're in
+     * course_builder::BUILDS_NOW), and the mapping plan reports them as mod_label
+     * rather than as unknown items the admin would assume aren't going anywhere.
+     *
+     * @return void
+     */
+    public function test_subheader_reports_as_label(): void {
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $sub = new item('s1', 'Before Class');
+        $sub->kind = item::KIND_SUBHEADER;
+        $section->add_item($sub);
+        $course->add_section($section);
+
+        $report = (new conversion_report($course))->build();
+
+        $row = $report['sections'][0]['items'][0];
+        $this->assertSame('subheader', $row['kind']);
+        $this->assertTrue($row['buildsnow']);
+        $this->assertSame('mod_label', $row['target']);
+        $this->assertSame(conversion_report::CONFIDENCE_FULL, $row['confidence']);
+        $this->assertSame('note_subheader', $row['note']);
+    }
+
+    /**
      * The syllabus orphan is reported as going to the top of the course.
      *
      * @return void

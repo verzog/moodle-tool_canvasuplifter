@@ -288,6 +288,12 @@ class course_builder {
             return false;
         }
         $this->record_link_target($urlmap, $modelitem, $cmid);
+        if (!$modelitem->isvisible) {
+            // The bank built from the same item was already hidden in build_one();
+            // mirror that here so an unpublished Canvas assessment doesn't leak as
+            // a runnable quiz once the imported course is made available.
+            set_coursemodule_visible($cmid, 0);
+        }
         return true;
     }
 
