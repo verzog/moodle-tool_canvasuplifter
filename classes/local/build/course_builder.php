@@ -402,10 +402,12 @@ class course_builder {
             if ($modelitem->kind === item::KIND_PAGE) {
                 $builtpagecmids[] = $cmid;
             }
-            if (!$modelitem->isvisible) {
+            if (!$modelitem->isvisible && !$modelitem->isannouncement) {
                 // Builders create everything visible by default; honour Canvas's
                 // per-item published state in one place rather than threading the
-                // flag through every builder's moduleinfo.
+                // flag through every builder's moduleinfo. Announcements share a
+                // single news forum cm, so hiding "an announcement" must not hide
+                // the whole forum — forum_builder already skips unpublished ones.
                 set_coursemodule_visible($cmid, 0);
             }
         }

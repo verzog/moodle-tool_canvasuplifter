@@ -247,4 +247,71 @@ XML;
         $this->assertStringContainsString('/mod/page/view.php', $post->message);
         $this->assertStringNotContainsString('CANVAS_OBJECT_REFERENCE', $post->message);
     }
+
+    /**
+     * A Canvas announcement (imsdt with a topicMeta type="announcement" sibling)
+     * gets posted to the course's auto-created Announcements forum (type="news")
+     * as a discussion thread, rather than building a new forum activity per
+     * announcement. No extra general forum is created.
+     *
+     * @return void
+     */
+    public function test_announcement_posts_to_news_forum(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/discussion');
+        file_put_contents(
+            $dir . '/discussion/a1.xml',
+            '<?xml version="1.0" encoding="utf-8"?>'
+            . '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Welcome to the course</title>'
+            . '<text texttype="text/html">&lt;p&gt;Classes start Monday.&lt;/p&gt;</text>'
+            . '</topic>'
+        );
+        // topicMeta declaring this discussion as an announcement.
+        file_put_contents(
+            $dir . '/discussion/a1_meta.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<topicMeta xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<topic_id>r_announce</topic_id>'
+            . '<title>Welcome to the course</title>'
+            . '<type>announcement</type>'
+            . '<workflow_state>active</workflow_state>'
+            . '</topicMeta>'
+        );
+        file_put_contents($dir . '/imsmanifest.xml', '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_announce" identifierref="r_announce"><title>Welcome</title></item>'
+            . '</item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_announce" type="imsdt_xmlv1p1">'
+            . '<file href="discussion/a1.xml"/></resource>'
+            . '<resource identifier="r_announce_meta" '
+            . 'type="associatedcontent/imscc_xmlv1p1/learning-application-resource" '
+            . 'href="discussion/a1_meta.xml"><file href="discussion/a1_meta.xml"/></resource>'
+            . '</resources></manifest>');
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $category = $this->getDataGenerator()->create_category();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        // The announcement counts as a built discussion, but no extra general forum exists.
+        $this->assertSame(1, $report['createdcounts']['discussion'] ?? 0);
+        $generals = $DB->get_records('forum', ['course' => $report['courseid'], 'type' => 'general']);
+        $this->assertCount(0, $generals);
+
+        // The news forum picked up a new discussion thread with the announcement prompt.
+        $news = $DB->get_record('forum', ['course' => $report['courseid'], 'type' => 'news'], '*', MUST_EXIST);
+        $discussions = $DB->get_records('forum_discussions', ['forum' => $news->id]);
+        $this->assertCount(1, $discussions);
+        $discussion = reset($discussions);
+        $this->assertSame('Welcome to the course', $discussion->name);
+        $post = $DB->get_record('forum_posts', ['id' => $discussion->firstpost]);
+        $this->assertStringContainsString('Classes start Monday.', $post->message);
+    }
 }

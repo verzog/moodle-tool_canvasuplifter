@@ -65,13 +65,23 @@ class forum_builder {
             return null;
         }
 
+        $name = $modelitem->title !== '' ? $modelitem->title
+            : ($topic['title'] !== '' ? $topic['title'] : 'Forum');
+
+        // Canvas announcements land in the course's auto-created Announcements
+        // forum (type=news) as new threads rather than as a forum each. Skip
+        // unpublished announcements so a draft doesn't appear in the public feed.
+        if ($modelitem->isannouncement) {
+            if (!$modelitem->isvisible) {
+                return null;
+            }
+            return $this->post_to_news_forum($course, $name, $topic);
+        }
+
         $module = $DB->get_record('modules', ['name' => 'forum']);
         if (!$module) {
             return null;
         }
-
-        $name = $modelitem->title !== '' ? $modelitem->title
-            : ($topic['title'] !== '' ? $topic['title'] : 'Forum');
 
         $moduleinfo = $this->moduleinfo($course, $sectionnum, (int) $module->id, $name);
         $created = add_moduleinfo($moduleinfo, $course);
@@ -80,6 +90,31 @@ class forum_builder {
         $this->seed_discussion($course, (int) $created->instance, $cmid, $name, $topic);
 
         return $cmid;
+    }
+
+    /**
+     * Post a Canvas announcement as a thread in the course's auto-created news
+     * forum and return that forum's cmid. The news forum already exists on every
+     * Moodle course, so each announcement just adds a discussion to it rather
+     * than spawning a new forum activity per announcement.
+     *
+     * @param stdClass $course Course record.
+     * @param string $name The announcement title.
+     * @param array $topic Parsed topic: text, plain (bool), attachments (string[]).
+     * @return int|null The news forum's cmid, or null if it could not be found.
+     */
+    private function post_to_news_forum(stdClass $course, string $name, array $topic): ?int {
+        global $DB;
+        $forum = $DB->get_record('forum', ['course' => $course->id, 'type' => 'news']);
+        if (!$forum) {
+            return null;
+        }
+        $cm = get_coursemodule_from_instance('forum', (int) $forum->id, (int) $course->id, false, IGNORE_MISSING);
+        if (!$cm) {
+            return null;
+        }
+        $this->seed_discussion($course, (int) $forum->id, (int) $cm->id, $name, $topic);
+        return (int) $cm->id;
     }
 
     /**
