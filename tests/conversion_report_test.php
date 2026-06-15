@@ -83,6 +83,42 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * Canvas ContextModuleSubHeader items count towards "builds now" (they're in
+     * course_builder::BUILDS_NOW), and the mapping plan reports them as mod_label
+     * rather than as unknown items the admin would assume aren't going anywhere.
+     *
+     * @return void
+     */
+    public function test_subheader_reports_as_label(): void {
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $sub = new item('s1', 'Before Class');
+        $sub->kind = item::KIND_SUBHEADER;
+        $section->add_item($sub);
+        $course->add_section($section);
+
+        $report = (new conversion_report($course))->build();
+
+        // Per-section drill-down: subheader appears with its label target.
+        $sectionrow = $report['sections'][0]['items'][0];
+        $this->assertSame('subheader', $sectionrow['kind']);
+        $this->assertTrue($sectionrow['buildsnow']);
+        $this->assertSame('mod_label', $sectionrow['target']);
+        $this->assertSame(conversion_report::CONFIDENCE_FULL, $sectionrow['confidence']);
+
+        // Aggregate row carries the note (per-section rows intentionally don't).
+        $bykind = [];
+        foreach ($report['rows'] as $row) {
+            $bykind[$row['kind']] = $row;
+        }
+        $this->assertArrayHasKey('subheader', $bykind);
+        $this->assertSame('mod_label', $bykind['subheader']['target']);
+        $this->assertSame('note_subheader', $bykind['subheader']['note']);
+        $this->assertTrue($bykind['subheader']['buildsnow']);
+        $this->assertSame(1, $report['buildsnowtotal']);
+    }
+
+    /**
      * The syllabus orphan is reported as going to the top of the course.
      *
      * @return void

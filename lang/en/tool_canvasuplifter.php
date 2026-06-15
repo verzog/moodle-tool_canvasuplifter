@@ -84,6 +84,7 @@ $string['note_page'] = 'Pages convert, including embedded images and internal li
     . 'pages, files and URLs. Links to content types that are not built yet are left unchanged.';
 $string['note_questionbank'] = 'Imported as question bank (mod_qbank) activities.';
 $string['note_quiz'] = 'Becomes a Moodle quiz; questions convert where the QTI question type is supported.';
+$string['note_subheader'] = 'Canvas module subheaders become Moodle labels with the heading as the body.';
 $string['note_unknown'] = 'Resource type not recognised; these are skipped.';
 $string['note_url'] = 'External links convert directly.';
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';

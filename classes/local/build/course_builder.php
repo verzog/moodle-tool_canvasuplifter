@@ -37,6 +37,7 @@ class course_builder {
     public const BUILDS_NOW = [
         item::KIND_PAGE, item::KIND_URL, item::KIND_FILE, item::KIND_ASSIGNMENT,
         item::KIND_QUIZ, item::KIND_QUESTIONBANK, item::KIND_DISCUSSION,
+        item::KIND_SUBHEADER,
     ];
 
     /** @var string[] Kinds that must be created in section 0 (question banks). */
@@ -51,6 +52,7 @@ class course_builder {
         item::KIND_QUIZ => 'quiz',
         item::KIND_QUESTIONBANK => 'qbank',
         item::KIND_DISCUSSION => 'forum',
+        item::KIND_SUBHEADER => 'label',
     ];
 
     /** @var int Course category for the new course. */
@@ -132,6 +134,7 @@ class course_builder {
             item::KIND_QUIZ => new quiz_builder($this->packageroot),
             item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot),
             item::KIND_DISCUSSION => new forum_builder($this->packageroot),
+            item::KIND_SUBHEADER => new label_builder(),
         ];
 
         $createdcounts = [];
@@ -285,6 +288,12 @@ class course_builder {
             return false;
         }
         $this->record_link_target($urlmap, $modelitem, $cmid);
+        if (!$modelitem->isvisible) {
+            // The bank built from the same item was already hidden in build_one();
+            // mirror that here so an unpublished Canvas assessment doesn't leak as
+            // a runnable quiz once the imported course is made available.
+            set_coursemodule_visible($cmid, 0);
+        }
         return true;
     }
 
@@ -392,6 +401,12 @@ class course_builder {
             $this->record_link_target($urlmap, $modelitem, $cmid);
             if ($modelitem->kind === item::KIND_PAGE) {
                 $builtpagecmids[] = $cmid;
+            }
+            if (!$modelitem->isvisible) {
+                // Builders create everything visible by default; honour Canvas's
+                // per-item published state in one place rather than threading the
+                // flag through every builder's moduleinfo.
+                set_coursemodule_visible($cmid, 0);
             }
         }
         return $cmid;
