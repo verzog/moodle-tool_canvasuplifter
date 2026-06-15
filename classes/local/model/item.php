@@ -43,6 +43,8 @@ class item {
     public const KIND_DISCUSSION = 'discussion';
     /** External (LTI) tool -> mod_lti. */
     public const KIND_LTI = 'lti';
+    /** Canvas ContextModuleSubHeader (a label inside a module) -> mod_label. */
+    public const KIND_SUBHEADER = 'subheader';
     /** Could not be classified. */
     public const KIND_UNKNOWN = 'unknown';
 
@@ -66,6 +68,12 @@ class item {
 
     /** @var string[] All file paths belonging to this resource. */
     public array $files = [];
+
+    /** @var bool Whether the item is published (visible to students) in Canvas. */
+    public bool $isvisible = true;
+
+    /** @var string Inline URL for items that carry it (e.g. Canvas ExternalUrl). */
+    public string $url = '';
 
     /**
      * Constructor.

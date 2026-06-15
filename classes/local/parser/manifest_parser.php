@@ -75,8 +75,12 @@ class manifest_parser {
         // Build a lookup of every resource by identifier.
         $resources = $this->read_resources($dom);
 
-        // Walk the organisation tree to build sections and place items.
-        $this->build_sections($dom, $resources, $course);
+        // Canvas exports a richer per-module structure in course_settings/module_meta.xml,
+        // including published state, in-module subheaders and inline ExternalUrl items;
+        // prefer it when present, otherwise fall back to the manifest's <organization>.
+        if (!$this->build_sections_from_module_meta($resources, $course)) {
+            $this->build_sections($dom, $resources, $course);
+        }
 
         // Any resource never referenced by the organisation tree becomes an orphan.
         $placed = [];
@@ -307,6 +311,158 @@ class manifest_parser {
             }
         }
         return false;
+    }
+
+    /**
+     * Build sections from Canvas's course_settings/module_meta.xml when present.
+     *
+     * Canvas's module_meta.xml is richer than the manifest's <organization> tree:
+     * it carries per-item workflow_state (published vs unpublished), Context-
+     * ModuleSubHeader rows (in-module labels) and inline ExternalUrl items that
+     * have no imswl resource of their own. Each <module> becomes a section, each
+     * <item> becomes a resource reference, a subheader, or a synthetic URL item.
+     *
+     * @param item[] $resources Resources keyed by identifier (modified in place).
+     * @param course_model $course The course model to populate.
+     * @return bool True if module_meta.xml was found and used; false to fall back.
+     */
+    protected function build_sections_from_module_meta(array &$resources, course_model $course): bool {
+        $path = $this->basedir . '/course_settings/module_meta.xml';
+        if (!is_readable($path)) {
+            return false;
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->load($path, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded) {
+            return false;
+        }
+        $modules = $dom->getElementsByTagNameNS('*', 'module');
+        if ($modules->length === 0) {
+            return false;
+        }
+
+        foreach ($modules as $module) {
+            if (!($module instanceof DOMElement)) {
+                continue;
+            }
+            $section = new section_model($this->child_text($module, 'title'));
+            $itemsnode = $this->first_child_named($module, 'items');
+            if ($itemsnode !== null) {
+                foreach ($this->children_named($itemsnode, 'item') as $itemnode) {
+                    $modelitem = $this->item_from_module_meta($itemnode, $resources);
+                    if ($modelitem !== null) {
+                        $section->add_item($modelitem);
+                    }
+                }
+            }
+            $course->add_section($section);
+        }
+        return true;
+    }
+
+    /**
+     * Build a model item from one <item> in module_meta.xml.
+     *
+     * Handles three shapes:
+     *   - ContextModuleSubHeader: a label row with only a title (no resource).
+     *   - identifierref pointing to a known manifest resource: reuse it, applying
+     *     the per-module title and published state.
+     *   - ExternalUrl with an inline <url>: synthesize a URL item when no
+     *     matching imswl resource exists.
+     *
+     * @param DOMElement $node The <item> element from module_meta.xml.
+     * @param item[] $resources Resources keyed by identifier (modified in place).
+     * @return item|null Built item, or null if it cannot be represented.
+     */
+    protected function item_from_module_meta(DOMElement $node, array &$resources): ?item {
+        $contenttype = $this->child_text($node, 'content_type');
+        $title = $this->child_text($node, 'title');
+        $isvisible = strtolower($this->child_text($node, 'workflow_state')) !== 'unpublished';
+
+        if ($contenttype === 'ContextModuleSubHeader') {
+            $modelitem = new item($node->getAttribute('identifier'), $title);
+            $modelitem->kind = item::KIND_SUBHEADER;
+            $modelitem->isvisible = $isvisible;
+            return $modelitem;
+        }
+
+        $ref = $this->child_text($node, 'identifierref');
+        if ($ref !== '' && isset($resources[$ref])) {
+            $modelitem = $resources[$ref];
+            if ($title !== '') {
+                $modelitem->title = $title;
+            }
+            $modelitem->isvisible = $isvisible;
+            return $modelitem;
+        }
+
+        if ($contenttype === 'ExternalUrl') {
+            $url = $this->child_text($node, 'url');
+            if ($url === '') {
+                return null;
+            }
+            // Some inline ExternalUrls reference their own identifier; key by it so
+            // they show up as referenced rather than orphaned.
+            $id = $node->getAttribute('identifier');
+            $modelitem = new item($id, $title);
+            $modelitem->kind = item::KIND_URL;
+            $modelitem->url = $url;
+            $modelitem->isvisible = $isvisible;
+            if ($id !== '') {
+                $resources[$id] = $modelitem;
+            }
+            return $modelitem;
+        }
+
+        return null;
+    }
+
+    /**
+     * Return the trimmed text content of the first child with the given local name.
+     *
+     * @param DOMElement $parent The parent element.
+     * @param string $name Local name to look for (namespace-agnostic).
+     * @return string Trimmed text, or '' if no such child exists.
+     */
+    protected function child_text(DOMElement $parent, string $name): string {
+        $child = $this->first_child_named($parent, $name);
+        return $child === null ? '' : trim($child->textContent);
+    }
+
+    /**
+     * Return the first direct child element with the given local name.
+     *
+     * @param DOMElement $parent The parent element.
+     * @param string $name Local name to look for.
+     * @return DOMElement|null
+     */
+    protected function first_child_named(DOMElement $parent, string $name): ?DOMElement {
+        foreach ($parent->childNodes as $child) {
+            if ($child instanceof DOMElement && $child->localName === $name) {
+                return $child;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Return all direct child elements with the given local name.
+     *
+     * @param DOMElement $parent The parent element.
+     * @param string $name Local name to look for.
+     * @return DOMElement[]
+     */
+    protected function children_named(DOMElement $parent, string $name): array {
+        $result = [];
+        foreach ($parent->childNodes as $child) {
+            if ($child instanceof DOMElement && $child->localName === $name) {
+                $result[] = $child;
+            }
+        }
+        return $result;
     }
 
     /**
