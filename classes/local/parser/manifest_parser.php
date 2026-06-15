@@ -397,7 +397,10 @@ class manifest_parser {
 
         $ref = $this->child_text($node, 'identifierref');
         if ($ref !== '' && isset($resources[$ref])) {
-            $modelitem = $resources[$ref];
+            // Clone before mutating: Canvas often reuses the same identifierref in
+            // several modules, and per-module title/visibility must not bleed
+            // across occurrences (later module would otherwise overwrite earlier).
+            $modelitem = clone $resources[$ref];
             if ($title !== '') {
                 $modelitem->title = $title;
             }

@@ -470,6 +470,87 @@ XML;
     }
 
     /**
+     * Canvas can place the same identifierref in two modules with different
+     * per-module visibility (or titles). Visibility must be tracked per module
+     * occurrence, so writing the hidden state for one module must not flip the
+     * other — the previous shared-instance approach made the later occurrence
+     * win for both sections.
+     *
+     * @return void
+     */
+    public function test_module_meta_shared_identifierref_keeps_per_module_visibility(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/welcome.html', '<p>Hi</p>');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1"><item identifier="root"/></organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_page" type="webcontent" href="wiki_content/welcome.html">
+      <file href="wiki_content/welcome.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        // The page is reused in a hidden module first and a visible module second;
+        // the previous "last write wins" bug hid both, while reversing the order
+        // showed both. Each occurrence also gets its own title.
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="mod_hidden">
+    <title>Draft</title>
+    <workflow_state>unpublished</workflow_state>
+    <items>
+      <item identifier="mi_a">
+        <content_type>WikiPage</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Welcome (draft copy)</title>
+        <identifierref>r_page</identifierref>
+      </item>
+    </items>
+  </module>
+  <module identifier="mod_live">
+    <title>Live</title>
+    <workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_b">
+        <content_type>WikiPage</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Welcome (live copy)</title>
+        <identifierref>r_page</identifierref>
+      </item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(2, $course->sections);
+        $hidden = $course->sections[0]->items[0];
+        $live = $course->sections[1]->items[0];
+
+        $this->assertFalse($hidden->isvisible, 'hidden module copy stays hidden');
+        $this->assertTrue($live->isvisible, 'live module copy stays visible');
+
+        // Per-module title overrides are also independent.
+        $this->assertSame('Welcome (draft copy)', $hidden->title);
+        $this->assertSame('Welcome (live copy)', $live->title);
+
+        // The two section items are distinct objects, not the same shared reference.
+        $this->assertNotSame($hidden, $live);
+    }
+
+    /**
      * Webcontent assets under quiz/ (QTI question images) are skipped, while a
      * genuine course file is kept.
      *
