@@ -298,6 +298,99 @@ XML;
     }
 
     /**
+     * When course_settings/module_meta.xml is present, its modules drive the
+     * section structure (overriding the manifest's <organization>), per-item
+     * workflow_state propagates as isvisible, ContextModuleSubHeader rows become
+     * synthetic subheader items, and ExternalUrl items with an inline <url>
+     * become URL items even without an imswl resource.
+     *
+     * @return void
+     */
+    public function test_module_meta_drives_sections_and_workflow_state(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/welcome.html', '<html><title>W</title></html>');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="wrong"><title>Wrong Section From Manifest</title>
+          <item identifier="i1" identifierref="r_page"><title>Ignored Title</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_page" type="webcontent" href="wiki_content/welcome.html">
+      <file href="wiki_content/welcome.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="mod1">
+    <title>Week 1</title>
+    <workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_page">
+        <content_type>WikiPage</content_type>
+        <workflow_state>unpublished</workflow_state>
+        <title>Welcome (overridden)</title>
+        <identifierref>r_page</identifierref>
+      </item>
+      <item identifier="mi_sub">
+        <content_type>ContextModuleSubHeader</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Before Class</title>
+      </item>
+      <item identifier="mi_url">
+        <content_type>ExternalUrl</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Lecture Videos</title>
+        <identifierref>mi_url</identifierref>
+        <url>https://www.youtube.com/</url>
+      </item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->sections);
+        $section = $course->sections[0];
+        $this->assertSame('Week 1', $section->title);
+        $this->assertCount(3, $section->items);
+
+        // The page took the title from module_meta and the unpublished state.
+        $this->assertSame('Welcome (overridden)', $section->items[0]->title);
+        $this->assertSame(item::KIND_PAGE, $section->items[0]->kind);
+        $this->assertFalse($section->items[0]->isvisible);
+
+        // The subheader is synthesised as a label-like item with no resource.
+        $this->assertSame(item::KIND_SUBHEADER, $section->items[1]->kind);
+        $this->assertSame('Before Class', $section->items[1]->title);
+        $this->assertTrue($section->items[1]->isvisible);
+
+        // The inline ExternalUrl becomes a URL item carrying the href.
+        $this->assertSame(item::KIND_URL, $section->items[2]->kind);
+        $this->assertSame('Lecture Videos', $section->items[2]->title);
+        $this->assertSame('https://www.youtube.com/', $section->items[2]->url);
+
+        // The synthesised URL is counted as placed, so it's not also orphaned.
+        $this->assertSame([], $course->orphans);
+    }
+
+    /**
      * Webcontent assets under quiz/ (QTI question images) are skipped, while a
      * genuine course file is kept.
      *
