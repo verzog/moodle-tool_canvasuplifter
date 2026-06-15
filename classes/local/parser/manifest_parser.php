@@ -349,10 +349,14 @@ class manifest_parser {
                 continue;
             }
             $section = new section_model($this->child_text($module, 'title'));
+            // Canvas can hide a whole module with the module-level workflow_state
+            // even when its items individually carry workflow_state="active". AND
+            // the two so the items inherit their parent module's hidden state.
+            $moduleisvisible = strtolower($this->child_text($module, 'workflow_state')) !== 'unpublished';
             $itemsnode = $this->first_child_named($module, 'items');
             if ($itemsnode !== null) {
                 foreach ($this->children_named($itemsnode, 'item') as $itemnode) {
-                    $modelitem = $this->item_from_module_meta($itemnode, $resources);
+                    $modelitem = $this->item_from_module_meta($itemnode, $resources, $moduleisvisible);
                     if ($modelitem !== null) {
                         $section->add_item($modelitem);
                     }
@@ -375,12 +379,14 @@ class manifest_parser {
      *
      * @param DOMElement $node The <item> element from module_meta.xml.
      * @param item[] $resources Resources keyed by identifier (modified in place).
+     * @param bool $moduleisvisible Visibility inherited from the parent <module>.
      * @return item|null Built item, or null if it cannot be represented.
      */
-    protected function item_from_module_meta(DOMElement $node, array &$resources): ?item {
+    protected function item_from_module_meta(DOMElement $node, array &$resources, bool $moduleisvisible = true): ?item {
         $contenttype = $this->child_text($node, 'content_type');
         $title = $this->child_text($node, 'title');
-        $isvisible = strtolower($this->child_text($node, 'workflow_state')) !== 'unpublished';
+        $isvisible = $moduleisvisible
+            && strtolower($this->child_text($node, 'workflow_state')) !== 'unpublished';
 
         if ($contenttype === 'ContextModuleSubHeader') {
             $modelitem = new item($node->getAttribute('identifier'), $title);

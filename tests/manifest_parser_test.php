@@ -391,6 +391,85 @@ XML;
     }
 
     /**
+     * A module-level workflow_state="unpublished" hides every item inside it,
+     * even items whose own workflow_state is "active". Canvas lets teachers
+     * unpublish a whole module without having to flip each item, so the inherited
+     * state must AND with the per-item one.
+     *
+     * @return void
+     */
+    public function test_module_meta_module_workflow_state_propagates_to_items(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/welcome.html', '<p>Hi</p>');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1"><item identifier="root"/></organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_page1" type="webcontent" href="wiki_content/welcome.html">
+      <file href="wiki_content/welcome.html"/>
+    </resource>
+    <resource identifier="r_page2" type="webcontent" href="wiki_content/welcome.html">
+      <file href="wiki_content/welcome.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="mod_hidden">
+    <title>Draft Module</title>
+    <workflow_state>unpublished</workflow_state>
+    <items>
+      <item identifier="mi_a">
+        <content_type>WikiPage</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Active item in hidden module</title>
+        <identifierref>r_page1</identifierref>
+      </item>
+      <item identifier="mi_sub">
+        <content_type>ContextModuleSubHeader</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Header</title>
+      </item>
+    </items>
+  </module>
+  <module identifier="mod_visible">
+    <title>Live Module</title>
+    <workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_b">
+        <content_type>WikiPage</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Plain active item</title>
+        <identifierref>r_page2</identifierref>
+      </item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(2, $course->sections);
+        // Every item under the unpublished module is hidden, including the subheader.
+        foreach ($course->sections[0]->items as $childitem) {
+            $this->assertFalse($childitem->isvisible, "child {$childitem->title} should inherit hidden state");
+        }
+        // The other module's items stay visible.
+        $this->assertTrue($course->sections[1]->items[0]->isvisible);
+    }
+
+    /**
      * Webcontent assets under quiz/ (QTI question images) are skipped, while a
      * genuine course file is kept.
      *
