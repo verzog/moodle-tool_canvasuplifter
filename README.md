@@ -2,13 +2,14 @@
 
 Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 
-> **Status: Phase 1 — early build.** This release can both *analyse* a Canvas
+> **Status: Phase 3 — early build.** This release can both *analyse* a Canvas
 > package (report what it contains and how cleanly each part maps to Moodle)
 > and *build* a new Moodle course from it. The builder currently creates
 > sections plus pages (`mod_page`), files (`mod_resource`), URLs (`mod_url`),
 > assignments (`mod_assign`), quizzes and question banks (`mod_quiz` /
-> `mod_qbank`) and forums (`mod_forum`); remaining content types (LTI) are
-> reported as skipped and will land in later phases. See the Roadmap below.
+> `mod_qbank`) and forums (`mod_forum`); remaining content types (LTI,
+> announcements) are reported as skipped and will land in later phases.
+> See the Roadmap below.
 
 ## Requirements
 
@@ -51,7 +52,9 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
   (images, video, audio and attachments) is imported with the question; external
   embeds such as YouTube are left as-is. An assessment **linked in the course**
   becomes a Moodle quiz (`mod_quiz`) with the questions as slots; a
-  **standalone/unreferenced** assessment becomes a question bank (`mod_qbank`).
+  **standalone/unreferenced** assessment becomes a question bank (`mod_qbank`),
+  and a build-time toggle ("Also build a runnable quiz from each standalone
+  question bank") will additionally seed a `mod_quiz` from each such bank.
   Unsupported question types are skipped, and multi-blank fill-in-blank collapses
   to a single short-answer.
 - Discussion topics build as forums, seeded with the Canvas prompt as the
@@ -88,13 +91,17 @@ Background on how Canvas ships quizzes — and why some arrive without questions
 
 ## How it's built
 
-A five-stage pipeline, kept in separate, testable pieces:
+A pipeline kept in separate, testable pieces:
 
 - `classes/local/ingest/package.php` — unzip and validate the package
 - `classes/local/parser/manifest_parser.php` — read the IMS manifest + Canvas
   extension files into a neutral model
 - `classes/local/model/` — the neutral course/section/item model (no Moodle deps)
 - `classes/local/report/conversion_report.php` — summarise mappability
+- `classes/local/build/` — Moodle-coupled builders (`course_builder` plus per
+  kind `page_builder`, `file_builder`, `url_builder`, `assign_builder`,
+  `forum_builder`, `quiz_builder`, `questionbank_builder`) with shared helpers
+  (`link_rewriter`, `file_embedder`, `safe_path`, `question_importer`)
 - `index.php` — the admin page tying it together
 
 The parser, model and report have **no Moodle dependencies**, so they can be
@@ -119,13 +126,13 @@ Everything lives under `~/.moodle-plugin-ci` (outside the repo).
 
 ## Roadmap
 
-| Phase | Adds |
-|---|---|
-| 0 (this) | Ingest, parse, model, read-only report |
-| 1 | Build: course, sections, pages, files, URLs, assignments |
-| 2 | Discussions → forums, announcements |
-| 3 | Quizzes + `mod_qbank` question banks (QTI import) |
-| 4 | Rubrics, gradebook, LTI placeholders |
+| Phase | Adds | Status |
+|---|---|---|
+| 0 | Ingest, parse, model, read-only report | Done |
+| 1 | Build: course, sections, pages, files, URLs, assignments | Done |
+| 2 | Discussions → forums | Done (announcements still pending) |
+| 3 | Quizzes + `mod_qbank` question banks (QTI import) | Done |
+| 4 | Rubrics, gradebook, LTI placeholders | Planned |
 
 ## Licence
 
