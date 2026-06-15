@@ -53,9 +53,9 @@ class label_builder {
             return null;
         }
 
-        // mod_label uses <h3> for subheader-style labels in many course themes; a
-        // small bold paragraph travels better across themes and matches Canvas's
-        // own subheader styling.
+        // A small bold paragraph travels better across course themes than the
+        // <h3> some themes apply to mod_label, and matches Canvas's own
+        // subheader styling.
         $intro = '<p><strong>' . s($title) . '</strong></p>';
 
         $moduleinfo = (object) [
