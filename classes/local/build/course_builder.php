@@ -398,7 +398,12 @@ class course_builder {
             );
         }
         if ($cmid !== null) {
-            $this->record_link_target($urlmap, $modelitem, $cmid);
+            // Builders may publish a custom URL (e.g. announcements share a news
+            // forum cm but each one needs its own discuss.php?d=… so internal
+            // Canvas links land on the right thread).
+            $override = ($builder !== null && property_exists($builder, 'linkurl'))
+                ? $builder->linkurl : null;
+            $this->record_link_target($urlmap, $modelitem, $cmid, $override);
             if ($modelitem->kind === item::KIND_PAGE) {
                 $builtpagecmids[] = $cmid;
             }
@@ -441,14 +446,19 @@ class course_builder {
      * @param array $urlmap Link map being built (modified in place).
      * @param item $modelitem The built item.
      * @param int $cmid Its course module id.
+     * @param string|null $override A builder-supplied URL to record instead of mod/.../view.php.
      * @return void
      */
-    private function record_link_target(array &$urlmap, item $modelitem, int $cmid): void {
-        $mod = self::KIND_TO_MOD[$modelitem->kind] ?? null;
-        if ($mod === null) {
-            return;
+    private function record_link_target(array &$urlmap, item $modelitem, int $cmid, ?string $override = null): void {
+        if ($override !== null && $override !== '') {
+            $url = $override;
+        } else {
+            $mod = self::KIND_TO_MOD[$modelitem->kind] ?? null;
+            if ($mod === null) {
+                return;
+            }
+            $url = (new \moodle_url('/mod/' . $mod . '/view.php', ['id' => $cmid]))->out(false);
         }
-        $url = (new \moodle_url('/mod/' . $mod . '/view.php', ['id' => $cmid]))->out(false);
         if ($modelitem->identifier !== '') {
             $urlmap['id:' . $modelitem->identifier] = $url;
         }

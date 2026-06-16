@@ -232,7 +232,11 @@ class manifest_parser {
      * @return void
      */
     protected function mark_announcements(array &$resources): void {
-        $announcementtopicids = [];
+        // topic_id => bool isunpublished. A discussion only gets the announcement
+        // flag when its topicMeta says so; unpublished state is read from the
+        // same XML so it survives even when the announcement isn't placed in
+        // module_meta.xml.
+        $announcementinfo = [];
         foreach ($resources as $resourceitem) {
             $candidates = $resourceitem->files;
             if ($resourceitem->href !== '') {
@@ -246,30 +250,36 @@ class manifest_parser {
                 if ($absolute === null) {
                     continue;
                 }
-                $topicid = $this->topicmeta_announcement_id((string) @file_get_contents($absolute));
-                if ($topicid !== null) {
-                    $announcementtopicids[$topicid] = true;
+                $info = $this->read_announcement_topicmeta((string) @file_get_contents($absolute));
+                if ($info !== null) {
+                    $announcementinfo[$info['topic_id']] = $info['isunpublished'];
                 }
             }
         }
         foreach ($resources as $resourceitem) {
             if ($resourceitem->kind === item::KIND_DISCUSSION
-                && isset($announcementtopicids[$resourceitem->identifier])
+                && array_key_exists($resourceitem->identifier, $announcementinfo)
             ) {
                 $resourceitem->isannouncement = true;
+                if ($announcementinfo[$resourceitem->identifier]) {
+                    // module_meta may not list this announcement at all, so isvisible
+                    // would default to true; the topicMeta is the only place its
+                    // unpublished state lives.
+                    $resourceitem->isvisible = false;
+                }
             }
         }
     }
 
     /**
      * If the given XML is a Canvas topicMeta for an announcement, return its
-     * <topic_id>; otherwise null. Kept narrowly Moodle-free so it stays
-     * testable from raw XML strings.
+     * <topic_id> and unpublished state; otherwise null. Kept narrowly
+     * Moodle-free so it stays testable from raw XML strings.
      *
      * @param string $xml The candidate XML payload.
-     * @return string|null The announcement's topic id, or null.
+     * @return array|null ['topic_id'=>string, 'isunpublished'=>bool] or null.
      */
-    protected function topicmeta_announcement_id(string $xml): ?string {
+    protected function read_announcement_topicmeta(string $xml): ?array {
         if (trim($xml) === '' || stripos($xml, 'topicMeta') === false) {
             return null;
         }
@@ -292,7 +302,13 @@ class manifest_parser {
             return null;
         }
         $id = trim($topicid->textContent);
-        return $id !== '' ? $id : null;
+        if ($id === '') {
+            return null;
+        }
+        $state = $this->first_child_named($dom->documentElement, 'workflow_state');
+        $isunpublished = $state !== null
+            && strtolower(trim($state->textContent)) === 'unpublished';
+        return ['topic_id' => $id, 'isunpublished' => $isunpublished];
     }
 
     /**

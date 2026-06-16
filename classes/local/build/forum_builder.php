@@ -39,6 +39,14 @@ class forum_builder {
     private string $packageroot;
 
     /**
+     * @var string|null URL the most recent build() should be linked to instead
+     * of the default mod/forum/view.php?id=cmid. Announcements share a single
+     * news forum cm, so each one needs its own discuss.php?d=… so internal
+     * Canvas links to a specific announcement land on its thread.
+     */
+    public ?string $linkurl = null;
+
+    /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
@@ -59,6 +67,9 @@ class forum_builder {
         global $CFG, $DB;
         require_once($CFG->dirroot . '/course/modlib.php');
         require_once($CFG->dirroot . '/mod/forum/lib.php');
+
+        // Reset between builds; we'll set it again for announcements.
+        $this->linkurl = null;
 
         $topic = $this->read_topic($modelitem);
         if ($topic === null) {
@@ -94,18 +105,22 @@ class forum_builder {
 
     /**
      * Post a Canvas announcement as a thread in the course's auto-created news
-     * forum and return that forum's cmid. The news forum already exists on every
-     * Moodle course, so each announcement just adds a discussion to it rather
-     * than spawning a new forum activity per announcement.
+     * forum and return that forum's cmid. The course usually already has a
+     * news forum, but sites whose course defaults disable Announcements may
+     * not — fall back to forum_get_course_forum() which finds-or-creates it,
+     * so no announcement is silently dropped.
+     *
+     * Records a per-thread linkurl (/mod/forum/discuss.php?d=…) so that
+     * $CANVAS_OBJECT_REFERENCE$ links to a specific announcement resolve to
+     * its thread rather than the shared news forum index.
      *
      * @param stdClass $course Course record.
      * @param string $name The announcement title.
      * @param array $topic Parsed topic: text, plain (bool), attachments (string[]).
-     * @return int|null The news forum's cmid, or null if it could not be found.
+     * @return int|null The news forum's cmid, or null if it could not be created.
      */
     private function post_to_news_forum(stdClass $course, string $name, array $topic): ?int {
-        global $DB;
-        $forum = $DB->get_record('forum', ['course' => $course->id, 'type' => 'news']);
+        $forum = forum_get_course_forum((int) $course->id, 'news');
         if (!$forum) {
             return null;
         }
@@ -113,7 +128,13 @@ class forum_builder {
         if (!$cm) {
             return null;
         }
-        $this->seed_discussion($course, (int) $forum->id, (int) $cm->id, $name, $topic);
+        $discussionid = $this->seed_discussion($course, (int) $forum->id, (int) $cm->id, $name, $topic);
+        if ($discussionid > 0) {
+            $this->linkurl = (new \moodle_url(
+                '/mod/forum/discuss.php',
+                ['d' => $discussionid]
+            ))->out(false);
+        }
         return (int) $cm->id;
     }
 
@@ -126,9 +147,9 @@ class forum_builder {
      * @param int $cmid The forum course module id.
      * @param string $name The thread subject.
      * @param array $topic Parsed topic: text, plain (bool), attachments (string[]).
-     * @return void
+     * @return int The created discussion id, or 0 if the post could not be added.
      */
-    private function seed_discussion(stdClass $course, int $forumid, int $cmid, string $name, array $topic): void {
+    private function seed_discussion(stdClass $course, int $forumid, int $cmid, string $name, array $topic): int {
         global $DB;
 
         $prompt = (string) ($topic['text'] ?? '');
@@ -155,12 +176,12 @@ class forum_builder {
         ];
         $discussionid = forum_add_discussion($discussion, null, null, get_admin()->id);
         if (!$discussionid) {
-            return;
+            return 0;
         }
 
         $firstpostid = (int) $DB->get_field('forum_discussions', 'firstpost', ['id' => $discussionid]);
         if ($firstpostid <= 0) {
-            return;
+            return (int) $discussionid;
         }
         $context = \context_module::instance($cmid);
 
@@ -174,6 +195,7 @@ class forum_builder {
         }
 
         $this->import_attachments($context->id, $firstpostid, (array) ($topic['attachments'] ?? []));
+        return (int) $discussionid;
     }
 
     /**

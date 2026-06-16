@@ -286,7 +286,7 @@ XML;
             . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
             . '<organizations><organization identifier="o"><item identifier="root">'
             . '<item identifier="m1"><title>Module 1</title>'
-            . '<item identifier="i_announce" identifierref="r_announce"><title>Welcome</title></item>'
+            . '<item identifier="i_announce" identifierref="r_announce"/>'
             . '</item></item></organization></organizations>'
             . '<resources>'
             . '<resource identifier="r_announce" type="imsdt_xmlv1p1">'
@@ -313,5 +313,135 @@ XML;
         $this->assertSame('Welcome to the course', $discussion->name);
         $post = $DB->get_record('forum_posts', ['id' => $discussion->firstpost]);
         $this->assertStringContainsString('Classes start Monday.', $post->message);
+    }
+
+    /**
+     * An announcement whose topicMeta says workflow_state="unpublished" is not
+     * posted to the news forum (skipped), even when module_meta doesn't list it.
+     *
+     * @return void
+     */
+    public function test_unpublished_announcement_is_skipped(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/discussion');
+        file_put_contents(
+            $dir . '/discussion/a1.xml',
+            '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Draft</title><text texttype="text/html">Not ready.</text></topic>'
+        );
+        file_put_contents(
+            $dir . '/discussion/a1_meta.xml',
+            '<topicMeta xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<topic_id>r_announce</topic_id>'
+            . '<type>announcement</type>'
+            . '<workflow_state>unpublished</workflow_state>'
+            . '</topicMeta>'
+        );
+        file_put_contents($dir . '/imsmanifest.xml', '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>M1</title>'
+            . '<item identifier="i_announce" identifierref="r_announce"/>'
+            . '</item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_announce" type="imsdt_xmlv1p1">'
+            . '<file href="discussion/a1.xml"/></resource>'
+            . '<resource identifier="r_announce_meta" '
+            . 'type="associatedcontent/imscc_xmlv1p1/learning-application-resource" '
+            . 'href="discussion/a1_meta.xml"><file href="discussion/a1_meta.xml"/></resource>'
+            . '</resources></manifest>');
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($this->getDataGenerator()->create_category()->id, $dir))->build($coursemodel);
+
+        $this->assertSame(0, $report['createdcounts']['discussion'] ?? 0);
+        $this->assertSame(1, $report['skippedcounts']['discussion'] ?? 0);
+        $news = $DB->get_record('forum', ['course' => $report['courseid'], 'type' => 'news'], '*', MUST_EXIST);
+        $this->assertSame(0, $DB->count_records('forum_discussions', ['forum' => $news->id]));
+    }
+
+    /**
+     * Internal Canvas links to a specific announcement should resolve to that
+     * announcement's discussion thread, not the shared news forum index, even
+     * when multiple announcements live in the same news forum. The page's
+     * $CANVAS_OBJECT_REFERENCE$ link gets rewritten to /mod/forum/discuss.php?d=…
+     *
+     * @return void
+     */
+    public function test_announcement_link_rewriting_targets_discussion(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/discussion');
+        mkdir($dir . '/wiki_content');
+        file_put_contents(
+            $dir . '/discussion/a1.xml',
+            '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>News one</title><text texttype="text/html">First.</text></topic>'
+        );
+        file_put_contents(
+            $dir . '/discussion/a1_meta.xml',
+            '<topicMeta xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<topic_id>r_a1</topic_id><type>announcement</type></topicMeta>'
+        );
+        file_put_contents(
+            $dir . '/discussion/a2.xml',
+            '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>News two</title><text texttype="text/html">Second.</text></topic>'
+        );
+        file_put_contents(
+            $dir . '/discussion/a2_meta.xml',
+            '<topicMeta xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<topic_id>r_a2</topic_id><type>announcement</type></topicMeta>'
+        );
+        // A page linking to the second announcement via $CANVAS_OBJECT_REFERENCE$.
+        file_put_contents(
+            $dir . '/wiki_content/intro.html',
+            '<p><a href="$CANVAS_OBJECT_REFERENCE$/announcements/r_a2">See announcement</a></p>'
+        );
+        file_put_contents($dir . '/imsmanifest.xml', '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>M1</title>'
+            . '<item identifier="i_page" identifierref="r_page"><title>Intro</title></item>'
+            . '<item identifier="i_a1" identifierref="r_a1"/>'
+            . '<item identifier="i_a2" identifierref="r_a2"/>'
+            . '</item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_page" type="webcontent" href="wiki_content/intro.html">'
+            . '<file href="wiki_content/intro.html"/></resource>'
+            . '<resource identifier="r_a1" type="imsdt_xmlv1p1">'
+            . '<file href="discussion/a1.xml"/></resource>'
+            . '<resource identifier="r_a1_meta" '
+            . 'type="associatedcontent/imscc_xmlv1p1/learning-application-resource" '
+            . 'href="discussion/a1_meta.xml"><file href="discussion/a1_meta.xml"/></resource>'
+            . '<resource identifier="r_a2" type="imsdt_xmlv1p1">'
+            . '<file href="discussion/a2.xml"/></resource>'
+            . '<resource identifier="r_a2_meta" '
+            . 'type="associatedcontent/imscc_xmlv1p1/learning-application-resource" '
+            . 'href="discussion/a2_meta.xml"><file href="discussion/a2_meta.xml"/></resource>'
+            . '</resources></manifest>');
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($this->getDataGenerator()->create_category()->id, $dir))->build($coursemodel);
+
+        $news = $DB->get_record('forum', ['course' => $report['courseid'], 'type' => 'news'], '*', MUST_EXIST);
+        $secondannouncement = $DB->get_record('forum_discussions', ['forum' => $news->id, 'name' => 'News two'], '*', MUST_EXIST);
+
+        $page = $DB->get_record_sql(
+            'SELECT p.* FROM {page} p JOIN {course_modules} cm ON cm.instance = p.id
+             JOIN {modules} m ON m.id = cm.module
+             WHERE cm.course = :course AND m.name = :name',
+            ['course' => $report['courseid'], 'name' => 'page']
+        );
+        // The page link landed on the announcement's thread, not the forum index.
+        $this->assertStringContainsString('/mod/forum/discuss.php?d=' . $secondannouncement->id, $page->content);
+        $this->assertStringNotContainsString('CANVAS_OBJECT_REFERENCE', $page->content);
     }
 }
