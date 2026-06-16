@@ -599,10 +599,13 @@ class course_builder {
      * Create a grade_category for each Canvas assignment group and configure the
      * course-level aggregation when Canvas marks the gradebook as weighted.
      *
-     * When weightingscheme is 'percent' the course aggregation is set to weighted
-     * mean of grades and each child carries the Canvas group_weight as its
-     * aggregationcoef. Otherwise the categories are created but no weights are
-     * applied, mirroring Canvas's "equally weighted" behaviour.
+     * When weightingscheme is 'percent' the course aggregation is set to Natural
+     * (GRADE_AGGREGATE_SUM) and each child category's grade_item carries the
+     * Canvas group_weight as a custom-weight override (aggregationcoef2 with
+     * weightoverride=1). That's the only place Moodle stores explicit per-child
+     * weights for category aggregation; setting aggregationcoef on the
+     * grade_category itself is ignored. Otherwise the categories are created
+     * but no weights are applied, mirroring Canvas's "equally weighted" mode.
      *
      * @param \stdClass $course Course record.
      * @param course_model $coursemodel Parsed package.
@@ -619,7 +622,7 @@ class course_builder {
         $weighted = $coursemodel->weightingscheme === 'percent';
         if ($weighted) {
             $coursecat = \grade_category::fetch_course_category((int) $course->id);
-            $coursecat->aggregation = GRADE_AGGREGATE_WEIGHTED_MEAN2;
+            $coursecat->aggregation = GRADE_AGGREGATE_SUM;
             $coursecat->update();
         }
 
@@ -631,8 +634,14 @@ class course_builder {
             );
             $cat->insert();
             if ($weighted && $spec['weight'] > 0) {
-                $cat->aggregationcoef = (float) $spec['weight'];
-                $cat->update();
+                // Custom-weight override lives on the category's grade_item, not
+                // on the grade_category record. aggregationcoef2 is a fraction
+                // of 1.0 (so 15% becomes 0.15), and weightoverride=1 tells
+                // Natural aggregation to honour it instead of recomputing.
+                $catitem = $cat->load_grade_item();
+                $catitem->aggregationcoef2 = ((float) $spec['weight']) / 100.0;
+                $catitem->weightoverride = 1;
+                $catitem->update();
             }
             $map[$spec['identifier']] = (int) $cat->id;
         }

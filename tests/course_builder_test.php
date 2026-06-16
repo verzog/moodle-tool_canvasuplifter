@@ -448,22 +448,29 @@ XML;
         $coursemodel = (new manifest_parser($dir))->parse();
         $report = (new course_builder($category->id, $dir))->build($coursemodel);
 
-        // Both Canvas groups became grade categories under the course.
-        $cats = $DB->get_records(
+        // Both Canvas groups became grade categories under the course, with
+        // their weights stored on the category's grade_item as a custom-weight
+        // override (Natural aggregation). aggregationcoef2 is a fraction of 1.0.
+        $partcats = $DB->get_records(
             'grade_categories',
             ['courseid' => $report['courseid'], 'fullname' => 'Participation']
         );
-        $this->assertCount(1, $cats);
-        $partcat = reset($cats);
-        $this->assertEquals(15.0, $partcat->aggregationcoef);
+        $this->assertCount(1, $partcats);
+        $partcat = \grade_category::fetch(['id' => reset($partcats)->id]);
+        $partitem = $partcat->load_grade_item();
+        $this->assertEqualsWithDelta(0.15, (float) $partitem->aggregationcoef2, 0.0001);
+        $this->assertEquals(1, $partitem->weightoverride);
 
-        $finals = $DB->get_records('grade_categories', ['courseid' => $report['courseid'], 'fullname' => 'Final']);
-        $this->assertCount(1, $finals);
-        $this->assertEquals(30.0, reset($finals)->aggregationcoef);
+        $finalcats = $DB->get_records('grade_categories', ['courseid' => $report['courseid'], 'fullname' => 'Final']);
+        $this->assertCount(1, $finalcats);
+        $finalcat = \grade_category::fetch(['id' => reset($finalcats)->id]);
+        $finalitem = $finalcat->load_grade_item();
+        $this->assertEqualsWithDelta(0.30, (float) $finalitem->aggregationcoef2, 0.0001);
+        $this->assertEquals(1, $finalitem->weightoverride);
 
-        // Course-level aggregation is weighted mean of grades.
+        // Course-level aggregation is Natural (custom weights honoured per child).
         $coursecat = \grade_category::fetch_course_category($report['courseid']);
-        $this->assertEquals(GRADE_AGGREGATE_WEIGHTED_MEAN2, $coursecat->aggregation);
+        $this->assertEquals(GRADE_AGGREGATE_SUM, $coursecat->aggregation);
 
         // The built assignment's grade item lives under the Participation category.
         $assigns = get_fast_modinfo($report['courseid'])->get_instances_of('assign');
