@@ -80,7 +80,7 @@ $string['matrixsupported_yes'] = 'Yes';
 $string['note_assignment'] = 'Name, instructions and due dates will convert; rubrics and advanced grading will not.';
 $string['note_discussion'] = 'Discussion topics become forums with the prompt as the opening post; Canvas does not export the replies, so existing threads do not carry across.';
 $string['note_file'] = 'Files convert directly to file resources.';
-$string['note_lti'] = 'Imported as a placeholder; keys and secrets must be reconfigured per site.';
+$string['note_lti'] = 'Imported as a hidden placeholder; the admin must reconfigure the consumer key and shared secret (or pick a preconfigured tool) and unhide the activity before students use it.';
 $string['note_page'] = 'Pages convert, including embedded images and internal links to other '
     . 'pages, files and URLs. Links to content types that are not built yet are left unchanged.';
 $string['note_questionbank'] = 'Imported as question bank (mod_qbank) activities.';
