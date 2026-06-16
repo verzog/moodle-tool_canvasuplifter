@@ -130,11 +130,12 @@ class manifest_parser {
         if ($modelitem->href !== '') {
             $candidates[] = $modelitem->href;
         }
-        // Discussion (imsdt), LTI (imsbasiclti) and QTI assessment resources are
-        // XML but name themselves inside the file, so read those too.
+        // Discussion (imsdt), LTI (imsbasiclti), web-link (imswl) and QTI
+        // assessment resources are XML but name themselves inside the file,
+        // so read those too.
         $allowxml = in_array(
             $modelitem->kind,
-            [item::KIND_DISCUSSION, item::KIND_LTI, item::KIND_QUIZ, item::KIND_QUESTIONBANK],
+            [item::KIND_DISCUSSION, item::KIND_LTI, item::KIND_URL, item::KIND_QUIZ, item::KIND_QUESTIONBANK],
             true
         );
         $isqti = in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true);

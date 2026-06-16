@@ -809,6 +809,47 @@ XML;
     }
 
     /**
+     * An IMS web-link (imswl) names its target inside the XML; an orphan URL
+     * with no manifest <title> should pick up the <webLink>/<title>, not fall
+     * back to the file slug like "weblink00003".
+     *
+     * @return void
+     */
+    public function test_derives_orphan_url_title_from_weblink_xml(): void {
+        $dir = make_request_directory();
+        file_put_contents(
+            $dir . '/weblink00003.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<webLink xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imswl_v1p2">'
+            . '<title>Open Textbook Library</title>'
+            . '<url href="https://example.edu/textbooks"/>'
+            . '</webLink>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_link" type="imswl_xmlv1p2" href="weblink00003.xml">
+      <file href="weblink00003.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame(item::KIND_URL, $course->orphans[0]->kind);
+        $this->assertSame('Open Textbook Library', $course->orphans[0]->title);
+    }
+
+    /**
      * Webcontent assets under quiz/ (QTI question images) are skipped, while a
      * genuine course file is kept.
      *
