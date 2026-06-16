@@ -75,6 +75,11 @@ class manifest_parser {
         // Build a lookup of every resource by identifier.
         $resources = $this->read_resources($dom);
 
+        // Canvas exports announcements as imsdt discussion topics but marks them
+        // in the topicMeta companion XML with <type>announcement</type>. Flag
+        // those so the builder can route them to the course's news forum.
+        $this->mark_announcements($resources);
+
         // Derive titles up front so module_meta clones inherit the recovered name
         // when their module item leaves the title blank, instead of falling back
         // to file slugs. The manifest-organisation path also benefits because
@@ -212,6 +217,100 @@ class manifest_parser {
             $items[$identifier] = $modelitem;
         }
         return $items;
+    }
+
+    /**
+     * Scan the package's topicMeta XML files and flag discussions whose Canvas
+     * topicMeta marks them as announcements (<type>announcement</type>).
+     *
+     * Canvas exports announcements with the same imsdt resource shape as ordinary
+     * discussions; the announcement signal lives in the topicMeta companion XML,
+     * which carries a <topic_id> back-reference. We build a topic_id -> bool map
+     * from those files and then mark matching KIND_DISCUSSION items in place.
+     *
+     * @param item[] $resources Resources keyed by identifier (modified in place).
+     * @return void
+     */
+    protected function mark_announcements(array &$resources): void {
+        // Map of topic_id => bool isunpublished. A discussion only gets the
+        // announcement flag when its topicMeta says so; the unpublished state
+        // lives in the same XML so it survives when module_meta.xml doesn't
+        // list the announcement.
+        $announcementinfo = [];
+        foreach ($resources as $resourceitem) {
+            $candidates = $resourceitem->files;
+            if ($resourceitem->href !== '') {
+                $candidates[] = $resourceitem->href;
+            }
+            foreach ($candidates as $relative) {
+                if (!preg_match('/\.xml$/i', $relative)) {
+                    continue;
+                }
+                $absolute = $this->resolve_within($relative);
+                if ($absolute === null) {
+                    continue;
+                }
+                $info = $this->read_announcement_topicmeta((string) @file_get_contents($absolute));
+                if ($info !== null) {
+                    $announcementinfo[$info['topic_id']] = $info['isunpublished'];
+                }
+            }
+        }
+        foreach ($resources as $resourceitem) {
+            if (
+                $resourceitem->kind === item::KIND_DISCUSSION
+                && array_key_exists($resourceitem->identifier, $announcementinfo)
+            ) {
+                $resourceitem->isannouncement = true;
+                if ($announcementinfo[$resourceitem->identifier]) {
+                    // Without this, an announcement that module_meta.xml omits
+                    // would default to isvisible=true; the topicMeta is the
+                    // only place its unpublished state lives.
+                    $resourceitem->isvisible = false;
+                }
+            }
+        }
+    }
+
+    /**
+     * If the given XML is a Canvas topicMeta for an announcement, return its
+     * <topic_id> and unpublished state; otherwise null. Kept narrowly
+     * Moodle-free so it stays testable from raw XML strings.
+     *
+     * @param string $xml The candidate XML payload.
+     * @return array|null ['topic_id'=>string, 'isunpublished'=>bool] or null.
+     */
+    protected function read_announcement_topicmeta(string $xml): ?array {
+        if (trim($xml) === '' || stripos($xml, 'topicMeta') === false) {
+            return null;
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (
+            !$loaded || $dom->documentElement === null
+            || $dom->documentElement->localName !== 'topicMeta'
+        ) {
+            return null;
+        }
+        $type = $this->first_child_named($dom->documentElement, 'type');
+        if ($type === null || strtolower(trim($type->textContent)) !== 'announcement') {
+            return null;
+        }
+        $topicid = $this->first_child_named($dom->documentElement, 'topic_id');
+        if ($topicid === null) {
+            return null;
+        }
+        $id = trim($topicid->textContent);
+        if ($id === '') {
+            return null;
+        }
+        $state = $this->first_child_named($dom->documentElement, 'workflow_state');
+        $isunpublished = $state !== null
+            && strtolower(trim($state->textContent)) === 'unpublished';
+        return ['topic_id' => $id, 'isunpublished' => $isunpublished];
     }
 
     /**

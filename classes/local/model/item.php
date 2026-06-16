@@ -72,6 +72,9 @@ class item {
     /** @var bool Whether the item is published (visible to students) in Canvas. */
     public bool $isvisible = true;
 
+    /** @var bool Whether a discussion is actually a Canvas announcement (topicMeta type="announcement"). */
+    public bool $isannouncement = false;
+
     /** @var string Inline URL for items that carry it (e.g. Canvas ExternalUrl). */
     public string $url = '';
 

@@ -607,6 +607,134 @@ XML;
     }
 
     /**
+     * Canvas marks an announcement by emitting a topicMeta companion XML with
+     * <type>announcement</type> and a <topic_id> pointing back at the imsdt
+     * discussion resource. The parser should set isannouncement on the matching
+     * discussion item and leave ordinary topics alone.
+     *
+     * @return void
+     */
+    public function test_topic_meta_marks_discussions_as_announcements(): void {
+        $dir = make_request_directory();
+        file_put_contents(
+            $dir . '/announce.xml',
+            '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Welcome to the course</title>'
+            . '<text texttype="text/html">Classes start Monday.</text></topic>'
+        );
+        file_put_contents(
+            $dir . '/announce_meta.xml',
+            '<topicMeta xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<topic_id>r_announce</topic_id><type>announcement</type></topicMeta>'
+        );
+        file_put_contents(
+            $dir . '/topic.xml',
+            '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Discussion</title>'
+            . '<text texttype="text/html">Say hi.</text></topic>'
+        );
+        file_put_contents(
+            $dir . '/topic_meta.xml',
+            '<topicMeta xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<topic_id>r_topic</topic_id><type>topic</type></topicMeta>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i_a" identifierref="r_announce"><title>Welcome</title></item>
+        <item identifier="i_t" identifierref="r_topic"><title>Discussion</title></item>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_announce" type="imsdt_xmlv1p1">
+      <file href="announce.xml"/>
+    </resource>
+    <resource identifier="r_announce_meta"
+              type="associatedcontent/imscc_xmlv1p1/learning-application-resource">
+      <file href="announce_meta.xml"/>
+    </resource>
+    <resource identifier="r_topic" type="imsdt_xmlv1p1">
+      <file href="topic.xml"/>
+    </resource>
+    <resource identifier="r_topic_meta"
+              type="associatedcontent/imscc_xmlv1p1/learning-application-resource">
+      <file href="topic_meta.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $items = [];
+        foreach ($course->sections[0]->items as $sectionitem) {
+            $items[$sectionitem->identifier] = $sectionitem;
+        }
+        $this->assertSame(item::KIND_DISCUSSION, $items['r_announce']->kind);
+        $this->assertTrue($items['r_announce']->isannouncement);
+        $this->assertSame(item::KIND_DISCUSSION, $items['r_topic']->kind);
+        $this->assertFalse($items['r_topic']->isannouncement);
+    }
+
+    /**
+     * topicMeta carries its own <workflow_state>. When it says "unpublished",
+     * the announcement's isvisible must flip to false even when module_meta.xml
+     * doesn't list the announcement at all (Canvas commonly omits them from
+     * the module structure entirely).
+     *
+     * @return void
+     */
+    public function test_topic_meta_unpublished_propagates_to_isvisible(): void {
+        $dir = make_request_directory();
+        file_put_contents(
+            $dir . '/announce.xml',
+            '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Draft</title><text texttype="text/html">Not ready.</text></topic>'
+        );
+        file_put_contents(
+            $dir . '/announce_meta.xml',
+            '<topicMeta xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<topic_id>r_announce</topic_id>'
+            . '<type>announcement</type>'
+            . '<workflow_state>unpublished</workflow_state>'
+            . '</topicMeta>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i_a" identifierref="r_announce"/>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_announce" type="imsdt_xmlv1p1">
+      <file href="announce.xml"/>
+    </resource>
+    <resource identifier="r_announce_meta"
+              type="associatedcontent/imscc_xmlv1p1/learning-application-resource">
+      <file href="announce_meta.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $announce = $course->sections[0]->items[0];
+        $this->assertTrue($announce->isannouncement);
+        $this->assertFalse($announce->isvisible);
+    }
+
+    /**
      * Webcontent assets under quiz/ (QTI question images) are skipped, while a
      * genuine course file is kept.
      *
