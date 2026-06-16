@@ -115,7 +115,7 @@ class lti_builder {
      * can be unit-tested directly from XML strings.
      *
      * @param string $xml The cartridge XML.
-     * @return array|null ['title','launchurl','secureurl','description'] or null.
+     * @return array|null ['title','launchurl','secureurl','description','custom'] or null.
      */
     public static function parse_cartridge_xml(string $xml): ?array {
         if (trim($xml) === '') {
@@ -130,10 +130,13 @@ class lti_builder {
             return null;
         }
         $title = self::first_child_text($dom, 'title');
-        $launchurl = self::first_child_text($dom, 'launch_url');
-        $secureurl = self::first_child_text($dom, 'secure_launch_url');
+        $launchurl = self::sanitise_url(self::first_child_text($dom, 'launch_url'));
+        $secureurl = self::sanitise_url(self::first_child_text($dom, 'secure_launch_url'));
         $description = self::first_child_text($dom, 'description');
-        // A cartridge with no URL is not usable as a tool placeholder.
+        // A cartridge with no usable http(s) URL is not a safe placeholder.
+        // Reject javascript:, data:, file:, app-internal schemes and the like
+        // so a malformed or malicious package can't create an active LTI
+        // endpoint that students could later launch.
         if ($launchurl === '' && $secureurl === '') {
             return null;
         }
@@ -145,7 +148,51 @@ class lti_builder {
             'launchurl' => $launchurl,
             'secureurl' => $secureurl,
             'description' => $description,
+            'custom' => self::read_custom_parameters($dom),
         ];
+    }
+
+    /**
+     * Validate a candidate launch URL: only http and https are accepted, so
+     * javascript:, data:, file:, mailto: and other dangerous or unusable
+     * schemes never reach mod_lti as a tool endpoint.
+     *
+     * @param string $url Trimmed candidate URL.
+     * @return string The URL if it's http(s), or the empty string.
+     */
+    private static function sanitise_url(string $url): string {
+        return preg_match('#^https?://#i', $url) === 1 ? $url : '';
+    }
+
+    /**
+     * Read the cartridge's <blti:custom> parameters. Many deep-linked
+     * publisher tools encode the resource id (or which Canvas assignment the
+     * link points at) in these parameters, so dropping them would leave the
+     * imported activity pointing at the tool's generic endpoint.
+     *
+     * @param DOMDocument $dom The parsed cartridge.
+     * @return array<string, string> Map of parameter name -> value, in document order.
+     */
+    private static function read_custom_parameters(DOMDocument $dom): array {
+        $params = [];
+        foreach ($dom->getElementsByTagNameNS('*', 'property') as $node) {
+            if (!($node instanceof DOMElement)) {
+                continue;
+            }
+            // Custom parameters live inside <blti:custom>; ignore <lticm:property>
+            // elements elsewhere (e.g. inside <blti:extensions>) so platform
+            // extensions don't leak into mod_lti's instructor parameters.
+            $parent = $node->parentNode;
+            if (!($parent instanceof DOMElement) || $parent->localName !== 'custom') {
+                continue;
+            }
+            $name = trim($node->getAttribute('name'));
+            if ($name === '') {
+                continue;
+            }
+            $params[$name] = trim($node->textContent);
+        }
+        return $params;
     }
 
     /**
@@ -198,7 +245,13 @@ class lti_builder {
             'module' => $moduleid,
             'course' => $course->id,
             'section' => $sectionnum,
-            'visible' => 1,
+            // Always start hidden: when a site has a preconfigured LTI tool
+            // whose base URL matches the cartridge launch URL, Moodle's
+            // lti_force_type_config_settings() will overwrite the
+            // LTI_SETTING_NEVER privacy fields below as soon as the activity
+            // is launched. Hiding the cm keeps it inert until an admin
+            // reviews the tool config and explicitly unhides it.
+            'visible' => 0,
             'cmidnumber' => '',
             'name' => shorten_text($name, 255),
             'intro' => $intro,
@@ -211,19 +264,39 @@ class lti_builder {
             // No credentials shipped with the cartridge.
             'resourcekey' => '',
             'password' => '',
-            'instructorcustomparameters' => '',
+            'instructorcustomparameters' => self::format_custom_parameters($cartridge['custom'] ?? []),
             'icon' => '',
             'secureicon' => '',
             'launchcontainer' => LTI_LAUNCH_CONTAINER_DEFAULT,
             'showtitlelaunch' => 1,
             'showdescriptionlaunch' => 0,
             // Conservative defaults: don't send PII or accept grades until
-            // an admin reviews the tool.
+            // an admin reviews the tool. Note these may be overridden by a
+            // URL-matched preconfigured tool; the visible=0 above keeps the
+            // activity inert until that review happens.
             'instructorchoicesendname' => LTI_SETTING_NEVER,
             'instructorchoicesendemailaddr' => LTI_SETTING_NEVER,
             'instructorchoiceacceptgrades' => LTI_SETTING_NEVER,
             'instructorchoiceallowroster' => LTI_SETTING_NEVER,
             'grade' => 0,
         ];
+    }
+
+    /**
+     * Render the cartridge's custom parameters in mod_lti's "newline-separated
+     * key=value" format. Empty when the cartridge has none.
+     *
+     * @param array<string, string> $params Parameter map.
+     * @return string
+     */
+    private static function format_custom_parameters(array $params): string {
+        if (empty($params)) {
+            return '';
+        }
+        $lines = [];
+        foreach ($params as $name => $value) {
+            $lines[] = $name . '=' . $value;
+        }
+        return implode("\n", $lines);
     }
 }

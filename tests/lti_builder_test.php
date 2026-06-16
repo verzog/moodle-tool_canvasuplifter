@@ -28,23 +28,67 @@ use tool_canvasuplifter\local\build\lti_builder;
  */
 final class lti_builder_test extends \basic_testcase {
     /**
-     * A plain cartridge yields its title and launch URL.
+     * A plain cartridge yields its title, launch URL and custom parameters.
      *
      * @return void
      */
     public function test_parse_plain_cartridge(): void {
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'
             . '<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p0"'
-            . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0">'
+            . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
+            . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
             . '<blti:title>Tool X</blti:title>'
             . '<blti:description>Course tool</blti:description>'
             . '<blti:launch_url>https://tool.example.com/launch</blti:launch_url>'
+            . '<blti:custom>'
+            . '<lticm:property name="resource_link_id">abc123</lticm:property>'
+            . '<lticm:property name="canvas_assignment_id">42</lticm:property>'
+            . '</blti:custom>'
             . '</cartridge_basiclti_link>';
         $info = lti_builder::parse_cartridge_xml($xml);
         $this->assertSame('Tool X', $info['title']);
         $this->assertSame('https://tool.example.com/launch', $info['launchurl']);
         $this->assertSame('', $info['secureurl']);
         $this->assertSame('Course tool', $info['description']);
+        $this->assertSame(['resource_link_id' => 'abc123', 'canvas_assignment_id' => '42'], $info['custom']);
+    }
+
+    /**
+     * <lticm:property> elements outside of <blti:custom> (e.g. nested inside
+     * <blti:extensions>) belong to platform extensions and must not leak into
+     * the instructor's custom parameters.
+     *
+     * @return void
+     */
+    public function test_extension_properties_are_not_treated_as_custom_params(): void {
+        $xml = '<cartridge_basiclti_link xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
+            . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
+            . '<blti:title>T</blti:title>'
+            . '<blti:launch_url>https://t.example/x</blti:launch_url>'
+            . '<blti:custom><lticm:property name="ok">yes</lticm:property></blti:custom>'
+            . '<blti:extensions platform="canvas.instructure.com">'
+            . '<lticm:property name="leak">no</lticm:property>'
+            . '</blti:extensions>'
+            . '</cartridge_basiclti_link>';
+        $info = lti_builder::parse_cartridge_xml($xml);
+        $this->assertSame(['ok' => 'yes'], $info['custom']);
+    }
+
+    /**
+     * Non-http(s) launch URLs (javascript:, data:, file:, mailto:, …) must be
+     * rejected so a malformed or malicious cartridge can't seed an active LTI
+     * endpoint with a dangerous scheme.
+     *
+     * @return void
+     */
+    public function test_non_http_launch_url_is_rejected(): void {
+        $template = '<cartridge_basiclti_link xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0">'
+            . '<blti:title>T</blti:title>'
+            . '<blti:launch_url>%s</blti:launch_url>'
+            . '</cartridge_basiclti_link>';
+        foreach (['javascript:alert(1)', 'data:text/html,<script>x</script>', 'file:///etc/passwd', 'about:blank'] as $bad) {
+            $this->assertNull(lti_builder::parse_cartridge_xml(sprintf($template, $bad)), $bad);
+        }
     }
 
     /**

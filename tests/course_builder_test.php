@@ -501,10 +501,14 @@ XML;
             $dir . '/lti.xml',
             '<?xml version="1.0" encoding="UTF-8"?>'
             . '<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p0"'
-            . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0">'
+            . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
+            . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
             . '<blti:title>Publisher Tool</blti:title>'
             . '<blti:description>External courseware</blti:description>'
             . '<blti:launch_url>https://tool.example.edu/launch</blti:launch_url>'
+            . '<blti:custom>'
+            . '<lticm:property name="resource_link_id">deep-link-xyz</lticm:property>'
+            . '</blti:custom>'
             . '</cartridge_basiclti_link>'
         );
         file_put_contents($dir . '/imsmanifest.xml', '<?xml version="1.0" encoding="UTF-8"?>'
@@ -537,7 +541,12 @@ XML;
         $this->assertSame('', (string) $lti->resourcekey);
         $this->assertSame('', (string) $lti->password);
         // The intro carries the per-site reminder for the admin.
-        $this->assertStringContainsString('consumer key', $lti->intro);
+        $this->assertStringContainsString('hidden placeholder', $lti->intro);
+        // Custom parameters from the cartridge survive in newline-separated form.
+        $this->assertStringContainsString('resource_link_id=deep-link-xyz', (string) $lti->instructorcustomparameters);
+        // The activity starts hidden so a URL-matched preconfigured tool can't
+        // auto-launch with privacy settings the admin hasn't reviewed.
+        $this->assertEquals(0, $cm->visible);
     }
 
     /**
