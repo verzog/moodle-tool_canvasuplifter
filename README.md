@@ -2,14 +2,15 @@
 
 Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 
-> **Status: Phase 3 — early build.** This release can both *analyse* a Canvas
+> **Status: Phase 4 — early build.** This release can both *analyse* a Canvas
 > package (report what it contains and how cleanly each part maps to Moodle)
 > and *build* a new Moodle course from it. The builder currently creates
 > sections plus pages (`mod_page`), files (`mod_resource`), URLs (`mod_url`),
 > assignments (`mod_assign`), quizzes and question banks (`mod_quiz` /
-> `mod_qbank`) and forums (`mod_forum`); remaining content types (LTI,
-> announcements) are reported as skipped and will land in later phases.
-> See the Roadmap below.
+> `mod_qbank`), forums (`mod_forum`), in-section labels (`mod_label`) for
+> Canvas module subheaders, LTI tool placeholders (`mod_lti`), and a
+> gradebook of categories with Canvas-derived weights. Canvas announcements
+> are posted into the course's news forum. See the Roadmap below.
 
 ## Requirements
 
@@ -130,9 +131,9 @@ Everything lives under `~/.moodle-plugin-ci` (outside the repo).
 |---|---|---|
 | 0 | Ingest, parse, model, read-only report | Done |
 | 1 | Build: course, sections, pages, files, URLs, assignments | Done |
-| 2 | Discussions → forums | Done (announcements still pending) |
+| 2 | Discussions → forums, announcements → news forum | Done |
 | 3 | Quizzes + `mod_qbank` question banks (QTI import) | Done |
-| 4 | Rubrics, gradebook, LTI placeholders | Planned |
+| 4 | Gradebook categories with Canvas weights, LTI placeholders, in-section labels | Done (rubrics still planned) |
 
 ## Licence
 

@@ -485,6 +485,71 @@ XML;
     }
 
     /**
+     * Building a package with an imsbasiclti cartridge creates a mod_lti
+     * placeholder pointing at the cartridge's launch URL, with credentials
+     * left blank for the admin to fill in.
+     *
+     * @return void
+     */
+    public function test_build_creates_lti_placeholder(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        file_put_contents(
+            $dir . '/lti.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p0"'
+            . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
+            . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
+            . '<blti:title>Publisher Tool</blti:title>'
+            . '<blti:description>External courseware</blti:description>'
+            . '<blti:launch_url>https://tool.example.edu/launch</blti:launch_url>'
+            . '<blti:custom>'
+            . '<lticm:property name="resource_link_id">deep-link-xyz</lticm:property>'
+            . '</blti:custom>'
+            . '</cartridge_basiclti_link>'
+        );
+        file_put_contents($dir . '/imsmanifest.xml', '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_lti" identifierref="r_lti"><title>Publisher Tool</title></item>'
+            . '</item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_lti" type="imsbasiclti_xmlv1p0" href="lti.xml">'
+            . '<file href="lti.xml"/></resource>'
+            . '</resources></manifest>');
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new \tool_canvasuplifter\local\parser\manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['lti'] ?? 0);
+
+        $cms = get_fast_modinfo($report['courseid'])->get_instances_of('lti');
+        $this->assertCount(1, $cms);
+        $cm = reset($cms);
+        $this->assertSame('Publisher Tool', $cm->get_name());
+
+        $lti = $DB->get_record('lti', ['id' => $cm->instance]);
+        $this->assertSame('https://tool.example.edu/launch', $lti->toolurl);
+        // Per-activity tool (not a preconfigured registry entry).
+        $this->assertEquals(0, $lti->typeid);
+        // No credentials carried across.
+        $this->assertSame('', (string) $lti->resourcekey);
+        $this->assertSame('', (string) $lti->password);
+        // The intro carries the per-site reminder for the admin.
+        $this->assertStringContainsString('hidden placeholder', $lti->intro);
+        // Custom parameters from the cartridge survive in newline-separated form.
+        $this->assertStringContainsString('resource_link_id=deep-link-xyz', (string) $lti->instructorcustomparameters);
+        // The activity starts hidden so a URL-matched preconfigured tool can't
+        // auto-launch with privacy settings the admin hasn't reviewed.
+        $this->assertEquals(0, $cm->visible);
+    }
+
+    /**
      * Write a package whose only syllabus + a stray file are unreferenced.
      *
      * @return string Path to the package root.
