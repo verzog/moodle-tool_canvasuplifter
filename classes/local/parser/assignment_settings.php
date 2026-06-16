@@ -53,6 +53,9 @@ class assignment_settings {
     /** @var int Cut-off (lock) date as a Unix timestamp (0 when unset). */
     public int $cutoff = 0;
 
+    /** @var string Canvas <assignment_group_identifierref>, used to place into a grade category. */
+    public string $gradegroupref = '';
+
     /**
      * Parse an assignment_settings.xml string.
      *
@@ -91,6 +94,7 @@ class assignment_settings {
         $settings->duedate = self::timestamp((string) ($doc->due_at ?? ''));
         $settings->allowfrom = self::timestamp((string) ($doc->unlock_at ?? ''));
         $settings->cutoff = self::timestamp((string) ($doc->lock_at ?? ''));
+        $settings->gradegroupref = trim((string) ($doc->assignment_group_identifierref ?? ''));
 
         return $settings;
     }

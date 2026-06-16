@@ -70,6 +70,9 @@ class course_builder {
     /** @var bool Also build a runnable quiz from each standalone (orphan) assessment. */
     private bool $quizfrombank;
 
+    /** @var array<string, int> Canvas assignment-group id -> Moodle grade_category id, for the current build. */
+    private array $gradecategoryids = [];
+
     /**
      * Constructor.
      *
@@ -125,6 +128,12 @@ class course_builder {
         $course = $DB->get_record('course', ['id' => $course->id], '*', MUST_EXIST);
 
         $this->report_progress(5, get_string('progresscoursecreated', 'tool_canvasuplifter'));
+
+        // Create one Moodle grade category per Canvas assignment group, so each
+        // mod_assign we build can be moved into its matching category. Built
+        // up front because Moodle creates a default grade item for every assign
+        // on add_moduleinfo() and we re-parent those once we know the cmid.
+        $this->gradecategoryids = $this->create_grade_categories($course, $coursemodel);
 
         $builders = [
             item::KIND_PAGE => new page_builder($this->packageroot),
@@ -404,6 +413,10 @@ class course_builder {
             $override = ($builder !== null && property_exists($builder, 'linkurl'))
                 ? $builder->linkurl : null;
             $this->record_link_target($urlmap, $modelitem, $cmid, $override);
+            // Drop assignments into their matching Canvas-derived grade category.
+            if ($modelitem->kind === item::KIND_ASSIGNMENT && $modelitem->gradegroupref !== '') {
+                $this->place_in_grade_category($course->id, $cmid, $modelitem->gradegroupref);
+            }
             if ($modelitem->kind === item::KIND_PAGE) {
                 $builtpagecmids[] = $cmid;
             }
@@ -580,5 +593,80 @@ class course_builder {
             $candidate = $base . ' ' . $suffix;
         }
         return $candidate;
+    }
+
+    /**
+     * Create a grade_category for each Canvas assignment group and configure the
+     * course-level aggregation when Canvas marks the gradebook as weighted.
+     *
+     * When weightingscheme is 'percent' the course aggregation is set to weighted
+     * mean of grades and each child carries the Canvas group_weight as its
+     * aggregationcoef. Otherwise the categories are created but no weights are
+     * applied, mirroring Canvas's "equally weighted" behaviour.
+     *
+     * @param \stdClass $course Course record.
+     * @param course_model $coursemodel Parsed package.
+     * @return array<string, int> Canvas identifier -> Moodle grade_category id.
+     */
+    private function create_grade_categories(\stdClass $course, course_model $coursemodel): array {
+        global $CFG;
+        if (empty($coursemodel->gradecategories)) {
+            return [];
+        }
+        require_once($CFG->libdir . '/gradelib.php');
+        require_once($CFG->libdir . '/grade/grade_category.php');
+
+        $weighted = $coursemodel->weightingscheme === 'percent';
+        if ($weighted) {
+            $coursecat = \grade_category::fetch_course_category((int) $course->id);
+            $coursecat->aggregation = GRADE_AGGREGATE_WEIGHTED_MEAN2;
+            $coursecat->update();
+        }
+
+        $map = [];
+        foreach ($coursemodel->gradecategories as $spec) {
+            $cat = new \grade_category(
+                ['courseid' => (int) $course->id, 'fullname' => $spec['title']],
+                false
+            );
+            $cat->insert();
+            if ($weighted && $spec['weight'] > 0) {
+                $cat->aggregationcoef = (float) $spec['weight'];
+                $cat->update();
+            }
+            $map[$spec['identifier']] = (int) $cat->id;
+        }
+        return $map;
+    }
+
+    /**
+     * Move a just-built assignment's grade item into the matching Canvas-derived
+     * grade category, by re-parenting the auto-created grade_item.
+     *
+     * @param int $courseid The course id.
+     * @param int $cmid The assignment's course module id.
+     * @param string $groupref Canvas assignment group identifier from the model.
+     * @return void
+     */
+    private function place_in_grade_category(int $courseid, int $cmid, string $groupref): void {
+        global $CFG;
+        $categoryid = $this->gradecategoryids[$groupref] ?? 0;
+        if ($categoryid <= 0) {
+            return;
+        }
+        $cm = get_coursemodule_from_id('assign', $cmid, $courseid, false, IGNORE_MISSING);
+        if (!$cm) {
+            return;
+        }
+        require_once($CFG->libdir . '/grade/grade_item.php');
+        $item = \grade_item::fetch([
+            'itemtype' => 'mod',
+            'itemmodule' => 'assign',
+            'iteminstance' => (int) $cm->instance,
+            'courseid' => $courseid,
+        ]);
+        if ($item) {
+            $item->set_parent($categoryid);
+        }
     }
 }

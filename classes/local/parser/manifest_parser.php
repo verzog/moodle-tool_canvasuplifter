@@ -71,6 +71,8 @@ class manifest_parser {
 
         $course = new course_model();
         $course->fullname = $this->read_course_title();
+        $course->weightingscheme = $this->read_weighting_scheme();
+        $course->gradecategories = $this->read_grade_categories();
 
         // Build a lookup of every resource by identifier.
         $resources = $this->read_resources($dom);
@@ -79,6 +81,10 @@ class manifest_parser {
         // in the topicMeta companion XML with <type>announcement</type>. Flag
         // those so the builder can route them to the course's news forum.
         $this->mark_announcements($resources);
+
+        // Read per-assignment grade-group references so course_builder can move
+        // each built mod_assign into its matching grade category.
+        $this->mark_assignment_groups($resources);
 
         // Derive titles up front so module_meta clones inherit the recovered name
         // when their module item leaves the title blank, instead of falling back
@@ -685,5 +691,98 @@ class manifest_parser {
             return trim((string) $xml->title);
         }
         return '';
+    }
+
+    /**
+     * Read Canvas's <group_weighting_scheme> from course_settings.xml.
+     *
+     * Returns 'percent' when the gradebook uses weighted assignment groups, or
+     * the empty string when groups are flat (or course_settings.xml is missing).
+     *
+     * @return string
+     */
+    protected function read_weighting_scheme(): string {
+        $path = $this->basedir . '/course_settings/course_settings.xml';
+        if (!is_readable($path)) {
+            return '';
+        }
+        $previous = libxml_use_internal_errors(true);
+        $xml = simplexml_load_file($path, 'SimpleXMLElement', LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if ($xml === false || !isset($xml->group_weighting_scheme)) {
+            return '';
+        }
+        return strtolower(trim((string) $xml->group_weighting_scheme));
+    }
+
+    /**
+     * Read Canvas's assignment_groups.xml into a list of grade-category specs.
+     *
+     * Each <assignmentGroup> becomes one entry with the Canvas identifier (used
+     * as the per-assignment foreign key), a display title, a sort position and
+     * the percentage weight. The list is sorted by position so the gradebook
+     * mirrors Canvas's ordering.
+     *
+     * @return array<int, array{identifier: string, title: string, position: int, weight: float}>
+     */
+    protected function read_grade_categories(): array {
+        $path = $this->basedir . '/course_settings/assignment_groups.xml';
+        if (!is_readable($path)) {
+            return [];
+        }
+        $previous = libxml_use_internal_errors(true);
+        $xml = simplexml_load_file($path, 'SimpleXMLElement', LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if ($xml === false) {
+            return [];
+        }
+        $groups = [];
+        foreach ($xml->assignmentGroup as $node) {
+            $id = trim((string) ($node['identifier'] ?? ''));
+            $title = trim((string) ($node->title ?? ''));
+            if ($id === '' || $title === '') {
+                continue;
+            }
+            $groups[] = [
+                'identifier' => $id,
+                'title' => $title,
+                'position' => (int) ($node->position ?? 0),
+                'weight' => (float) ($node->group_weight ?? 0),
+            ];
+        }
+        usort($groups, fn($a, $b) => $a['position'] <=> $b['position']);
+        return $groups;
+    }
+
+    /**
+     * For every assignment resource, read its assignment_settings.xml to find
+     * the Canvas <assignment_group_identifierref> and stash it on the item so
+     * the builder can drop the graded activity into the right grade category.
+     *
+     * @param item[] $resources Resources keyed by identifier (modified in place).
+     * @return void
+     */
+    protected function mark_assignment_groups(array &$resources): void {
+        foreach ($resources as $resourceitem) {
+            if ($resourceitem->kind !== item::KIND_ASSIGNMENT) {
+                continue;
+            }
+            foreach ($resourceitem->files as $relative) {
+                if (!str_ends_with($relative, 'assignment_settings.xml')) {
+                    continue;
+                }
+                $absolute = $this->resolve_within($relative);
+                if ($absolute === null) {
+                    continue;
+                }
+                $settings = assignment_settings::parse((string) @file_get_contents($absolute));
+                if ($settings->gradegroupref !== '') {
+                    $resourceitem->gradegroupref = $settings->gradegroupref;
+                }
+                break;
+            }
+        }
     }
 }

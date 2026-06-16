@@ -378,6 +378,106 @@ XML;
     }
 
     /**
+     * Building a package with assignment_groups.xml + a weighted gradebook
+     * creates a Moodle grade category per Canvas group, sets the course-level
+     * aggregation to weighted mean, applies the group_weight as the category's
+     * aggregationcoef, and re-parents each built assignment's grade item into
+     * the matching category.
+     *
+     * @return void
+     */
+    public function test_build_creates_weighted_grade_categories(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/grade/grade_category.php');
+        require_once($CFG->libdir . '/grade/grade_item.php');
+
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/a1');
+        file_put_contents(
+            $dir . '/course_settings/course_settings.xml',
+            '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>C</title><group_weighting_scheme>percent</group_weighting_scheme>'
+            . '</course>'
+        );
+        file_put_contents(
+            $dir . '/course_settings/assignment_groups.xml',
+            '<assignmentGroups xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<assignmentGroup identifier="g_part"><title>Participation</title>'
+            . '<position>1</position><group_weight>15.0</group_weight></assignmentGroup>'
+            . '<assignmentGroup identifier="g_final"><title>Final</title>'
+            . '<position>2</position><group_weight>30.0</group_weight></assignmentGroup>'
+            . '</assignmentGroups>'
+        );
+        file_put_contents(
+            $dir . '/a1/assignment_settings.xml',
+            '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Essay</title><points_possible>50</points_possible>'
+            . '<grading_type>points</grading_type>'
+            . '<submission_types>online_upload</submission_types>'
+            . '<assignment_group_identifierref>g_part</assignment_group_identifierref>'
+            . '</assignment>'
+        );
+        file_put_contents($dir . '/a1/a1.html', '<p>Essay.</p>');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i_assign" identifierref="r_assign"><title>Essay</title></item>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_assign"
+              type="associatedcontent/imscc_xmlv1p1/learning-application-resource"
+              href="a1/a1.html">
+      <file href="a1/a1.html"/>
+      <file href="a1/assignment_settings.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        // Both Canvas groups became grade categories under the course.
+        $cats = $DB->get_records(
+            'grade_categories',
+            ['courseid' => $report['courseid'], 'fullname' => 'Participation']
+        );
+        $this->assertCount(1, $cats);
+        $partcat = reset($cats);
+        $this->assertEquals(15.0, $partcat->aggregationcoef);
+
+        $finals = $DB->get_records('grade_categories', ['courseid' => $report['courseid'], 'fullname' => 'Final']);
+        $this->assertCount(1, $finals);
+        $this->assertEquals(30.0, reset($finals)->aggregationcoef);
+
+        // Course-level aggregation is weighted mean of grades.
+        $coursecat = \grade_category::fetch_course_category($report['courseid']);
+        $this->assertEquals(GRADE_AGGREGATE_WEIGHTED_MEAN2, $coursecat->aggregation);
+
+        // The built assignment's grade item lives under the Participation category.
+        $assigns = get_fast_modinfo($report['courseid'])->get_instances_of('assign');
+        $assigncm = reset($assigns);
+        $gradeitem = \grade_item::fetch([
+            'itemtype' => 'mod',
+            'itemmodule' => 'assign',
+            'iteminstance' => $assigncm->instance,
+            'courseid' => $report['courseid'],
+        ]);
+        $this->assertEquals($partcat->id, $gradeitem->categoryid);
+    }
+
+    /**
      * Write a package whose only syllabus + a stray file are unreferenced.
      *
      * @return string Path to the package root.
