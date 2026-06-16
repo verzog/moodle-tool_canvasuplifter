@@ -78,6 +78,9 @@ class item {
     /** @var string Inline URL for items that carry it (e.g. Canvas ExternalUrl). */
     public string $url = '';
 
+    /** @var string For assignments: Canvas <assignment_group_identifierref>. */
+    public string $gradegroupref = '';
+
     /**
      * Constructor.
      *

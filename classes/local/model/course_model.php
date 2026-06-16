@@ -37,6 +37,19 @@ class course_model {
     public array $orphans = [];
 
     /**
+     * @var array<int, array{identifier: string, title: string, position: int, weight: float}>
+     * Canvas assignment groups, ordered by position. Each entry maps to one
+     * Moodle grade category. Empty when the package has no assignment_groups.xml.
+     */
+    public array $gradecategories = [];
+
+    /**
+     * @var string Canvas <group_weighting_scheme>: 'percent' enables weighted
+     * categories; anything else means treat groups as plain categories.
+     */
+    public string $weightingscheme = '';
+
+    /**
      * Add a section.
      *
      * @param section_model $section The section to add.

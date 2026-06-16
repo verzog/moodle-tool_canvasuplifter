@@ -735,6 +735,80 @@ XML;
     }
 
     /**
+     * Canvas's assignment_groups.xml becomes course_model::gradecategories, in
+     * position order, and course_settings.xml's <group_weighting_scheme> drives
+     * course_model::weightingscheme. Per-assignment
+     * <assignment_group_identifierref> is captured into item::gradegroupref so
+     * the builder can route each assignment into its category.
+     *
+     * @return void
+     */
+    public function test_assignment_groups_become_grade_categories(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/a1');
+        file_put_contents(
+            $dir . '/course_settings/course_settings.xml',
+            '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>C</title><group_weighting_scheme>percent</group_weighting_scheme>'
+            . '</course>'
+        );
+        file_put_contents(
+            $dir . '/course_settings/assignment_groups.xml',
+            '<assignmentGroups xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<assignmentGroup identifier="g_quizzes"><title>Weekly Quizzes</title>'
+            . '<position>3</position><group_weight>10.0</group_weight></assignmentGroup>'
+            . '<assignmentGroup identifier="g_part"><title>Participation</title>'
+            . '<position>1</position><group_weight>15.0</group_weight></assignmentGroup>'
+            . '</assignmentGroups>'
+        );
+        file_put_contents(
+            $dir . '/a1/assignment_settings.xml',
+            '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Essay</title><points_possible>50</points_possible>'
+            . '<grading_type>points</grading_type>'
+            . '<submission_types>online_upload</submission_types>'
+            . '<assignment_group_identifierref>g_part</assignment_group_identifierref>'
+            . '</assignment>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i_assign" identifierref="r_assign"><title>Essay</title></item>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_assign"
+              type="associatedcontent/imscc_xmlv1p1/learning-application-resource"
+              href="a1/assignment_settings.xml">
+      <file href="a1/assignment_settings.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame('percent', $course->weightingscheme);
+        // Sorted by position: Participation (1) before Weekly Quizzes (3).
+        $this->assertCount(2, $course->gradecategories);
+        $this->assertSame('g_part', $course->gradecategories[0]['identifier']);
+        $this->assertSame('Participation', $course->gradecategories[0]['title']);
+        $this->assertSame(15.0, $course->gradecategories[0]['weight']);
+        $this->assertSame('g_quizzes', $course->gradecategories[1]['identifier']);
+        $this->assertSame(10.0, $course->gradecategories[1]['weight']);
+
+        $assign = $course->sections[0]->items[0];
+        $this->assertSame(item::KIND_ASSIGNMENT, $assign->kind);
+        $this->assertSame('g_part', $assign->gradegroupref);
+    }
+
+    /**
      * Webcontent assets under quiz/ (QTI question images) are skipped, while a
      * genuine course file is kept.
      *
