@@ -203,8 +203,8 @@ class lti_builder {
             'name' => shorten_text($name, 255),
             'intro' => $intro,
             'introformat' => FORMAT_HTML,
-            // typeid=0 means "use the per-activity tool URL"; the admin can
-            // later swap it for a preconfigured tool from the LTI registry.
+            // A typeid of 0 means "use the per-activity tool URL"; the admin
+            // can later swap it for a preconfigured tool from the LTI registry.
             'typeid' => 0,
             'toolurl' => $cartridge['launchurl'],
             'securetoolurl' => $cartridge['secureurl'],
