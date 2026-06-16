@@ -66,6 +66,7 @@ $string['extraquizzesbuilt'] = 'Also built {$a} runnable quiz(zes) from standalo
 $string['itemcount'] = 'Content items';
 $string['itemdetailheading'] = 'Item-by-item detail';
 $string['jobstatusis'] = 'Status: {$a}.';
+$string['lti_placeholder_note'] = 'Imported as a placeholder from a Canvas LTI link. Set the consumer key and shared secret on the Moodle side before students use this tool.';
 $string['matrixcolsupported'] = 'Converts';
 $string['matrixcoltype'] = 'Question type';
 $string['matrixexplain'] = '{$a->supported} of {$a->total} questions will convert. '

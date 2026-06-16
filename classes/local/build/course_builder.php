@@ -23,10 +23,7 @@ use tool_canvasuplifter\local\model\item;
 /**
  * Course builder: creates a Moodle course, its sections, and the activity types
  * implemented so far (mod_page, mod_url, mod_resource, mod_assign, mod_quiz,
- * mod_qbank and mod_forum).
- *
- * Activity types not yet implemented (e.g. mod_lti) are counted as skipped in the
- * build report so the admin can see what's still to come.
+ * mod_qbank, mod_forum, mod_label and mod_lti).
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -37,7 +34,7 @@ class course_builder {
     public const BUILDS_NOW = [
         item::KIND_PAGE, item::KIND_URL, item::KIND_FILE, item::KIND_ASSIGNMENT,
         item::KIND_QUIZ, item::KIND_QUESTIONBANK, item::KIND_DISCUSSION,
-        item::KIND_SUBHEADER,
+        item::KIND_SUBHEADER, item::KIND_LTI,
     ];
 
     /** @var string[] Kinds that must be created in section 0 (question banks). */
@@ -53,6 +50,7 @@ class course_builder {
         item::KIND_QUESTIONBANK => 'qbank',
         item::KIND_DISCUSSION => 'forum',
         item::KIND_SUBHEADER => 'label',
+        item::KIND_LTI => 'lti',
     ];
 
     /** @var int Course category for the new course. */
@@ -144,6 +142,7 @@ class course_builder {
             item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot),
             item::KIND_DISCUSSION => new forum_builder($this->packageroot),
             item::KIND_SUBHEADER => new label_builder(),
+            item::KIND_LTI => new lti_builder($this->packageroot),
         ];
 
         $createdcounts = [];
