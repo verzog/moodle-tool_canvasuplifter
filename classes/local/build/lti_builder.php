@@ -286,7 +286,7 @@ class lti_builder {
      * Render the cartridge's custom parameters in mod_lti's "newline-separated
      * key=value" format. Empty when the cartridge has none.
      *
-     * @param array<string, string> $params Parameter map.
+     * @param array $params Parameter map (string => string).
      * @return string
      */
     private static function format_custom_parameters(array $params): string {
