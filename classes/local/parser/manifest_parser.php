@@ -232,10 +232,10 @@ class manifest_parser {
      * @return void
      */
     protected function mark_announcements(array &$resources): void {
-        // topic_id => bool isunpublished. A discussion only gets the announcement
-        // flag when its topicMeta says so; unpublished state is read from the
-        // same XML so it survives even when the announcement isn't placed in
-        // module_meta.xml.
+        // Map of topic_id => bool isunpublished. A discussion only gets the
+        // announcement flag when its topicMeta says so; the unpublished state
+        // lives in the same XML so it survives when module_meta.xml doesn't
+        // list the announcement.
         $announcementinfo = [];
         foreach ($resources as $resourceitem) {
             $candidates = $resourceitem->files;
@@ -257,14 +257,15 @@ class manifest_parser {
             }
         }
         foreach ($resources as $resourceitem) {
-            if ($resourceitem->kind === item::KIND_DISCUSSION
+            if (
+                $resourceitem->kind === item::KIND_DISCUSSION
                 && array_key_exists($resourceitem->identifier, $announcementinfo)
             ) {
                 $resourceitem->isannouncement = true;
                 if ($announcementinfo[$resourceitem->identifier]) {
-                    // module_meta may not list this announcement at all, so isvisible
-                    // would default to true; the topicMeta is the only place its
-                    // unpublished state lives.
+                    // Without this, an announcement that module_meta.xml omits
+                    // would default to isvisible=true; the topicMeta is the
+                    // only place its unpublished state lives.
                     $resourceitem->isvisible = false;
                 }
             }
@@ -288,7 +289,8 @@ class manifest_parser {
         $loaded = $dom->loadXML($xml, LIBXML_NONET);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
-        if (!$loaded || $dom->documentElement === null
+        if (
+            !$loaded || $dom->documentElement === null
             || $dom->documentElement->localName !== 'topicMeta'
         ) {
             return null;

@@ -271,7 +271,7 @@ XML;
             . '<text texttype="text/html">&lt;p&gt;Classes start Monday.&lt;/p&gt;</text>'
             . '</topic>'
         );
-        // topicMeta declaring this discussion as an announcement.
+        // Companion topicMeta declaring this discussion as an announcement.
         file_put_contents(
             $dir . '/discussion/a1_meta.xml',
             '<?xml version="1.0" encoding="UTF-8"?>'
