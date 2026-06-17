@@ -1490,6 +1490,59 @@ XML;
     }
 
     /**
+     * A nested folder whose index.html only appears as a secondary <file>
+     * entry (no resource lists it as the primary href) must not steal a
+     * theme marker from a real parent bundle. Without this guard the
+     * marker would be attributed to the unanchored nested folder,
+     * fold_one_bundle() would return false there, and the real parent
+     * lesson folder would never be folded — every bundle asset would then
+     * surface as a separate file.
+     *
+     * @return void
+     */
+    public function test_unanchored_nested_index_does_not_steal_parent_marker(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/lesson');
+        mkdir($dir . '/lesson/style');
+        file_put_contents($dir . '/lesson/index.html', '<html><title>Lesson</title></html>');
+        // Nested asset folder also has an index.html, but only as a secondary
+        // file entry below — no resource has it as a primary href.
+        file_put_contents($dir . '/lesson/style/index.html', '<html><title>fragment</title></html>');
+        file_put_contents($dir . '/lesson/style/igencp.css', '');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="o"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_lesson" type="webcontent" href="lesson/index.html">
+      <file href="lesson/index.html"/>
+    </resource>
+    <resource identifier="r_skin" type="webcontent" href="lesson/style/igencp.css">
+      <file href="lesson/style/igencp.css"/>
+      <file href="lesson/style/index.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The real lesson folder folds; the unanchored nested folder is
+        // suppressed as a bundle asset, not surfaced separately.
+        $byid = [];
+        foreach ($course->orphans as $orphan) {
+            $byid[$orphan->identifier] = $orphan;
+        }
+        $this->assertArrayHasKey('r_lesson', $byid);
+        $this->assertSame(item::KIND_PAGE, $byid['r_lesson']->kind);
+        $this->assertArrayNotHasKey('r_skin', $byid);
+        $assetrels = array_column($byid['r_lesson']->bundleassets, 'relpath');
+        $this->assertContains('style/igencp.css', $assetrels);
+    }
+
+    /**
      * Real ILIAS / IGEN / DELOS exports nest the theme marker many levels
      * below the lesson folder (style/igencp.css,
      * Customizing/global/skin/igencp/igencp.css,

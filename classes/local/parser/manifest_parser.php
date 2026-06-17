@@ -1012,22 +1012,29 @@ class manifest_parser {
      * @return void
      */
     protected function fold_lesson_bundles(array &$resources): void {
-        // Pass 1a: collect basenames per folder (lower -> real case) so the
-        // anchor lookup later can recover an exact filename for exporters
-        // that ship "Index.html" / "INDEX.HTML".
-        $basenamesbyfolder = [];
-        foreach ($resources as $resourceitem) {
-            foreach ($this->resource_paths($resourceitem) as $path) {
-                $folder = $this->normalise_folder(dirname($path));
-                $basenamesbyfolder[$folder][strtolower(basename($path))] = basename($path);
-            }
-        }
-        // Pass 1b: identify every folder that has an index.html at its root.
+        // Pass 1: identify every folder where some resource's PRIMARY path
+        // (href, falling back to files[0]) is index.html. A nested asset
+        // folder that merely lists index.html as a secondary <file> entry
+        // must not qualify — fold_one_bundle() can only promote a resource
+        // whose primary path is the anchor, so attributing a marker to such
+        // a folder would let it steal the marker from a real parent bundle
+        // and then silently fail to fold either of them.
+        //
+        // The map value is the real-cased basename so the eventual anchor
+        // path matches whatever the exporter actually wrote (Index.html,
+        // INDEX.HTML, etc.).
         $anchorfolders = [];
-        foreach ($basenamesbyfolder as $folder => $basenames) {
-            if (isset($basenames[self::LESSON_BUNDLE_ROOT_MARKER])) {
-                $anchorfolders[$folder] = true;
+        foreach ($resources as $resourceitem) {
+            $primary = $this->primary_path($resourceitem);
+            if ($primary === '') {
+                continue;
             }
+            $basename = basename($primary);
+            if (strtolower($basename) !== self::LESSON_BUNDLE_ROOT_MARKER) {
+                continue;
+            }
+            $folder = $this->normalise_folder(dirname($primary));
+            $anchorfolders[$folder] = $basename;
         }
         // Pass 2: attribute each theme marker to the NEAREST ancestor that
         // owns its own index.html — not every ancestor. Propagating to every
@@ -1071,11 +1078,7 @@ class manifest_parser {
             // markers happen to be secondary <file> entries of unrelated
             // resources), a nested bundle below should still be allowed to
             // fold on its own.
-            $folded = $this->fold_one_bundle(
-                $resources,
-                $folder,
-                $basenamesbyfolder[$folder][self::LESSON_BUNDLE_ROOT_MARKER]
-            );
+            $folded = $this->fold_one_bundle($resources, $folder, $anchorfolders[$folder]);
             if ($folded) {
                 $claimedprefixes[] = $folder === '' ? '' : ($folder . '/');
             }
