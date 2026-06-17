@@ -102,9 +102,9 @@ class assignment_settings {
         $settings->cutoff = self::timestamp((string) ($doc->lock_at ?? ''));
         $settings->gradegroupref = trim((string) ($doc->assignment_group_identifierref ?? ''));
         $settings->rubricref = trim((string) ($doc->rubric_identifierref ?? ''));
-        // <rubric_use_for_grading> is present only when a rubric is attached;
-        // default to true so an attached rubric drives the grade unless Canvas
-        // explicitly opts out.
+        // The <rubric_use_for_grading> element is present only when a rubric
+        // is attached; default to true so an attached rubric drives the grade
+        // unless Canvas explicitly opts out.
         if (isset($doc->rubric_use_for_grading)) {
             $settings->rubricforgrading = filter_var((string) $doc->rubric_use_for_grading, FILTER_VALIDATE_BOOLEAN);
         }

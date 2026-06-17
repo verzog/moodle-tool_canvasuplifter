@@ -791,7 +791,8 @@ class manifest_parser {
         }
         $rubrics = [];
         foreach ($dom->getElementsByTagNameNS('*', 'rubric') as $rubricnode) {
-            if (!($rubricnode instanceof DOMElement) || $rubricnode->parentNode === null
+            if (
+                !($rubricnode instanceof DOMElement) || $rubricnode->parentNode === null
                 || $rubricnode->parentNode->localName !== 'rubrics'
             ) {
                 // The outer <rubric> is the top-level entry; an inline <rubric>
@@ -871,6 +872,15 @@ class manifest_parser {
         return filter_var($this->child_text($parent, $name), FILTER_VALIDATE_BOOLEAN);
     }
 
+    /**
+     * For every assignment resource, parse its assignment_settings.xml once and
+     * stash the grade-group reference and any rubric reference on the model
+     * item so the builder can route the activity into the right grade category
+     * and attach the right gradingform_rubric definition.
+     *
+     * @param array $resources Resources keyed by identifier (item objects, modified in place).
+     * @return void
+     */
     protected function mark_assignment_groups(array &$resources): void {
         foreach ($resources as $resourceitem) {
             if ($resourceitem->kind !== item::KIND_ASSIGNMENT) {
