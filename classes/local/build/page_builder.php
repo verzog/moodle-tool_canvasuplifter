@@ -146,7 +146,10 @@ class page_builder {
         // Capture the URL path (up to a ?/# suffix) and the suffix separately
         // so cache-busting query strings and #fragments survive the rewrite.
         // Absolute URLs (http://, https://, //host, /root) are left alone.
-        $pattern = '#\b(href|src)\s*=\s*(["\'])([^"\'?#]+)([?#][^"\']*)?\2#i';
+        // Delimiter ~ so the literal '#' in the URL char classes doesn't
+        // terminate the pattern early (which would only see [^"\'?] and
+        // throw "Unknown modifier ']'").
+        $pattern = '~\b(href|src)\s*=\s*(["\'])([^"\'?#]+)([?#][^"\']*)?\2~i';
         return (string) preg_replace_callback($pattern, function (array $m) use ($assetset): string {
             $path = $m[3];
             $suffix = $m[4] ?? '';
