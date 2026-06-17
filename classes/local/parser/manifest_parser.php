@@ -662,14 +662,20 @@ class manifest_parser {
         }
         $organization = $organizations->item(0);
 
-        // The organisation usually wraps everything in one or more pass-through
-        // root <item>s that don't represent sections themselves. Peel as long
-        // as the level above the modules has just one child, so an exporter
-        // that nests <Item_1><Course>[modules]</Course></Item_1> still lands
-        // at the "modules" level rather than at the course wrapper.
+        // Peel pass-through wrappers above the modules level. Stop when
+        // either (a) we'd descend to more than one node — those become the
+        // sections — or (b) the single node's children are all activity
+        // leaves: that single node IS the only section, and the leaves are
+        // its activities. The second rule keeps a single-module export like
+        // root → "Week 1" → [Welcome, Essay] from being mis-peeled into
+        // activity-titled sections.
         $rootitems = $this->child_items($organization);
-        while (count($rootitems) === 1 && count($this->child_items($rootitems[0])) > 0) {
-            $rootitems = $this->child_items($rootitems[0]);
+        while (count($rootitems) === 1) {
+            $children = $this->child_items($rootitems[0]);
+            if (empty($children) || $this->all_activity_leaves($children)) {
+                break;
+            }
+            $rootitems = $children;
         }
 
         foreach ($rootitems as $sectionnode) {
@@ -686,6 +692,24 @@ class manifest_parser {
             $this->collect_leaf_resources($sectionnode, $resources, $section);
             $course->add_section($section);
         }
+    }
+
+    /**
+     * Whether every supplied <item> is an activity leaf — i.e. has no nested
+     * <item> children of its own. Used by build_sections() to decide whether
+     * the current single peeling target is the section itself (children are
+     * its activities) or a wrapper that should be peeled further.
+     *
+     * @param DOMElement[] $items
+     * @return bool
+     */
+    protected function all_activity_leaves(array $items): bool {
+        foreach ($items as $item) {
+            if (count($this->child_items($item)) > 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

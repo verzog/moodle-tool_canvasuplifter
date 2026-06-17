@@ -1560,7 +1560,7 @@ XML;
         file_put_contents($dir . '/lesson1/page.html', '<html><title>L1</title></html>');
         file_put_contents($dir . '/lesson2/page.html', '<html><title>L2</title></html>');
 
-        // Item_1 → CourseWrapper → [Intro leaf, Unit 1 folder → [Lesson1, Lesson2]]
+        // Item_1 → CourseWrapper → [Intro leaf, Unit 1 folder → [Lesson1, Lesson2]].
         $manifest = <<<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
