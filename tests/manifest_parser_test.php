@@ -1016,6 +1016,155 @@ XML;
         $this->assertSame('r_index', $course->orphans[0]->identifier);
         $this->assertSame(item::KIND_PAGE, $course->orphans[0]->kind);
         $this->assertSame('Unit 1', $course->orphans[0]->title);
+
+        // The promoted page must point at index.html, not whatever <file> the
+        // manifest happens to list first. And it must carry the sibling files
+        // as bundle assets so page_builder can re-host them under pluginfile.
+        $page = $course->orphans[0];
+        $this->assertSame('unit1/index.html', $page->href);
+        $this->assertSame('unit1/index.html', $page->files[0]);
+        $assetrels = array_column($page->bundleassets, 'relpath');
+        sort($assetrels);
+        $this->assertContains('assets/head_back.gif', $assetrels);
+        $this->assertContains('jquery.js', $assetrels);
+        $this->assertNotContains('index.html', $assetrels);
+    }
+
+    /**
+     * Exporters that ship "Index.html" or "INDEX.HTML" should still produce
+     * the page; case-insensitive match recovers the actual basename instead
+     * of falling through to KIND_UNKNOWN and losing the whole bundle.
+     *
+     * @return void
+     */
+    public function test_folds_lesson_bundle_case_insensitively(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/unit2');
+        file_put_contents($dir . '/unit2/Index.html', '<html><head><title>Unit 2</title></head></html>');
+        file_put_contents($dir . '/unit2/igencp.css', '');
+        file_put_contents($dir . '/unit2/delos_cont.css', '');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="o"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_idx" type="webcontent" href="unit2/Index.html">
+      <file href="unit2/Index.html"/>
+    </resource>
+    <resource identifier="r_a" type="webcontent" href="unit2/igencp.css">
+      <file href="unit2/igencp.css"/>
+    </resource>
+    <resource identifier="r_b" type="webcontent" href="unit2/delos_cont.css">
+      <file href="unit2/delos_cont.css"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('r_idx', $course->orphans[0]->identifier);
+        $this->assertSame(item::KIND_PAGE, $course->orphans[0]->kind);
+    }
+
+    /**
+     * Bundle assets that the manifest organisation references must not
+     * surface as section items either — only the orphan pass filters
+     * KIND_UNKNOWN otherwise, so referenced framework files would still
+     * appear in the report as unbuildable rows.
+     *
+     * @return void
+     */
+    public function test_folded_bundle_assets_are_dropped_from_sections(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/unit3');
+        file_put_contents($dir . '/unit3/index.html', '<html><title>Unit 3</title></html>');
+        file_put_contents($dir . '/unit3/igencp.css', '');
+        file_put_contents($dir . '/unit3/delos_cont.css', '');
+        file_put_contents($dir . '/unit3/jquery.js', '');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="o">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_idx" identifierref="r_idx"><title>Lesson</title></item>
+          <item identifier="i_jq" identifierref="r_jq"><title>Player</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_idx" type="webcontent" href="unit3/index.html">
+      <file href="unit3/index.html"/>
+    </resource>
+    <resource identifier="r_a" type="webcontent" href="unit3/igencp.css">
+      <file href="unit3/igencp.css"/>
+    </resource>
+    <resource identifier="r_b" type="webcontent" href="unit3/delos_cont.css">
+      <file href="unit3/delos_cont.css"/>
+    </resource>
+    <resource identifier="r_jq" type="webcontent" href="unit3/jquery.js">
+      <file href="unit3/jquery.js"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Only the index page reaches the section; the referenced jQuery asset
+        // is suppressed instead of surfacing as an unbuildable unknown item.
+        $this->assertCount(1, $course->sections);
+        $this->assertCount(1, $course->sections[0]->items);
+        $this->assertSame('r_idx', $course->sections[0]->items[0]->identifier);
+        $this->assertSame(item::KIND_PAGE, $course->sections[0]->items[0]->kind);
+    }
+
+    /**
+     * A root-level bundle (markers in the package root) should claim every
+     * resource, including those under subfolders like assets/ or images/,
+     * to match the same folder-tree semantics nested bundles use.
+     *
+     * @return void
+     */
+    public function test_root_level_bundle_includes_subfolders(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/assets');
+        file_put_contents($dir . '/index.html', '<html><title>Course</title></html>');
+        file_put_contents($dir . '/igencp.css', '');
+        file_put_contents($dir . '/delos_cont.css', '');
+        file_put_contents($dir . '/assets/head_back.gif', 'GIF');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="o"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_idx" type="webcontent" href="index.html"><file href="index.html"/></resource>
+    <resource identifier="r_a" type="webcontent" href="igencp.css"><file href="igencp.css"/></resource>
+    <resource identifier="r_b" type="webcontent" href="delos_cont.css"><file href="delos_cont.css"/></resource>
+    <resource identifier="r_sub" type="webcontent" href="assets/head_back.gif">
+      <file href="assets/head_back.gif"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The subfolder image is folded too, not left as a stray orphan.
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('r_idx', $course->orphans[0]->identifier);
+        $assetrels = array_column($course->orphans[0]->bundleassets, 'relpath');
+        $this->assertContains('assets/head_back.gif', $assetrels);
     }
 
     /**

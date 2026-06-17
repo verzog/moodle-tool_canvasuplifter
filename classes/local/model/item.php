@@ -88,6 +88,15 @@ class item {
     public bool $rubricforgrading = true;
 
     /**
+     * @var array For bundle-promoted pages (eXe/IGEN lessons): sibling files
+     *            to import into the page's filearea so relative refs in the
+     *            HTML keep working. Each entry: ['source','relpath'] where
+     *            source is package-relative and relpath is relative to the
+     *            anchor's folder.
+     */
+    public array $bundleassets = [];
+
+    /**
      * Constructor.
      *
      * @param string $identifier Canvas resource identifier.

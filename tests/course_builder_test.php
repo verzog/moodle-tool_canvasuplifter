@@ -719,4 +719,77 @@ XML;
         $this->assertCount(1, $resources);
         $this->assertEquals(2, reset($resources)->sectionnum);
     }
+
+    /**
+     * An eXe/IGEN-style lesson bundle should be built as a single mod_page,
+     * with the sibling CSS/JS/images imported into the page's content
+     * filearea and the relative URLs in the HTML rewritten to Moodle's
+     * pluginfile syntax so the page actually renders.
+     *
+     * @return void
+     */
+    public function test_build_imports_lesson_bundle_assets_into_page(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/unit1');
+        mkdir($dir . '/unit1/assets');
+        file_put_contents(
+            $dir . '/unit1/index.html',
+            '<html><head><title>Unit 1</title>'
+            . '<link rel="stylesheet" href="igencp.css">'
+            . '<script src="jquery.js"></script>'
+            . '</head><body><img src="assets/head_back.gif"></body></html>'
+        );
+        file_put_contents($dir . '/unit1/igencp.css', '/* skin */');
+        file_put_contents($dir . '/unit1/delos_cont.css', '/* skin */');
+        file_put_contents($dir . '/unit1/jquery.js', '// noise');
+        file_put_contents($dir . '/unit1/assets/head_back.gif', 'GIF');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="o"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_idx" type="webcontent" href="unit1/index.html"><file href="unit1/index.html"/></resource>
+    <resource identifier="r_a" type="webcontent" href="unit1/igencp.css"><file href="unit1/igencp.css"/></resource>
+    <resource identifier="r_b" type="webcontent" href="unit1/delos_cont.css">
+      <file href="unit1/delos_cont.css"/>
+    </resource>
+    <resource identifier="r_jq" type="webcontent" href="unit1/jquery.js"><file href="unit1/jquery.js"/></resource>
+    <resource identifier="r_img" type="webcontent" href="unit1/assets/head_back.gif">
+      <file href="unit1/assets/head_back.gif"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        // One page built; no stray mod_resource activities for the framework.
+        $pages = get_fast_modinfo($report['courseid'])->get_instances_of('page');
+        $this->assertCount(1, $pages);
+        $resourcecms = get_fast_modinfo($report['courseid'])->get_instances_of('resource');
+        $this->assertCount(0, $resourcecms);
+
+        $pagecm = reset($pages);
+        $page = $DB->get_record('page', ['id' => $pagecm->instance]);
+        // Relative refs got rewritten to pluginfile so the saved HTML matches
+        // the assets that have been re-hosted under the page.
+        $this->assertStringContainsString('@@PLUGINFILE@@/igencp.css', $page->content);
+        $this->assertStringContainsString('@@PLUGINFILE@@/jquery.js', $page->content);
+        $this->assertStringContainsString('@@PLUGINFILE@@/assets/head_back.gif', $page->content);
+
+        // Asset files actually landed in the page's content filearea.
+        $fs = get_file_storage();
+        $context = \context_module::instance($pagecm->id);
+        $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/', 'igencp.css'));
+        $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/', 'jquery.js'));
+        $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/assets/', 'head_back.gif'));
+    }
 }

@@ -81,6 +81,14 @@ class page_builder {
 
         $title = $modelitem->title !== '' ? $modelitem->title : pathinfo($modelitem->href, PATHINFO_FILENAME);
 
+        // For bundle-promoted pages, rewrite relative <link>/<script>/<img>
+        // references to @@PLUGINFILE@@ before the page is stored, so the saved
+        // HTML already points at the eventual pluginfile URLs.
+        $bundleassets = $modelitem->bundleassets ?? [];
+        if (!empty($bundleassets)) {
+            $content = $this->rewrite_bundle_refs($content, $bundleassets);
+        }
+
         $moduleinfo = (object) [
             'modulename' => 'page',
             'module' => $module->id,
@@ -107,7 +115,84 @@ class page_builder {
         // resolve through pluginfile.php instead of 404ing.
         $this->embed_files($cmid, (int) $created->instance, $content);
 
+        // Import bundle siblings (CSS/JS/images referenced by relative URL).
+        if (!empty($bundleassets)) {
+            $this->import_bundle_assets($cmid, $bundleassets);
+        }
+
         return $cmid;
+    }
+
+    /**
+     * Rewrite relative href/src URLs that point at known bundle assets to
+     * Moodle pluginfile references. Anything that doesn't match a listed
+     * asset (external links, in-page anchors, javascript: URLs) is left alone.
+     *
+     * @param string $content The original page HTML.
+     * @param array $bundleassets List of ['source','relpath'] entries.
+     * @return string Rewritten HTML.
+     */
+    private function rewrite_bundle_refs(string $content, array $bundleassets): string {
+        foreach ($bundleassets as $asset) {
+            $relpath = ltrim((string) ($asset['relpath'] ?? ''), '/');
+            if ($relpath === '') {
+                continue;
+            }
+            // Match href="relpath" / src='relpath' for the literal relative
+            // path, plus the "./relpath" form some authors write. Replacement
+            // builds a fresh attribute so quote style is preserved.
+            foreach ([$relpath, './' . $relpath] as $needle) {
+                $pattern = '#\b(href|src)\s*=\s*(["\'])' . preg_quote($needle, '#') . '(\2)#i';
+                $content = (string) preg_replace(
+                    $pattern,
+                    '$1=$2@@PLUGINFILE@@/' . $relpath . '$3',
+                    $content
+                );
+            }
+        }
+        return $content;
+    }
+
+    /**
+     * Copy bundle sibling files into the page's content filearea so the
+     * rewritten pluginfile URLs resolve. Each asset is stored at its
+     * relative-to-anchor path so the same path the HTML references is also
+     * the path inside pluginfile.
+     *
+     * @param int $cmid The page's course module id.
+     * @param array $bundleassets List of ['source','relpath'] entries.
+     * @return void
+     */
+    private function import_bundle_assets(int $cmid, array $bundleassets): void {
+        $context = \context_module::instance($cmid);
+        $fs = get_file_storage();
+        foreach ($bundleassets as $asset) {
+            $source = (string) ($asset['source'] ?? '');
+            $relpath = ltrim((string) ($asset['relpath'] ?? ''), '/');
+            if ($source === '' || $relpath === '') {
+                continue;
+            }
+            $absolute = safe_path::within($this->packageroot, $source);
+            if ($absolute === null || !is_readable($absolute)) {
+                continue;
+            }
+            $filename = basename($relpath);
+            $filepath = '/' . trim((string) dirname($relpath), '/.');
+            if ($filepath !== '/' && !str_ends_with($filepath, '/')) {
+                $filepath .= '/';
+            }
+            if ($fs->file_exists($context->id, 'mod_page', 'content', 0, $filepath, $filename)) {
+                continue;
+            }
+            $fs->create_file_from_pathname([
+                'contextid' => $context->id,
+                'component' => 'mod_page',
+                'filearea' => 'content',
+                'itemid' => 0,
+                'filepath' => $filepath,
+                'filename' => $filename,
+            ], $absolute);
+        }
     }
 
     /**
