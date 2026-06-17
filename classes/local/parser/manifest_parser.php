@@ -1012,38 +1012,53 @@ class manifest_parser {
      * @return void
      */
     protected function fold_lesson_bundles(array &$resources): void {
-        // First pass: collect basenames present in each folder (lower -> real
-        // case) so case-insensitive matching can still recover the actual
-        // filename when an exporter ships "Index.html" or "INDEX.HTML". Also
-        // record, per folder, which theme markers appear anywhere underneath
-        // — ILIAS nests them in subfolders like style/ or templates/default/.
+        // Pass 1a: collect basenames per folder (lower -> real case) so the
+        // anchor lookup later can recover an exact filename for exporters
+        // that ship "Index.html" / "INDEX.HTML".
         $basenamesbyfolder = [];
-        $themesseenbyfolder = [];
         foreach ($resources as $resourceitem) {
             foreach ($this->resource_paths($resourceitem) as $path) {
                 $folder = $this->normalise_folder(dirname($path));
+                $basenamesbyfolder[$folder][strtolower(basename($path))] = basename($path);
+            }
+        }
+        // Pass 1b: identify every folder that has an index.html at its root.
+        $anchorfolders = [];
+        foreach ($basenamesbyfolder as $folder => $basenames) {
+            if (isset($basenames[self::LESSON_BUNDLE_ROOT_MARKER])) {
+                $anchorfolders[$folder] = true;
+            }
+        }
+        // Pass 2: attribute each theme marker to the NEAREST ancestor that
+        // owns its own index.html — not every ancestor. Propagating to every
+        // ancestor would let a child marker promote a parent landing page,
+        // and the shortest-first fold would then swallow the actual lesson
+        // bundles below.
+        $themesseenbyfolder = [];
+        foreach ($resources as $resourceitem) {
+            foreach ($this->resource_paths($resourceitem) as $path) {
                 $basenamelower = strtolower(basename($path));
-                $basenamesbyfolder[$folder][$basenamelower] = basename($path);
-                if (in_array($basenamelower, self::LESSON_BUNDLE_THEME_MARKERS, true)) {
-                    foreach ($this->ancestor_folders($folder) as $ancestor) {
-                        $themesseenbyfolder[$ancestor] = true;
-                    }
+                if (!in_array($basenamelower, self::LESSON_BUNDLE_THEME_MARKERS, true)) {
+                    continue;
+                }
+                $owner = $this->nearest_anchor_folder(
+                    $this->normalise_folder(dirname($path)),
+                    $anchorfolders
+                );
+                if ($owner !== null) {
+                    $themesseenbyfolder[$owner] = true;
                 }
             }
         }
-        // Second pass: a folder is a bundle if it carries index.html at its
-        // root AND any descendant path holds one of the theme markers. Sort
-        // outermost-first so a root bundle claims a nested one rather than
-        // having the nested fold promote it back to KIND_PAGE.
+        // Pass 3: a folder is a bundle if it has the anchor AND a theme
+        // marker that resolved to it. Sort outermost-first so a genuine
+        // root-level bundle claims a nested one rather than having the
+        // nested fold promote it back to KIND_PAGE.
         $bundlefolders = [];
-        foreach ($basenamesbyfolder as $folder => $basenames) {
-            if (!isset($basenames[self::LESSON_BUNDLE_ROOT_MARKER])) {
-                continue;
+        foreach ($anchorfolders as $folder => $_) {
+            if (!empty($themesseenbyfolder[$folder])) {
+                $bundlefolders[] = $folder;
             }
-            if (empty($themesseenbyfolder[$folder])) {
-                continue;
-            }
-            $bundlefolders[] = $folder;
         }
         usort($bundlefolders, fn($a, $b) => strlen($a) - strlen($b));
         $claimedprefixes = [];
@@ -1259,5 +1274,24 @@ class manifest_parser {
             $current = $parent;
         }
         return $ancestors;
+    }
+
+    /**
+     * Return the nearest folder at or above $folder that owns an index.html,
+     * or null if none of its ancestors do. Used to attribute a theme marker
+     * to the innermost lesson bundle that contains it, so child markers can't
+     * promote a parent landing folder above them.
+     *
+     * @param string $folder Folder containing the theme marker.
+     * @param array $anchorfolders Map of folder => true for folders with index.html at root.
+     * @return string|null Owning folder, or null.
+     */
+    private function nearest_anchor_folder(string $folder, array $anchorfolders): ?string {
+        foreach ($this->ancestor_folders($folder) as $ancestor) {
+            if (isset($anchorfolders[$ancestor])) {
+                return $ancestor;
+            }
+        }
+        return null;
     }
 }

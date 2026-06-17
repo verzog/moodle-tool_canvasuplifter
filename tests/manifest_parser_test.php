@@ -1437,6 +1437,59 @@ XML;
     }
 
     /**
+     * A parent landing index.html without its own theme marker must NOT be
+     * promoted just because a child lesson bundle has one. Otherwise the
+     * shortest-first fold would claim the whole parent tree and demote every
+     * real lesson bundle inside it.
+     *
+     * @return void
+     */
+    public function test_child_theme_marker_does_not_promote_parent_anchor(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course');
+        mkdir($dir . '/course/lesson');
+        // Parent landing page with NO theme marker anywhere outside the child.
+        file_put_contents($dir . '/course/index.html', '<html><title>Course</title></html>');
+        // Real lesson bundle below it.
+        file_put_contents($dir . '/course/lesson/index.html', '<html><title>Lesson</title></html>');
+        file_put_contents($dir . '/course/lesson/igencp.css', '');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="o"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_parent" type="webcontent" href="course/index.html">
+      <file href="course/index.html"/>
+    </resource>
+    <resource identifier="r_child" type="webcontent" href="course/lesson/index.html">
+      <file href="course/lesson/index.html"/>
+    </resource>
+    <resource identifier="r_theme" type="webcontent" href="course/lesson/igencp.css">
+      <file href="course/lesson/igencp.css"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Parent stays as an ordinary file resource; only the child lesson
+        // folder folds to a page.
+        $byid = [];
+        foreach ($course->orphans as $orphan) {
+            $byid[$orphan->identifier] = $orphan;
+        }
+        $this->assertArrayHasKey('r_parent', $byid);
+        $this->assertSame(item::KIND_FILE, $byid['r_parent']->kind);
+        $this->assertArrayHasKey('r_child', $byid);
+        $this->assertSame(item::KIND_PAGE, $byid['r_child']->kind);
+        // The theme marker is folded as a child asset, not surfaced separately.
+        $this->assertArrayNotHasKey('r_theme', $byid);
+    }
+
+    /**
      * Real ILIAS / IGEN / DELOS exports nest the theme marker many levels
      * below the lesson folder (style/igencp.css,
      * Customizing/global/skin/igencp/igencp.css,
