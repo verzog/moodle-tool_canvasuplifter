@@ -918,7 +918,9 @@ XML;
     <resource identifier="r_skin2" type="webcontent" href="unit1/delos_cont.css"><file href="unit1/delos_cont.css"/></resource>
     <resource identifier="r_jq" type="webcontent" href="unit1/jquery.js"><file href="unit1/jquery.js"/></resource>
     <resource identifier="r_acc" type="webcontent" href="unit1/accordion.css"><file href="unit1/accordion.css"/></resource>
-    <resource identifier="r_img" type="webcontent" href="unit1/assets/head_back.gif"><file href="unit1/assets/head_back.gif"/></resource>
+    <resource identifier="r_img" type="webcontent" href="unit1/assets/head_back.gif">
+      <file href="unit1/assets/head_back.gif"/>
+    </resource>
   </resources>
 </manifest>
 XML;
