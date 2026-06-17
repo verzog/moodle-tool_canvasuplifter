@@ -87,6 +87,11 @@ class manifest_parser {
         // each built mod_assign into its matching grade category.
         $this->mark_assignment_groups($resources);
 
+        // Fold eXe/IGEN-style lesson bundles into a single page each so the
+        // hundreds of framework asset files those packages ship per lesson
+        // don't all surface as standalone mod_resource activities.
+        $this->fold_lesson_bundles($resources);
+
         // Derive titles up front so module_meta clones inherit the recovered name
         // when their module item leaves the title blank, instead of falling back
         // to file slugs. The manifest-organisation path also benefits because
@@ -162,6 +167,10 @@ class manifest_parser {
             // <blti:title>, while discussions use a plain <title>.
             if (preg_match('#<(?:[\w.-]+:)?title[^>]*>(.*?)</(?:[\w.-]+:)?title>#is', $html, $matches)) {
                 $title = trim(html_entity_decode(strip_tags($matches[1]), ENT_QUOTES | ENT_HTML5));
+                // Strip a leading separator (e.g. "- Audio Visual") that some
+                // exporters leave behind when they drop the part before a dash.
+                $title = ltrim($title, " \t-–—|:");
+                $title = trim($title);
                 if ($title !== '') {
                     return $title;
                 }
@@ -905,5 +914,95 @@ class manifest_parser {
                 break;
             }
         }
+    }
+
+    /**
+     * Marker filenames that, when present together in a folder, indicate the
+     * folder is an eXe / IGEN / DELOS lesson bundle. The three-marker AND
+     * makes accidental matches against unrelated packages near-impossible:
+     * Canvas exports do not ship any of these files, and a coincidence of
+     * all three outside this family of authoring tools is implausible.
+     */
+    private const LESSON_BUNDLE_MARKERS = ['igencp.css', 'delos_cont.css', 'index.html'];
+
+    /**
+     * Detect lesson bundles (folders containing the three marker files) and
+     * collapse each into a single mod_page anchored at the folder's
+     * index.html. All sibling resources inside the same folder tree are
+     * demoted to KIND_UNKNOWN so they vanish from the orphan list instead of
+     * surfacing as hundreds of mod_resource entries (framework CSS, JS,
+     * player SWFs, theme images) that a learner has no business seeing.
+     *
+     * Triggered purely from manifest hrefs; the package directory itself is
+     * not scanned, keeping the parser fast and Moodle-free. Canvas exports
+     * never carry these markers, so existing Canvas imports are unaffected.
+     *
+     * @param array $resources Resources keyed by identifier (item objects, modified in place).
+     * @return void
+     */
+    protected function fold_lesson_bundles(array &$resources): void {
+        // First pass: collect every basename present in each folder, plus a
+        // back-reference from folder -> resource ids.
+        $basenamesbyfolder = [];
+        $resourcesbyfolder = [];
+        foreach ($resources as $resourceitem) {
+            $paths = $resourceitem->files;
+            if ($resourceitem->href !== '') {
+                $paths[] = $resourceitem->href;
+            }
+            foreach ($paths as $path) {
+                $folder = $this->normalise_folder(dirname($path));
+                $basenamesbyfolder[$folder][strtolower(basename($path))] = true;
+                $resourcesbyfolder[$folder][$resourceitem->identifier] = true;
+            }
+        }
+        // Second pass: identify folders that contain all three markers, then
+        // demote every resource living inside (or below) that folder. The
+        // resource whose primary href is the folder's index.html is promoted
+        // to KIND_PAGE so the bundle reads as a single lesson activity.
+        foreach ($basenamesbyfolder as $folder => $basenames) {
+            foreach (self::LESSON_BUNDLE_MARKERS as $marker) {
+                if (!isset($basenames[$marker])) {
+                    continue 2;
+                }
+            }
+            $anchor = $folder === '' ? 'index.html' : ($folder . '/index.html');
+            $folderprefix = $folder === '' ? '' : ($folder . '/');
+            foreach ($resources as $resourceitem) {
+                $primary = $resourceitem->href !== '' ? $resourceitem->href : ($resourceitem->files[0] ?? '');
+                if ($primary === '') {
+                    continue;
+                }
+                // Resources whose primary file is the anchor or sits in this
+                // folder (or any subfolder). dirname('a/b/c') === folder is
+                // the strict same-folder test; the prefix match catches subdirs.
+                $inside = $primary === $anchor
+                    || ($folderprefix !== '' && strpos($primary, $folderprefix) === 0)
+                    || ($folderprefix === '' && strpos($primary, '/') === false);
+                if (!$inside) {
+                    continue;
+                }
+                if ($primary === $anchor) {
+                    $resourceitem->kind = item::KIND_PAGE;
+                } else {
+                    $resourceitem->kind = item::KIND_UNKNOWN;
+                }
+            }
+        }
+    }
+
+    /**
+     * Normalise a dirname() result to a package-relative folder path with no
+     * leading slash and no trailing slash. dirname() returns "." for top-level
+     * files; map that to "".
+     *
+     * @param string $folder Folder path as returned by dirname().
+     * @return string Normalised path.
+     */
+    private function normalise_folder(string $folder): string {
+        if ($folder === '.' || $folder === '/' || $folder === '') {
+            return '';
+        }
+        return ltrim($folder, '/');
     }
 }
