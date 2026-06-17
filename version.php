@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026061702;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026061703;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Phase 4: bundle detector attributes theme markers to nearest enclosing bundle.
-$plugin->release   = '0.24.2';
+$plugin->maturity  = MATURITY_ALPHA;  // Phase 4: org-tree walker recurses into folder wrappers.
+$plugin->release   = '0.25.0';
