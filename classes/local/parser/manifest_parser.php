@@ -1055,7 +1055,7 @@ class manifest_parser {
         // root-level bundle claims a nested one rather than having the
         // nested fold promote it back to KIND_PAGE.
         $bundlefolders = [];
-        foreach ($anchorfolders as $folder => $_) {
+        foreach (array_keys($anchorfolders) as $folder) {
             if (!empty($themesseenbyfolder[$folder])) {
                 $bundlefolders[] = $folder;
             }
