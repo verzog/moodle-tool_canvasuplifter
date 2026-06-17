@@ -133,24 +133,38 @@ class page_builder {
      * @return string Rewritten HTML.
      */
     private function rewrite_bundle_refs(string $content, array $bundleassets): string {
+        $assetset = [];
         foreach ($bundleassets as $asset) {
-            $relpath = ltrim((string) ($asset['relpath'] ?? ''), '/');
-            if ($relpath === '') {
-                continue;
-            }
-            // Match href="relpath" / src='relpath' for the literal relative
-            // path, plus the "./relpath" form some authors write. Replacement
-            // builds a fresh attribute so quote style is preserved.
-            foreach ([$relpath, './' . $relpath] as $needle) {
-                $pattern = '#\b(href|src)\s*=\s*(["\'])' . preg_quote($needle, '#') . '(\2)#i';
-                $content = (string) preg_replace(
-                    $pattern,
-                    '$1=$2@@PLUGINFILE@@/' . $relpath . '$3',
-                    $content
-                );
+            $rel = ltrim((string) ($asset['relpath'] ?? ''), '/');
+            if ($rel !== '') {
+                $assetset[$rel] = true;
             }
         }
-        return $content;
+        if (empty($assetset)) {
+            return $content;
+        }
+        // Capture the URL path (up to a ?/# suffix) and the suffix separately
+        // so cache-busting query strings and #fragments survive the rewrite.
+        // Absolute URLs (http://, https://, //host, /root) are left alone.
+        // Delimiter ~ so the literal '#' in the URL char classes doesn't
+        // terminate the pattern early (which would only see [^"\'?] and
+        // throw "Unknown modifier ']'").
+        $pattern = '~\b(href|src)\s*=\s*(["\'])([^"\'?#]+)([?#][^"\']*)?\2~i';
+        return (string) preg_replace_callback($pattern, function (array $m) use ($assetset): string {
+            $path = $m[3];
+            $suffix = $m[4] ?? '';
+            if (
+                $path === '' || $path[0] === '/'
+                || strpos($path, '://') !== false || strpos($path, '//') === 0
+            ) {
+                return $m[0];
+            }
+            $candidate = ltrim(preg_replace('#^\./#', '', $path), '/');
+            if (!isset($assetset[$candidate])) {
+                return $m[0];
+            }
+            return $m[1] . '=' . $m[2] . '@@PLUGINFILE@@/' . $candidate . $suffix . $m[2];
+        }, $content);
     }
 
     /**

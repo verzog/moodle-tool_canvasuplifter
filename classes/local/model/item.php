@@ -97,6 +97,24 @@ class item {
     public array $bundleassets = [];
 
     /**
+     * @var bool True when fold_lesson_bundles() demoted this item as a sibling
+     *           of a lesson bundle. Distinguishes "asset folded into another
+     *           page" from "genuinely unclassified resource" so the report
+     *           still surfaces real unknowns in sections.
+     */
+    public bool $bundlemember = false;
+
+    /**
+     * @var bool True when the manifest parser deliberately classified this
+     *           resource as KIND_UNKNOWN to skip it (quiz/ assets under a
+     *           QTI resource, learning-application metadata files without
+     *           an HTML payload). Distinguished from genuinely unsupported
+     *           resource types so the section path can keep suppressing
+     *           the former while still surfacing the latter.
+     */
+    public bool $suppressed = false;
+
+    /**
      * Constructor.
      *
      * @param string $identifier Canvas resource identifier.

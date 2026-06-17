@@ -739,9 +739,12 @@ XML;
         file_put_contents(
             $dir . '/unit1/index.html',
             '<html><head><title>Unit 1</title>'
-            . '<link rel="stylesheet" href="igencp.css">'
-            . '<script src="jquery.js"></script>'
-            . '</head><body><img src="assets/head_back.gif"></body></html>'
+            . '<link rel="stylesheet" href="igencp.css?v=1">'
+            . '<script src="./jquery.js"></script>'
+            . '</head><body>'
+            . '<img src="assets/head_back.gif#crop=top">'
+            . '<a href="https://example.com/external.css">leave me alone</a>'
+            . '</body></html>'
         );
         file_put_contents($dir . '/unit1/igencp.css', '/* skin */');
         file_put_contents($dir . '/unit1/delos_cont.css', '/* skin */');
@@ -779,11 +782,15 @@ XML;
 
         $pagecm = reset($pages);
         $page = $DB->get_record('page', ['id' => $pagecm->instance]);
-        // Relative refs got rewritten to pluginfile so the saved HTML matches
-        // the assets that have been re-hosted under the page.
-        $this->assertStringContainsString('@@PLUGINFILE@@/igencp.css', $page->content);
+        // Relative refs got rewritten to pluginfile, including cache-busting
+        // ?suffix and #fragment which must survive the rewrite. The "./"
+        // relative form normalises to the bare relpath. Absolute URLs to
+        // unrelated hosts are left alone.
+        $this->assertStringContainsString('@@PLUGINFILE@@/igencp.css?v=1', $page->content);
         $this->assertStringContainsString('@@PLUGINFILE@@/jquery.js', $page->content);
-        $this->assertStringContainsString('@@PLUGINFILE@@/assets/head_back.gif', $page->content);
+        $this->assertStringNotContainsString('"./jquery.js"', $page->content);
+        $this->assertStringContainsString('@@PLUGINFILE@@/assets/head_back.gif#crop=top', $page->content);
+        $this->assertStringContainsString('https://example.com/external.css', $page->content);
 
         // Asset files actually landed in the page's content filearea.
         $fs = get_file_storage();
