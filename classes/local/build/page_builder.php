@@ -125,8 +125,8 @@ class page_builder {
 
     /**
      * Rewrite relative href/src URLs that point at known bundle assets to
-     * @@PLUGINFILE@@ references. Anything that doesn't match a listed asset
-     * (external links, in-page anchors, javascript: URLs) is left alone.
+     * Moodle pluginfile references. Anything that doesn't match a listed
+     * asset (external links, in-page anchors, javascript: URLs) is left alone.
      *
      * @param string $content The original page HTML.
      * @param array $bundleassets List of ['source','relpath'] entries.
@@ -155,7 +155,7 @@ class page_builder {
 
     /**
      * Copy bundle sibling files into the page's content filearea so the
-     * rewritten @@PLUGINFILE@@ URLs resolve. Each asset is stored at its
+     * rewritten pluginfile URLs resolve. Each asset is stored at its
      * relative-to-anchor path so the same path the HTML references is also
      * the path inside pluginfile.
      *

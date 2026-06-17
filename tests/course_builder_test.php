@@ -723,8 +723,8 @@ XML;
     /**
      * An eXe/IGEN-style lesson bundle should be built as a single mod_page,
      * with the sibling CSS/JS/images imported into the page's content
-     * filearea and the relative URLs in the HTML rewritten to
-     * @@PLUGINFILE@@ so the page actually renders.
+     * filearea and the relative URLs in the HTML rewritten to Moodle's
+     * pluginfile syntax so the page actually renders.
      *
      * @return void
      */
