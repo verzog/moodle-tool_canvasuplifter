@@ -982,20 +982,27 @@ class manifest_parser {
 
     /**
      * Marker filenames that, when present together in a folder, indicate the
-     * folder is an eXe / IGEN / DELOS lesson bundle. The three-marker AND
-     * makes accidental matches against unrelated packages near-impossible:
-     * Canvas exports do not ship any of these files, and a coincidence of
-     * all three outside this family of authoring tools is implausible.
+     * folder is an eXe / IGEN / DELOS / ILIAS lesson bundle.
+     *
+     * The anchor file ("index.html") must sit at the folder root, but the
+     * theme markers can live anywhere under it — ILIAS exports nest them
+     * many levels deep (e.g. style/igencp.css,
+     * Customizing/global/skin/igencp/igencp.css,
+     * templates/default/delos_cont.css). Either theme marker is enough; both
+     * are distinctive ILIAS-specific filenames Canvas exports never carry,
+     * so accidental matches stay near-impossible.
      */
-    private const LESSON_BUNDLE_MARKERS = ['igencp.css', 'delos_cont.css', 'index.html'];
+    private const LESSON_BUNDLE_ROOT_MARKER = 'index.html';
+    /** @var string[] Theme markers; presence of any one anywhere in the subtree confirms a bundle. */
+    private const LESSON_BUNDLE_THEME_MARKERS = ['igencp.css', 'delos_cont.css'];
 
     /**
-     * Detect lesson bundles (folders containing the three marker files) and
-     * collapse each into a single mod_page anchored at the folder's
-     * index.html. Sibling resources inside the same folder tree are
-     * demoted to KIND_UNKNOWN and their files attached to the promoted
-     * page as bundle assets so the page's relative <link>/<script>/<img>
-     * URLs still resolve once mod_page imports them under pluginfile.
+     * Detect lesson bundles and collapse each into a single mod_page anchored
+     * at the folder's index.html. Sibling resources inside the same folder
+     * tree are demoted to KIND_UNKNOWN and their files attached to the
+     * promoted page as bundle assets so the page's relative
+     * <link>/<script>/<img> URLs still resolve once mod_page imports them
+     * under pluginfile.
      *
      * Triggered purely from manifest hrefs; the package directory itself is
      * not scanned, keeping the parser fast and Moodle-free. Canvas exports
@@ -1007,25 +1014,34 @@ class manifest_parser {
     protected function fold_lesson_bundles(array &$resources): void {
         // First pass: collect basenames present in each folder (lower -> real
         // case) so case-insensitive matching can still recover the actual
-        // filename when an exporter ships "Index.html" or "INDEX.HTML".
+        // filename when an exporter ships "Index.html" or "INDEX.HTML". Also
+        // record, per folder, which theme markers appear anywhere underneath
+        // — ILIAS nests them in subfolders like style/ or templates/default/.
         $basenamesbyfolder = [];
+        $themesseenbyfolder = [];
         foreach ($resources as $resourceitem) {
             foreach ($this->resource_paths($resourceitem) as $path) {
                 $folder = $this->normalise_folder(dirname($path));
-                $basenamesbyfolder[$folder][strtolower(basename($path))] = basename($path);
+                $basenamelower = strtolower(basename($path));
+                $basenamesbyfolder[$folder][$basenamelower] = basename($path);
+                if (in_array($basenamelower, self::LESSON_BUNDLE_THEME_MARKERS, true)) {
+                    foreach ($this->ancestor_folders($folder) as $ancestor) {
+                        $themesseenbyfolder[$ancestor] = true;
+                    }
+                }
             }
         }
-        // Second pass: identify every folder carrying the marker triple, sort
-        // outermost-first (shortest folder path), then fold each unless an
-        // ancestor bundle already claimed its tree. Without that ordering a
-        // root-level bundle would demote a nested bundle's siblings, only for
-        // a later iteration to promote the nested index back to KIND_PAGE.
+        // Second pass: a folder is a bundle if it carries index.html at its
+        // root AND any descendant path holds one of the theme markers. Sort
+        // outermost-first so a root bundle claims a nested one rather than
+        // having the nested fold promote it back to KIND_PAGE.
         $bundlefolders = [];
         foreach ($basenamesbyfolder as $folder => $basenames) {
-            foreach (self::LESSON_BUNDLE_MARKERS as $marker) {
-                if (!isset($basenames[$marker])) {
-                    continue 2;
-                }
+            if (!isset($basenames[self::LESSON_BUNDLE_ROOT_MARKER])) {
+                continue;
+            }
+            if (empty($themesseenbyfolder[$folder])) {
+                continue;
             }
             $bundlefolders[] = $folder;
         }
@@ -1043,7 +1059,7 @@ class manifest_parser {
             $folded = $this->fold_one_bundle(
                 $resources,
                 $folder,
-                $basenamesbyfolder[$folder]['index.html']
+                $basenamesbyfolder[$folder][self::LESSON_BUNDLE_ROOT_MARKER]
             );
             if ($folded) {
                 $claimedprefixes[] = $folder === '' ? '' : ($folder . '/');
@@ -1218,5 +1234,30 @@ class manifest_parser {
             return '';
         }
         return ltrim($folder, '/');
+    }
+
+    /**
+     * Return the given folder plus every ancestor folder, root ('') included.
+     * Used by fold_lesson_bundles() to propagate "a marker exists below me"
+     * up the tree so bundle detection can see markers nested in subfolders.
+     *
+     * @param string $folder Normalised folder path; '' for root.
+     * @return string[] Folder itself, parent, …, root ('') — no duplicates.
+     */
+    private function ancestor_folders(string $folder): array {
+        $ancestors = [$folder];
+        if ($folder === '') {
+            return $ancestors;
+        }
+        $current = $folder;
+        while ($current !== '') {
+            $parent = $this->normalise_folder(dirname($current));
+            if ($parent === $current) {
+                break;
+            }
+            $ancestors[] = $parent;
+            $current = $parent;
+        }
+        return $ancestors;
     }
 }

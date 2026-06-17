@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026061600;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026061700;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Phase 4: eXe/IGEN lesson-bundle folding into mod_page.
-$plugin->release   = '0.23.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Phase 4: bundle detector now matches markers nested in subfolders.
+$plugin->release   = '0.24.0';
