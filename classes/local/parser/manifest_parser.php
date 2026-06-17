@@ -982,20 +982,27 @@ class manifest_parser {
 
     /**
      * Marker filenames that, when present together in a folder, indicate the
-     * folder is an eXe / IGEN / DELOS lesson bundle. The three-marker AND
-     * makes accidental matches against unrelated packages near-impossible:
-     * Canvas exports do not ship any of these files, and a coincidence of
-     * all three outside this family of authoring tools is implausible.
+     * folder is an eXe / IGEN / DELOS / ILIAS lesson bundle.
+     *
+     * The anchor file ("index.html") must sit at the folder root, but the
+     * theme markers can live anywhere under it — ILIAS exports nest them
+     * many levels deep (e.g. style/igencp.css,
+     * Customizing/global/skin/igencp/igencp.css,
+     * templates/default/delos_cont.css). Either theme marker is enough; both
+     * are distinctive ILIAS-specific filenames Canvas exports never carry,
+     * so accidental matches stay near-impossible.
      */
-    private const LESSON_BUNDLE_MARKERS = ['igencp.css', 'delos_cont.css', 'index.html'];
+    private const LESSON_BUNDLE_ROOT_MARKER = 'index.html';
+    /** @var string[] Theme markers; presence of any one anywhere in the subtree confirms a bundle. */
+    private const LESSON_BUNDLE_THEME_MARKERS = ['igencp.css', 'delos_cont.css'];
 
     /**
-     * Detect lesson bundles (folders containing the three marker files) and
-     * collapse each into a single mod_page anchored at the folder's
-     * index.html. Sibling resources inside the same folder tree are
-     * demoted to KIND_UNKNOWN and their files attached to the promoted
-     * page as bundle assets so the page's relative <link>/<script>/<img>
-     * URLs still resolve once mod_page imports them under pluginfile.
+     * Detect lesson bundles and collapse each into a single mod_page anchored
+     * at the folder's index.html. Sibling resources inside the same folder
+     * tree are demoted to KIND_UNKNOWN and their files attached to the
+     * promoted page as bundle assets so the page's relative
+     * <link>/<script>/<img> URLs still resolve once mod_page imports them
+     * under pluginfile.
      *
      * Triggered purely from manifest hrefs; the package directory itself is
      * not scanned, keeping the parser fast and Moodle-free. Canvas exports
@@ -1005,29 +1012,60 @@ class manifest_parser {
      * @return void
      */
     protected function fold_lesson_bundles(array &$resources): void {
-        // First pass: collect basenames present in each folder (lower -> real
-        // case) so case-insensitive matching can still recover the actual
-        // filename when an exporter ships "Index.html" or "INDEX.HTML".
-        $basenamesbyfolder = [];
+        // Pass 1: identify every folder where some resource's PRIMARY path
+        // (href, falling back to files[0]) is index.html. A nested asset
+        // folder that merely lists index.html as a secondary <file> entry
+        // must not qualify — fold_one_bundle() can only promote a resource
+        // whose primary path is the anchor, so attributing a marker to such
+        // a folder would let it steal the marker from a real parent bundle
+        // and then silently fail to fold either of them.
+        //
+        // The map value is the real-cased basename so the eventual anchor
+        // path matches whatever the exporter actually wrote (Index.html,
+        // INDEX.HTML, etc.).
+        $anchorfolders = [];
+        foreach ($resources as $resourceitem) {
+            $primary = $this->primary_path($resourceitem);
+            if ($primary === '') {
+                continue;
+            }
+            $basename = basename($primary);
+            if (strtolower($basename) !== self::LESSON_BUNDLE_ROOT_MARKER) {
+                continue;
+            }
+            $folder = $this->normalise_folder(dirname($primary));
+            $anchorfolders[$folder] = $basename;
+        }
+        // Pass 2: attribute each theme marker to the NEAREST ancestor that
+        // owns its own index.html — not every ancestor. Propagating to every
+        // ancestor would let a child marker promote a parent landing page,
+        // and the shortest-first fold would then swallow the actual lesson
+        // bundles below.
+        $themesseenbyfolder = [];
         foreach ($resources as $resourceitem) {
             foreach ($this->resource_paths($resourceitem) as $path) {
-                $folder = $this->normalise_folder(dirname($path));
-                $basenamesbyfolder[$folder][strtolower(basename($path))] = basename($path);
-            }
-        }
-        // Second pass: identify every folder carrying the marker triple, sort
-        // outermost-first (shortest folder path), then fold each unless an
-        // ancestor bundle already claimed its tree. Without that ordering a
-        // root-level bundle would demote a nested bundle's siblings, only for
-        // a later iteration to promote the nested index back to KIND_PAGE.
-        $bundlefolders = [];
-        foreach ($basenamesbyfolder as $folder => $basenames) {
-            foreach (self::LESSON_BUNDLE_MARKERS as $marker) {
-                if (!isset($basenames[$marker])) {
-                    continue 2;
+                $basenamelower = strtolower(basename($path));
+                if (!in_array($basenamelower, self::LESSON_BUNDLE_THEME_MARKERS, true)) {
+                    continue;
+                }
+                $owner = $this->nearest_anchor_folder(
+                    $this->normalise_folder(dirname($path)),
+                    $anchorfolders
+                );
+                if ($owner !== null) {
+                    $themesseenbyfolder[$owner] = true;
                 }
             }
-            $bundlefolders[] = $folder;
+        }
+        // Pass 3: a folder is a bundle if it has the anchor AND a theme
+        // marker that resolved to it. Sort outermost-first so a genuine
+        // root-level bundle claims a nested one rather than having the
+        // nested fold promote it back to KIND_PAGE.
+        $bundlefolders = [];
+        foreach (array_keys($anchorfolders) as $folder) {
+            if (!empty($themesseenbyfolder[$folder])) {
+                $bundlefolders[] = $folder;
+            }
         }
         usort($bundlefolders, fn($a, $b) => strlen($a) - strlen($b));
         $claimedprefixes = [];
@@ -1040,11 +1078,7 @@ class manifest_parser {
             // markers happen to be secondary <file> entries of unrelated
             // resources), a nested bundle below should still be allowed to
             // fold on its own.
-            $folded = $this->fold_one_bundle(
-                $resources,
-                $folder,
-                $basenamesbyfolder[$folder]['index.html']
-            );
+            $folded = $this->fold_one_bundle($resources, $folder, $anchorfolders[$folder]);
             if ($folded) {
                 $claimedprefixes[] = $folder === '' ? '' : ($folder . '/');
             }
@@ -1218,5 +1252,49 @@ class manifest_parser {
             return '';
         }
         return ltrim($folder, '/');
+    }
+
+    /**
+     * Return the given folder plus every ancestor folder, root ('') included.
+     * Used by fold_lesson_bundles() to propagate "a marker exists below me"
+     * up the tree so bundle detection can see markers nested in subfolders.
+     *
+     * @param string $folder Normalised folder path; '' for root.
+     * @return string[] Folder itself, parent, …, root ('') — no duplicates.
+     */
+    private function ancestor_folders(string $folder): array {
+        $ancestors = [$folder];
+        if ($folder === '') {
+            return $ancestors;
+        }
+        $current = $folder;
+        while ($current !== '') {
+            $parent = $this->normalise_folder(dirname($current));
+            if ($parent === $current) {
+                break;
+            }
+            $ancestors[] = $parent;
+            $current = $parent;
+        }
+        return $ancestors;
+    }
+
+    /**
+     * Return the nearest folder at or above $folder that owns an index.html,
+     * or null if none of its ancestors do. Used to attribute a theme marker
+     * to the innermost lesson bundle that contains it, so child markers can't
+     * promote a parent landing folder above them.
+     *
+     * @param string $folder Folder containing the theme marker.
+     * @param array $anchorfolders Map of folder => true for folders with index.html at root.
+     * @return string|null Owning folder, or null.
+     */
+    private function nearest_anchor_folder(string $folder, array $anchorfolders): ?string {
+        foreach ($this->ancestor_folders($folder) as $ancestor) {
+            if (isset($anchorfolders[$ancestor])) {
+                return $ancestor;
+            }
+        }
+        return null;
     }
 }

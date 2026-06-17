@@ -1392,17 +1392,20 @@ XML;
     }
 
     /**
-     * Without the three markers together, a folder full of HTML/CSS/JS is left
-     * alone — Canvas exports with assorted webcontent files must still come
-     * through as ordinary mod_resource entries.
+     * Folders containing an index.html but no ILIAS theme marker stay as
+     * ordinary mod_resource entries — Canvas exports with miscellaneous
+     * HTML/CSS in subfolders must not be folded by accident. Likewise a
+     * folder carrying the theme marker but no index.html at its root.
      *
      * @return void
      */
     public function test_bundle_detector_does_not_fire_without_markers(): void {
         $dir = make_request_directory();
         mkdir($dir . '/random');
+        mkdir($dir . '/themed');
         file_put_contents($dir . '/random/index.html', '<html><title>X</title></html>');
-        file_put_contents($dir . '/random/igencp.css', '/* lone marker */');
+        file_put_contents($dir . '/random/site.css', '/* not a theme marker */');
+        file_put_contents($dir . '/themed/igencp.css', '/* theme marker but no index.html at root */');
 
         $manifest = <<<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1411,8 +1414,13 @@ XML;
     <organization identifier="org1"><item identifier="root"/></organization>
   </organizations>
   <resources>
-    <resource identifier="r_index" type="webcontent" href="random/index.html"><file href="random/index.html"/></resource>
-    <resource identifier="r_css" type="webcontent" href="random/igencp.css"><file href="random/igencp.css"/></resource>
+    <resource identifier="r_index" type="webcontent" href="random/index.html">
+      <file href="random/index.html"/>
+    </resource>
+    <resource identifier="r_css" type="webcontent" href="random/site.css"><file href="random/site.css"/></resource>
+    <resource identifier="r_theme" type="webcontent" href="themed/igencp.css">
+      <file href="themed/igencp.css"/>
+    </resource>
   </resources>
 </manifest>
 XML;
@@ -1420,11 +1428,182 @@ XML;
 
         $course = (new manifest_parser($dir))->parse();
 
-        // Both resources still surface, classified normally (no bundle fold).
-        $this->assertCount(2, $course->orphans);
+        // All three still surface as plain orphans; no bundle fold.
+        $this->assertCount(3, $course->orphans);
         $kinds = array_column($course->orphans, 'kind', 'identifier');
         $this->assertSame(item::KIND_FILE, $kinds['r_index']);
         $this->assertSame(item::KIND_FILE, $kinds['r_css']);
+        $this->assertSame(item::KIND_FILE, $kinds['r_theme']);
+    }
+
+    /**
+     * A parent landing index.html without its own theme marker must NOT be
+     * promoted just because a child lesson bundle has one. Otherwise the
+     * shortest-first fold would claim the whole parent tree and demote every
+     * real lesson bundle inside it.
+     *
+     * @return void
+     */
+    public function test_child_theme_marker_does_not_promote_parent_anchor(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course');
+        mkdir($dir . '/course/lesson');
+        // Parent landing page with NO theme marker anywhere outside the child.
+        file_put_contents($dir . '/course/index.html', '<html><title>Course</title></html>');
+        // Real lesson bundle below it.
+        file_put_contents($dir . '/course/lesson/index.html', '<html><title>Lesson</title></html>');
+        file_put_contents($dir . '/course/lesson/igencp.css', '');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="o"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_parent" type="webcontent" href="course/index.html">
+      <file href="course/index.html"/>
+    </resource>
+    <resource identifier="r_child" type="webcontent" href="course/lesson/index.html">
+      <file href="course/lesson/index.html"/>
+    </resource>
+    <resource identifier="r_theme" type="webcontent" href="course/lesson/igencp.css">
+      <file href="course/lesson/igencp.css"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Parent stays as an ordinary file resource; only the child lesson
+        // folder folds to a page.
+        $byid = [];
+        foreach ($course->orphans as $orphan) {
+            $byid[$orphan->identifier] = $orphan;
+        }
+        $this->assertArrayHasKey('r_parent', $byid);
+        $this->assertSame(item::KIND_FILE, $byid['r_parent']->kind);
+        $this->assertArrayHasKey('r_child', $byid);
+        $this->assertSame(item::KIND_PAGE, $byid['r_child']->kind);
+        // The theme marker is folded as a child asset, not surfaced separately.
+        $this->assertArrayNotHasKey('r_theme', $byid);
+    }
+
+    /**
+     * A nested folder whose index.html only appears as a secondary <file>
+     * entry (no resource lists it as the primary href) must not steal a
+     * theme marker from a real parent bundle. Without this guard the
+     * marker would be attributed to the unanchored nested folder,
+     * fold_one_bundle() would return false there, and the real parent
+     * lesson folder would never be folded — every bundle asset would then
+     * surface as a separate file.
+     *
+     * @return void
+     */
+    public function test_unanchored_nested_index_does_not_steal_parent_marker(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/lesson');
+        mkdir($dir . '/lesson/style');
+        file_put_contents($dir . '/lesson/index.html', '<html><title>Lesson</title></html>');
+        // Nested asset folder also has an index.html, but only as a secondary
+        // file entry below — no resource has it as a primary href.
+        file_put_contents($dir . '/lesson/style/index.html', '<html><title>fragment</title></html>');
+        file_put_contents($dir . '/lesson/style/igencp.css', '');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="o"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_lesson" type="webcontent" href="lesson/index.html">
+      <file href="lesson/index.html"/>
+    </resource>
+    <resource identifier="r_skin" type="webcontent" href="lesson/style/igencp.css">
+      <file href="lesson/style/igencp.css"/>
+      <file href="lesson/style/index.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The real lesson folder folds; the unanchored nested folder is
+        // suppressed as a bundle asset, not surfaced separately.
+        $byid = [];
+        foreach ($course->orphans as $orphan) {
+            $byid[$orphan->identifier] = $orphan;
+        }
+        $this->assertArrayHasKey('r_lesson', $byid);
+        $this->assertSame(item::KIND_PAGE, $byid['r_lesson']->kind);
+        $this->assertArrayNotHasKey('r_skin', $byid);
+        $assetrels = array_column($byid['r_lesson']->bundleassets, 'relpath');
+        $this->assertContains('style/igencp.css', $assetrels);
+    }
+
+    /**
+     * Real ILIAS / IGEN / DELOS exports nest the theme marker many levels
+     * below the lesson folder (style/igencp.css,
+     * Customizing/global/skin/igencp/igencp.css,
+     * templates/default/delos_cont.css). The detector should still fold each
+     * lesson folder into a single page even though the markers don't sit at
+     * the same level as the anchor index.html.
+     *
+     * @return void
+     */
+    public function test_folds_bundle_with_nested_theme_marker(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/NTERID_LM_00008599_R');
+        mkdir($dir . '/NTERID_LM_00008599_R/style');
+        mkdir($dir . '/NTERID_LM_00008599_R/style/images');
+        file_put_contents(
+            $dir . '/NTERID_LM_00008599_R/index.html',
+            '<html><head><title>Fall Protection</title></head><body>Hi</body></html>'
+        );
+        file_put_contents($dir . '/NTERID_LM_00008599_R/lm_pg_5859.html', '<p>Lesson page.</p>');
+        file_put_contents($dir . '/NTERID_LM_00008599_R/syntaxhighlight.css', '');
+        file_put_contents($dir . '/NTERID_LM_00008599_R/style/igencp.css', '');
+        file_put_contents($dir . '/NTERID_LM_00008599_R/style/images/head_back.gif', 'GIF');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="o"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_idx" type="webcontent" href="NTERID_LM_00008599_R/index.html">
+      <file href="NTERID_LM_00008599_R/index.html"/>
+    </resource>
+    <resource identifier="r_lmpg" type="webcontent" href="NTERID_LM_00008599_R/lm_pg_5859.html">
+      <file href="NTERID_LM_00008599_R/lm_pg_5859.html"/>
+    </resource>
+    <resource identifier="r_sx" type="webcontent" href="NTERID_LM_00008599_R/syntaxhighlight.css">
+      <file href="NTERID_LM_00008599_R/syntaxhighlight.css"/>
+    </resource>
+    <resource identifier="r_theme" type="webcontent" href="NTERID_LM_00008599_R/style/igencp.css">
+      <file href="NTERID_LM_00008599_R/style/igencp.css"/>
+    </resource>
+    <resource identifier="r_img" type="webcontent" href="NTERID_LM_00008599_R/style/images/head_back.gif">
+      <file href="NTERID_LM_00008599_R/style/images/head_back.gif"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Single page from the bundle; siblings folded as assets.
+        $this->assertCount(1, $course->orphans);
+        $page = $course->orphans[0];
+        $this->assertSame('r_idx', $page->identifier);
+        $this->assertSame(item::KIND_PAGE, $page->kind);
+        $assetrels = array_column($page->bundleassets, 'relpath');
+        sort($assetrels);
+        $this->assertSame(
+            ['lm_pg_5859.html', 'style/igencp.css', 'style/images/head_back.gif', 'syntaxhighlight.css'],
+            $assetrels
+        );
     }
 
     /**
