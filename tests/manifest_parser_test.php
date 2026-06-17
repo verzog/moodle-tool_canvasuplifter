@@ -884,4 +884,123 @@ XML;
         $this->assertSame('r_doc', $course->orphans[0]->identifier);
         $this->assertSame(item::KIND_FILE, $course->orphans[0]->kind);
     }
+
+    /**
+     * eXe/IGEN/DELOS-style lesson bundles (folders carrying igencp.css +
+     * delos_cont.css + index.html) get folded into a single mod_page anchored
+     * at the folder's index.html. The skeleton siblings (jquery, accordion,
+     * theme images, audio players, …) vanish from the orphan list instead of
+     * surfacing as hundreds of pointless mod_resource entries.
+     *
+     * @return void
+     */
+    public function test_folds_lesson_bundle_into_single_page(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/unit1');
+        mkdir($dir . '/unit1/assets');
+        // The bundle markers + the entry page + the skeleton noise.
+        file_put_contents($dir . '/unit1/index.html', '<html><head><title>Unit 1</title></head><body>Hi</body></html>');
+        file_put_contents($dir . '/unit1/igencp.css', '/* skin */');
+        file_put_contents($dir . '/unit1/delos_cont.css', '/* skin */');
+        file_put_contents($dir . '/unit1/jquery.js', '// noise');
+        file_put_contents($dir . '/unit1/accordion.css', '/* noise */');
+        file_put_contents($dir . '/unit1/assets/head_back.gif', 'GIF');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1"><item identifier="root"/></organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_index" type="webcontent" href="unit1/index.html"><file href="unit1/index.html"/></resource>
+    <resource identifier="r_skin1" type="webcontent" href="unit1/igencp.css"><file href="unit1/igencp.css"/></resource>
+    <resource identifier="r_skin2" type="webcontent" href="unit1/delos_cont.css"><file href="unit1/delos_cont.css"/></resource>
+    <resource identifier="r_jq" type="webcontent" href="unit1/jquery.js"><file href="unit1/jquery.js"/></resource>
+    <resource identifier="r_acc" type="webcontent" href="unit1/accordion.css"><file href="unit1/accordion.css"/></resource>
+    <resource identifier="r_img" type="webcontent" href="unit1/assets/head_back.gif"><file href="unit1/assets/head_back.gif"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Only the bundle's index.html survives as a single page; everything
+        // else (skin CSS, jQuery, theme image in a subfolder) is suppressed.
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('r_index', $course->orphans[0]->identifier);
+        $this->assertSame(item::KIND_PAGE, $course->orphans[0]->kind);
+        $this->assertSame('Unit 1', $course->orphans[0]->title);
+    }
+
+    /**
+     * Without the three markers together, a folder full of HTML/CSS/JS is left
+     * alone — Canvas exports with assorted webcontent files must still come
+     * through as ordinary mod_resource entries.
+     *
+     * @return void
+     */
+    public function test_bundle_detector_does_not_fire_without_markers(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/random');
+        file_put_contents($dir . '/random/index.html', '<html><title>X</title></html>');
+        file_put_contents($dir . '/random/igencp.css', '/* lone marker */');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1"><item identifier="root"/></organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_index" type="webcontent" href="random/index.html"><file href="random/index.html"/></resource>
+    <resource identifier="r_css" type="webcontent" href="random/igencp.css"><file href="random/igencp.css"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Both resources still surface, classified normally (no bundle fold).
+        $this->assertCount(2, $course->orphans);
+        $kinds = array_column($course->orphans, 'kind', 'identifier');
+        $this->assertSame(item::KIND_FILE, $kinds['r_index']);
+        $this->assertSame(item::KIND_FILE, $kinds['r_css']);
+    }
+
+    /**
+     * An HTML <title> like " - Audio Visual" loses its leading separator so
+     * the report and the built activity don't show the dash on its own.
+     *
+     * @return void
+     */
+    public function test_strips_leading_separator_from_derived_title(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/lessons');
+        file_put_contents(
+            $dir . '/lessons/audio.html',
+            '<html><head><title> - Audio Visual</title></head><body/></html>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1"><item identifier="root"/></organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_audio" type="webcontent" href="lessons/audio.html">
+      <file href="lessons/audio.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('Audio Visual', $course->orphans[0]->title);
+    }
 }
