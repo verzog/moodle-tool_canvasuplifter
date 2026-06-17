@@ -73,6 +73,7 @@ class manifest_parser {
         $course->fullname = $this->read_course_title();
         $course->weightingscheme = $this->read_weighting_scheme();
         $course->gradecategories = $this->read_grade_categories();
+        $course->rubrics = $this->read_rubrics();
 
         // Build a lookup of every resource by identifier.
         $resources = $this->read_resources($dom);
@@ -758,11 +759,126 @@ class manifest_parser {
     }
 
     /**
-     * For every assignment resource, read its assignment_settings.xml to find
-     * the Canvas <assignment_group_identifierref> and stash it on the item so
-     * the builder can drop the graded activity into the right grade category.
+     * For every assignment resource, parse its assignment_settings.xml once and
+     * stash the grade-group reference and any rubric reference on the model
+     * item so the builder can route the activity into the right grade category
+     * and attach the right gradingform_rubric definition.
      *
      * @param item[] $resources Resources keyed by identifier (modified in place).
+     * @return void
+     */
+    /**
+     * Read Canvas's course_settings/rubrics.xml into a map keyed by Canvas
+     * rubric identifier. Each value carries the title, the free-form-comments
+     * and hide-score-total flags, and an ordered list of criteria each with
+     * their points-only levels. The shape stays Moodle-free so the rubric
+     * library is still testable from XML strings.
+     *
+     * @return array Map of identifier => rubric hash (see course_model::$rubrics).
+     */
+    protected function read_rubrics(): array {
+        $path = $this->basedir . '/course_settings/rubrics.xml';
+        if (!is_readable($path)) {
+            return [];
+        }
+        $previous = libxml_use_internal_errors(true);
+        $dom = new DOMDocument();
+        $loaded = $dom->load($path, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded) {
+            return [];
+        }
+        $rubrics = [];
+        foreach ($dom->getElementsByTagNameNS('*', 'rubric') as $rubricnode) {
+            if (
+                !($rubricnode instanceof DOMElement) || $rubricnode->parentNode === null
+                || $rubricnode->parentNode->localName !== 'rubrics'
+            ) {
+                // The outer <rubric> is the top-level entry; an inline <rubric>
+                // nested elsewhere (e.g. inside an assignment extension) is read
+                // through the assignment path, not here.
+                continue;
+            }
+            $id = trim($rubricnode->getAttribute('identifier'));
+            if ($id === '') {
+                continue;
+            }
+            $rubrics[$id] = [
+                'title' => $this->child_text($rubricnode, 'title'),
+                'free_form_comments' => $this->bool_text($rubricnode, 'free_form_criterion_comments'),
+                'hide_score_total' => $this->bool_text($rubricnode, 'hide_score_total'),
+                'criteria' => $this->read_criteria($rubricnode),
+            ];
+        }
+        return $rubrics;
+    }
+
+    /**
+     * Read the <criteria>/<criterion> children of a <rubric> element.
+     *
+     * @param DOMElement $rubricnode The rubric element.
+     * @return array Ordered list of ['id','description','points','levels'].
+     */
+    protected function read_criteria(DOMElement $rubricnode): array {
+        $criteria = [];
+        $criterianode = $this->first_child_named($rubricnode, 'criteria');
+        if ($criterianode === null) {
+            return $criteria;
+        }
+        foreach ($this->children_named($criterianode, 'criterion') as $criterionnode) {
+            $criteria[] = [
+                'id' => $this->child_text($criterionnode, 'criterion_id'),
+                'description' => $this->child_text($criterionnode, 'description'),
+                'points' => (float) $this->child_text($criterionnode, 'points'),
+                'levels' => $this->read_ratings($criterionnode),
+            ];
+        }
+        return $criteria;
+    }
+
+    /**
+     * Read the <ratings>/<rating> children of a <criterion> element. Returns
+     * them sorted ascending by points so gradingform_rubric renders them
+     * lowest-to-highest left-to-right.
+     *
+     * @param DOMElement $criterionnode The criterion element.
+     * @return array Ordered list of ['description','points'].
+     */
+    protected function read_ratings(DOMElement $criterionnode): array {
+        $levels = [];
+        $ratingsnode = $this->first_child_named($criterionnode, 'ratings');
+        if ($ratingsnode === null) {
+            return $levels;
+        }
+        foreach ($this->children_named($ratingsnode, 'rating') as $ratingnode) {
+            $levels[] = [
+                'description' => $this->child_text($ratingnode, 'description'),
+                'points' => (float) $this->child_text($ratingnode, 'points'),
+            ];
+        }
+        usort($levels, fn($a, $b) => $a['points'] <=> $b['points']);
+        return $levels;
+    }
+
+    /**
+     * Read the trimmed text of a child element and interpret it as a boolean.
+     *
+     * @param DOMElement $parent The parent element.
+     * @param string $name Local name of the child.
+     * @return bool
+     */
+    protected function bool_text(DOMElement $parent, string $name): bool {
+        return filter_var($this->child_text($parent, $name), FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /**
+     * For every assignment resource, parse its assignment_settings.xml once and
+     * stash the grade-group reference and any rubric reference on the model
+     * item so the builder can route the activity into the right grade category
+     * and attach the right gradingform_rubric definition.
+     *
+     * @param array $resources Resources keyed by identifier (item objects, modified in place).
      * @return void
      */
     protected function mark_assignment_groups(array &$resources): void {
@@ -781,6 +897,10 @@ class manifest_parser {
                 $settings = assignment_settings::parse((string) @file_get_contents($absolute));
                 if ($settings->gradegroupref !== '') {
                     $resourceitem->gradegroupref = $settings->gradegroupref;
+                }
+                if ($settings->rubricref !== '') {
+                    $resourceitem->rubricref = $settings->rubricref;
+                    $resourceitem->rubricforgrading = $settings->rubricforgrading;
                 }
                 break;
             }

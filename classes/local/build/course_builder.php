@@ -71,6 +71,9 @@ class course_builder {
     /** @var array<string, int> Canvas assignment-group id -> Moodle grade_category id, for the current build. */
     private array $gradecategoryids = [];
 
+    /** @var array Canvas rubric library (id => spec) for the current build; see course_model::$rubrics. */
+    private array $rubrics = [];
+
     /**
      * Constructor.
      *
@@ -132,6 +135,9 @@ class course_builder {
         // up front because Moodle creates a default grade item for every assign
         // on add_moduleinfo() and we re-parent those once we know the cmid.
         $this->gradecategoryids = $this->create_grade_categories($course, $coursemodel);
+        // Hold the rubric library so attach_rubric() can look up by Canvas id
+        // when each assignment is built.
+        $this->rubrics = $coursemodel->rubrics;
 
         $builders = [
             item::KIND_PAGE => new page_builder($this->packageroot),
@@ -416,6 +422,10 @@ class course_builder {
             if ($modelitem->kind === item::KIND_ASSIGNMENT && $modelitem->gradegroupref !== '') {
                 $this->place_in_grade_category($course->id, $cmid, $modelitem->gradegroupref);
             }
+            // Attach any Canvas rubric the assignment is linked to.
+            if ($modelitem->kind === item::KIND_ASSIGNMENT && $modelitem->rubricref !== '') {
+                $this->attach_rubric($cmid, $modelitem);
+            }
             if ($modelitem->kind === item::KIND_PAGE) {
                 $builtpagecmids[] = $cmid;
             }
@@ -645,6 +655,104 @@ class course_builder {
             $map[$spec['identifier']] = (int) $cat->id;
         }
         return $map;
+    }
+
+    /**
+     * Install the Canvas rubric the model item points at as a Moodle
+     * gradingform_rubric definition on the assignment's submissions grading
+     * area. When the Canvas <rubric_use_for_grading> flag is true, make rubric
+     * the active grading method so it drives the grade; otherwise the rubric
+     * is just defined and the admin can switch to it later.
+     *
+     * @param int $cmid The assignment's course module id.
+     * @param item $modelitem The assignment item.
+     * @return void
+     */
+    private function attach_rubric(int $cmid, item $modelitem): void {
+        global $CFG;
+        $spec = $this->rubrics[$modelitem->rubricref] ?? null;
+        if ($spec === null || empty($spec['criteria'])) {
+            return;
+        }
+        require_once($CFG->dirroot . '/grade/grading/lib.php');
+        $cm = get_coursemodule_from_id('assign', $cmid, 0, false, IGNORE_MISSING);
+        if (!$cm) {
+            return;
+        }
+        $context = \context_module::instance($cmid);
+        $gradingmanager = get_grading_manager($context, 'mod_assign', 'submissions');
+        $controller = $gradingmanager->get_controller('rubric');
+        if ($controller === null) {
+            return;
+        }
+        $controller->update_definition($this->rubric_definition($spec));
+        if ($modelitem->rubricforgrading) {
+            $gradingmanager->set_active_method('rubric');
+        }
+    }
+
+    /**
+     * Translate a Canvas rubric spec into the stdClass that
+     * gradingform_rubric_controller::update_definition() expects. Keys
+     * prefixed "NEWID" tell the controller to insert rows on first save.
+     *
+     * @param array $spec One entry of course_model::$rubrics.
+     * @return \stdClass Definition payload.
+     */
+    private function rubric_definition(array $spec): \stdClass {
+        $criteria = [];
+        $criterionseq = 0;
+        $levelseq = 0;
+        foreach ($spec['criteria'] as $criterion) {
+            $levels = [];
+            foreach ($criterion['levels'] as $level) {
+                $levels['NEWID' . (++$levelseq)] = [
+                    'score' => (float) $level['points'],
+                    'definition' => $level['description'],
+                    'definitionformat' => FORMAT_HTML,
+                ];
+            }
+            // Empty criterion (no levels): drop a single zero/full pair so
+            // gradingform_rubric still has a valid row to render.
+            if (empty($levels)) {
+                $levels['NEWID' . (++$levelseq)] = [
+                    'score' => 0,
+                    'definition' => get_string('confidence_none', 'tool_canvasuplifter'),
+                    'definitionformat' => FORMAT_HTML,
+                ];
+                $levels['NEWID' . (++$levelseq)] = [
+                    'score' => (float) ($criterion['points'] ?? 0),
+                    'definition' => get_string('confidence_full', 'tool_canvasuplifter'),
+                    'definitionformat' => FORMAT_HTML,
+                ];
+            }
+            $criteria['NEWID' . (++$criterionseq)] = [
+                'sortorder' => $criterionseq,
+                'description' => $criterion['description'],
+                'descriptionformat' => FORMAT_HTML,
+                'levels' => $levels,
+            ];
+        }
+        $definition = new \stdClass();
+        $definition->name = (string) ($spec['title'] !== '' ? $spec['title'] : 'Rubric');
+        $definition->description_editor = ['text' => '', 'format' => FORMAT_HTML];
+        $definition->status = \gradingform_controller::DEFINITION_STATUS_READY;
+        $definition->rubric = [
+            'criteria' => $criteria,
+            'options' => [
+                // Ratings rendered ascending (low → high) to match the sort
+                // applied in the parser.
+                'sortlevelsasc' => 1,
+                'showdescriptionteacher' => 1,
+                'showdescriptionstudent' => 1,
+                'showscoreteacher' => 1,
+                'showscorestudent' => empty($spec['hide_score_total']) ? 1 : 0,
+                'enableremarks' => 1,
+                'showremarksstudent' => 1,
+                'lockzeropoints' => 1,
+            ],
+        ];
+        return $definition;
     }
 
     /**
