@@ -97,6 +97,14 @@ class item {
     public array $bundleassets = [];
 
     /**
+     * @var bool True when fold_lesson_bundles() demoted this item as a sibling
+     *           of a lesson bundle. Distinguishes "asset folded into another
+     *           page" from "genuinely unclassified resource" so the report
+     *           still surfaces real unknowns in sections.
+     */
+    public bool $bundlemember = false;
+
+    /**
      * Constructor.
      *
      * @param string $identifier Canvas resource identifier.

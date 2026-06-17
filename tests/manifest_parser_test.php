@@ -1168,6 +1168,132 @@ XML;
     }
 
     /**
+     * When the package root carries the marker triple AND a subfolder also
+     * carries it, the outer (root) bundle should claim the subfolder; the
+     * inner detection must not later promote the subfolder's index.html
+     * back to KIND_PAGE.
+     *
+     * @return void
+     */
+    public function test_root_bundle_swallows_nested_bundle(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/inner');
+        file_put_contents($dir . '/index.html', '<html><title>Course</title></html>');
+        file_put_contents($dir . '/igencp.css', '');
+        file_put_contents($dir . '/delos_cont.css', '');
+        file_put_contents($dir . '/inner/index.html', '<html><title>Inner</title></html>');
+        file_put_contents($dir . '/inner/igencp.css', '');
+        file_put_contents($dir . '/inner/delos_cont.css', '');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="o"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_root" type="webcontent" href="index.html"><file href="index.html"/></resource>
+    <resource identifier="r_a" type="webcontent" href="igencp.css"><file href="igencp.css"/></resource>
+    <resource identifier="r_b" type="webcontent" href="delos_cont.css"><file href="delos_cont.css"/></resource>
+    <resource identifier="r_inner" type="webcontent" href="inner/index.html">
+      <file href="inner/index.html"/>
+    </resource>
+    <resource identifier="r_c" type="webcontent" href="inner/igencp.css"><file href="inner/igencp.css"/></resource>
+    <resource identifier="r_d" type="webcontent" href="inner/delos_cont.css">
+      <file href="inner/delos_cont.css"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Only the root index becomes a page; the nested one is just an asset.
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('r_root', $course->orphans[0]->identifier);
+        $assetrels = array_column($course->orphans[0]->bundleassets, 'relpath');
+        $this->assertContains('inner/index.html', $assetrels);
+    }
+
+    /**
+     * When a bundle is expressed as one <resource> with index.html as href
+     * and the framework siblings as additional <file> children, those
+     * non-anchor files must still land in $bundleassets — page_builder needs
+     * them to rewrite and import the relative refs.
+     *
+     * @return void
+     */
+    public function test_anchor_resource_siblings_collected_as_assets(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/lesson');
+        file_put_contents($dir . '/lesson/index.html', '<html><title>L</title></html>');
+        file_put_contents($dir . '/lesson/igencp.css', '');
+        file_put_contents($dir . '/lesson/delos_cont.css', '');
+        file_put_contents($dir . '/lesson/jquery.js', '');
+
+        // Single resource bundles everything together.
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="o"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_bundle" type="webcontent" href="lesson/index.html">
+      <file href="lesson/index.html"/>
+      <file href="lesson/igencp.css"/>
+      <file href="lesson/delos_cont.css"/>
+      <file href="lesson/jquery.js"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame(item::KIND_PAGE, $course->orphans[0]->kind);
+        $assetrels = array_column($course->orphans[0]->bundleassets, 'relpath');
+        sort($assetrels);
+        $this->assertSame(['delos_cont.css', 'igencp.css', 'jquery.js'], $assetrels);
+    }
+
+    /**
+     * A KIND_UNKNOWN resource that *isn't* a bundle asset (an unsupported
+     * resource type the organisation references) must still surface in the
+     * section so the report can flag it as unmappable.
+     *
+     * @return void
+     */
+    public function test_non_bundle_unknown_still_surfaces_in_section(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="o"><item identifier="root">
+      <item identifier="m1"><title>Week 1</title>
+        <item identifier="i_x" identifierref="r_x"><title>Mystery</title></item>
+      </item>
+    </item></organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_x" type="some-vendor-specific-bundle" href="x.bin">
+      <file href="x.bin"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Section still carries the unknown so the report can warn about it.
+        $this->assertCount(1, $course->sections);
+        $this->assertCount(1, $course->sections[0]->items);
+        $this->assertSame(item::KIND_UNKNOWN, $course->sections[0]->items[0]->kind);
+        $this->assertSame('Mystery', $course->sections[0]->items[0]->title);
+    }
+
+    /**
      * Without the three markers together, a folder full of HTML/CSS/JS is left
      * alone — Canvas exports with assorted webcontent files must still come
      * through as ordinary mod_resource entries.

@@ -520,8 +520,10 @@ class manifest_parser {
         $ref = $this->child_text($node, 'identifierref');
         if ($ref !== '' && isset($resources[$ref])) {
             // Bundle assets demoted by fold_lesson_bundles() must not surface
-            // here either, even when module_meta references them by id.
-            if ($resources[$ref]->kind === item::KIND_UNKNOWN) {
+            // here either, even when module_meta references them by id. Real
+            // KIND_UNKNOWN resources still flow through so the report can
+            // call them out.
+            if ($resources[$ref]->bundlemember) {
                 return null;
             }
             // Clone before mutating: Canvas often reuses the same identifierref in
@@ -652,11 +654,12 @@ class manifest_parser {
             return;
         }
         $resourceitem = $resources[$ref];
-        // Bundle assets demoted to KIND_UNKNOWN by fold_lesson_bundles() must
-        // not appear in sections either; otherwise an organisation that
-        // references the framework files would still surface them in the
-        // report and tally them as "skipped" unknown items.
-        if ($resourceitem->kind === item::KIND_UNKNOWN) {
+        // Bundle assets demoted by fold_lesson_bundles() must not appear in
+        // sections either; otherwise an organisation that references the
+        // framework files would still surface them. Genuinely unknown
+        // resource types (KIND_UNKNOWN without bundlemember) must keep
+        // surfacing so the report flags them.
+        if ($resourceitem->bundlemember) {
             return;
         }
         $title = $this->item_title($node);
@@ -968,17 +971,49 @@ class manifest_parser {
                 $basenamesbyfolder[$folder][strtolower(basename($path))] = basename($path);
             }
         }
-        // Second pass: detect folders carrying all three markers and process
-        // each bundle. The exact-cased index basename is recovered from the
-        // first pass so the anchor path matches whatever the exporter wrote.
+        // Second pass: identify every folder carrying the marker triple, sort
+        // outermost-first (shortest folder path), then fold each unless an
+        // ancestor bundle already claimed its tree. Without that ordering a
+        // root-level bundle would demote a nested bundle's siblings, only for
+        // a later iteration to promote the nested index back to KIND_PAGE.
+        $bundlefolders = [];
         foreach ($basenamesbyfolder as $folder => $basenames) {
             foreach (self::LESSON_BUNDLE_MARKERS as $marker) {
                 if (!isset($basenames[$marker])) {
                     continue 2;
                 }
             }
-            $this->fold_one_bundle($resources, $folder, $basenames['index.html']);
+            $bundlefolders[] = $folder;
         }
+        usort($bundlefolders, fn($a, $b) => strlen($a) - strlen($b));
+        $claimedprefixes = [];
+        foreach ($bundlefolders as $folder) {
+            if ($this->folder_inside_claimed($folder, $claimedprefixes)) {
+                continue;
+            }
+            $this->fold_one_bundle($resources, $folder, $basenamesbyfolder[$folder]['index.html']);
+            $claimedprefixes[] = $folder === '' ? '' : ($folder . '/');
+        }
+    }
+
+    /**
+     * Whether the given folder sits inside a folder we've already folded as a
+     * bundle. A claimed prefix of '' (root bundle) claims everything.
+     *
+     * @param string $folder Candidate folder, '' for root.
+     * @param array $claimedprefixes Folder prefixes already folded.
+     * @return bool
+     */
+    private function folder_inside_claimed(string $folder, array $claimedprefixes): bool {
+        foreach ($claimedprefixes as $prefix) {
+            if ($prefix === '') {
+                return true;
+            }
+            if ($folder !== '' && strpos($folder . '/', $prefix) === 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1011,17 +1046,21 @@ class manifest_parser {
             }
             if (strcasecmp($primary, $anchor) === 0) {
                 $anchoritem = $resourceitem;
+                // Some packages express the whole bundle as a single resource
+                // with the anchor as href and assets as additional <file>
+                // children. Pull those siblings off the anchor too.
+                foreach ($this->resource_paths($resourceitem) as $assetpath) {
+                    if (strcasecmp($assetpath, $anchor) === 0) {
+                        continue;
+                    }
+                    $this->record_bundle_asset($assets, $assetpath, $folderprefix);
+                }
                 continue;
             }
             $resourceitem->kind = item::KIND_UNKNOWN;
+            $resourceitem->bundlemember = true;
             foreach ($this->resource_paths($resourceitem) as $assetpath) {
-                $relpath = $folderprefix === ''
-                    ? ltrim($assetpath, '/')
-                    : substr($assetpath, strlen($folderprefix));
-                if ($relpath === '' || $relpath === false) {
-                    continue;
-                }
-                $assets[$relpath] = ['source' => $assetpath, 'relpath' => $relpath];
+                $this->record_bundle_asset($assets, $assetpath, $folderprefix);
             }
         }
         if ($anchoritem === null) {
@@ -1042,6 +1081,26 @@ class manifest_parser {
             $anchoritem->files = $reordered;
         }
         $anchoritem->bundleassets = array_values($assets);
+    }
+
+    /**
+     * Append a package path to the asset accumulator, keyed by its
+     * relative-to-anchor path so duplicates collapse and the page filearea
+     * mirrors the layout the HTML references.
+     *
+     * @param array $assets Accumulator: relpath => ['source','relpath'] (modified in place).
+     * @param string $assetpath Package-relative path.
+     * @param string $folderprefix Bundle folder with trailing slash, '' at root.
+     * @return void
+     */
+    private function record_bundle_asset(array &$assets, string $assetpath, string $folderprefix): void {
+        $relpath = $folderprefix === ''
+            ? ltrim($assetpath, '/')
+            : substr($assetpath, strlen($folderprefix));
+        if ($relpath === '' || $relpath === false) {
+            return;
+        }
+        $assets[$relpath] = ['source' => $assetpath, 'relpath' => $relpath];
     }
 
     /**
