@@ -236,9 +236,52 @@ class manifest_parser {
             }
 
             $modelitem->kind = $this->classify($type, $href, $modelitem->files);
+            // Mark the deliberate-skip cases (quiz/ assets, metadata-only
+            // learning-application resources) so section attach can keep
+            // suppressing them when the organisation explicitly references
+            // them, without also suppressing genuinely unsupported types.
+            $modelitem->suppressed = $this->deliberately_suppressed(
+                $modelitem->kind,
+                $type,
+                $href,
+                $modelitem->files
+            );
             $items[$identifier] = $modelitem;
         }
         return $items;
+    }
+
+    /**
+     * Whether classify() returned KIND_UNKNOWN intentionally — i.e. the
+     * resource is a known-but-skipped kind (a quiz/ asset that lives inside
+     * a QTI question, or a learning-application companion XML carrying no
+     * HTML payload) — as opposed to an unsupported resource type that the
+     * report should still flag.
+     *
+     * @param string $kind The classifier's verdict.
+     * @param string $type Raw CC resource type string.
+     * @param string $href Primary href.
+     * @param array $files All file hrefs (strings).
+     * @return bool
+     */
+    protected function deliberately_suppressed(string $kind, string $type, string $href, array $files): bool {
+        if ($kind !== item::KIND_UNKNOWN) {
+            return false;
+        }
+        if (($type === 'webcontent' || str_contains($type, 'webcontent'))
+            && $this->is_quiz_asset($href, $files)
+        ) {
+            return true;
+        }
+        if (str_contains($type, 'learning-application-resource')
+            && !$this->has_html($href, $files)
+        ) {
+            // assignment_settings.xml would have been classified as
+            // KIND_ASSIGNMENT, so by here we know it's a metadata-only
+            // companion (e.g. topicMeta, assessment_meta, canvas_export.txt).
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -519,11 +562,10 @@ class manifest_parser {
 
         $ref = $this->child_text($node, 'identifierref');
         if ($ref !== '' && isset($resources[$ref])) {
-            // Bundle assets demoted by fold_lesson_bundles() must not surface
-            // here either, even when module_meta references them by id. Real
-            // KIND_UNKNOWN resources still flow through so the report can
-            // call them out.
-            if ($resources[$ref]->bundlemember) {
+            // Mirror attach_resource()'s suppression rule: bundle assets and
+            // deliberate-skip unknowns stay hidden; real KIND_UNKNOWN
+            // resources still flow through so the report can flag them.
+            if ($resources[$ref]->bundlemember || $resources[$ref]->suppressed) {
                 return null;
             }
             // Clone before mutating: Canvas often reuses the same identifierref in
@@ -654,12 +696,12 @@ class manifest_parser {
             return;
         }
         $resourceitem = $resources[$ref];
-        // Bundle assets demoted by fold_lesson_bundles() must not appear in
-        // sections either; otherwise an organisation that references the
-        // framework files would still surface them. Genuinely unknown
-        // resource types (KIND_UNKNOWN without bundlemember) must keep
-        // surfacing so the report flags them.
-        if ($resourceitem->bundlemember) {
+        // Skip resources we've deliberately set aside: bundle assets folded
+        // by fold_lesson_bundles(), and the deliberate-skip KIND_UNKNOWN
+        // cases (quiz/ assets, metadata-only learning-application
+        // companions). Genuinely unsupported resource types stay visible so
+        // the report can call them out as unmappable rows.
+        if ($resourceitem->bundlemember || $resourceitem->suppressed) {
             return;
         }
         $title = $this->item_title($node);
@@ -991,8 +1033,19 @@ class manifest_parser {
             if ($this->folder_inside_claimed($folder, $claimedprefixes)) {
                 continue;
             }
-            $this->fold_one_bundle($resources, $folder, $basenamesbyfolder[$folder]['index.html']);
-            $claimedprefixes[] = $folder === '' ? '' : ($folder . '/');
+            // Only claim the folder tree once we've actually promoted an
+            // anchor: if no resource's primary path is the index.html (the
+            // markers happen to be secondary <file> entries of unrelated
+            // resources), a nested bundle below should still be allowed to
+            // fold on its own.
+            $folded = $this->fold_one_bundle(
+                $resources,
+                $folder,
+                $basenamesbyfolder[$folder]['index.html']
+            );
+            if ($folded) {
+                $claimedprefixes[] = $folder === '' ? '' : ($folder . '/');
+            }
         }
     }
 
@@ -1027,21 +1080,19 @@ class manifest_parser {
      * @param string $indexbasename The real-cased basename of the index file (e.g. "Index.html").
      * @return void
      */
-    private function fold_one_bundle(array &$resources, string $folder, string $indexbasename): void {
+    private function fold_one_bundle(array &$resources, string $folder, string $indexbasename): bool {
         $folderprefix = $folder === '' ? '' : ($folder . '/');
         $anchor = $folderprefix . $indexbasename;
-        // Build the asset list against the anchor so the promoted page can
-        // import them. Skip the anchor itself, and dedupe by relpath so two
-        // resources pointing at the same file don't both land in pluginfile.
+        // First find the anchor without mutating anything: if no resource's
+        // primary path is the index file (e.g. the markers only exist as
+        // secondary <file> entries on unrelated resources), nothing gets
+        // demoted and a nested bundle below stays available to fold itself.
         $anchoritem = null;
+        $todemote = [];
         $assets = [];
         foreach ($resources as $resourceitem) {
             $primary = $this->primary_path($resourceitem);
-            if ($primary === '') {
-                continue;
-            }
-            $inside = $this->path_inside_bundle($primary, $folderprefix);
-            if (!$inside) {
+            if ($primary === '' || !$this->path_inside_bundle($primary, $folderprefix)) {
                 continue;
             }
             if (strcasecmp($primary, $anchor) === 0) {
@@ -1057,14 +1108,18 @@ class manifest_parser {
                 }
                 continue;
             }
-            $resourceitem->kind = item::KIND_UNKNOWN;
-            $resourceitem->bundlemember = true;
+            $todemote[] = $resourceitem;
             foreach ($this->resource_paths($resourceitem) as $assetpath) {
                 $this->record_bundle_asset($assets, $assetpath, $folderprefix);
             }
         }
         if ($anchoritem === null) {
-            return;
+            return false;
+        }
+        // Anchor confirmed — apply demotions and promote the anchor.
+        foreach ($todemote as $sibling) {
+            $sibling->kind = item::KIND_UNKNOWN;
+            $sibling->bundlemember = true;
         }
         $anchoritem->kind = item::KIND_PAGE;
         // Ensure page_builder reads the HTML payload, not whatever file the
@@ -1081,6 +1136,7 @@ class manifest_parser {
             $anchoritem->files = $reordered;
         }
         $anchoritem->bundleassets = array_values($assets);
+        return true;
     }
 
     /**

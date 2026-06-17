@@ -105,6 +105,16 @@ class item {
     public bool $bundlemember = false;
 
     /**
+     * @var bool True when the manifest parser deliberately classified this
+     *           resource as KIND_UNKNOWN to skip it (quiz/ assets under a
+     *           QTI resource, learning-application metadata files without
+     *           an HTML payload). Distinguished from genuinely unsupported
+     *           resource types so the section path can keep suppressing
+     *           the former while still surfacing the latter.
+     */
+    public bool $suppressed = false;
+
+    /**
      * Constructor.
      *
      * @param string $identifier Canvas resource identifier.

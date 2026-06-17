@@ -1294,6 +1294,104 @@ XML;
     }
 
     /**
+     * Resources the classifier deliberately marks KIND_UNKNOWN (quiz/ assets,
+     * metadata-only learning-application companions) stay suppressed even
+     * when the organisation explicitly references them. Genuinely unknown
+     * resource types must still appear so the report can flag them.
+     *
+     * @return void
+     */
+    public function test_deliberate_unknown_assets_stay_suppressed_in_sections(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        file_put_contents($dir . '/quiz/diagram.png', 'PNG');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="o"><item identifier="root">
+      <item identifier="m1"><title>Week 1</title>
+        <item identifier="i_qa" identifierref="r_quizasset"><title>QuizAsset</title></item>
+      </item>
+    </item></organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quizasset" type="webcontent">
+      <file href="quiz/diagram.png"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The quiz asset doesn't reach the section even though the
+        // organisation references it — same behaviour as the original parser.
+        $this->assertCount(1, $course->sections);
+        $this->assertCount(0, $course->sections[0]->items);
+    }
+
+    /**
+     * If the marker filenames appear inside a folder only as secondary <file>
+     * entries (no resource's primary href is that folder's index.html), no
+     * anchor is found and nothing should be claimed: a valid nested bundle
+     * below must still be allowed to fold on its own.
+     *
+     * @return void
+     */
+    public function test_unanchored_outer_lets_inner_bundle_fold(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/outer');
+        mkdir($dir . '/outer/lesson');
+        // Markers in outer/ — but no resource will have outer/index.html as
+        // its primary path; the index file is bundled into the loose carrier.
+        file_put_contents($dir . '/outer/index.html', '<html><title>Outer</title></html>');
+        file_put_contents($dir . '/outer/igencp.css', '');
+        file_put_contents($dir . '/outer/delos_cont.css', '');
+        // Valid nested bundle.
+        file_put_contents($dir . '/outer/lesson/index.html', '<html><title>Lesson</title></html>');
+        file_put_contents($dir . '/outer/lesson/igencp.css', '');
+        file_put_contents($dir . '/outer/lesson/delos_cont.css', '');
+
+        // The outer carrier resource has the marker triple only as <file> entries;
+        // its primary href is the unrelated zip below it, so no anchor exists at outer/.
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="o"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_carrier" type="webcontent" href="outer/igencp.css">
+      <file href="outer/igencp.css"/>
+      <file href="outer/delos_cont.css"/>
+      <file href="outer/index.html"/>
+    </resource>
+    <resource identifier="r_inner" type="webcontent" href="outer/lesson/index.html">
+      <file href="outer/lesson/index.html"/>
+    </resource>
+    <resource identifier="r_inner_a" type="webcontent" href="outer/lesson/igencp.css">
+      <file href="outer/lesson/igencp.css"/>
+    </resource>
+    <resource identifier="r_inner_b" type="webcontent" href="outer/lesson/delos_cont.css">
+      <file href="outer/lesson/delos_cont.css"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The inner bundle still folds: lesson/index.html becomes a page.
+        $byid = [];
+        foreach ($course->orphans as $orphan) {
+            $byid[$orphan->identifier] = $orphan;
+        }
+        $this->assertArrayHasKey('r_inner', $byid);
+        $this->assertSame(item::KIND_PAGE, $byid['r_inner']->kind);
+    }
+
+    /**
      * Without the three markers together, a folder full of HTML/CSS/JS is left
      * alone — Canvas exports with assorted webcontent files must still come
      * through as ordinary mod_resource entries.
