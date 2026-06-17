@@ -1543,6 +1543,76 @@ XML;
     }
 
     /**
+     * Common Cartridge organisations can nest module folders inside a course
+     * wrapper, and each module can in turn wrap its lessons inside an
+     * untitled identifierref-less folder <item>. The walker must flatten
+     * those wrappers into the section's items so descendant lessons don't
+     * surface as orphans.
+     *
+     * @return void
+     */
+    public function test_org_tree_recurses_into_folder_wrappers(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/intro');
+        mkdir($dir . '/lesson1');
+        mkdir($dir . '/lesson2');
+        file_put_contents($dir . '/intro/intro.html', '<html><title>Intro</title></html>');
+        file_put_contents($dir . '/lesson1/page.html', '<html><title>L1</title></html>');
+        file_put_contents($dir . '/lesson2/page.html', '<html><title>L2</title></html>');
+
+        // Item_1 → CourseWrapper → [Intro leaf, Unit 1 folder → [Lesson1, Lesson2]]
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="Org_1" structure="rooted-hierarchy">
+      <item identifier="Item_1">
+        <item identifier="course_wrapper">
+          <title>Course Title</title>
+          <item identifierref="r_intro" identifier="i_intro"><title>Intro</title></item>
+          <item identifier="folder_unit1">
+            <title>Unit 1</title>
+            <item identifierref="r_lesson1" identifier="i_l1"><title>Lesson 1</title></item>
+            <item identifierref="r_lesson2" identifier="i_l2"><title>Lesson 2</title></item>
+          </item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_intro" type="webcontent" href="intro/intro.html">
+      <file href="intro/intro.html"/>
+    </resource>
+    <resource identifier="r_lesson1" type="webcontent" href="lesson1/page.html">
+      <file href="lesson1/page.html"/>
+    </resource>
+    <resource identifier="r_lesson2" type="webcontent" href="lesson2/page.html">
+      <file href="lesson2/page.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Two sections: the leaf-only "Intro" wrapper and the "Unit 1" folder.
+        $this->assertCount(2, $course->sections);
+        $sectionsbytitle = [];
+        foreach ($course->sections as $section) {
+            $sectionsbytitle[$section->title] = $section;
+        }
+        $this->assertArrayHasKey('Intro', $sectionsbytitle);
+        $this->assertCount(1, $sectionsbytitle['Intro']->items);
+        $this->assertArrayHasKey('Unit 1', $sectionsbytitle);
+        // Both lesson leaves attached inside Unit 1 with their org-tree titles.
+        $titles = array_map(fn($i) => $i->title, $sectionsbytitle['Unit 1']->items);
+        $this->assertSame(['Lesson 1', 'Lesson 2'], $titles);
+        // No orphans: every resource is reachable from the org tree.
+        $this->assertSame([], $course->orphans);
+    }
+
+    /**
      * Real ILIAS / IGEN / DELOS exports nest the theme marker many levels
      * below the lesson folder (style/igencp.css,
      * Customizing/global/skin/igencp/igencp.css,

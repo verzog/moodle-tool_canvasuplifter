@@ -662,25 +662,50 @@ class manifest_parser {
         }
         $organization = $organizations->item(0);
 
-        // The organisation usually has a single root <item> wrapping the modules.
+        // The organisation usually wraps everything in one or more pass-through
+        // root <item>s that don't represent sections themselves. Peel as long
+        // as the level above the modules has just one child, so an exporter
+        // that nests <Item_1><Course>[modules]</Course></Item_1> still lands
+        // at the "modules" level rather than at the course wrapper.
         $rootitems = $this->child_items($organization);
-        if (count($rootitems) === 1 && count($this->child_items($rootitems[0])) > 0) {
+        while (count($rootitems) === 1 && count($this->child_items($rootitems[0])) > 0) {
             $rootitems = $this->child_items($rootitems[0]);
         }
 
         foreach ($rootitems as $sectionnode) {
             $section = new section_model($this->item_title($sectionnode));
-            $children = $this->child_items($sectionnode);
-
-            if (count($children) === 0) {
-                // A leaf at the top level: treat the section node itself as an activity.
+            if ($sectionnode->getAttribute('identifierref') !== '') {
+                // The section node is itself a leaf (an item with its own
+                // resource); attach it as the section's first item.
                 $this->attach_resource($sectionnode, $resources, $section);
-            } else {
-                foreach ($children as $childnode) {
-                    $this->attach_resource($childnode, $resources, $section);
-                }
             }
+            // Walk the whole subtree so descendants inside folder wrappers
+            // (items with no identifierref of their own) still attach with
+            // their org-tree titles. Folder wrappers commonly appear as
+            // intermediate <item>s carrying just a <title> in CC packages.
+            $this->collect_leaf_resources($sectionnode, $resources, $section);
             $course->add_section($section);
+        }
+    }
+
+    /**
+     * Recursively attach every descendant <item> that carries an identifierref
+     * to the given section, flattening folder wrappers along the way. Avoids
+     * adding the same identifier twice if multiple <item>s point at it.
+     *
+     * @param \DOMNode $node The parent <item> to walk under.
+     * @param item[] $resources Resources keyed by identifier.
+     * @param section_model $section The section to add to.
+     * @return void
+     */
+    protected function collect_leaf_resources(\DOMNode $node, array $resources, section_model $section): void {
+        foreach ($this->child_items($node) as $child) {
+            if ($child->getAttribute('identifierref') !== '') {
+                $this->attach_resource($child, $resources, $section);
+            }
+            // Recurse regardless: a folder may have its own identifierref AND
+            // wrap more children, and both should land in the section.
+            $this->collect_leaf_resources($child, $resources, $section);
         }
     }
 
