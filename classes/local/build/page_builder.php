@@ -153,7 +153,8 @@ class page_builder {
         return (string) preg_replace_callback($pattern, function (array $m) use ($assetset): string {
             $path = $m[3];
             $suffix = $m[4] ?? '';
-            if ($path === '' || $path[0] === '/'
+            if (
+                $path === '' || $path[0] === '/'
                 || strpos($path, '://') !== false || strpos($path, '//') === 0
             ) {
                 return $m[0];

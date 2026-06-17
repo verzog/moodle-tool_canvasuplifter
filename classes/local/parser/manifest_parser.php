@@ -268,15 +268,17 @@ class manifest_parser {
         if ($kind !== item::KIND_UNKNOWN) {
             return false;
         }
-        if (($type === 'webcontent' || str_contains($type, 'webcontent'))
+        if (
+            ($type === 'webcontent' || str_contains($type, 'webcontent'))
             && $this->is_quiz_asset($href, $files)
         ) {
             return true;
         }
-        if (str_contains($type, 'learning-application-resource')
+        if (
+            str_contains($type, 'learning-application-resource')
             && !$this->has_html($href, $files)
         ) {
-            // assignment_settings.xml would have been classified as
+            // An assignment_settings.xml would have been classified as
             // KIND_ASSIGNMENT, so by here we know it's a metadata-only
             // companion (e.g. topicMeta, assessment_meta, canvas_export.txt).
             return true;
