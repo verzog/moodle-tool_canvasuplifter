@@ -56,6 +56,12 @@ class assignment_settings {
     /** @var string Canvas <assignment_group_identifierref>, used to place into a grade category. */
     public string $gradegroupref = '';
 
+    /** @var string Canvas <rubric_identifierref>, foreign key into course_settings/rubrics.xml. */
+    public string $rubricref = '';
+
+    /** @var bool Canvas <rubric_use_for_grading>: whether the rubric drives the grade. */
+    public bool $rubricforgrading = true;
+
     /**
      * Parse an assignment_settings.xml string.
      *
@@ -95,6 +101,13 @@ class assignment_settings {
         $settings->allowfrom = self::timestamp((string) ($doc->unlock_at ?? ''));
         $settings->cutoff = self::timestamp((string) ($doc->lock_at ?? ''));
         $settings->gradegroupref = trim((string) ($doc->assignment_group_identifierref ?? ''));
+        $settings->rubricref = trim((string) ($doc->rubric_identifierref ?? ''));
+        // <rubric_use_for_grading> is present only when a rubric is attached;
+        // default to true so an attached rubric drives the grade unless Canvas
+        // explicitly opts out.
+        if (isset($doc->rubric_use_for_grading)) {
+            $settings->rubricforgrading = filter_var((string) $doc->rubric_use_for_grading, FILTER_VALIDATE_BOOLEAN);
+        }
 
         return $settings;
     }

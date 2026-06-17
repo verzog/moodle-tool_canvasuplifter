@@ -850,6 +850,88 @@ XML;
     }
 
     /**
+     * Canvas's course_settings/rubrics.xml becomes course_model::rubrics, with
+     * each rubric's criteria and ratings preserved. Ratings are sorted ascending
+     * by points so gradingform_rubric renders them left-to-right low→high. The
+     * per-assignment <rubric_identifierref> + <rubric_use_for_grading> in
+     * assignment_settings.xml lands on item::rubricref / item::rubricforgrading.
+     *
+     * @return void
+     */
+    public function test_rubrics_xml_becomes_model_and_assignment_ref(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/a1');
+        file_put_contents(
+            $dir . '/course_settings/rubrics.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<rubrics xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<rubric identifier="r_one">'
+            . '<title>Essay Rubric</title>'
+            . '<free_form_criterion_comments>false</free_form_criterion_comments>'
+            . '<hide_score_total>false</hide_score_total>'
+            . '<criteria><criterion>'
+            . '<criterion_id>_4743</criterion_id>'
+            . '<points>5.0</points>'
+            . '<description>Argument</description>'
+            . '<ratings>'
+            . '<rating><description>Full Marks</description><points>5.0</points>'
+            . '<criterion_id>_4743</criterion_id><id>blank</id></rating>'
+            . '<rating><description>No Marks</description><points>0.0</points>'
+            . '<criterion_id>_4743</criterion_id><id>blank_2</id></rating>'
+            . '</ratings>'
+            . '</criterion></criteria>'
+            . '</rubric>'
+            . '</rubrics>'
+        );
+        file_put_contents(
+            $dir . '/a1/assignment_settings.xml',
+            '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Essay</title><points_possible>5</points_possible>'
+            . '<grading_type>points</grading_type>'
+            . '<submission_types>online_text_entry</submission_types>'
+            . '<rubric_identifierref>r_one</rubric_identifierref>'
+            . '<rubric_use_for_grading>true</rubric_use_for_grading>'
+            . '</assignment>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i_assign" identifierref="r_assign"><title>Essay</title></item>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_assign"
+              type="associatedcontent/imscc_xmlv1p1/learning-application-resource"
+              href="a1/assignment_settings.xml">
+      <file href="a1/assignment_settings.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertArrayHasKey('r_one', $course->rubrics);
+        $rubric = $course->rubrics['r_one'];
+        $this->assertSame('Essay Rubric', $rubric['title']);
+        $this->assertFalse($rubric['hide_score_total']);
+        $this->assertCount(1, $rubric['criteria']);
+        $this->assertSame('Argument', $rubric['criteria'][0]['description']);
+        // Ratings sorted low→high to match gradingform_rubric's sortlevelsasc=1.
+        $this->assertSame([0.0, 5.0], array_column($rubric['criteria'][0]['levels'], 'points'));
+
+        $assign = $course->sections[0]->items[0];
+        $this->assertSame('r_one', $assign->rubricref);
+        $this->assertTrue($assign->rubricforgrading);
+    }
+
+    /**
      * Webcontent assets under quiz/ (QTI question images) are skipped, while a
      * genuine course file is kept.
      *

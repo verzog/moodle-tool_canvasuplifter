@@ -81,6 +81,12 @@ class item {
     /** @var string For assignments: Canvas <assignment_group_identifierref>. */
     public string $gradegroupref = '';
 
+    /** @var string For assignments: Canvas <rubric_identifierref>, the rubric library id. */
+    public string $rubricref = '';
+
+    /** @var bool For assignments: whether the linked rubric is used to compute the grade. */
+    public bool $rubricforgrading = true;
+
     /**
      * Constructor.
      *

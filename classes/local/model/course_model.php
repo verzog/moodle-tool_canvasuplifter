@@ -50,6 +50,15 @@ class course_model {
     public string $weightingscheme = '';
 
     /**
+     * @var array Canvas rubric library, keyed by Canvas identifier. Each value
+     * is a hash with keys: title (string), free_form_comments (bool),
+     * hide_score_total (bool), criteria (array of ['id','description','points',
+     * 'levels'=>[['description','points'],...]]). Empty when the package has
+     * no course_settings/rubrics.xml.
+     */
+    public array $rubrics = [];
+
+    /**
      * Add a section.
      *
      * @param section_model $section The section to add.

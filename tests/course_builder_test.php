@@ -550,6 +550,97 @@ XML;
     }
 
     /**
+     * Building a package with a Canvas rubric attached to an assignment
+     * installs a Moodle gradingform_rubric definition on the activity's
+     * submissions grading area and activates rubric as the grading method
+     * when <rubric_use_for_grading> is true.
+     *
+     * @return void
+     */
+    public function test_build_attaches_canvas_rubric_to_assignment(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/grade/grading/lib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/a1');
+        file_put_contents(
+            $dir . '/course_settings/rubrics.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<rubrics xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<rubric identifier="r_one">'
+            . '<title>Essay Rubric</title>'
+            . '<criteria><criterion>'
+            . '<criterion_id>_a</criterion_id><points>5.0</points>'
+            . '<description>Argument</description>'
+            . '<ratings>'
+            . '<rating><description>Full</description><points>5.0</points>'
+            . '<criterion_id>_a</criterion_id><id>r1</id></rating>'
+            . '<rating><description>None</description><points>0.0</points>'
+            . '<criterion_id>_a</criterion_id><id>r2</id></rating>'
+            . '</ratings></criterion></criteria></rubric></rubrics>'
+        );
+        file_put_contents(
+            $dir . '/a1/assignment_settings.xml',
+            '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Essay</title><points_possible>5</points_possible>'
+            . '<grading_type>points</grading_type>'
+            . '<submission_types>online_text_entry</submission_types>'
+            . '<rubric_identifierref>r_one</rubric_identifierref>'
+            . '<rubric_use_for_grading>true</rubric_use_for_grading>'
+            . '</assignment>'
+        );
+        file_put_contents($dir . '/a1/a1.html', '<p>Write an essay.</p>');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i_assign" identifierref="r_assign"><title>Essay</title></item>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_assign"
+              type="associatedcontent/imscc_xmlv1p1/learning-application-resource"
+              href="a1/a1.html">
+      <file href="a1/a1.html"/>
+      <file href="a1/assignment_settings.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        // The assignment was built and rubric is the active grading method.
+        $assigns = get_fast_modinfo($report['courseid'])->get_instances_of('assign');
+        $this->assertCount(1, $assigns);
+        $assigncm = reset($assigns);
+
+        $context = \context_module::instance($assigncm->id);
+        $gradingmanager = get_grading_manager($context, 'mod_assign', 'submissions');
+        $this->assertSame('rubric', $gradingmanager->get_active_method());
+
+        // The definition carries one criterion with two levels, scored 0 and 5.
+        $controller = $gradingmanager->get_controller('rubric');
+        $definition = $controller->get_definition();
+        $this->assertSame('Essay Rubric', $definition->name);
+        $this->assertCount(1, $definition->rubric_criteria);
+        $criterion = reset($definition->rubric_criteria);
+        $this->assertSame('Argument', $criterion['description']);
+        $scores = array_column($criterion['levels'], 'score');
+        sort($scores);
+        $this->assertEqualsWithDelta([0.0, 5.0], $scores, 0.0001);
+    }
+
+    /**
      * Write a package whose only syllabus + a stray file are unreferenced.
      *
      * @return string Path to the package root.
