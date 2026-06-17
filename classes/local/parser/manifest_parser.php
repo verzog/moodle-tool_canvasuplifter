@@ -168,9 +168,14 @@ class manifest_parser {
             if (preg_match('#<(?:[\w.-]+:)?title[^>]*>(.*?)</(?:[\w.-]+:)?title>#is', $html, $matches)) {
                 $title = trim(html_entity_decode(strip_tags($matches[1]), ENT_QUOTES | ENT_HTML5));
                 // Strip a leading separator (e.g. "- Audio Visual") that some
-                // exporters leave behind when they drop the part before a dash.
-                $title = ltrim($title, " \t-–—|:");
-                $title = trim($title);
+                // exporters leave behind when they drop the part before a
+                // dash. /u so multibyte en/em dashes are matched as
+                // characters, not as raw bytes that would corrupt UTF-8 in
+                // titles that legitimately start with other punctuation.
+                $stripped = preg_replace('/^[\s\-\x{2013}\x{2014}|:]+/u', '', $title);
+                if (is_string($stripped)) {
+                    $title = trim($stripped);
+                }
                 if ($title !== '') {
                     return $title;
                 }
@@ -514,6 +519,11 @@ class manifest_parser {
 
         $ref = $this->child_text($node, 'identifierref');
         if ($ref !== '' && isset($resources[$ref])) {
+            // Bundle assets demoted by fold_lesson_bundles() must not surface
+            // here either, even when module_meta references them by id.
+            if ($resources[$ref]->kind === item::KIND_UNKNOWN) {
+                return null;
+            }
             // Clone before mutating: Canvas often reuses the same identifierref in
             // several modules, and per-module title/visibility must not bleed
             // across occurrences (later module would otherwise overwrite earlier).
@@ -642,6 +652,13 @@ class manifest_parser {
             return;
         }
         $resourceitem = $resources[$ref];
+        // Bundle assets demoted to KIND_UNKNOWN by fold_lesson_bundles() must
+        // not appear in sections either; otherwise an organisation that
+        // references the framework files would still surface them in the
+        // report and tally them as "skipped" unknown items.
+        if ($resourceitem->kind === item::KIND_UNKNOWN) {
+            return;
+        }
         $title = $this->item_title($node);
         if ($title !== '') {
             $resourceitem->title = $title;
@@ -928,10 +945,10 @@ class manifest_parser {
     /**
      * Detect lesson bundles (folders containing the three marker files) and
      * collapse each into a single mod_page anchored at the folder's
-     * index.html. All sibling resources inside the same folder tree are
-     * demoted to KIND_UNKNOWN so they vanish from the orphan list instead of
-     * surfacing as hundreds of mod_resource entries (framework CSS, JS,
-     * player SWFs, theme images) that a learner has no business seeing.
+     * index.html. Sibling resources inside the same folder tree are
+     * demoted to KIND_UNKNOWN and their files attached to the promoted
+     * page as bundle assets so the page's relative <link>/<script>/<img>
+     * URLs still resolve once mod_page imports them under pluginfile.
      *
      * Triggered purely from manifest hrefs; the package directory itself is
      * not scanned, keeping the parser fast and Moodle-free. Canvas exports
@@ -941,54 +958,134 @@ class manifest_parser {
      * @return void
      */
     protected function fold_lesson_bundles(array &$resources): void {
-        // First pass: collect every basename present in each folder, plus a
-        // back-reference from folder -> resource ids.
+        // First pass: collect basenames present in each folder (lower -> real
+        // case) so case-insensitive matching can still recover the actual
+        // filename when an exporter ships "Index.html" or "INDEX.HTML".
         $basenamesbyfolder = [];
-        $resourcesbyfolder = [];
         foreach ($resources as $resourceitem) {
-            $paths = $resourceitem->files;
-            if ($resourceitem->href !== '') {
-                $paths[] = $resourceitem->href;
-            }
-            foreach ($paths as $path) {
+            foreach ($this->resource_paths($resourceitem) as $path) {
                 $folder = $this->normalise_folder(dirname($path));
-                $basenamesbyfolder[$folder][strtolower(basename($path))] = true;
-                $resourcesbyfolder[$folder][$resourceitem->identifier] = true;
+                $basenamesbyfolder[$folder][strtolower(basename($path))] = basename($path);
             }
         }
-        // Second pass: identify folders that contain all three markers, then
-        // demote every resource living inside (or below) that folder. The
-        // resource whose primary href is the folder's index.html is promoted
-        // to KIND_PAGE so the bundle reads as a single lesson activity.
+        // Second pass: detect folders carrying all three markers and process
+        // each bundle. The exact-cased index basename is recovered from the
+        // first pass so the anchor path matches whatever the exporter wrote.
         foreach ($basenamesbyfolder as $folder => $basenames) {
             foreach (self::LESSON_BUNDLE_MARKERS as $marker) {
                 if (!isset($basenames[$marker])) {
                     continue 2;
                 }
             }
-            $anchor = $folder === '' ? 'index.html' : ($folder . '/index.html');
-            $folderprefix = $folder === '' ? '' : ($folder . '/');
-            foreach ($resources as $resourceitem) {
-                $primary = $resourceitem->href !== '' ? $resourceitem->href : ($resourceitem->files[0] ?? '');
-                if ($primary === '') {
+            $this->fold_one_bundle($resources, $folder, $basenames['index.html']);
+        }
+    }
+
+    /**
+     * Fold a single detected bundle: pick the anchor resource (index.html in
+     * the bundle's folder), promote it to KIND_PAGE, and demote every
+     * sibling resource living in the same folder tree, attaching their
+     * files to the anchor as bundle assets.
+     *
+     * @param array $resources Resources keyed by identifier (item objects, modified in place).
+     * @param string $folder Bundle folder path, '' for a root-level bundle.
+     * @param string $indexbasename The real-cased basename of the index file (e.g. "Index.html").
+     * @return void
+     */
+    private function fold_one_bundle(array &$resources, string $folder, string $indexbasename): void {
+        $folderprefix = $folder === '' ? '' : ($folder . '/');
+        $anchor = $folderprefix . $indexbasename;
+        // Build the asset list against the anchor so the promoted page can
+        // import them. Skip the anchor itself, and dedupe by relpath so two
+        // resources pointing at the same file don't both land in pluginfile.
+        $anchoritem = null;
+        $assets = [];
+        foreach ($resources as $resourceitem) {
+            $primary = $this->primary_path($resourceitem);
+            if ($primary === '') {
+                continue;
+            }
+            $inside = $this->path_inside_bundle($primary, $folderprefix);
+            if (!$inside) {
+                continue;
+            }
+            if (strcasecmp($primary, $anchor) === 0) {
+                $anchoritem = $resourceitem;
+                continue;
+            }
+            $resourceitem->kind = item::KIND_UNKNOWN;
+            foreach ($this->resource_paths($resourceitem) as $assetpath) {
+                $relpath = $folderprefix === ''
+                    ? ltrim($assetpath, '/')
+                    : substr($assetpath, strlen($folderprefix));
+                if ($relpath === '' || $relpath === false) {
                     continue;
                 }
-                // Resources whose primary file is the anchor or sits in this
-                // folder (or any subfolder). dirname('a/b/c') === folder is
-                // the strict same-folder test; the prefix match catches subdirs.
-                $inside = $primary === $anchor
-                    || ($folderprefix !== '' && strpos($primary, $folderprefix) === 0)
-                    || ($folderprefix === '' && strpos($primary, '/') === false);
-                if (!$inside) {
-                    continue;
-                }
-                if ($primary === $anchor) {
-                    $resourceitem->kind = item::KIND_PAGE;
-                } else {
-                    $resourceitem->kind = item::KIND_UNKNOWN;
-                }
+                $assets[$relpath] = ['source' => $assetpath, 'relpath' => $relpath];
             }
         }
+        if ($anchoritem === null) {
+            return;
+        }
+        $anchoritem->kind = item::KIND_PAGE;
+        // Ensure page_builder reads the HTML payload, not whatever file the
+        // manifest happened to list first: pin href to the anchor and bring
+        // it to the front of the files array.
+        $anchoritem->href = $anchor;
+        if (!empty($anchoritem->files)) {
+            $reordered = [$anchor];
+            foreach ($anchoritem->files as $f) {
+                if (strcasecmp($f, $anchor) !== 0) {
+                    $reordered[] = $f;
+                }
+            }
+            $anchoritem->files = $reordered;
+        }
+        $anchoritem->bundleassets = array_values($assets);
+    }
+
+    /**
+     * Whether a resource's primary path lives inside a bundle folder tree.
+     * Root bundles (folderprefix === '') claim every resource path, matching
+     * the same folder-tree semantics nested bundles use.
+     *
+     * @param string $primary The resource's primary package path.
+     * @param string $folderprefix Bundle folder with trailing slash, '' at root.
+     * @return bool
+     */
+    private function path_inside_bundle(string $primary, string $folderprefix): bool {
+        if ($folderprefix === '') {
+            return true;
+        }
+        return strpos($primary, $folderprefix) === 0;
+    }
+
+    /**
+     * Return the resource's primary package path (href, falling back to the
+     * first file entry). Empty string when neither is set.
+     *
+     * @param item $resourceitem
+     * @return string
+     */
+    private function primary_path(item $resourceitem): string {
+        if ($resourceitem->href !== '') {
+            return $resourceitem->href;
+        }
+        return (string) ($resourceitem->files[0] ?? '');
+    }
+
+    /**
+     * Collect every package path a resource owns (href + file entries).
+     *
+     * @param item $resourceitem
+     * @return array
+     */
+    private function resource_paths(item $resourceitem): array {
+        $paths = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $paths[] = $resourceitem->href;
+        }
+        return array_unique(array_filter($paths, fn($p) => $p !== ''));
     }
 
     /**
