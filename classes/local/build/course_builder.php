@@ -229,6 +229,7 @@ class course_builder {
         // Second pass: rewrite internal page links now that every target exists.
         $this->rewrite_internal_links($builtpagecmids, $urlmap);
         $this->rewrite_forum_links((int) $course->id, $urlmap);
+        $this->rewrite_assign_links((int) $course->id, $urlmap);
 
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
@@ -497,6 +498,15 @@ class course_builder {
         if ($modelitem->identifier !== '') {
             $urlmap['id:' . $modelitem->identifier] = $url;
         }
+        // Variant swaps replace a fallback resource with its preferred target;
+        // any $CANVAS_OBJECT_REFERENCE$ link that still addresses the fallback
+        // identifier needs to resolve to the same URL the preferred item was
+        // built at. The aliasids list carries those redirected identifiers.
+        foreach ($modelitem->aliasids as $aliasid) {
+            if ($aliasid !== '') {
+                $urlmap['id:' . $aliasid] = $url;
+            }
+        }
         if ($modelitem->kind === item::KIND_PAGE) {
             $slug = $this->slug_for($modelitem);
             if ($slug !== '') {
@@ -592,6 +602,34 @@ class course_builder {
             $newmessage = $rewriter->rewrite_internal_links((string) $post->message, $urlmap);
             if ($newmessage !== $post->message) {
                 $DB->set_field('forum_posts', 'message', $newmessage, ['id' => $post->id]);
+            }
+        }
+    }
+
+    /**
+     * Rewrite internal Canvas links in built assignment intros.
+     *
+     * CC 1.3 IMS Assignment profile packages carry the instructions inside the
+     * profile's <text> element, which may include $WIKI_REFERENCE$ or
+     * $CANVAS_OBJECT_REFERENCE$ placeholders. assign_builder stores that HTML
+     * verbatim because the URL map isn't yet complete when each activity is
+     * created; resolve them here once every link target exists, mirroring the
+     * page and forum passes.
+     *
+     * @param int $courseid The built course id.
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_assign_links(int $courseid, array $urlmap): void {
+        global $DB;
+        if (empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        foreach ($DB->get_records('assign', ['course' => $courseid], '', 'id, intro') as $assign) {
+            $newintro = $rewriter->rewrite_internal_links((string) $assign->intro, $urlmap);
+            if ($newintro !== $assign->intro) {
+                $DB->set_field('assign', 'intro', $newintro, ['id' => $assign->id]);
             }
         }
     }

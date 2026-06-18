@@ -86,18 +86,27 @@ class assignment_settings {
             return $settings;
         }
 
-        $previous = libxml_use_internal_errors(true);
+        // Load via DOMDocument so the root element's namespace URI is readable
+        // whether the document uses a default namespace (`<assignment xmlns="...">`)
+        // or a prefix (`<cc:assignment xmlns:cc="...">`). SimpleXML's
+        // getNamespaces(false) only exposes the default namespace under the ''
+        // key and would mis-classify a prefixed CC 1.3 profile as Canvas-flat.
         // LIBXML_NOCDATA flattens <text><![CDATA[...]]></text> so $doc->text
         // yields the HTML description directly.
-        $doc = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NONET | LIBXML_NOCDATA);
+        $previous = libxml_use_internal_errors(true);
+        $dom = new \DOMDocument();
+        $loaded = $dom->loadXML($xml, LIBXML_NONET | LIBXML_NOCDATA);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
-        if ($doc === false) {
+        if (!$loaded || $dom->documentElement === null) {
+            return $settings;
+        }
+        $rootns = (string) ($dom->documentElement->namespaceURI ?? '');
+        $doc = simplexml_import_dom($dom);
+        if (!($doc instanceof \SimpleXMLElement)) {
             return $settings;
         }
 
-        $namespaces = $doc->getNamespaces(false);
-        $rootns = $namespaces[''] ?? '';
         if ($rootns === self::IMSCC_ASSIGNMENT_NS) {
             self::populate_from_imscc_profile($doc, $settings);
         } else {
@@ -118,21 +127,29 @@ class assignment_settings {
      * @return void
      */
     private static function populate_from_imscc_profile(\SimpleXMLElement $doc, self $settings): void {
-        $settings->title = trim((string) ($doc->title ?? ''));
-        $settings->description = trim((string) ($doc->text ?? ''));
+        // Access children in the IMSCC profile namespace so prefixed roots
+        // (e.g. <cc:assignment xmlns:cc="...">) work identically to default-
+        // namespaced ones.
+        $ims = $doc->children(self::IMSCC_ASSIGNMENT_NS);
+        $settings->title = trim((string) ($ims->title ?? ''));
+        $settings->description = trim((string) ($ims->text ?? ''));
 
-        if (isset($doc->gradable)) {
-            $points = (string) $doc->gradable['points_possible'];
+        if (isset($ims->gradable)) {
+            // Attribute access via $elem['attr'] returns '' once we've narrowed
+            // SimpleXML into a non-default namespace view; go through
+            // attributes() so unnamespaced attributes resolve consistently for
+            // both default and prefixed CC profile documents.
+            $points = (string) $ims->gradable->attributes()->points_possible;
             if ($points !== '') {
                 $settings->points = (int) round((float) $points);
             }
-            $gradable = filter_var(trim((string) $doc->gradable), FILTER_VALIDATE_BOOLEAN);
+            $gradable = filter_var(trim((string) $ims->gradable), FILTER_VALIDATE_BOOLEAN);
             $settings->gradingtype = $gradable && $settings->points > 0 ? 'points' : 'not_graded';
         }
 
-        if (isset($doc->submission_formats)) {
-            foreach ($doc->submission_formats->format as $format) {
-                $mapped = self::map_submission_format((string) $format['type']);
+        if (isset($ims->submission_formats)) {
+            foreach ($ims->submission_formats->format as $format) {
+                $mapped = self::map_submission_format((string) $format->attributes()->type);
                 if ($mapped !== '' && !in_array($mapped, $settings->submissiontypes, true)) {
                     $settings->submissiontypes[] = $mapped;
                 }
@@ -141,8 +158,8 @@ class assignment_settings {
 
         // Drill into <extensions> for the Canvas extension element (in the
         // Canvas namespace) — same flat shape as a stand-alone assignment_settings.xml.
-        if (isset($doc->extensions)) {
-            foreach ($doc->extensions->children(self::CANVAS_NS) as $ext) {
+        if (isset($ims->extensions)) {
+            foreach ($ims->extensions->children(self::CANVAS_NS) as $ext) {
                 if ($ext->getName() !== 'assignment') {
                     continue;
                 }
@@ -160,7 +177,10 @@ class assignment_settings {
      */
     private static function map_submission_format(string $format): string {
         return match (strtolower(trim($format))) {
-            'html' => 'online_text_entry',
+            // The CC 1.3 profile lists both `text` (plain) and `html` (rich)
+            // text submissions; Moodle has one online_text_entry plugin that
+            // serves either, so collapse them onto the same submissiontype.
+            'html', 'text' => 'online_text_entry',
             'file' => 'online_upload',
             'url' => 'online_url',
             default => '',

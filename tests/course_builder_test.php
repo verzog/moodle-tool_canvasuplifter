@@ -730,6 +730,141 @@ XML;
     }
 
     /**
+     * For CC 1.3 IMS Assignment profile packages, the profile's <text> is the
+     * authoritative prompt. Any HTML attachment sitting alongside in the
+     * resource's <file> list is a handout, not the assignment instructions,
+     * and must not displace <text> in the imported intro.
+     *
+     * Also exercises the post-build link rewrite pass over assignment intros:
+     * a $WIKI_REFERENCE$ placeholder in <text> resolves to the target page's
+     * pluginfile URL after every activity is built.
+     *
+     * @return void
+     */
+    public function test_build_cc13_prefers_text_and_rewrites_links_in_intro(): void {
+        global $CFG, $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/syllabus.html', '<p>Syllabus body.</p>');
+        // A sibling HTML attachment that must NOT win over the profile's
+        // <text>; if it does, the imported intro would carry handout text
+        // rather than the prompt.
+        file_put_contents($dir . '/a1/attachment.html', '<p>This is a handout, not the prompt.</p>');
+        file_put_contents(
+            $dir . '/a1/assignment.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment identifier="ia1" xmlns="http://www.imsglobal.org/xsd/imscc_extensions/assignment">'
+            . '<title>Lab</title>'
+            . '<text texttype="text/html">'
+            . '<![CDATA[<p>See the <a href="$WIKI_REFERENCE$/pages/syllabus">syllabus</a>.</p>]]>'
+            . '</text>'
+            . '<gradable points_possible="5">true</gradable>'
+            . '<submission_formats><format type="html"/></submission_formats>'
+            . '</assignment>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i_syl" identifierref="r_syl"><title>Syllabus</title></item>
+        <item identifier="i_assign" identifierref="r_assign"><title>Lab</title></item>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_syl" type="webcontent" href="wiki_content/syllabus.html">
+      <file href="wiki_content/syllabus.html"/>
+    </resource>
+    <resource identifier="r_assign" type="assignment_xmlv1p0" href="a1/assignment.xml">
+      <file href="a1/assignment.xml"/>
+      <file href="a1/attachment.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $assigns = get_fast_modinfo($report['courseid'])->get_instances_of('assign');
+        $this->assertCount(1, $assigns);
+        $assigncm = reset($assigns);
+        $assign = $DB->get_record('assign', ['id' => $assigncm->instance], '*', MUST_EXIST);
+
+        // The profile's <text> wins; the handout sibling is left out.
+        $this->assertStringContainsString('See the', $assign->intro);
+        $this->assertStringNotContainsString('handout, not the prompt', $assign->intro);
+
+        // The $WIKI_REFERENCE$ placeholder is resolved to the syllabus page
+        // URL by the post-build link rewriter, not stored verbatim.
+        $this->assertStringNotContainsString('$WIKI_REFERENCE$', $assign->intro);
+        $this->assertMatchesRegularExpression('#/mod/page/view\.php\?id=\d+#', $assign->intro);
+    }
+
+    /**
+     * A CC 1.3 IMS Assignment profile embedded inline inside <resource>
+     * (no <file> child) builds end-to-end: the captured inline descriptor
+     * lands on item::inlinexml and assign_builder consumes it directly so
+     * the activity gets its title, intro, grade and submission type.
+     *
+     * @return void
+     */
+    public function test_build_handles_inline_cc13_assignment_descriptor(): void {
+        global $CFG, $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1"'
+            . ' xmlns:cc="http://www.imsglobal.org/xsd/imscc_extensions/assignment"'
+            . ' identifier="m">'
+            . '<organizations><organization identifier="org1">'
+            . '<item identifier="root"><item identifier="m1"><title>Week 1</title>'
+            . '<item identifier="i1" identifierref="r1"><title>Inline Lab</title></item>'
+            . '</item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r1" type="assignment_xmlv1p0">'
+            . '<cc:assignment identifier="a1">'
+            . '<cc:title>Inline Lab</cc:title>'
+            . '<cc:text texttype="text/html">&lt;p&gt;Inline prompt.&lt;/p&gt;</cc:text>'
+            . '<cc:gradable points_possible="8">true</cc:gradable>'
+            . '<cc:submission_formats><cc:format type="text"/></cc:submission_formats>'
+            . '</cc:assignment>'
+            . '</resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $assigns = get_fast_modinfo($report['courseid'])->get_instances_of('assign');
+        $this->assertCount(1, $assigns);
+        $assign = $DB->get_record('assign', ['id' => reset($assigns)->instance], '*', MUST_EXIST);
+        $this->assertSame('Inline Lab', $assign->name);
+        $this->assertStringContainsString('Inline prompt', $assign->intro);
+        $this->assertEqualsWithDelta(8.0, (float) $assign->grade, 0.0001);
+        // The `text` submission_format maps to mod_assign's online_text_entry plugin.
+        $this->assertEquals(
+            1,
+            (int) $DB->get_field(
+                'assign_plugin_config',
+                'value',
+                ['assignment' => $assign->id, 'plugin' => 'onlinetext', 'subtype' => 'assignsubmission', 'name' => 'enabled']
+            )
+        );
+    }
+
+    /**
      * Write a package whose only syllabus + a stray file are unreferenced.
      *
      * @return string Path to the package root.

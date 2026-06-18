@@ -137,6 +137,60 @@ final class assignment_settings_test extends \basic_testcase {
     }
 
     /**
+     * The CC 1.3 profile detector matches on the root element's namespace
+     * URI, not on SimpleXML's default-namespace map. A profile document
+     * whose root uses a namespace prefix still parses through the profile
+     * path so title/description/gradable/extensions all resolve.
+     *
+     * @return void
+     */
+    public function test_parse_cc13_prefixed_namespace_root(): void {
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<cc:assignment xmlns:cc="http://www.imsglobal.org/xsd/imscc_extensions/assignment"'
+            . ' identifier="a1">'
+            . '<cc:title>Prefixed Lab</cc:title>'
+            . '<cc:text texttype="text/html">&lt;p&gt;Prefixed&lt;/p&gt;</cc:text>'
+            . '<cc:gradable points_possible="20">true</cc:gradable>'
+            . '<cc:submission_formats><cc:format type="html"/></cc:submission_formats>'
+            . '<cc:extensions>'
+            . '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<rubric_identifierref>r_prefix</rubric_identifierref>'
+            . '</assignment>'
+            . '</cc:extensions>'
+            . '</cc:assignment>';
+
+        $settings = assignment_settings::parse($xml);
+
+        $this->assertSame('Prefixed Lab', $settings->title);
+        $this->assertSame(20, $settings->points);
+        $this->assertSame('points', $settings->gradingtype);
+        $this->assertSame('<p>Prefixed</p>', $settings->description);
+        $this->assertTrue($settings->wants_onlinetext());
+        $this->assertSame('r_prefix', $settings->rubricref);
+    }
+
+    /**
+     * CC 1.3 submission_formats include both `text` (plain) and `html` (rich)
+     * text submissions; Moodle has only one online_text_entry plugin, so both
+     * map to the same submission type.
+     *
+     * @return void
+     */
+    public function test_parse_cc13_text_submission_format(): void {
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment xmlns="http://www.imsglobal.org/xsd/imscc_extensions/assignment" identifier="a1">'
+            . '<title>Reflection</title>'
+            . '<gradable points_possible="5">true</gradable>'
+            . '<submission_formats><format type="text"/></submission_formats>'
+            . '</assignment>';
+
+        $settings = assignment_settings::parse($xml);
+
+        $this->assertTrue($settings->wants_onlinetext());
+        $this->assertFalse($settings->wants_fileupload());
+    }
+
+    /**
      * Malformed XML yields a default object rather than throwing.
      *
      * @return void

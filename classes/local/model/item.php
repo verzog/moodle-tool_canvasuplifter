@@ -115,6 +115,36 @@ class item {
     public bool $suppressed = false;
 
     /**
+     * @var string For assignments: serialized CC 1.3 IMS Assignment profile
+     *             XML when the manifest embeds the descriptor inline inside
+     *             the <resource> instead of pointing at it via <file>. The
+     *             assign_builder feeds this directly to assignment_settings
+     *             when no on-disk settings XML is locatable.
+     */
+    public string $inlinexml = '';
+
+    /**
+     * @var string CC variant <variant identifierref="..."> target. CC 1.3
+     *             cartridges may point the organization tree at a fallback
+     *             resource (e.g. a plain webcontent HTML) and put the
+     *             preferred resource (e.g. an assignment_xmlv1p0) behind a
+     *             variant. Captured so the section attach can swap to the
+     *             preferred target when it's a richer buildable kind.
+     */
+    public string $variantref = '';
+
+    /**
+     * @var string[] Extra Canvas identifiers under which this item should be
+     *               recorded in course_builder's URL map. Populated when a
+     *               variant swap redirects a fallback resource to its
+     *               preferred target: any $CANVAS_OBJECT_REFERENCE$ link in
+     *               the package may still address the fallback identifier
+     *               (the one the organisation tree references) rather than
+     *               the preferred one we actually built.
+     */
+    public array $aliasids = [];
+
+    /**
      * @var string Alternative activity name used when this item builds as a
      *             mod_qbank (always for KIND_QUESTIONBANK, and for orphan
      *             KIND_QUIZ items that course_builder converts to banks).

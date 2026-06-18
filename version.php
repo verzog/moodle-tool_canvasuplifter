@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026061802;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026061804;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Bank-only disambiguation suffix; runnable quiz from same item stays unsuffixed.
-$plugin->release   = '0.27.1';
+$plugin->maturity  = MATURITY_ALPHA;  // CC 1.3 assignment review fixes (variants, inline, prefixed ns, links).
+$plugin->release   = '0.29.0';

@@ -61,26 +61,36 @@ class assign_builder {
         require_once($CFG->dirroot . '/course/modlib.php');
 
         $settingspath = $this->locate_settings($modelitem);
-        if ($settingspath === null) {
+        if ($settingspath !== null) {
+            $settings = assignment_settings::parse((string) @file_get_contents($settingspath));
+        } else if ($modelitem->inlinexml !== '') {
+            // CC 1.3 packages may embed the IMS Assignment profile XML
+            // directly inside <resource>; parse it without touching disk.
+            $settings = assignment_settings::parse($modelitem->inlinexml);
+        } else {
             mtrace(sprintf(
-                'tool_canvasuplifter: assignment "%s" skipped — no assignment_settings.xml or CC 1.3 assignment XML (files=%s)',
+                'tool_canvasuplifter: assignment "%s" skipped — no assignment_settings.xml,'
+                . ' inline CC 1.3 profile or assignment XML (files=%s)',
                 $modelitem->title,
                 implode(',', $modelitem->files)
             ));
             return null;
         }
-        $settings = assignment_settings::parse((string) @file_get_contents($settingspath));
 
         $module = $DB->get_record('modules', ['name' => 'assign']);
         if (!$module) {
             return null;
         }
 
-        $intro = $this->description_html($modelitem, $settingspath);
-        // CC 1.3 assignments carry the HTML description in <text> inside the
-        // assignment XML rather than as a separate .html sibling; fall back to it.
-        if ($intro === '' && $settings->description !== '') {
+        // For CC 1.3 IMS Assignment profile packages, the authoritative
+        // instructions live in the profile's <text> element. Prefer it over
+        // any HTML sibling in the resource's file list: that sibling is
+        // typically a handout or attachment, not the assignment prompt, and
+        // letting it win drops the real instructions on the floor.
+        if ($settings->description !== '') {
             $intro = $settings->description;
+        } else {
+            $intro = $settingspath !== null ? $this->description_html($modelitem, $settingspath) : '';
         }
         $name = $modelitem->title !== '' ? $modelitem->title : ($settings->title !== '' ? $settings->title : 'Assignment');
 

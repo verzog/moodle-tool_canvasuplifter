@@ -117,7 +117,11 @@ class manifest_parser {
             }
         }
         foreach ($resources as $identifier => $resourceitem) {
-            if (empty($placed[$identifier]) && $resourceitem->kind !== item::KIND_UNKNOWN) {
+            if (
+                empty($placed[$identifier])
+                && $resourceitem->kind !== item::KIND_UNKNOWN
+                && !$resourceitem->suppressed
+            ) {
                 $course->orphans[] = $resourceitem;
             }
         }
@@ -284,6 +288,17 @@ class manifest_parser {
                 }
             }
 
+            // Some CC 1.3 packages embed the IMS Assignment profile XML
+            // inline inside <resource> instead of carrying it as a <file>.
+            // Capture the serialized inline descriptor so assign_builder can
+            // parse it even when no on-disk path resolves.
+            $modelitem->inlinexml = $this->read_inline_assignment_xml($resource);
+
+            // CC's <variant> extension lets a fallback resource point at a
+            // richer preferred resource. Remember the target so the section
+            // attach can swap when the variant is a buildable kind.
+            $modelitem->variantref = $this->read_variant_ref($resource);
+
             $modelitem->kind = $this->classify($type, $href, $modelitem->files);
             // Mark the deliberate-skip cases (quiz/ assets, metadata-only
             // learning-application resources) so section attach can keep
@@ -298,6 +313,60 @@ class manifest_parser {
             $items[$identifier] = $modelitem;
         }
         return $items;
+    }
+
+    /**
+     * Read the CC <variant identifierref="..."> child of a <resource>, if any.
+     * The variant element lives in the CC extension namespace
+     * imscp_extensionv1p2; match it namespace-agnostically by local name so
+     * any commonly-used prefix works.
+     *
+     * @param DOMElement $resource The <resource> element.
+     * @return string Variant target identifier, or '' when no variant child.
+     */
+    private function read_variant_ref(DOMElement $resource): string {
+        foreach ($resource->childNodes as $child) {
+            if (!($child instanceof DOMElement)) {
+                continue;
+            }
+            if ($child->localName !== 'variant') {
+                continue;
+            }
+            $ref = trim($child->getAttribute('identifierref'));
+            if ($ref !== '') {
+                return $ref;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Look for an inline CC 1.3 IMS Assignment profile descriptor inside a
+     * <resource>. The CC spec allows the <assignment> element to be embedded
+     * directly under <resource> instead of referenced via <file>; return the
+     * serialized XML of that element so assign_builder can parse it without
+     * needing a path on disk.
+     *
+     * @param DOMElement $resource The <resource> element.
+     * @return string Serialized inline descriptor XML, or '' when not present.
+     */
+    private function read_inline_assignment_xml(DOMElement $resource): string {
+        $ns = 'http://www.imsglobal.org/xsd/imscc_extensions/assignment';
+        foreach ($resource->getElementsByTagNameNS($ns, 'assignment') as $node) {
+            if ($node->parentNode !== $resource) {
+                // Only treat a direct child as the inline descriptor; nested
+                // <assignment> elements (e.g. inside <extensions>) belong to a
+                // parent descriptor and should not be lifted out on their own.
+                continue;
+            }
+            // Use C14N so the captured snippet carries its xmlns declaration
+            // inline; saveXML omits ancestor-declared namespaces and the
+            // resulting fragment would parse without a namespace context,
+            // tripping assignment_settings's CC 1.3 profile detection.
+            $xml = $node->C14N();
+            return is_string($xml) ? $xml : '';
+        }
+        return '';
     }
 
     /**
@@ -803,7 +872,7 @@ class manifest_parser {
         if ($ref === '' || !isset($resources[$ref])) {
             return;
         }
-        $resourceitem = $resources[$ref];
+        $resourceitem = $this->prefer_variant($resources[$ref], $resources);
         // Skip resources we've deliberately set aside: bundle assets folded
         // by fold_lesson_bundles(), and the deliberate-skip KIND_UNKNOWN
         // cases (quiz/ assets, metadata-only learning-application
@@ -817,6 +886,43 @@ class manifest_parser {
             $resourceitem->title = $title;
         }
         $section->add_item($resourceitem);
+    }
+
+    /**
+     * Follow a CC <variant identifierref="..."> to its preferred target when
+     * the variant points at a richer buildable resource than the fallback the
+     * organisation tree references. CC cartridges commonly point items at a
+     * webcontent fallback and put the real assignment_xmlv1p0 resource behind
+     * a variant; without this swap the fallback HTML is what lands in the
+     * section while the assignment becomes an orphan.
+     *
+     * Marks the fallback as suppressed so the orphan pass doesn't surface it
+     * separately. Currently only swaps for KIND_ASSIGNMENT targets, where the
+     * intent ("the assignment is the real activity") is unambiguous.
+     *
+     * @param item $fallback The resource the organisation tree references.
+     * @param item[] $resources All resources keyed by identifier.
+     * @return item Either the fallback or its preferred variant target.
+     */
+    private function prefer_variant(item $fallback, array $resources): item {
+        if ($fallback->variantref === '' || !isset($resources[$fallback->variantref])) {
+            return $fallback;
+        }
+        $preferred = $resources[$fallback->variantref];
+        if ($preferred->kind !== item::KIND_ASSIGNMENT) {
+            return $fallback;
+        }
+        $fallback->suppressed = true;
+        // Carry the fallback identifier as an alias so the URL map records
+        // the preferred resource's URL under both IDs. Any
+        // $CANVAS_OBJECT_REFERENCE$ link elsewhere in the package that
+        // targets the fallback (the one named in the organisation tree)
+        // still resolves to the built assignment instead of landing on
+        // an unresolved placeholder.
+        if (!in_array($fallback->identifier, $preferred->aliasids, true)) {
+            $preferred->aliasids[] = $fallback->identifier;
+        }
+        return $preferred;
     }
 
     /**
@@ -1103,11 +1209,22 @@ class manifest_parser {
             if ($resourceitem->kind !== item::KIND_ASSIGNMENT) {
                 continue;
             }
+            $xml = '';
             $absolute = $this->locate_assignment_settings($resourceitem);
-            if ($absolute === null) {
+            if ($absolute !== null) {
+                $xml = (string) @file_get_contents($absolute);
+            } else if ($resourceitem->inlinexml !== '') {
+                // Inline CC 1.3 descriptors live on the model rather than on
+                // disk; without this fallback their <extensions>'
+                // assignment_group_identifierref and rubric_identifierref
+                // wouldn't reach the item, losing grade-category placement
+                // and rubric attachment for the built assignment.
+                $xml = $resourceitem->inlinexml;
+            }
+            if ($xml === '') {
                 continue;
             }
-            $settings = assignment_settings::parse((string) @file_get_contents($absolute));
+            $settings = assignment_settings::parse($xml);
             if ($settings->gradegroupref !== '') {
                 $resourceitem->gradegroupref = $settings->gradegroupref;
             }
