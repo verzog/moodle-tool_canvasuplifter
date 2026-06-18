@@ -1154,6 +1154,201 @@ XML;
     }
 
     /**
+     * When the package ships no course_settings/course_settings.xml (e.g. a
+     * question-bank-only Canvas export, or any non-Canvas CC package), the
+     * course title is recovered from the IMS LOMIMSCC metadata block on the
+     * manifest. The single untitled root <item> in such a package picks up the
+     * same title as its section name so the report doesn't show a blank.
+     *
+     * @return void
+     */
+    public function test_recovers_course_title_from_manifest_lom_metadata(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/qb');
+        file_put_contents(
+            $dir . '/qb/qb.xml',
+            '<questestinterop><objectbank ident="ob"/></questestinterop>'
+        );
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest xmlns="http://www.imsglobal.org/xsd/imsccv1p2/imscp_v1p1"'
+            . ' xmlns:lomimscc="http://ltsc.ieee.org/xsd/imsccv1p2/LOM/manifest"'
+            . ' identifier="m">'
+            . '<metadata><lomimscc:lom><lomimscc:general>'
+            . '<lomimscc:title><lomimscc:string>Lab Manuals : CH 1 Intro</lomimscc:string></lomimscc:title>'
+            . '</lomimscc:general></lomimscc:lom></metadata>'
+            . '<organizations><organization identifier="org" structure="rooted-hierarchy">'
+            . '<item identifier="root">'
+            . '<item identifier="i1" identifierref="r1"><title>Q Bank One</title></item>'
+            . '</item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r1" type="imsqti_xmlv1p2/imscc_xmlv1p2/question-bank">'
+            . '<file href="qb/qb.xml"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame('Lab Manuals : CH 1 Intro', $course->fullname);
+        // The untitled <item identifier="root"> wraps the one activity leaf;
+        // the section inherits the course name rather than coming out blank.
+        $this->assertCount(1, $course->sections);
+        $this->assertSame('Lab Manuals : CH 1 Intro', $course->sections[0]->title);
+    }
+
+    /**
+     * When a Canvas package ships a question bank alongside its twin quiz
+     * assessment carrying the same human-readable title, the question bank
+     * gets a "(question bank)" suffix so the two activities don't appear with
+     * identical names. Standalone question banks (no title twin) stay as-is.
+     *
+     * @return void
+     */
+    public function test_disambiguates_questionbank_titles_against_twin_quizzes(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/r1');
+        mkdir($dir . '/r2');
+        mkdir($dir . '/r3');
+        $qti = '<questestinterop><assessment ident="a"/></questestinterop>';
+        $bank = '<questestinterop><objectbank ident="ob"/></questestinterop>';
+        file_put_contents($dir . '/r1/r1.xml', $qti);
+        file_put_contents($dir . '/r2/r2.xml', $bank);
+        file_put_contents($dir . '/r3/r3.xml', $bank);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p2/imscp_v1p1">
+  <organizations>
+    <organization identifier="org" structure="rooted-hierarchy">
+      <item identifier="root">
+        <item identifier="i1" identifierref="r1"><title>CH 1.1 Overview</title></item>
+        <item identifier="i2" identifierref="r2"><title>CH 1.1 Overview</title></item>
+        <item identifier="i3" identifierref="r3"><title>Standalone Bank</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r1" type="imsqti_xmlv1p2/imscc_xmlv1p2/assessment"><file href="r1/r1.xml"/></resource>
+    <resource identifier="r2" type="imsqti_xmlv1p2/imscc_xmlv1p2/question-bank"><file href="r2/r2.xml"/></resource>
+    <resource identifier="r3" type="imsqti_xmlv1p2/imscc_xmlv1p2/question-bank"><file href="r3/r3.xml"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $byid = [];
+        foreach ($course->sections[0]->items as $modelitem) {
+            $byid[$modelitem->identifier] = $modelitem;
+        }
+        $quiz = $byid['r1'];
+        $bank = $byid['r2'];
+        $standalone = $byid['r3'];
+
+        // The model titles stay as the manifest provides them; the disambiguated
+        // bank name lives separately on item::banktitle so a quiz_from_bank
+        // second build of the same orphan model item keeps the unsuffixed name.
+        $this->assertSame('CH 1.1 Overview', $quiz->title);
+        $this->assertSame('', $quiz->banktitle);
+        $this->assertSame('CH 1.1 Overview', $bank->title);
+        $this->assertSame('CH 1.1 Overview (question bank)', $bank->banktitle);
+        // Standalone bank (no twin quiz title) gets no banktitle.
+        $this->assertSame('Standalone Bank', $standalone->title);
+        $this->assertSame('', $standalone->banktitle);
+    }
+
+    /**
+     * Course title fallback only consults the manifest's direct <metadata>
+     * child. CC resources may carry their own LOM <metadata> blocks; the
+     * lookup must not borrow a resource title as the course full name when
+     * the top-level <metadata> is absent.
+     *
+     * @return void
+     */
+    public function test_course_title_ignores_per_resource_metadata(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/qb');
+        file_put_contents(
+            $dir . '/qb/qb.xml',
+            '<questestinterop><objectbank ident="ob"/></questestinterop>'
+        );
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest xmlns="http://www.imsglobal.org/xsd/imsccv1p2/imscp_v1p1"'
+            . ' xmlns:lomimscc="http://ltsc.ieee.org/xsd/imsccv1p2/LOM/manifest"'
+            . ' identifier="m">'
+            // No top-level <metadata>: the only LOM block lives inside the
+            // resource, which describes the bank, not the course.
+            . '<organizations><organization identifier="org" structure="rooted-hierarchy">'
+            . '<item identifier="root">'
+            . '<item identifier="i1" identifierref="r1"><title>Q Bank One</title></item>'
+            . '</item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r1" type="imsqti_xmlv1p2/imscc_xmlv1p2/question-bank">'
+            . '<metadata><lomimscc:lom><lomimscc:general>'
+            . '<lomimscc:title><lomimscc:string>Per-Resource LOM Title</lomimscc:string></lomimscc:title>'
+            . '</lomimscc:general></lomimscc:lom></metadata>'
+            . '<file href="qb/qb.xml"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame('', $course->fullname);
+    }
+
+    /**
+     * An unreferenced (orphan) KIND_QUIZ that course_builder converts to a
+     * question bank also gets disambiguated when its title matches a linked
+     * quiz, so the resulting mod_quiz and mod_qbank activities don't share a
+     * name.
+     *
+     * @return void
+     */
+    public function test_disambiguates_orphan_quiz_built_as_bank(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/r1');
+        mkdir($dir . '/r2');
+        // Both assessments carry the same title in their QTI XML so
+        // derive_title produces the colliding "Foo" name without any org-tree
+        // reference for the orphan.
+        $qti = '<questestinterop><assessment ident="a" title="Foo"/></questestinterop>';
+        file_put_contents($dir . '/r1/r1.xml', $qti);
+        file_put_contents($dir . '/r2/r2.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p2/imscp_v1p1">
+  <organizations>
+    <organization identifier="org" structure="rooted-hierarchy">
+      <item identifier="root">
+        <item identifier="i1" identifierref="r_linked"><title>Foo</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_linked" type="imsqti_xmlv1p2/imscc_xmlv1p2/assessment"><file href="r1/r1.xml"/></resource>
+    <resource identifier="r_orphan" type="imsqti_xmlv1p2/imscc_xmlv1p2/assessment"><file href="r2/r2.xml"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $orphan = $course->orphans[0];
+        // The orphan KIND_QUIZ that will build as a bank gets banktitle set
+        // for the bank build; title stays unsuffixed so a subsequent
+        // quiz_from_bank build using the same model item still creates a
+        // runnable mod_quiz called "Foo".
+        $this->assertSame(item::KIND_QUIZ, $orphan->kind);
+        $this->assertSame('Foo', $orphan->title);
+        $this->assertSame('Foo (question bank)', $orphan->banktitle);
+        $linked = $course->sections[0]->items[0];
+        $this->assertSame(item::KIND_QUIZ, $linked->kind);
+        $this->assertSame('Foo', $linked->title);
+        $this->assertSame('', $linked->banktitle);
+    }
+
+    /**
      * Webcontent assets under quiz/ (QTI question images) are skipped, while a
      * genuine course file is kept.
      *

@@ -145,6 +145,18 @@ class item {
     public array $aliasids = [];
 
     /**
+     * @var string Alternative activity name used when this item builds as a
+     *             mod_qbank (always for KIND_QUESTIONBANK, and for orphan
+     *             KIND_QUIZ items that course_builder converts to banks).
+     *             Set by the manifest_parser's disambiguation pass when the
+     *             item shares its title with another item; left empty
+     *             otherwise. Kept separate from $title so the runnable quiz
+     *             that the quiz_from_bank toggle builds from the same model
+     *             item keeps the unsuffixed name.
+     */
+    public string $banktitle = '';
+
+    /**
      * Constructor.
      *
      * @param string $identifier Canvas resource identifier.

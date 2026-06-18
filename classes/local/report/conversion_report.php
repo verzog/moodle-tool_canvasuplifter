@@ -363,7 +363,7 @@ class conversion_report {
             foreach ($sectionmodel->items as $modelitem) {
                 $entry = $this->effective_plan($modelitem, true);
                 $items[] = [
-                    'title' => $modelitem->title,
+                    'title' => $this->display_title($modelitem, true),
                     'kind' => $modelitem->kind,
                     'target' => $entry['target'],
                     'confidence' => $entry['confidence'],
@@ -385,7 +385,7 @@ class conversion_report {
         foreach ($this->course->orphans as $modelitem) {
             $entry = $this->effective_plan($modelitem, false);
             $orphans[] = [
-                'title' => $this->display_title($modelitem),
+                'title' => $this->display_title($modelitem, false),
                 'kind' => $modelitem->kind,
                 'target' => $entry['target'],
                 'resourcetype' => $modelitem->resourcetype,
@@ -398,12 +398,20 @@ class conversion_report {
 
     /**
      * Best available display title: explicit title, else source file name,
-     * else the raw identifier.
+     * else the raw identifier. When the item will build as a mod_qbank,
+     * prefer banktitle so the report matches the activity name graders will
+     * see (the bank suffix landing on twin-titled bank/quiz pairs).
      *
      * @param item $modelitem The resource.
+     * @param bool $referenced Whether the item is linked from the course.
      * @return string
      */
-    protected function display_title(item $modelitem): string {
+    protected function display_title(item $modelitem, bool $referenced): string {
+        $buildsasbank = $modelitem->kind === item::KIND_QUESTIONBANK
+            || ($modelitem->kind === item::KIND_QUIZ && !$referenced);
+        if ($buildsasbank && $modelitem->banktitle !== '') {
+            return $modelitem->banktitle;
+        }
         if ($modelitem->title !== '') {
             return $modelitem->title;
         }

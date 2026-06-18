@@ -107,6 +107,68 @@ XML;
     }
 
     /**
+     * With the toggle on and a linked quiz already carrying the same title
+     * as the orphan assessment, the bank picks up a "(question bank)" suffix
+     * but the runnable quiz built from the same orphan model item keeps the
+     * unsuffixed title. Pins the contract that disambiguation lives on
+     * item::banktitle (used only for the bank build), not on item::title.
+     *
+     * @return void
+     */
+    public function test_toggle_does_not_suffix_runnable_quiz_when_disambiguating(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Foo"><section ident="s1">'
+            . $this->mcitem('i1', 'A') . $this->mcitem('i2', 'B')
+            . '</section></assessment></questestinterop>';
+        // Two assessments with the same QTI title; one is linked from the
+        // organisation tree, the other is orphan and builds as a bank.
+        file_put_contents($dir . '/quiz/r_linked.xml', $qti);
+        file_put_contents($dir . '/quiz/r_orphan.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i_linked" identifierref="r_linked"><title>Foo</title></item>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_linked" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/r_linked.xml"/>
+    </resource>
+    <resource identifier="r_orphan" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/r_orphan.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir, null, 0, true))->build($coursemodel);
+
+        $courseid = $report['courseid'];
+        $quiznames = $DB->get_fieldset_select('quiz', 'name', 'course = ?', [$courseid]);
+        $banknames = $DB->get_fieldset_select('qbank', 'name', 'course = ?', [$courseid]);
+        sort($quiznames);
+
+        // Two quizzes — the linked one and the extra runnable one — both
+        // called "Foo"; the orphan-built bank carries the suffix.
+        $this->assertSame(['Foo', 'Foo'], $quiznames);
+        $this->assertSame(['Foo (question bank)'], $banknames);
+    }
+
+    /**
      * With the toggle on, a standalone assessment builds both the bank and a quiz.
      *
      * @return void
