@@ -876,6 +876,7 @@ XML;
             . '<description>Argument</description>'
             . '<ratings>'
             . '<rating><description>Full Marks</description><points>5.0</points>'
+            . '<long_description>Argument is clear, well supported and original.</long_description>'
             . '<criterion_id>_4743</criterion_id><id>blank</id></rating>'
             . '<rating><description>No Marks</description><points>0.0</points>'
             . '<criterion_id>_4743</criterion_id><id>blank_2</id></rating>'
@@ -925,10 +926,83 @@ XML;
         $this->assertSame('Argument', $rubric['criteria'][0]['description']);
         // Ratings sorted low→high to match gradingform_rubric's sortlevelsasc=1.
         $this->assertSame([0.0, 5.0], array_column($rubric['criteria'][0]['levels'], 'points'));
+        // Per-rating long_descriptions are preserved on the model (and surface as
+        // a second paragraph on the gradingform_rubric level definition at build).
+        $levels = $rubric['criteria'][0]['levels'];
+        $bypoints = array_column($levels, 'long_description', 'points');
+        $this->assertSame('', $bypoints[0.0]);
+        $this->assertSame('Argument is clear, well supported and original.', $bypoints[5.0]);
 
         $assign = $course->sections[0]->items[0];
         $this->assertSame('r_one', $assign->rubricref);
         $this->assertTrue($assign->rubricforgrading);
+    }
+
+    /**
+     * A CC 1.3 IMS Assignment profile resource (root <assignment xmlns="imscc_extensions/
+     * assignment">) has its <rubric_identifierref> and <assignment_group_identifierref>
+     * picked up from the nested Canvas <extensions> element, so non-Canvas exporters
+     * still wire rubrics and grade categories onto the model.
+     *
+     * @return void
+     */
+    public function test_cc13_assignment_profile_picks_up_rubric_ref(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/a1');
+        file_put_contents(
+            $dir . '/course_settings/rubrics.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<rubrics xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<rubric identifier="r_cc13"><title>R</title>'
+            . '<criteria><criterion><criterion_id>_a</criterion_id>'
+            . '<points>5.0</points><description>D</description>'
+            . '<ratings><rating><description>F</description><points>5.0</points></rating></ratings>'
+            . '</criterion></criteria></rubric></rubrics>'
+        );
+        file_put_contents(
+            $dir . '/a1/assignment.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment identifier="ia1" xmlns="http://www.imsglobal.org/xsd/imscc_extensions/assignment">'
+            . '<title>Lab report</title>'
+            . '<text texttype="text/html">&lt;p&gt;Write up the experiment.&lt;/p&gt;</text>'
+            . '<gradable points_possible="10">true</gradable>'
+            . '<submission_formats><format type="html"/><format type="file"/></submission_formats>'
+            . '<extensions>'
+            . '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<rubric_identifierref>r_cc13</rubric_identifierref>'
+            . '<rubric_use_for_grading>false</rubric_use_for_grading>'
+            . '<assignment_group_identifierref>g_part</assignment_group_identifierref>'
+            . '</assignment>'
+            . '</extensions>'
+            . '</assignment>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i_assign" identifierref="r_assign"><title>Lab report</title></item>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_assign" type="assignment_xmlv1p0" href="a1/assignment.xml">
+      <file href="a1/assignment.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $assign = $course->sections[0]->items[0];
+        $this->assertSame(item::KIND_ASSIGNMENT, $assign->kind);
+        $this->assertSame('r_cc13', $assign->rubricref);
+        $this->assertFalse($assign->rubricforgrading);
+        $this->assertSame('g_part', $assign->gradegroupref);
     }
 
     /**

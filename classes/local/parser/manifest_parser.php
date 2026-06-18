@@ -977,6 +977,7 @@ class manifest_parser {
             $levels[] = [
                 'description' => $this->child_text($ratingnode, 'description'),
                 'points' => (float) $this->child_text($ratingnode, 'points'),
+                'long_description' => $this->child_text($ratingnode, 'long_description'),
             ];
         }
         usort($levels, fn($a, $b) => $a['points'] <=> $b['points']);
@@ -1008,25 +1009,57 @@ class manifest_parser {
             if ($resourceitem->kind !== item::KIND_ASSIGNMENT) {
                 continue;
             }
-            foreach ($resourceitem->files as $relative) {
-                if (!str_ends_with($relative, 'assignment_settings.xml')) {
-                    continue;
-                }
-                $absolute = $this->resolve_within($relative);
-                if ($absolute === null) {
-                    continue;
-                }
-                $settings = assignment_settings::parse((string) @file_get_contents($absolute));
-                if ($settings->gradegroupref !== '') {
-                    $resourceitem->gradegroupref = $settings->gradegroupref;
-                }
-                if ($settings->rubricref !== '') {
-                    $resourceitem->rubricref = $settings->rubricref;
-                    $resourceitem->rubricforgrading = $settings->rubricforgrading;
-                }
-                break;
+            $absolute = $this->locate_assignment_settings($resourceitem);
+            if ($absolute === null) {
+                continue;
+            }
+            $settings = assignment_settings::parse((string) @file_get_contents($absolute));
+            if ($settings->gradegroupref !== '') {
+                $resourceitem->gradegroupref = $settings->gradegroupref;
+            }
+            if ($settings->rubricref !== '') {
+                $resourceitem->rubricref = $settings->rubricref;
+                $resourceitem->rubricforgrading = $settings->rubricforgrading;
             }
         }
+    }
+
+    /**
+     * Locate the assignment settings XML for an assignment resource: prefer
+     * Canvas's assignment_settings.xml, fall back to a CC 1.3 IMS Assignment
+     * profile document so non-Canvas exporters still surface rubric and
+     * grade-group references.
+     *
+     * @param item $resourceitem The assignment resource.
+     * @return string|null Absolute path within the package, or null.
+     */
+    private function locate_assignment_settings(item $resourceitem): ?string {
+        foreach ($resourceitem->files as $relative) {
+            if (!str_ends_with($relative, 'assignment_settings.xml')) {
+                continue;
+            }
+            $absolute = $this->resolve_within($relative);
+            if ($absolute !== null) {
+                return $absolute;
+            }
+        }
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            array_unshift($candidates, $resourceitem->href);
+        }
+        foreach ($candidates as $relative) {
+            if (!preg_match('/\.xml$/i', $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within($relative);
+            if ($absolute === null) {
+                continue;
+            }
+            if (str_contains((string) @file_get_contents($absolute), 'imscc_extensions/assignment')) {
+                return $absolute;
+            }
+        }
+        return null;
     }
 
     /**

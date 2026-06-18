@@ -706,9 +706,18 @@ class course_builder {
         foreach ($spec['criteria'] as $criterion) {
             $levels = [];
             foreach ($criterion['levels'] as $level) {
+                // Moodle's gradingform_rubric has no per-level long_description
+                // field, so append Canvas's long_description onto the visible
+                // level definition as a second paragraph when present.
+                $definition = (string) $level['description'];
+                $long = trim((string) ($level['long_description'] ?? ''));
+                if ($long !== '') {
+                    $definition = trim($definition);
+                    $definition = $definition === '' ? $long : $definition . "\n\n" . $long;
+                }
                 $levels['NEWID' . (++$levelseq)] = [
                     'score' => (float) $level['points'],
-                    'definition' => $level['description'],
+                    'definition' => $definition,
                     'definitionformat' => FORMAT_HTML,
                 ];
             }

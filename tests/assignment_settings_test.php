@@ -78,6 +78,65 @@ final class assignment_settings_test extends \basic_testcase {
     }
 
     /**
+     * A CC 1.3 IMS Assignment profile document (root <assignment> in the
+     * imscc_extensions/assignment namespace) populates title, points and
+     * submission types from the core profile and rubric/group references from
+     * the nested Canvas <extensions> child.
+     *
+     * @return void
+     */
+    public function test_parse_cc13_ims_profile(): void {
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment xmlns="http://www.imsglobal.org/xsd/imscc_extensions/assignment" identifier="a1">'
+            . '<title>Lab report</title>'
+            . '<text texttype="text/html"><![CDATA[<p>Write up the experiment.</p>]]></text>'
+            . '<gradable points_possible="10">true</gradable>'
+            . '<submission_formats><format type="html"/><format type="file"/></submission_formats>'
+            . '<extensions>'
+            . '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<due_at>2030-10-01T23:59:00Z</due_at>'
+            . '<rubric_identifierref>r_cc13</rubric_identifierref>'
+            . '<rubric_use_for_grading>false</rubric_use_for_grading>'
+            . '<assignment_group_identifierref>g_part</assignment_group_identifierref>'
+            . '</assignment>'
+            . '</extensions>'
+            . '</assignment>';
+
+        $settings = assignment_settings::parse($xml);
+
+        $this->assertSame('Lab report', $settings->title);
+        $this->assertSame(10, $settings->points);
+        $this->assertSame('points', $settings->gradingtype);
+        $this->assertTrue($settings->wants_onlinetext());
+        $this->assertTrue($settings->wants_fileupload());
+        $this->assertSame('<p>Write up the experiment.</p>', $settings->description);
+        $this->assertSame(strtotime('2030-10-01T23:59:00Z'), $settings->duedate);
+        $this->assertSame('r_cc13', $settings->rubricref);
+        $this->assertFalse($settings->rubricforgrading);
+        $this->assertSame('g_part', $settings->gradegroupref);
+    }
+
+    /**
+     * A CC 1.3 IMS Assignment profile with <gradable>false</gradable> reports
+     * as not-graded so the builder doesn't put a point grade on it.
+     *
+     * @return void
+     */
+    public function test_parse_cc13_ims_profile_not_graded(): void {
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment xmlns="http://www.imsglobal.org/xsd/imscc_extensions/assignment" identifier="a1">'
+            . '<title>Reflection</title>'
+            . '<gradable points_possible="0">false</gradable>'
+            . '</assignment>';
+
+        $settings = assignment_settings::parse($xml);
+
+        $this->assertSame('Reflection', $settings->title);
+        $this->assertSame(0, $settings->points);
+        $this->assertSame('not_graded', $settings->gradingtype);
+    }
+
+    /**
      * Malformed XML yields a default object rather than throwing.
      *
      * @return void
