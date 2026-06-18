@@ -60,10 +60,10 @@ class assign_builder {
         global $CFG, $DB;
         require_once($CFG->dirroot . '/course/modlib.php');
 
-        $settingspath = $this->locate($modelitem, 'assignment_settings.xml');
+        $settingspath = $this->locate_settings($modelitem);
         if ($settingspath === null) {
             mtrace(sprintf(
-                'tool_canvasuplifter: assignment "%s" skipped — no assignment_settings.xml (files=%s)',
+                'tool_canvasuplifter: assignment "%s" skipped — no assignment_settings.xml or CC 1.3 assignment XML (files=%s)',
                 $modelitem->title,
                 implode(',', $modelitem->files)
             ));
@@ -77,6 +77,11 @@ class assign_builder {
         }
 
         $intro = $this->description_html($modelitem, $settingspath);
+        // CC 1.3 assignments carry the HTML description in <text> inside the
+        // assignment XML rather than as a separate .html sibling; fall back to it.
+        if ($intro === '' && $settings->description !== '') {
+            $intro = $settings->description;
+        }
         $name = $modelitem->title !== '' ? $modelitem->title : ($settings->title !== '' ? $settings->title : 'Assignment');
 
         $moduleinfo = $this->moduleinfo($course, $sectionnum, $module->id, $name, $intro, $settings);
@@ -211,19 +216,37 @@ class assign_builder {
     }
 
     /**
-     * Find a file belonging to the resource whose name ends with $needle.
+     * Locate the XML carrying assignment settings: Canvas's
+     * assignment_settings.xml when present, otherwise a CC 1.3 IMS
+     * Assignment profile document (root <assignment xmlns="imscc_extensions/
+     * assignment">) shipped by non-Canvas exporters.
      *
      * @param item $modelitem The assignment item.
-     * @param string $needle File name suffix to match, e.g. "assignment_settings.xml".
      * @return string|null Absolute path within the package, or null.
      */
-    private function locate(item $modelitem, string $needle): ?string {
+    private function locate_settings(item $modelitem): ?string {
         foreach ($modelitem->files as $relative) {
-            if (!str_ends_with($relative, $needle)) {
+            if (!str_ends_with($relative, 'assignment_settings.xml')) {
                 continue;
             }
             $absolute = safe_path::within($this->packageroot, $relative);
             if ($absolute !== null && is_readable($absolute)) {
+                return $absolute;
+            }
+        }
+        $candidates = $modelitem->files;
+        if ($modelitem->href !== '') {
+            array_unshift($candidates, $modelitem->href);
+        }
+        foreach ($candidates as $relative) {
+            if (!preg_match('/\.xml$/i', $relative)) {
+                continue;
+            }
+            $absolute = safe_path::within($this->packageroot, $relative);
+            if ($absolute === null || !is_readable($absolute)) {
+                continue;
+            }
+            if (str_contains((string) @file_get_contents($absolute), 'imscc_extensions/assignment')) {
                 return $absolute;
             }
         }

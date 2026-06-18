@@ -577,6 +577,7 @@ XML;
             . '<description>Argument</description>'
             . '<ratings>'
             . '<rating><description>Full</description><points>5.0</points>'
+            . '<long_description>Argument is clear, well supported and original.</long_description>'
             . '<criterion_id>_a</criterion_id><id>r1</id></rating>'
             . '<rating><description>None</description><points>0.0</points>'
             . '<criterion_id>_a</criterion_id><id>r2</id></rating>'
@@ -638,6 +639,94 @@ XML;
         $scores = array_column($criterion['levels'], 'score');
         sort($scores);
         $this->assertEqualsWithDelta([0.0, 5.0], $scores, 0.0001);
+        // Canvas's per-rating <long_description> is appended onto the matching
+        // level's definition so graders see the full descriptor.
+        $bypoints = array_column($criterion['levels'], 'definition', 'score');
+        $this->assertStringContainsString('Full', (string) $bypoints[5.0]);
+        $this->assertStringContainsString('Argument is clear', (string) $bypoints[5.0]);
+    }
+
+    /**
+     * Building a CC 1.3 IMS Assignment profile package (no
+     * assignment_settings.xml, description in <text>, Canvas extension nested
+     * under <extensions>) produces a mod_assign with the description from the
+     * profile and a Canvas rubric attached via the extension's
+     * <rubric_identifierref>.
+     *
+     * @return void
+     */
+    public function test_build_handles_cc13_assignment_profile_with_rubric(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/grade/grading/lib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/a1');
+        file_put_contents(
+            $dir . '/course_settings/rubrics.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<rubrics xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<rubric identifier="r_cc13"><title>Lab Rubric</title>'
+            . '<criteria><criterion><criterion_id>_a</criterion_id>'
+            . '<points>5.0</points><description>Method</description>'
+            . '<ratings><rating><description>Full</description><points>5.0</points></rating>'
+            . '<rating><description>None</description><points>0.0</points></rating></ratings>'
+            . '</criterion></criteria></rubric></rubrics>'
+        );
+        file_put_contents(
+            $dir . '/a1/assignment.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment identifier="ia1" xmlns="http://www.imsglobal.org/xsd/imscc_extensions/assignment">'
+            . '<title>Lab report</title>'
+            . '<text texttype="text/html"><![CDATA[<p>Write up the experiment.</p>]]></text>'
+            . '<gradable points_possible="5">true</gradable>'
+            . '<submission_formats><format type="html"/><format type="file"/></submission_formats>'
+            . '<extensions>'
+            . '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<rubric_identifierref>r_cc13</rubric_identifierref>'
+            . '<rubric_use_for_grading>true</rubric_use_for_grading>'
+            . '</assignment>'
+            . '</extensions>'
+            . '</assignment>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i_assign" identifierref="r_assign"><title>Lab report</title></item>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_assign" type="assignment_xmlv1p0" href="a1/assignment.xml">
+      <file href="a1/assignment.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $assigns = get_fast_modinfo($report['courseid'])->get_instances_of('assign');
+        $this->assertCount(1, $assigns);
+        $assigncm = reset($assigns);
+        $assign = $DB->get_record('assign', ['id' => $assigncm->instance], '*', MUST_EXIST);
+        $this->assertSame('Lab report', $assign->name);
+        $this->assertStringContainsString('Write up the experiment.', $assign->intro);
+        // CC 1.3 <gradable points_possible="5"> drives mod_assign's grade.
+        $this->assertEqualsWithDelta(5.0, (float) $assign->grade, 0.0001);
+
+        // The Canvas extension's rubric_identifierref drives grading.
+        $context = \context_module::instance($assigncm->id);
+        $gradingmanager = get_grading_manager($context, 'mod_assign', 'submissions');
+        $this->assertSame('rubric', $gradingmanager->get_active_method());
     }
 
     /**
