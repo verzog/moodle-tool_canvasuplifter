@@ -377,15 +377,26 @@ class course_builder {
         $cmid = null;
         $kind = $modelitem->kind;
         $builder = $builders[$kind] ?? null;
+        $buildsasbank = false;
         // Orphan (unreferenced) assessments become question banks rather than
         // quizzes; banks can only live in section 0.
         if ($kind === item::KIND_QUIZ && !$referenced) {
             $builder = $builders[item::KIND_QUESTIONBANK] ?? $builder;
             $sectionnum = 0;
+            $buildsasbank = true;
         } else if (in_array($kind, self::SECTION_ZERO_KINDS, true)) {
             $sectionnum = 0;
+            $buildsasbank = $kind === item::KIND_QUESTIONBANK;
         }
         if ($builder !== null) {
+            // Use the disambiguated banktitle for the bank build only, so a
+            // subsequent quiz_from_bank build can reuse this same model item
+            // with the unsuffixed original title. Restored in finally so an
+            // exception during build still rolls the swap back.
+            $savedtitle = $modelitem->title;
+            if ($buildsasbank && $modelitem->banktitle !== '') {
+                $modelitem->title = $modelitem->banktitle;
+            }
             try {
                 $cmid = $builder->build($course, $sectionnum, $modelitem);
             } catch (\Throwable $e) {
@@ -393,6 +404,8 @@ class course_builder {
                 mtrace('tool_canvasuplifter: ' . $msg);
                 $skipreasons[] = $msg;
                 $cmid = null;
+            } finally {
+                $modelitem->title = $savedtitle;
             }
         }
         if ($cmid === null && in_array($modelitem->kind, self::BUILDS_NOW, true)) {
