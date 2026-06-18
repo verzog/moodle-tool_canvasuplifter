@@ -485,6 +485,15 @@ class course_builder {
         if ($modelitem->identifier !== '') {
             $urlmap['id:' . $modelitem->identifier] = $url;
         }
+        // Variant swaps replace a fallback resource with its preferred target;
+        // any $CANVAS_OBJECT_REFERENCE$ link that still addresses the fallback
+        // identifier needs to resolve to the same URL the preferred item was
+        // built at. The aliasids list carries those redirected identifiers.
+        foreach ($modelitem->aliasids as $aliasid) {
+            if ($aliasid !== '') {
+                $urlmap['id:' . $aliasid] = $url;
+            }
+        }
         if ($modelitem->kind === item::KIND_PAGE) {
             $slug = $this->slug_for($modelitem);
             if ($slug !== '') {

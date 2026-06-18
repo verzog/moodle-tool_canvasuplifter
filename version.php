@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026061802;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026061803;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // CC 1.3 assignment review fixes (variants, inline, prefixed ns, links).
-$plugin->release   = '0.28.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Variant alias IDs + inline assignment extension metadata.
+$plugin->release   = '0.28.1';

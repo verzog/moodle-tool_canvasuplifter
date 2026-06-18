@@ -134,6 +134,17 @@ class item {
     public string $variantref = '';
 
     /**
+     * @var string[] Extra Canvas identifiers under which this item should be
+     *               recorded in course_builder's URL map. Populated when a
+     *               variant swap redirects a fallback resource to its
+     *               preferred target: any $CANVAS_OBJECT_REFERENCE$ link in
+     *               the package may still address the fallback identifier
+     *               (the one the organisation tree references) rather than
+     *               the preferred one we actually built.
+     */
+    public array $aliasids = [];
+
+    /**
      * Constructor.
      *
      * @param string $identifier Canvas resource identifier.

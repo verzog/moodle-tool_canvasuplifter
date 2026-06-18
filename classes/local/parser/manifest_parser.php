@@ -856,6 +856,15 @@ class manifest_parser {
             return $fallback;
         }
         $fallback->suppressed = true;
+        // Carry the fallback identifier as an alias so the URL map records
+        // the preferred resource's URL under both IDs. Any
+        // $CANVAS_OBJECT_REFERENCE$ link elsewhere in the package that
+        // targets the fallback (the one named in the organisation tree)
+        // still resolves to the built assignment instead of landing on
+        // an unresolved placeholder.
+        if (!in_array($fallback->identifier, $preferred->aliasids, true)) {
+            $preferred->aliasids[] = $fallback->identifier;
+        }
         return $preferred;
     }
 
@@ -1106,11 +1115,22 @@ class manifest_parser {
             if ($resourceitem->kind !== item::KIND_ASSIGNMENT) {
                 continue;
             }
+            $xml = '';
             $absolute = $this->locate_assignment_settings($resourceitem);
-            if ($absolute === null) {
+            if ($absolute !== null) {
+                $xml = (string) @file_get_contents($absolute);
+            } else if ($resourceitem->inlinexml !== '') {
+                // Inline CC 1.3 descriptors live on the model rather than on
+                // disk; without this fallback their <extensions>'
+                // assignment_group_identifierref and rubric_identifierref
+                // wouldn't reach the item, losing grade-category placement
+                // and rubric attachment for the built assignment.
+                $xml = $resourceitem->inlinexml;
+            }
+            if ($xml === '') {
                 continue;
             }
-            $settings = assignment_settings::parse((string) @file_get_contents($absolute));
+            $settings = assignment_settings::parse($xml);
             if ($settings->gradegroupref !== '') {
                 $resourceitem->gradegroupref = $settings->gradegroupref;
             }

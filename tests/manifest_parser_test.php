@@ -1100,6 +1100,57 @@ XML;
         $this->assertSame('Lab Report', $attached->title);
         // The fallback resource is suppressed: it must not surface as an orphan.
         $this->assertSame([], $course->orphans);
+        // The preferred item carries the fallback identifier as an alias so
+        // $CANVAS_OBJECT_REFERENCE$ links targeting the fallback still resolve
+        // to the built assignment once course_builder publishes the URL map.
+        $this->assertSame(['r_fb'], $attached->aliasids);
+    }
+
+    /**
+     * Inline CC 1.3 assignment descriptors carry their <extensions>'
+     * assignment_group_identifierref and rubric_identifierref on the
+     * captured inlinexml. mark_assignment_groups() must parse them out of
+     * the inline XML when no on-disk settings file resolves so the imported
+     * assignment still picks up its grade-category placement and rubric
+     * attachment.
+     *
+     * @return void
+     */
+    public function test_inline_cc13_extensions_populate_grade_and_rubric_refs(): void {
+        $dir = make_request_directory();
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest xmlns="http://www.imsglobal.org/xsd/imsccv1p2/imscp_v1p1"'
+            . ' xmlns:cc="http://www.imsglobal.org/xsd/imscc_extensions/assignment"'
+            . ' identifier="m">'
+            . '<organizations><organization identifier="org" structure="rooted-hierarchy">'
+            . '<item identifier="root">'
+            . '<item identifier="i1" identifierref="r1"><title>Inline Lab</title></item>'
+            . '</item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r1" type="assignment_xmlv1p0">'
+            . '<cc:assignment identifier="a1">'
+            . '<cc:title>Inline Lab</cc:title>'
+            . '<cc:gradable points_possible="5">true</cc:gradable>'
+            . '<cc:submission_formats><cc:format type="html"/></cc:submission_formats>'
+            . '<cc:extensions>'
+            . '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<assignment_group_identifierref>g_inline</assignment_group_identifierref>'
+            . '<rubric_identifierref>r_inline</rubric_identifierref>'
+            . '<rubric_use_for_grading>false</rubric_use_for_grading>'
+            . '</assignment>'
+            . '</cc:extensions>'
+            . '</cc:assignment>'
+            . '</resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $assign = $course->sections[0]->items[0];
+        $this->assertSame(item::KIND_ASSIGNMENT, $assign->kind);
+        $this->assertSame('g_inline', $assign->gradegroupref);
+        $this->assertSame('r_inline', $assign->rubricref);
+        $this->assertFalse($assign->rubricforgrading);
     }
 
     /**
