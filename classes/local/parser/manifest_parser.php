@@ -70,7 +70,7 @@ class manifest_parser {
         }
 
         $course = new course_model();
-        $course->fullname = $this->read_course_title();
+        $course->fullname = $this->read_course_title($dom);
         $course->weightingscheme = $this->read_weighting_scheme();
         $course->gradecategories = $this->read_grade_categories();
         $course->rubrics = $this->read_rubrics();
@@ -122,7 +122,41 @@ class manifest_parser {
             }
         }
 
+        // Canvas exports often ship a question bank alongside its twin quiz
+        // assessment, both carrying the same human-readable title. Suffix the
+        // question bank so graders can tell the two mod_qbank/mod_quiz
+        // activities apart on the course page and in the report.
+        $this->disambiguate_questionbank_titles($course);
+
         return $course;
+    }
+
+    /**
+     * Append a " (question bank)" suffix to any KIND_QUESTIONBANK item whose
+     * title is shared with another item in the course (sections or orphans),
+     * so the resulting Moodle activity names don't collide with the twin quiz.
+     *
+     * @param course_model $course The populated course model.
+     * @return void
+     */
+    private function disambiguate_questionbank_titles(course_model $course): void {
+        $counts = [];
+        foreach ($course->all_items() as $modelitem) {
+            $key = $modelitem->title;
+            if ($key === '') {
+                continue;
+            }
+            $counts[$key] = ($counts[$key] ?? 0) + 1;
+        }
+        foreach ($course->all_items() as $modelitem) {
+            if ($modelitem->kind !== item::KIND_QUESTIONBANK) {
+                continue;
+            }
+            if (($counts[$modelitem->title] ?? 0) < 2) {
+                continue;
+            }
+            $modelitem->title .= ' (question bank)';
+        }
     }
 
     /**
@@ -679,7 +713,15 @@ class manifest_parser {
         }
 
         foreach ($rootitems as $sectionnode) {
-            $section = new section_model($this->item_title($sectionnode));
+            $title = $this->item_title($sectionnode);
+            // CC manifests where the org tree is a single untitled <item root>
+            // wrapping activity leaves give us an empty section name; fall back
+            // to the course title so the section reads as something useful
+            // instead of Moodle's "Section 1" default.
+            if ($title === '' && $course->fullname !== '') {
+                $title = $course->fullname;
+            }
+            $section = new section_model($title);
             if ($sectionnode->getAttribute('identifierref') !== '') {
                 // The section node is itself a leaf (an item with its own
                 // resource); attach it as the section's first item.
@@ -794,25 +836,49 @@ class manifest_parser {
     }
 
     /**
-     * Try to read the course title from the Canvas course_settings file.
+     * Try to read the course title, preferring Canvas's course_settings.xml
+     * and falling back to the IMS LOMIMSCC metadata block in the manifest.
      *
+     * @param DOMDocument $dom The parsed manifest document.
      * @return string Empty string if not found.
      */
-    protected function read_course_title(): string {
+    protected function read_course_title(DOMDocument $dom): string {
         $path = $this->basedir . '/course_settings/course_settings.xml';
-        if (!is_readable($path)) {
+        if (is_readable($path)) {
+            $previous = libxml_use_internal_errors(true);
+            $xml = simplexml_load_file($path, 'SimpleXMLElement', LIBXML_NONET);
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+            // The Canvas course_settings.xml exposes <title> for the course name.
+            if ($xml !== false && isset($xml->title)) {
+                $value = trim((string) $xml->title);
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+        }
+        // Fall back to the IMS LOM metadata title carried in the manifest
+        // itself: <metadata><lomimscc:lom><lomimscc:general><lomimscc:title>
+        // <lomimscc:string>...</...>. Question-bank-only Canvas exports and
+        // non-Canvas CC packages have no course_settings.xml so this is the
+        // only title available.
+        $metadata = $dom->getElementsByTagNameNS('*', 'metadata')->item(0);
+        if ($metadata === null) {
             return '';
         }
-        $previous = libxml_use_internal_errors(true);
-        $xml = simplexml_load_file($path, 'SimpleXMLElement', LIBXML_NONET);
-        libxml_clear_errors();
-        libxml_use_internal_errors($previous);
-        if ($xml === false) {
-            return '';
-        }
-        // The Canvas course_settings.xml exposes <title> for the course name.
-        if (isset($xml->title)) {
-            return trim((string) $xml->title);
+        foreach ($metadata->getElementsByTagNameNS('*', 'title') as $titlenode) {
+            foreach ($titlenode->getElementsByTagNameNS('*', 'string') as $stringnode) {
+                $value = trim($stringnode->textContent);
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+            // No <string> child (some authoring tools inline the text): take
+            // the title element's own text content.
+            $value = trim($titlenode->textContent);
+            if ($value !== '') {
+                return $value;
+            }
         }
         return '';
     }
