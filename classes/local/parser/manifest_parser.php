@@ -132,9 +132,13 @@ class manifest_parser {
     }
 
     /**
-     * Append a " (question bank)" suffix to any KIND_QUESTIONBANK item whose
-     * title is shared with another item in the course (sections or orphans),
-     * so the resulting Moodle activity names don't collide with the twin quiz.
+     * Append a " (question bank)" suffix to any item that will end up as a
+     * mod_qbank activity and shares its title with another item in the
+     * course, so the resulting Moodle activity names don't collide on the
+     * course page or in the report. Covers both:
+     *  - KIND_QUESTIONBANK items (always built as banks); and
+     *  - orphan KIND_QUIZ items, which course_builder converts to banks via
+     *    the question-bank builder (see build_one()'s orphan-quiz handling).
      *
      * @param course_model $course The populated course model.
      * @return void
@@ -148,8 +152,14 @@ class manifest_parser {
             }
             $counts[$key] = ($counts[$key] ?? 0) + 1;
         }
+        $orphanids = [];
+        foreach ($course->orphans as $orphan) {
+            $orphanids[$orphan->identifier] = true;
+        }
         foreach ($course->all_items() as $modelitem) {
-            if ($modelitem->kind !== item::KIND_QUESTIONBANK) {
+            $buildsasbank = $modelitem->kind === item::KIND_QUESTIONBANK
+                || ($modelitem->kind === item::KIND_QUIZ && isset($orphanids[$modelitem->identifier]));
+            if (!$buildsasbank) {
                 continue;
             }
             if (($counts[$modelitem->title] ?? 0) < 2) {
@@ -858,11 +868,24 @@ class manifest_parser {
             }
         }
         // Fall back to the IMS LOM metadata title carried in the manifest
-        // itself: <metadata><lomimscc:lom><lomimscc:general><lomimscc:title>
-        // <lomimscc:string>...</...>. Question-bank-only Canvas exports and
-        // non-Canvas CC packages have no course_settings.xml so this is the
-        // only title available.
-        $metadata = $dom->getElementsByTagNameNS('*', 'metadata')->item(0);
+        // itself: <manifest><metadata><lomimscc:lom><lomimscc:general>
+        // <lomimscc:title><lomimscc:string>...</...>. Question-bank-only
+        // Canvas exports and non-Canvas CC packages have no
+        // course_settings.xml so this is the only title available. Restrict
+        // the lookup to a direct <metadata> child of the document element;
+        // CC resources can carry their own per-resource LOM metadata and we
+        // must not borrow a resource title as the course title.
+        $root = $dom->documentElement;
+        if ($root === null) {
+            return '';
+        }
+        $metadata = null;
+        foreach ($root->childNodes as $child) {
+            if ($child instanceof DOMElement && $child->localName === 'metadata') {
+                $metadata = $child;
+                break;
+            }
+        }
         if ($metadata === null) {
             return '';
         }
