@@ -132,13 +132,18 @@ class manifest_parser {
     }
 
     /**
-     * Append a " (question bank)" suffix to any item that will end up as a
-     * mod_qbank activity and shares its title with another item in the
-     * course, so the resulting Moodle activity names don't collide on the
-     * course page or in the report. Covers both:
+     * For any item that will end up as a mod_qbank activity and shares its
+     * title with another item in the course, populate item::banktitle with
+     * the original title plus a " (question bank)" suffix so the bank build
+     * uses a distinct activity name. Covers both:
      *  - KIND_QUESTIONBANK items (always built as banks); and
      *  - orphan KIND_QUIZ items, which course_builder converts to banks via
      *    the question-bank builder (see build_one()'s orphan-quiz handling).
+     *
+     * Crucially we do NOT mutate $modelitem->title itself: when the
+     * quiz_from_bank toggle is on, course_builder hands the SAME orphan
+     * quiz model item to quiz_builder after the bank build to also create
+     * a runnable mod_quiz, and that runnable copy keeps the unsuffixed name.
      *
      * @param course_model $course The populated course model.
      * @return void
@@ -165,7 +170,7 @@ class manifest_parser {
             if (($counts[$modelitem->title] ?? 0) < 2) {
                 continue;
             }
-            $modelitem->title .= ' (question bank)';
+            $modelitem->banktitle = $modelitem->title . ' (question bank)';
         }
     }
 

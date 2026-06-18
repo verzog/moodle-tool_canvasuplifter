@@ -1088,17 +1088,24 @@ XML;
 
         $course = (new manifest_parser($dir))->parse();
 
-        $bytitle = [];
+        $byid = [];
         foreach ($course->sections[0]->items as $modelitem) {
-            $bytitle[$modelitem->title] = $modelitem->kind;
+            $byid[$modelitem->identifier] = $modelitem;
         }
-        $this->assertArrayHasKey('CH 1.1 Overview', $bytitle);
-        $this->assertSame(item::KIND_QUIZ, $bytitle['CH 1.1 Overview']);
-        $this->assertArrayHasKey('CH 1.1 Overview (question bank)', $bytitle);
-        $this->assertSame(item::KIND_QUESTIONBANK, $bytitle['CH 1.1 Overview (question bank)']);
-        // Standalone bank (no twin quiz title) keeps its original title.
-        $this->assertArrayHasKey('Standalone Bank', $bytitle);
-        $this->assertSame(item::KIND_QUESTIONBANK, $bytitle['Standalone Bank']);
+        $quiz = $byid['r1'];
+        $bank = $byid['r2'];
+        $standalone = $byid['r3'];
+
+        // The model titles stay as the manifest provides them; the disambiguated
+        // bank name lives separately on item::banktitle so a quiz_from_bank
+        // second build of the same orphan model item keeps the unsuffixed name.
+        $this->assertSame('CH 1.1 Overview', $quiz->title);
+        $this->assertSame('', $quiz->banktitle);
+        $this->assertSame('CH 1.1 Overview', $bank->title);
+        $this->assertSame('CH 1.1 Overview (question bank)', $bank->banktitle);
+        // Standalone bank (no twin quiz title) gets no banktitle.
+        $this->assertSame('Standalone Bank', $standalone->title);
+        $this->assertSame('', $standalone->banktitle);
     }
 
     /**
@@ -1180,13 +1187,17 @@ XML;
 
         $this->assertCount(1, $course->orphans);
         $orphan = $course->orphans[0];
-        // The orphan KIND_QUIZ that will build as a bank picks up the suffix;
-        // the linked quiz keeps the bare title.
+        // The orphan KIND_QUIZ that will build as a bank gets banktitle set
+        // for the bank build; title stays unsuffixed so a subsequent
+        // quiz_from_bank build using the same model item still creates a
+        // runnable mod_quiz called "Foo".
         $this->assertSame(item::KIND_QUIZ, $orphan->kind);
-        $this->assertSame('Foo (question bank)', $orphan->title);
+        $this->assertSame('Foo', $orphan->title);
+        $this->assertSame('Foo (question bank)', $orphan->banktitle);
         $linked = $course->sections[0]->items[0];
         $this->assertSame(item::KIND_QUIZ, $linked->kind);
         $this->assertSame('Foo', $linked->title);
+        $this->assertSame('', $linked->banktitle);
     }
 
     /**
