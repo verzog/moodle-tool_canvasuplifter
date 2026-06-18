@@ -115,6 +115,25 @@ class item {
     public bool $suppressed = false;
 
     /**
+     * @var string For assignments: serialized CC 1.3 IMS Assignment profile
+     *             XML when the manifest embeds the descriptor inline inside
+     *             the <resource> instead of pointing at it via <file>. The
+     *             assign_builder feeds this directly to assignment_settings
+     *             when no on-disk settings XML is locatable.
+     */
+    public string $inlinexml = '';
+
+    /**
+     * @var string CC variant <variant identifierref="..."> target. CC 1.3
+     *             cartridges may point the organization tree at a fallback
+     *             resource (e.g. a plain webcontent HTML) and put the
+     *             preferred resource (e.g. an assignment_xmlv1p0) behind a
+     *             variant. Captured so the section attach can swap to the
+     *             preferred target when it's a richer buildable kind.
+     */
+    public string $variantref = '';
+
+    /**
      * Constructor.
      *
      * @param string $identifier Canvas resource identifier.
