@@ -2,15 +2,18 @@
 
 Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 
-> **Status: Phase 4 — early build.** This release can both *analyse* a Canvas
-> package (report what it contains and how cleanly each part maps to Moodle)
-> and *build* a new Moodle course from it. The builder currently creates
+> **Status: alpha, Phase 4 complete.** This release can both *analyse* a
+> Canvas package (report what it contains and how cleanly each part maps to
+> Moodle) and *build* a new Moodle course from it. The builder creates
 > sections plus pages (`mod_page`), files (`mod_resource`), URLs (`mod_url`),
-> assignments (`mod_assign`), quizzes and question banks (`mod_quiz` /
+> assignments (`mod_assign`) with optional Canvas rubrics on the
+> `submissions` grading area, quizzes and question banks (`mod_quiz` /
 > `mod_qbank`), forums (`mod_forum`), in-section labels (`mod_label`) for
 > Canvas module subheaders, LTI tool placeholders (`mod_lti`), and a
 > gradebook of categories with Canvas-derived weights. Canvas announcements
-> are posted into the course's news forum. See the Roadmap below.
+> are posted into the course's news forum. Non-Canvas CC 1.3 packages whose
+> assignments use the IMS Assignment profile build through the same
+> `mod_assign` path. See the Roadmap and "Path to beta" sections below.
 
 ## Requirements
 
@@ -133,7 +136,35 @@ Everything lives under `~/.moodle-plugin-ci` (outside the repo).
 | 1 | Build: course, sections, pages, files, URLs, assignments | Done |
 | 2 | Discussions → forums, announcements → news forum | Done |
 | 3 | Quizzes + `mod_qbank` question banks (QTI import) | Done |
-| 4 | Gradebook categories with Canvas weights, LTI placeholders, in-section labels | Done (rubrics still planned) |
+| 4 | Gradebook categories with Canvas weights, LTI placeholders, in-section labels, Canvas rubrics → `gradingform_rubric`, CC 1.3 IMS Assignment profile | Done |
+
+## Path to beta
+
+Status today is `MATURITY_ALPHA`. The bar to flip to `MATURITY_BETA` and
+submit to the Moodle plugin directory is one clean build of each of these
+shapes against `main`:
+
+- [ ] A Canvas course exporting **New Quizzes** alongside Classic Quizzes
+      (Canvas writes both as QTI 1.2 with subtly different shapes).
+- [ ] A **multi-module Canvas course with cross-references** between pages
+      (`$WIKI_REFERENCE$`, `$CANVAS_OBJECT_REFERENCE$`) — exercises the
+      post-build link rewriter across pages, forums and assignment intros.
+- [ ] An **embedded-media-heavy course** — videos, audio, images both in
+      page bodies and in QTI question stems — exercises `file_embedder`
+      and the question-asset import path end-to-end.
+- [ ] A **non-Canvas CC 1.3 export** (Blackboard Ultra, D2L Brightspace,
+      Schoology, OpenStax Connexions) — exercises the IMS Assignment
+      profile, prefixed namespaces, inline descriptors, and variant
+      targets that PR #57 and #59 added.
+- [ ] An **outcomes-heavy course** — Canvas learning outcomes are
+      currently dropped (`learning_outcome_identifierref` on rubric
+      criteria and assignments). A surviving build here either confirms
+      we don't break or points at the outcomes pipeline as the next
+      phase.
+
+Each successful build narrows the shape space; if all five land cleanly
+(or only surface small fixes), flip `version.php` to `MATURITY_BETA` and
+submit.
 
 ## Licence
 
