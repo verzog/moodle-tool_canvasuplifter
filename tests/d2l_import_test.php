@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\course_builder;
+use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\parser\manifest_parser;
 
 /**
@@ -125,5 +126,86 @@ XML;
         $names = $DB->get_fieldset_select('course_sections', 'name', 'course = ? AND name IS NOT NULL', [$courseid]);
         $this->assertContains('Course Information', $names);
         $this->assertContains('1. Properties of Soils', $names);
+    }
+
+    /**
+     * D2L assessment exports (material_type d2lquiz / d2lquestionlibrary) are
+     * real content, not metadata, so they are preserved (here as an orphan
+     * resource) rather than suppressed along with news/syllabus/links.
+     *
+     * @return void
+     */
+    public function test_d2l_quiz_resources_are_preserved(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/slides.pptx', 'slides');
+        file_put_contents($dir . '/quiz_d2l_1.xml', '<quiz><question/></quiz>');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="D2L_2"
+    xmlns:d2l_2p0="http://desire2learn.com/xsd/d2lcp_v2p0"
+    xmlns="http://www.imsglobal.org/xsd/imscp_v1p1">
+  <organizations default="d2l_orgs">
+    <organization identifier="d2l_org">
+      <item identifier="m1" identifierref="RES_m1">
+        <title>Unit</title>
+        <item identifier="i1" identifierref="RES_i1"><title>Slides</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="RES_m1" type="webcontent" d2l_2p0:material_type="contentmodule" href="" />
+    <resource identifier="RES_i1" type="webcontent" d2l_2p0:material_type="content" href="slides.pptx" />
+    <resource identifier="RES_quiz" type="webcontent" d2l_2p0:material_type="d2lquiz" href="quiz_d2l_1.xml" />
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $quiz = $course->orphans[0];
+        $this->assertSame('RES_quiz', $quiz->identifier);
+        $this->assertSame(item::KIND_FILE, $quiz->kind);
+        $this->assertFalse($quiz->suppressed);
+    }
+
+    /**
+     * A referenced buildable resource whose payload is missing from the manifest
+     * (a malformed export) must still be placed in its section — so it reaches
+     * the builder and is reported as skipped — rather than being silently
+     * suppressed along with the D2L placeholders.
+     *
+     * @return void
+     */
+    public function test_missing_payload_resource_is_still_reported(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="cc1" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i1" identifierref="r1"><title>Broken Assignment</title></item>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r1" type="assignment_xmlv1p0"/>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Not suppressed: it lands in its section, so the builder sees it and
+        // reports a missing-payload skip instead of it vanishing from the report.
+        $this->assertCount(1, $course->sections);
+        $this->assertCount(1, $course->sections[0]->items);
+        $placed = $course->sections[0]->items[0];
+        $this->assertSame('r1', $placed->identifier);
+        $this->assertSame(item::KIND_ASSIGNMENT, $placed->kind);
+        $this->assertFalse($placed->suppressed);
     }
 }

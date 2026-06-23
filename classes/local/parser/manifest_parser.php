@@ -300,16 +300,19 @@ class manifest_parser {
             $modelitem->variantref = $this->read_variant_ref($resource);
 
             $modelitem->kind = $this->classify($type, $href, $modelitem->files);
-            // A resource with no <file>, no href and no inline descriptor has
-            // nothing to build. D2L emits its content "modules" exactly this
-            // way — empty contentmodule <resource>s that exist only to title a
-            // section — and its own metadata resources (material_type starting
-            // "d2l", e.g. d2lnews/d2lsyllabus/d2llinks) are course config, not
-            // learner content. Suppress both: they neither attach as phantom
-            // activities nor surface as "Additional resources" junk, while the
-            // module hierarchy still becomes sections via the organisation tree.
-            $haspayload = $href !== '' || !empty($modelitem->files) || $modelitem->inlinexml !== '';
-            if (!$haspayload || str_starts_with($this->read_d2l_material_type($resource), 'd2l')) {
+            $materialtype = $this->read_d2l_material_type($resource);
+            // D2L emits its course "modules" as empty contentmodule <resource>s
+            // that exist only to title a section, and its syllabus/news/links as
+            // metadata-only XML. Suppress just those — they neither attach as
+            // phantom activities nor surface as "Additional resources" junk —
+            // while the module hierarchy still becomes sections via the
+            // organisation tree. Everything else flows through, including D2L's
+            // d2lquiz / d2lquestionlibrary assessment exports and any resource
+            // whose payload is simply missing, so the report can place or
+            // skip-and-explain it rather than dropping it silently.
+            $ismodulenode = $materialtype === 'contentmodule'
+                && $href === '' && empty($modelitem->files) && $modelitem->inlinexml === '';
+            if ($ismodulenode || in_array($materialtype, self::D2L_METADATA_MATERIAL_TYPES, true)) {
                 $modelitem->kind = item::KIND_UNKNOWN;
                 $modelitem->suppressed = true;
             } else {
@@ -353,6 +356,17 @@ class manifest_parser {
         }
         return '';
     }
+
+    /**
+     * D2L material types that carry course configuration/metadata rather than
+     * learner content, so they are suppressed instead of imported as files.
+     * Deliberately a small allowlist: other d2l* types (notably d2lquiz and
+     * d2lquestionlibrary assessment exports) are preserved as resources rather
+     * than dropped.
+     *
+     * @var string[]
+     */
+    private const D2L_METADATA_MATERIAL_TYPES = ['d2lnews', 'd2lsyllabus', 'd2llinks'];
 
     /**
      * Read a resource's D2L material_type (the d2l_2p0:material_type attribute),
