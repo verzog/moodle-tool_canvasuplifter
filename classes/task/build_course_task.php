@@ -25,7 +25,7 @@ use tool_canvasuplifter\local\parser\manifest_parser;
 /**
  * Adhoc task that extracts the stored Canvas package and builds the course.
  *
- * Custom data shape: {jobid: int, quizfrombank?: int}.
+ * Custom data shape: {jobid: int, quizfrombank?: int, pagegrouping?: string}.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -39,6 +39,7 @@ class build_course_task extends adhoc_task {
         $data = (array) $this->get_custom_data();
         $jobid = (int) ($data['jobid'] ?? 0);
         $quizfrombank = !empty($data['quizfrombank']);
+        $pagegrouping = (string) ($data['pagegrouping'] ?? '');
         if ($jobid <= 0) {
             mtrace('build_course_task: missing jobid');
             return;
@@ -72,7 +73,8 @@ class build_course_task extends adhoc_task {
                 $root,
                 $jobs,
                 $jobid,
-                $quizfrombank
+                $quizfrombank,
+                $pagegrouping
             ))->build($coursemodel);
             $jobs->mark_done($jobid, $report['courseid'], $report);
             mtrace("build_course_task: job $jobid built course {$report['courseid']}");

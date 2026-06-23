@@ -69,6 +69,15 @@ class upload_form extends moodleform {
         $mform->setDefault('quizfrombank', 0);
         $mform->addHelpButton('quizfrombank', 'quizfrombank', 'tool_canvasuplifter');
 
+        $mform->addElement('select', 'pagegrouping', get_string('pagegrouping', 'tool_canvasuplifter'), [
+            '' => get_string('pagegrouping_none', 'tool_canvasuplifter'),
+            'book' => get_string('pagegrouping_book', 'tool_canvasuplifter'),
+            'lesson' => get_string('pagegrouping_lesson', 'tool_canvasuplifter'),
+        ]);
+        $mform->setDefault('pagegrouping', '');
+        $mform->setType('pagegrouping', PARAM_ALPHA);
+        $mform->addHelpButton('pagegrouping', 'pagegrouping', 'tool_canvasuplifter');
+
         $buttons = [
             $mform->createElement('submit', 'analysebutton', get_string('analyse', 'tool_canvasuplifter')),
             $mform->createElement('submit', 'buildbutton', get_string('buildcourse', 'tool_canvasuplifter')),

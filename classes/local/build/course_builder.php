@@ -23,7 +23,8 @@ use tool_canvasuplifter\local\model\item;
 /**
  * Course builder: creates a Moodle course, its sections, and the activity types
  * implemented so far (mod_page, mod_url, mod_resource, mod_assign, mod_quiz,
- * mod_qbank, mod_forum, mod_label and mod_lti).
+ * mod_qbank, mod_forum, mod_label and mod_lti). With the page-grouping option
+ * set, consecutive pages are combined into a single mod_book or mod_lesson.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -68,6 +69,15 @@ class course_builder {
     /** @var bool Also build a runnable quiz from each standalone (orphan) assessment. */
     private bool $quizfrombank;
 
+    /** @var string Combine consecutive pages into a single activity: '' (off), 'book' or 'lesson'. */
+    private string $pagegrouping;
+
+    /** @var book_builder|lesson_builder|null Memoised grouped-page builder for the current $pagegrouping. */
+    private $groupbuilder = null;
+
+    /** @var bool Whether $groupbuilder has been resolved yet. */
+    private bool $groupbuilderinit = false;
+
     /** @var array<string, int> Canvas assignment-group id -> Moodle grade_category id, for the current build. */
     private array $gradecategoryids = [];
 
@@ -82,19 +92,22 @@ class course_builder {
      * @param job_manager|null $jobs Optional, used to report progress.
      * @param int $jobid Job id, required when $jobs is set.
      * @param bool $quizfrombank Also build a runnable quiz from each standalone assessment.
+     * @param string $pagegrouping Combine consecutive pages into one activity: '' (off), 'book' or 'lesson'.
      */
     public function __construct(
         int $categoryid,
         string $packageroot,
         ?job_manager $jobs = null,
         int $jobid = 0,
-        bool $quizfrombank = false
+        bool $quizfrombank = false,
+        string $pagegrouping = ''
     ) {
         $this->categoryid = $categoryid;
         $this->packageroot = rtrim($packageroot, '/');
         $this->jobs = $jobs;
         $this->jobid = $jobid;
         $this->quizfrombank = $quizfrombank;
+        $this->pagegrouping = in_array($pagegrouping, ['book', 'lesson'], true) ? $pagegrouping : '';
     }
 
     /**
@@ -156,6 +169,7 @@ class course_builder {
         $skipreasons = [];
         $urlmap = [];          // Canvas reference key => Moodle activity URL.
         $builtpagecmids = [];   // Course module ids of pages, for the link pass.
+        $rewritetargets = [];   // Grouped book/lesson content rows, for the link pass.
         $extraquizzes = 0;      // Runnable quizzes built from standalone banks (toggle).
         $totalitems = max(1, count($coursemodel->all_items()));
         $processed = 0;
@@ -163,14 +177,28 @@ class course_builder {
         foreach ($coursemodel->sections as $index => $sectionmodel) {
             $sectionnum = $index + 1;
             $this->prepare_section($course, $sectionnum, $sectionmodel->title);
-            foreach ($sectionmodel->items as $modelitem) {
+            foreach ($this->segment_items($sectionmodel->items) as $segment) {
+                if ($segment['type'] === 'group') {
+                    $this->build_page_group(
+                        $course,
+                        $sectionnum,
+                        $sectionmodel->title,
+                        $segment['items'],
+                        $builders,
+                        $urlmap,
+                        $builtpagecmids,
+                        $rewritetargets,
+                        $createdcounts,
+                        $skippedcounts
+                    );
+                    $processed += count($segment['items']);
+                    $this->report_item_progress($processed, $totalitems, item::KIND_PAGE);
+                    continue;
+                }
+                $modelitem = $segment['item'];
                 $cmid = $this->build_one($course, $sectionnum, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons);
                 $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
-                $this->report_progress($this->item_percent(++$processed, $totalitems), get_string(
-                    'progressitem',
-                    'tool_canvasuplifter',
-                    ['done' => $processed, 'total' => $totalitems, 'kind' => $modelitem->kind]
-                ));
+                $this->report_item_progress(++$processed, $totalitems, $modelitem->kind);
             }
         }
 
@@ -185,11 +213,7 @@ class course_builder {
                 }
                 $cmid = $this->build_one($course, 0, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons, false);
                 $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
-                $this->report_progress($this->item_percent(++$processed, $totalitems), get_string(
-                    'progressitem',
-                    'tool_canvasuplifter',
-                    ['done' => $processed, 'total' => $totalitems, 'kind' => $modelitem->kind]
-                ));
+                $this->report_item_progress(++$processed, $totalitems, $modelitem->kind);
             } else {
                 $extras[] = $modelitem;
             }
@@ -199,7 +223,26 @@ class course_builder {
         if (!empty($extras)) {
             $orphansection = count($coursemodel->sections) + 1;
             $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
-            foreach ($extras as $modelitem) {
+            $orphantitle = get_string('additionalresources', 'tool_canvasuplifter');
+            foreach ($this->segment_items($extras) as $segment) {
+                if ($segment['type'] === 'group') {
+                    $this->build_page_group(
+                        $course,
+                        $orphansection,
+                        $orphantitle,
+                        $segment['items'],
+                        $builders,
+                        $urlmap,
+                        $builtpagecmids,
+                        $rewritetargets,
+                        $createdcounts,
+                        $skippedcounts
+                    );
+                    $processed += count($segment['items']);
+                    $this->report_item_progress($processed, $totalitems, item::KIND_PAGE);
+                    continue;
+                }
+                $modelitem = $segment['item'];
                 $cmid = $this->build_one(
                     $course,
                     $orphansection,
@@ -218,16 +261,13 @@ class course_builder {
                         $extraquizzes++;
                     }
                 }
-                $this->report_progress($this->item_percent(++$processed, $totalitems), get_string(
-                    'progressitem',
-                    'tool_canvasuplifter',
-                    ['done' => $processed, 'total' => $totalitems, 'kind' => $modelitem->kind]
-                ));
+                $this->report_item_progress(++$processed, $totalitems, $modelitem->kind);
             }
         }
 
         // Second pass: rewrite internal page links now that every target exists.
         $this->rewrite_internal_links($builtpagecmids, $urlmap);
+        $this->rewrite_grouped_content($rewritetargets, $urlmap);
         $this->rewrite_forum_links((int) $course->id, $urlmap);
         $this->rewrite_assign_links((int) $course->id, $urlmap);
 
@@ -334,6 +374,204 @@ class course_builder {
      */
     private function item_percent(int $processed, int $total): int {
         return 5 + (int) round(90 * $processed / max(1, $total));
+    }
+
+    /**
+     * Report a per-item progress update with the standard "n of m (kind)" message.
+     *
+     * @param int $processed Items processed so far.
+     * @param int $total Total items.
+     * @param string $kind The kind just processed.
+     * @return void
+     */
+    private function report_item_progress(int $processed, int $total, string $kind): void {
+        $this->report_progress($this->item_percent($processed, $total), get_string(
+            'progressitem',
+            'tool_canvasuplifter',
+            ['done' => $processed, 'total' => $total, 'kind' => $kind]
+        ));
+    }
+
+    /**
+     * Split an ordered item list into build segments. When page grouping is off
+     * every item is its own "single" segment; when on, each maximal run of two
+     * or more consecutive pages becomes a "group" segment (a lone page stays a
+     * single page).
+     *
+     * @param array $items The items in build order.
+     * @return array List of ['type' => 'single', 'item' => item] / ['type' => 'group', 'items' => item[]].
+     */
+    private function segment_items(array $items): array {
+        if ($this->pagegrouping === '') {
+            return array_map(fn($modelitem) => ['type' => 'single', 'item' => $modelitem], $items);
+        }
+        $segments = [];
+        $run = [];
+        foreach ($items as $modelitem) {
+            if ($modelitem->kind === item::KIND_PAGE) {
+                $run[] = $modelitem;
+                continue;
+            }
+            $this->flush_run($run, $segments);
+            $segments[] = ['type' => 'single', 'item' => $modelitem];
+        }
+        $this->flush_run($run, $segments);
+        return $segments;
+    }
+
+    /**
+     * Emit the accumulated page run as a group (2+ pages) or as single pages,
+     * then reset the run.
+     *
+     * @param array $run Accumulated consecutive page items (reset to []).
+     * @param array $segments Segment list being built (modified in place).
+     * @return void
+     */
+    private function flush_run(array &$run, array &$segments): void {
+        if (count($run) >= 2) {
+            $segments[] = ['type' => 'group', 'items' => $run];
+        } else {
+            foreach ($run as $modelitem) {
+                $segments[] = ['type' => 'single', 'item' => $modelitem];
+            }
+        }
+        $run = [];
+    }
+
+    /**
+     * Resolve (and memoise) the grouped-page builder for the configured target.
+     *
+     * @return book_builder|lesson_builder|null The builder, or null when grouping is off.
+     */
+    private function group_builder() {
+        if (!$this->groupbuilderinit) {
+            $this->groupbuilderinit = true;
+            if ($this->pagegrouping === 'book') {
+                $this->groupbuilder = new book_builder($this->packageroot);
+            } else if ($this->pagegrouping === 'lesson') {
+                $this->groupbuilder = new lesson_builder($this->packageroot);
+            }
+        }
+        return $this->groupbuilder;
+    }
+
+    /**
+     * Build a run of consecutive pages as one combined book/lesson activity,
+     * recording each page's link target and the chapter/page rows that the
+     * second link pass must rewrite. Falls back to one page per item if the
+     * combined build fails, so no content is lost.
+     *
+     * @param \stdClass $course Course record.
+     * @param int $sectionnum Section to place the activity in.
+     * @param string $groupname Activity name (the section title).
+     * @param array $pages The page items in the run.
+     * @param array $builders Map of kind => builder object (for the page fallback).
+     * @param array $urlmap Link map (modified in place).
+     * @param int[] $builtpagecmids Page cmids for the link pass (modified in place).
+     * @param array $rewritetargets Grouped content rows for the link pass (modified in place).
+     * @param array $createdcounts Created tallies (modified in place).
+     * @param array $skippedcounts Skipped tallies (modified in place).
+     * @return void
+     */
+    private function build_page_group(
+        \stdClass $course,
+        int $sectionnum,
+        string $groupname,
+        array $pages,
+        array $builders,
+        array &$urlmap,
+        array &$builtpagecmids,
+        array &$rewritetargets,
+        array &$createdcounts,
+        array &$skippedcounts
+    ): void {
+        $builder = $this->group_builder();
+        $result = null;
+        if ($builder !== null) {
+            try {
+                $result = $builder->build_group($course, $sectionnum, $groupname, $pages);
+            } catch (\Throwable $e) {
+                mtrace('tool_canvasuplifter: ' . sprintf(
+                    'failed to build %s from "%s": %s',
+                    $this->pagegrouping,
+                    $groupname,
+                    $e->getMessage()
+                ));
+                $result = null;
+            }
+        }
+        if ($result === null) {
+            $this->build_pages_individually(
+                $course,
+                $sectionnum,
+                $pages,
+                $builders,
+                $urlmap,
+                $builtpagecmids,
+                $createdcounts,
+                $skippedcounts
+            );
+            return;
+        }
+
+        $built = [];
+        foreach ($result['pages'] as $entry) {
+            $page = $entry['item'];
+            $built[spl_object_id($page)] = true;
+            $this->record_link_target($urlmap, $page, (int) $result['cmid'], $entry['url']);
+            $rewritetargets[] = $entry['rewrite'];
+            $this->tally((int) $result['cmid'], item::KIND_PAGE, $createdcounts, $skippedcounts);
+        }
+        foreach ($pages as $page) {
+            if (empty($built[spl_object_id($page)])) {
+                $this->tally(null, item::KIND_PAGE, $createdcounts, $skippedcounts);
+            }
+        }
+    }
+
+    /**
+     * Build each page in a run as its own mod_page. Used as the fallback when a
+     * combined book/lesson build cannot be created.
+     *
+     * @param \stdClass $course Course record.
+     * @param int $sectionnum Section to place the pages in.
+     * @param array $pages The page items.
+     * @param array $builders Map of kind => builder object.
+     * @param array $urlmap Link map (modified in place).
+     * @param int[] $builtpagecmids Page cmids for the link pass (modified in place).
+     * @param array $createdcounts Created tallies (modified in place).
+     * @param array $skippedcounts Skipped tallies (modified in place).
+     * @return void
+     */
+    private function build_pages_individually(
+        \stdClass $course,
+        int $sectionnum,
+        array $pages,
+        array $builders,
+        array &$urlmap,
+        array &$builtpagecmids,
+        array &$createdcounts,
+        array &$skippedcounts
+    ): void {
+        $pagebuilder = $builders[item::KIND_PAGE] ?? null;
+        foreach ($pages as $page) {
+            $cmid = null;
+            if ($pagebuilder !== null) {
+                try {
+                    $cmid = $pagebuilder->build($course, $sectionnum, $page);
+                } catch (\Throwable $e) {
+                    $cmid = null;
+                }
+            }
+            if ($cmid !== null) {
+                $this->record_link_target($urlmap, $page, $cmid);
+                $builtpagecmids[] = $cmid;
+                if (!$page->isvisible) {
+                    set_coursemodule_visible($cmid, 0);
+                }
+            }
+            $this->tally($cmid, item::KIND_PAGE, $createdcounts, $skippedcounts);
+        }
     }
 
     /**
@@ -572,6 +810,37 @@ class course_builder {
             $newcontent = $rewriter->rewrite_internal_links((string) $page->content, $urlmap);
             if ($newcontent !== $page->content) {
                 $DB->set_field('page', 'content', $newcontent, ['id' => $page->id]);
+            }
+        }
+    }
+
+    /**
+     * Rewrite internal Canvas links in grouped book chapter / lesson page bodies.
+     *
+     * Pages folded into a book or lesson carry the same
+     * $WIKI_REFERENCE$/$CANVAS_OBJECT_REFERENCE$ placeholders that standalone
+     * pages do, so they get the same second-pass treatment once every link
+     * target (including the chapter/page anchors themselves) is known.
+     *
+     * @param array $targets Rows to rewrite: each ['table' => string, 'id' => int, 'field' => string].
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_grouped_content(array $targets, array $urlmap): void {
+        global $DB;
+        if (empty($targets) || empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        foreach ($targets as $target) {
+            $field = $target['field'];
+            $record = $DB->get_record($target['table'], ['id' => $target['id']], 'id, ' . $field);
+            if (!$record) {
+                continue;
+            }
+            $newcontent = $rewriter->rewrite_internal_links((string) $record->$field, $urlmap);
+            if ($newcontent !== $record->$field) {
+                $DB->set_field($target['table'], $field, $newcontent, ['id' => $target['id']]);
             }
         }
     }

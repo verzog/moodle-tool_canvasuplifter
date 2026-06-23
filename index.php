@@ -83,7 +83,12 @@ if ($data = $form->get_data()) {
             $jobid = $jobs->create((int) $USER->id, $selectedcategory, $storedfileid);
 
             $task = new build_course_task();
-            $task->set_custom_data(['jobid' => $jobid, 'quizfrombank' => empty($data->quizfrombank) ? 0 : 1]);
+            $task->set_custom_data([
+                'jobid' => $jobid,
+                'quizfrombank' => empty($data->quizfrombank) ? 0 : 1,
+                // Anything other than 'book'/'lesson' is ignored by course_builder.
+                'pagegrouping' => clean_param($data->pagegrouping ?? '', PARAM_ALPHA),
+            ]);
             \core\task\manager::queue_adhoc_task($task);
 
             redirect(new moodle_url('/admin/tool/canvasuplifter/status.php', ['jobid' => $jobid]));
@@ -128,10 +133,16 @@ if ($buildfromreport > 0) {
         throw new \moodle_exception('errorjobnotfound', 'tool_canvasuplifter');
     }
     $quizfrombank = optional_param('quizfrombank', 0, PARAM_INT);
+    $pagegrouping = optional_param('pagegrouping', '', PARAM_ALPHA);
     $jobs = new job_manager();
     $jobid = $jobs->create((int) $USER->id, $categoryid, $buildfromreport);
     $task = new build_course_task();
-    $task->set_custom_data(['jobid' => $jobid, 'quizfrombank' => $quizfrombank ? 1 : 0]);
+    $task->set_custom_data([
+        'jobid' => $jobid,
+        'quizfrombank' => $quizfrombank ? 1 : 0,
+        // Anything other than 'book'/'lesson' is ignored by course_builder.
+        'pagegrouping' => $pagegrouping,
+    ]);
     \core\task\manager::queue_adhoc_task($task);
     redirect(new moodle_url('/admin/tool/canvasuplifter/status.php', ['jobid' => $jobid]));
 }
@@ -353,6 +364,26 @@ if ($report === null) {
             get_string('quizfrombank', 'tool_canvasuplifter'),
             ['for' => 'quizfrombank', 'class' => 'form-check-label']
         );
+        $form .= html_writer::end_div();
+        $form .= html_writer::start_div('form-group row mb-2');
+        $form .= html_writer::tag(
+            'label',
+            get_string('pagegrouping', 'tool_canvasuplifter'),
+            ['for' => 'reportpagegrouping', 'class' => 'col-md-3 col-form-label']
+        );
+        $form .= html_writer::start_div('col-md-9');
+        $form .= html_writer::select(
+            [
+                '' => get_string('pagegrouping_none', 'tool_canvasuplifter'),
+                'book' => get_string('pagegrouping_book', 'tool_canvasuplifter'),
+                'lesson' => get_string('pagegrouping_lesson', 'tool_canvasuplifter'),
+            ],
+            'pagegrouping',
+            '',
+            false,
+            ['id' => 'reportpagegrouping', 'class' => 'form-control']
+        );
+        $form .= html_writer::end_div();
         $form .= html_writer::end_div();
         $form .= html_writer::div(
             html_writer::empty_tag('input', [

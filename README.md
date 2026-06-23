@@ -37,7 +37,15 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
    warnings. Nothing is written in this mode.
 4. **Build course** queues a background task that creates a new (hidden) course
    in the chosen category and builds the supported content into it. A status
-   page shows progress and a summary of what was created or skipped.
+   page shows progress and a summary of what was created or skipped. Two optional
+   settings sit on the upload and report pages:
+   - *Also build a runnable quiz from each standalone question bank* (see below).
+   - *Combine consecutive pages* — off by default. Set it to **Book** or
+     **Lesson** to fold each run of two or more adjacent wiki pages in a section
+     into one `mod_book` (a chapter per page) or `mod_lesson` (a content page per
+     page), named after the section. A lone page between activities stays a
+     `mod_page`, and links between the folded pages are rewritten to point at the
+     right chapter/page.
 
 ### Known limitations (Phase 1)
 
@@ -51,6 +59,10 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
   are not carried across.
 - Resources not linked from any module are imported into an "Additional
   resources" section so nothing is lost.
+- The optional "Combine consecutive pages" setting can fold runs of pages into a
+  single book or lesson. Book chapters honour each Canvas page's published state;
+  lessons have no per-page visibility, so an unpublished page folded into a
+  lesson becomes visible.
 - Canvas QTI assessments convert their questions — multiple choice, multiple
   response, fill-in-blank, true/false and essay. Bundled media in question text
   (images, video, audio and attachments) is imported with the question; external
