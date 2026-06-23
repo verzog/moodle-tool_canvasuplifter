@@ -208,4 +208,199 @@ XML;
         $this->assertSame(item::KIND_ASSIGNMENT, $placed->kind);
         $this->assertFalse($placed->suppressed);
     }
+
+    /**
+     * A non-D2L cartridge that uses an empty webcontent resource as a
+     * section/folder container keeps it suppressed: it titles the section via
+     * the organisation tree but must not attach as a phantom payload-less file
+     * ahead of the real child content.
+     *
+     * @return void
+     */
+    public function test_empty_webcontent_container_is_suppressed(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="cc2" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="folder" identifierref="RES_folder">
+        <title>Module One</title>
+        <item identifier="i1" identifierref="RES_child"><title>Reading</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="RES_folder" type="webcontent" href=""/>
+    <resource identifier="RES_child" type="webcontent" href="reading.html"/>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->sections);
+        $this->assertSame('Module One', $course->sections[0]->title);
+        // Only the real child attaches; the empty container is not a phantom item.
+        $this->assertCount(1, $course->sections[0]->items);
+        $this->assertSame('RES_child', $course->sections[0]->items[0]->identifier);
+        $this->assertCount(0, $course->orphans);
+    }
+
+    /**
+     * An empty webcontent resource referenced as a leaf (no child items) is a
+     * malformed file, not a container, so it must still attach and reach
+     * file_builder — leaving a missing-payload skip in the report — rather than
+     * being hidden.
+     *
+     * @return void
+     */
+    public function test_empty_webcontent_leaf_is_reported(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="cc3" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1"><item identifier="root">
+      <item identifier="m1"><title>Week 1</title>
+        <item identifier="i1" identifierref="r1"><title>Broken File</title></item>
+      </item>
+    </item></organization>
+  </organizations>
+  <resources>
+    <resource identifier="r1" type="webcontent" href=""/>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->sections);
+        $this->assertCount(1, $course->sections[0]->items);
+        $placed = $course->sections[0]->items[0];
+        $this->assertSame('r1', $placed->identifier);
+        $this->assertSame(item::KIND_FILE, $placed->kind);
+        $this->assertFalse($placed->suppressed);
+    }
+
+    /**
+     * A referenced resource of an unsupported type with no payload must still
+     * surface in its section as KIND_UNKNOWN so the report can flag it as
+     * unmappable, rather than being silently suppressed.
+     *
+     * @return void
+     */
+    public function test_empty_unsupported_resource_is_reported(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="cc4" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1"><item identifier="root">
+      <item identifier="m1"><title>Week 1</title>
+        <item identifier="i1" identifierref="r_x"><title>Mystery</title></item>
+      </item>
+    </item></organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_x" type="some-vendor-specific-bundle"/>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->sections);
+        $this->assertCount(1, $course->sections[0]->items);
+        $placed = $course->sections[0]->items[0];
+        $this->assertSame('r_x', $placed->identifier);
+        $this->assertSame(item::KIND_UNKNOWN, $placed->kind);
+        $this->assertFalse($placed->suppressed);
+    }
+
+    /**
+     * An item that references an empty *buildable* resource (an
+     * assignment_xmlv1p0 with no descriptor) and also nests children is not a
+     * container: the malformed assignment must still attach alongside its child,
+     * so the report can flag the missing payload.
+     *
+     * @return void
+     */
+    public function test_empty_buildable_parent_is_reported(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="cc5" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="a1" identifierref="r_assign">
+        <title>Assignment Folder</title>
+        <item identifier="i1" identifierref="r_child"><title>Reading</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_assign" type="assignment_xmlv1p0"/>
+    <resource identifier="r_child" type="webcontent" href="reading.html"/>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->sections);
+        $ids = array_map(fn($i) => $i->identifier, $course->sections[0]->items);
+        $this->assertContains('r_assign', $ids);
+        $this->assertContains('r_child', $ids);
+        $assign = $course->sections[0]->items[array_search('r_assign', $ids, true)];
+        $this->assertSame(item::KIND_ASSIGNMENT, $assign->kind);
+        $this->assertFalse($assign->suppressed);
+    }
+
+    /**
+     * When the same empty webcontent resource is referenced once as a folder
+     * (with children) and once as a leaf, the container occurrence must not
+     * poison the leaf: the leaf still attaches so the malformed file is
+     * reported, and resource reuse keeps working.
+     *
+     * @return void
+     */
+    public function test_reused_empty_resource_leaf_still_reported(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="cc6" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="folder" identifierref="r_shared">
+        <title>Folder</title>
+        <item identifier="i_child" identifierref="r_child"><title>Reading</title></item>
+      </item>
+      <item identifier="leaf" identifierref="r_shared"><title>Loose File</title></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_shared" type="webcontent" href=""/>
+    <resource identifier="r_child" type="webcontent" href="reading.html"/>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(2, $course->sections);
+        // Folder section: only the real child; the container ref is hidden.
+        $this->assertSame(['r_child'], array_map(fn($i) => $i->identifier, $course->sections[0]->items));
+        // Leaf section: the reused resource still attaches and is reportable.
+        $this->assertCount(1, $course->sections[1]->items);
+        $leaf = $course->sections[1]->items[0];
+        $this->assertSame('r_shared', $leaf->identifier);
+        $this->assertFalse($leaf->suppressed);
+        $this->assertCount(0, $course->orphans);
+    }
 }
