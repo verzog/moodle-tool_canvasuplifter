@@ -300,16 +300,30 @@ class manifest_parser {
             $modelitem->variantref = $this->read_variant_ref($resource);
 
             $modelitem->kind = $this->classify($type, $href, $modelitem->files);
-            // Mark the deliberate-skip cases (quiz/ assets, metadata-only
-            // learning-application resources) so section attach can keep
-            // suppressing them when the organisation explicitly references
-            // them, without also suppressing genuinely unsupported types.
-            $modelitem->suppressed = $this->deliberately_suppressed(
-                $modelitem->kind,
-                $type,
-                $href,
-                $modelitem->files
-            );
+            // A resource with no <file>, no href and no inline descriptor has
+            // nothing to build. D2L emits its content "modules" exactly this
+            // way — empty contentmodule <resource>s that exist only to title a
+            // section — and its own metadata resources (material_type starting
+            // "d2l", e.g. d2lnews/d2lsyllabus/d2llinks) are course config, not
+            // learner content. Suppress both: they neither attach as phantom
+            // activities nor surface as "Additional resources" junk, while the
+            // module hierarchy still becomes sections via the organisation tree.
+            $haspayload = $href !== '' || !empty($modelitem->files) || $modelitem->inlinexml !== '';
+            if (!$haspayload || str_starts_with($this->read_d2l_material_type($resource), 'd2l')) {
+                $modelitem->kind = item::KIND_UNKNOWN;
+                $modelitem->suppressed = true;
+            } else {
+                // Mark the deliberate-skip cases (quiz/ assets, metadata-only
+                // learning-application resources) so section attach can keep
+                // suppressing them when the organisation explicitly references
+                // them, without also suppressing genuinely unsupported types.
+                $modelitem->suppressed = $this->deliberately_suppressed(
+                    $modelitem->kind,
+                    $type,
+                    $href,
+                    $modelitem->files
+                );
+            }
             $items[$identifier] = $modelitem;
         }
         return $items;
@@ -338,6 +352,29 @@ class manifest_parser {
             }
         }
         return '';
+    }
+
+    /**
+     * Read a resource's D2L material_type (the d2l_2p0:material_type attribute),
+     * matched namespace-agnostically by local name so any prefix works. D2L
+     * Brightspace tags every <resource> with one: "content"/"contentmodule" for
+     * real material, and "d2lnews"/"d2lsyllabus"/"d2llinks"/etc. for its own
+     * metadata. Returns the lower-cased value, or '' when not a D2L resource.
+     *
+     * @param DOMElement $resource The <resource> element.
+     * @return string Lower-cased material type, or '' when absent.
+     */
+    private function read_d2l_material_type(DOMElement $resource): string {
+        $value = $resource->getAttributeNS('http://desire2learn.com/xsd/d2lcp_v2p0', 'material_type');
+        if ($value === '') {
+            foreach ($resource->attributes as $attr) {
+                if ($attr->localName === 'material_type') {
+                    $value = (string) $attr->nodeValue;
+                    break;
+                }
+            }
+        }
+        return strtolower(trim($value));
     }
 
     /**
