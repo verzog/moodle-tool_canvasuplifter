@@ -93,6 +93,19 @@ final class download_link_extractor_test extends \advanced_testcase {
     }
 
     /**
+     * The meta-refresh attributes are matched in either order (content first).
+     *
+     * @return void
+     */
+    public function test_meta_refresh_content_before_http_equiv(): void {
+        $html = '<head><meta content="0;url=/dl/course.imscc" http-equiv="refresh"></head>';
+        $this->assertSame(
+            'https://x.test/dl/course.imscc',
+            download_link_extractor::find($html, 'https://x.test/landing/page.html')
+        );
+    }
+
+    /**
      * Non-navigational and irrelevant links yield nothing.
      *
      * @return void

@@ -70,10 +70,20 @@ class download_link_extractor {
             }
         }
 
-        // 3. A meta-refresh redirect to the file.
-        $refresh = '~<meta[^>]+http-equiv\s*=\s*["\']?refresh["\']?[^>]*content\s*=\s*["\'][^"\']*url=([^"\'>]+)~i';
-        if (preg_match($refresh, $html, $m)) {
-            return self::absolutize(html_entity_decode(trim($m[1])), $baseurl);
+        // 3. A meta-refresh redirect to the file. Handle the http-equiv and
+        // content attributes in either order (valid HTML allows both).
+        if (preg_match_all('~<meta\b[^>]*>~i', $html, $metas)) {
+            foreach ($metas[0] as $meta) {
+                if (!preg_match('~http-equiv\s*=\s*["\']?\s*refresh~i', $meta)) {
+                    continue;
+                }
+                if (
+                    preg_match('~content\s*=\s*("|\')(.*?)\1~i', $meta, $cm)
+                    && preg_match('~\burl\s*=\s*([^"\'>\s]+)~i', $cm[2], $um)
+                ) {
+                    return self::absolutize(html_entity_decode(trim($um[1])), $baseurl);
+                }
+            }
         }
 
         return null;
