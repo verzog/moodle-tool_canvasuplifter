@@ -143,6 +143,57 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A consent/acceptance statement ("I have read and agree", "I accept") is an
+     * affirmation too, so its single correct option also gains a "No" distractor
+     * and becomes importable. Covers Canvas copyright/acceptance click-throughs.
+     *
+     * @return void
+     */
+    public function test_acceptance_statement_gets_no_distractor(): void {
+        foreach (['I have read and agree', 'I accept', 'I acknowledge the terms', 'Accept'] as $optiontext) {
+            $pres = '<presentation><material><mattext>Copyright Notice</mattext></material>'
+                . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+                . '<response_label ident="A"><material><mattext texttype="text/plain">' . $optiontext
+                . '</mattext></material></response_label>'
+                . '</render_choice></response_lid></presentation>';
+            $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+                . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+                . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+            $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+            $q = $r['questions'][0];
+
+            $this->assertCount(2, $q->answers, "$optiontext should gain a distractor");
+            $this->assertSame($optiontext, trim($q->answers[0]['text']));
+            $this->assertSame('No', $q->answers[1]['text']);
+            $this->assertTrue($q->is_importable(), "$optiontext should be importable");
+        }
+    }
+
+    /**
+     * A single-option statement that declines ("I do not agree") is not an
+     * affirmation, so it is left unimportable rather than gaining a false "No".
+     *
+     * @return void
+     */
+    public function test_single_option_decline_is_left_alone(): void {
+        $pres = '<presentation><material><mattext>Terms</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext texttype="text/plain">I do not agree</mattext>'
+            . '</material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+        $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+        $q = $r['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
      * A bare item reference (an ident with no presentation, as Canvas New
      * Quizzes export) yields no question but is counted as unresolved, so the
      * builder can report missing content rather than an empty assessment.

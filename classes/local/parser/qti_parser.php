@@ -232,12 +232,34 @@ class qti_parser {
         if ($text === '') {
             return false;
         }
-        $affirmations = ['yes', 'y', 'true', 't', 'agree', 'i agree', 'i understand', 'i do', 'ok', 'okay', 'correct'];
+        // Never treat a decline/negation as an affirmation, even when it also
+        // contains an affirmative word (e.g. "I do not agree", "I disagree").
+        if (
+            preg_match('/\b(disagree|decline|refuse|reject)\b/', $text)
+            || str_contains($text, 'do not') || str_contains($text, "n't") || str_contains($text, 'not agree')
+        ) {
+            return false;
+        }
+        $affirmations = [
+            'yes', 'y', 'true', 't', 'ok', 'okay', 'correct', 'i do',
+            'agree', 'accept', 'acknowledge', 'understood',
+            'i agree', 'i accept', 'i acknowledge', 'i understand', 'i consent', 'i confirm', 'i certify',
+        ];
         if (in_array($text, $affirmations, true)) {
             return true;
         }
-        return str_starts_with($text, 'yes') || str_starts_with($text, 'i agree')
-            || str_starts_with($text, 'i understand');
+        // Consent / acceptance phrasings: an affirmative opener ("I have read and
+        // agree", "I accept the terms ...") or a closing verb ("... and accept").
+        $openers = [
+            'yes', 'i agree', 'i accept', 'i acknowledge', 'i understand', 'i consent',
+            'i confirm', 'i certify', 'i have read', 'accept', 'agree', 'acknowledge',
+        ];
+        foreach ($openers as $opener) {
+            if (str_starts_with($text, $opener)) {
+                return true;
+            }
+        }
+        return (bool) preg_match('/\b(agree|accept|acknowledge|consent|understood)$/', $text);
     }
 
     /**
