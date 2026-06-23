@@ -52,7 +52,9 @@ $string['confidence_manual'] = 'Needs manual finishing';
 $string['confidence_none'] = 'Cannot map yet';
 $string['confidence_partial'] = 'Maps, some detail may be lost';
 $string['coursename'] = 'Course name';
+$string['defaultbookname'] = 'Course pages';
 $string['defaultcoursename'] = 'Imported Canvas course';
+$string['defaultlessonname'] = 'Course pages';
 $string['errorbadmanifestxml'] = 'The imsmanifest.xml file could not be parsed as XML.';
 $string['errorbadurl'] = 'The download URL must start with http:// or https://.';
 $string['errorbothsources'] = 'Provide either a file or a URL, not both.';
@@ -101,6 +103,11 @@ $string['packageurl'] = 'Download URL';
 $string['packageurl_help'] = 'Alternatively, paste an HTTPS link to a Canvas .imscc file '
     . '(for example a signed S3 link or a direct download URL). The site upload limit applies. '
     . 'Note: signed CloudFront / S3 URLs are often IP-pinned and will fail when fetched server-side.';
+$string['pagegrouping'] = 'Combine consecutive pages';
+$string['pagegrouping_book'] = 'Into a book (mod_book)';
+$string['pagegrouping_help'] = 'Canvas wiki pages normally build as one Page activity (mod_page) each, which can leave a long run of separate pages. Choose Book or Lesson to combine each run of two or more consecutive pages into a single activity — one book chapter or lesson page per Canvas page — named after its section. A lone page between other activities stays a Page. Links between the combined pages are rewritten to point at the right chapter/page. The analysis report still lists each page individually, as the report is produced before this build-time choice is made.';
+$string['pagegrouping_lesson'] = 'Into a lesson (mod_lesson)';
+$string['pagegrouping_none'] = 'No — one page activity each';
 $string['placement_extras'] = 'Additional resources section';
 $string['placement_top'] = 'Top of course';
 $string['pluginname'] = 'Canvas Uplifter';

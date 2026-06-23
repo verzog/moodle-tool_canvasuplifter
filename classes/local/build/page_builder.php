@@ -231,25 +231,11 @@ class page_builder {
     /**
      * Resolve the HTML file inside the package that backs this page.
      *
-     * Canvas usually puts pages under wiki_content/<slug>.html; other CC
-     * exporters drop them at the resource's href. We try files[0] first
-     * (the manifest's explicit file list) and fall back to href.
-     *
      * @param item $modelitem
      * @return string|null Absolute path, or null if nothing is readable.
      */
     private function payload_path(item $modelitem): ?string {
-        $candidates = $modelitem->files;
-        if ($modelitem->href !== '') {
-            $candidates[] = $modelitem->href;
-        }
-        foreach ($candidates as $relative) {
-            $absolute = safe_path::within($this->packageroot, $relative);
-            if ($absolute !== null && is_readable($absolute)) {
-                return $absolute;
-            }
-        }
-        return null;
+        return page_payload::locate($this->packageroot, $modelitem);
     }
 
     /**
