@@ -100,6 +100,78 @@ class link_rewriter {
     }
 
     /**
+     * Rewrite relative cross-resource links to Canvas object-reference tokens.
+     *
+     * Non-Canvas exporters (e.g. ILIAS) link between learning modules with plain
+     * relative paths like <a href="../OTHER_LM/index.html"> rather than Canvas
+     * placeholder tokens. Given the package directory the page's source HTML
+     * lives in and a map of package-relative path => built resource identifier,
+     * this resolves such a link to its target resource and rewrites it to a
+     * $CANVAS_OBJECT_REFERENCE$ token, so the existing internal-link pass turns
+     * it into the real activity URL once every target is built. Absolute URLs,
+     * in-page anchors, mailto:/javascript: schemes and references that don't
+     * resolve to a built resource are left untouched.
+     *
+     * @param string $html The page HTML (after file/bundle rewriting).
+     * @param string $basedir Package-relative directory of the page's source HTML ('' at root).
+     * @param array $pathtoid Map of package-relative path to resource identifier.
+     * @return string The rewritten HTML.
+     */
+    public function rewrite_relative_links(string $html, string $basedir, array $pathtoid): string {
+        if (empty($pathtoid)) {
+            return $html;
+        }
+        $pattern = '~\bhref\s*=\s*(["\'])([^"\']+)\1~i';
+        return (string) preg_replace_callback($pattern, function (array $m) use ($basedir, $pathtoid): string {
+            $value = $m[2];
+            // Keep any ?query / #fragment suffix so it survives the rewrite.
+            $path = (string) preg_replace('/[?#].*$/', '', $value);
+            $suffix = substr($value, strlen($path));
+            if ($path === '' || $path[0] === '#' || $path[0] === '/') {
+                return $m[0];
+            }
+            // Leave protocol-relative (//host) and scheme URLs (http:, mailto:, …).
+            if (str_starts_with($path, '//') || preg_match('~^[a-z][a-z0-9+.\-]*:~i', $path)) {
+                return $m[0];
+            }
+            $resolved = self::normalize_path($basedir, rawurldecode($path));
+            if ($resolved === null || !isset($pathtoid[$resolved])) {
+                return $m[0];
+            }
+            return 'href=' . $m[1] . '$CANVAS_OBJECT_REFERENCE$/ilias/' . $pathtoid[$resolved] . $suffix . $m[1];
+        }, $html) ?? $html;
+    }
+
+    /**
+     * Resolve a relative reference against a base directory into a normalised,
+     * root-relative package path, collapsing '.' and '..' segments.
+     *
+     * @param string $basedir Package-relative directory ('' at root).
+     * @param string $relative The relative reference (no scheme, not root-absolute).
+     * @return string|null The normalised path, or null if it escapes the package root.
+     */
+    public static function normalize_path(string $basedir, string $relative): ?string {
+        $combined = trim($basedir, '/');
+        $combined = $combined === '' ? $relative : $combined . '/' . $relative;
+        $segments = [];
+        foreach (explode('/', $combined) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+            if ($segment === '..') {
+                if (empty($segments)) {
+                    // The reference climbs above the package root; treat as unresolvable.
+                    return null;
+                }
+                array_pop($segments);
+                continue;
+            }
+            $segments[] = $segment;
+        }
+        return implode('/', $segments);
+    }
+
+    /**
      * Resolve a package-relative reference to a real file, trying the common
      * Canvas file-base locations.
      *

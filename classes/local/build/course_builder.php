@@ -152,8 +152,13 @@ class course_builder {
         // when each assignment is built.
         $this->rubrics = $coursemodel->rubrics;
 
+        // Map each buildable resource's primary source path to its identifier so
+        // page_builder can turn relative cross-resource links (ILIAS learning
+        // modules linking to each other by path) into object-reference tokens.
+        $pathtoid = $this->build_pathtoid($coursemodel);
+
         $builders = [
-            item::KIND_PAGE => new page_builder($this->packageroot),
+            item::KIND_PAGE => new page_builder($this->packageroot, $pathtoid),
             item::KIND_URL => new url_builder($this->packageroot),
             item::KIND_FILE => new file_builder($this->packageroot),
             item::KIND_ASSIGNMENT => new assign_builder($this->packageroot),
@@ -751,6 +756,37 @@ class course_builder {
                 $urlmap['wiki:' . $slug] = $url;
             }
         }
+    }
+
+    /**
+     * Build a package-path => identifier map of every buildable resource, used
+     * to resolve relative cross-resource links (e.g. ILIAS learning modules
+     * that link to each other by path rather than Canvas placeholder tokens).
+     *
+     * Only resources that actually build and get recorded in the URL map are
+     * included: bundle members (folded into another page) and deliberately
+     * suppressed resources are skipped, as is anything with no buildable module
+     * mapping, so a rewritten link never points at a target that won't exist.
+     *
+     * @param course_model $coursemodel Parsed package.
+     * @return array<string, string> Package-relative path => resource identifier.
+     */
+    private function build_pathtoid(course_model $coursemodel): array {
+        $map = [];
+        foreach ($coursemodel->all_items() as $modelitem) {
+            if ($modelitem->identifier === '' || $modelitem->bundlemember || $modelitem->suppressed) {
+                continue;
+            }
+            if (!isset(self::KIND_TO_MOD[$modelitem->kind])) {
+                continue;
+            }
+            $primary = $modelitem->href !== '' ? $modelitem->href : ($modelitem->files[0] ?? '');
+            $primary = ltrim((string) $primary, '/');
+            if ($primary !== '' && !isset($map[$primary])) {
+                $map[$primary] = $modelitem->identifier;
+            }
+        }
+        return $map;
     }
 
     /**

@@ -90,4 +90,83 @@ final class link_rewriter_test extends \advanced_testcase {
         // The unmapped reference is preserved rather than broken further.
         $this->assertStringContainsString('$WIKI_REFERENCE$/pages/unmapped', $out);
     }
+
+    /**
+     * A relative cross-resource link (ILIAS module-to-module) that resolves to a
+     * built resource becomes a $CANVAS_OBJECT_REFERENCE$ token, which the
+     * internal-link pass then turns into the activity URL; query/fragment
+     * suffixes survive, and the page's own assets are left for bundle rewriting.
+     *
+     * @return void
+     */
+    public function test_rewrite_relative_links_resolves_cross_resource(): void {
+        $html = '<a href="../NTERID_LM_00011919_R/index.html">Next module</a>'
+            . '<a href="../docs/handout.pdf#page=2">Handout</a>'
+            . '<img src="media/diagram.png">';
+        $pathtoid = [
+            'NTERID_LM_00011919_R/index.html' => 'NTERID_LM_00011919_R',
+            'docs/handout.pdf' => 'res_handout',
+        ];
+
+        $rewriter = new link_rewriter();
+        $out = $rewriter->rewrite_relative_links($html, 'NTERID_FOLD_00011918_INTRO_R', $pathtoid);
+
+        $this->assertStringContainsString('href="$CANVAS_OBJECT_REFERENCE$/ilias/NTERID_LM_00011919_R"', $out);
+        $this->assertStringContainsString('href="$CANVAS_OBJECT_REFERENCE$/ilias/res_handout#page=2"', $out);
+        // The same second pass that handles Canvas object refs resolves these.
+        $resolved = $rewriter->rewrite_internal_links($out, [
+            'id:NTERID_LM_00011919_R' => 'https://moodle.test/mod/page/view.php?id=42',
+            'id:res_handout' => 'https://moodle.test/mod/resource/view.php?id=43',
+        ]);
+        $this->assertStringContainsString('href="https://moodle.test/mod/page/view.php?id=42"', $resolved);
+        $this->assertStringContainsString('href="https://moodle.test/mod/resource/view.php?id=43#page=2"', $resolved);
+    }
+
+    /**
+     * Absolute URLs, scheme links, in-page anchors and references that don't
+     * resolve to a built resource are left exactly as they were.
+     *
+     * @return void
+     */
+    public function test_rewrite_relative_links_leaves_non_matching(): void {
+        $html = '<a href="https://example.org/page">External</a>'
+            . '<a href="mailto:info@aset.org">Mail</a>'
+            . '<a href="#section-2">Jump</a>'
+            . '<a href="/root/absolute.html">Root</a>'
+            . '<a href="../OTHER_LM/index.html">Unmapped</a>'
+            . '<link href="style.css">';
+        $pathtoid = ['NTERID_LM_00011919_R/index.html' => 'NTERID_LM_00011919_R'];
+
+        $out = (new link_rewriter())->rewrite_relative_links($html, 'NTERID_FOLD_00011918_INTRO_R', $pathtoid);
+
+        $this->assertSame($html, $out);
+    }
+
+    /**
+     * An empty path map is a no-op, so non-ILIAS imports pay nothing.
+     *
+     * @return void
+     */
+    public function test_rewrite_relative_links_empty_map_is_noop(): void {
+        $html = '<a href="../NTERID_LM_00011919_R/index.html">Next</a>';
+        $this->assertSame($html, (new link_rewriter())->rewrite_relative_links($html, 'a/b', []));
+    }
+
+    /**
+     * normalize_path() collapses '.'/'..' against the base directory and refuses
+     * references that climb above the package root.
+     *
+     * @return void
+     */
+    public function test_normalize_path(): void {
+        $this->assertSame(
+            'NTERID_LM_00011919_R/index.html',
+            link_rewriter::normalize_path('NTERID_FOLD_00011918_INTRO_R', '../NTERID_LM_00011919_R/index.html')
+        );
+        $this->assertSame('a/b/c.html', link_rewriter::normalize_path('a/b', './c.html'));
+        $this->assertSame('top.html', link_rewriter::normalize_path('', 'top.html'));
+        $this->assertSame('x/z.html', link_rewriter::normalize_path('x/y', '../y/../z.html'));
+        // Climbs above the root -> unresolvable.
+        $this->assertNull(link_rewriter::normalize_path('a', '../../escape.html'));
+    }
 }

@@ -35,13 +35,18 @@ class page_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var array<string, string> Package-relative path => resource identifier, for relative-link rewriting. */
+    private array $pathtoid;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param array $pathtoid Map of package-relative path to resource identifier (for cross-resource links).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, array $pathtoid = []) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->pathtoid = $pathtoid;
     }
 
     /**
@@ -87,6 +92,16 @@ class page_builder {
         $bundleassets = $modelitem->bundleassets ?? [];
         if (!empty($bundleassets)) {
             $content = $this->rewrite_bundle_refs($content, $bundleassets);
+        }
+
+        // Turn relative cross-resource links (ILIAS learning modules linking to
+        // each other by path) into $CANVAS_OBJECT_REFERENCE$ tokens, resolved to
+        // real activity URLs by course_builder's second link pass. Runs after
+        // bundle rewriting so a page's own assets (already @@PLUGINFILE@@) are
+        // left alone, and only when a path map was supplied.
+        if (!empty($this->pathtoid)) {
+            $basedir = $this->source_basedir($modelitem, $contentpath);
+            $content = (new link_rewriter())->rewrite_relative_links($content, $basedir, $this->pathtoid);
         }
 
         $moduleinfo = (object) [
@@ -236,6 +251,25 @@ class page_builder {
      */
     private function payload_path(item $modelitem): ?string {
         return page_payload::locate($this->packageroot, $modelitem);
+    }
+
+    /**
+     * Determine the package-relative directory the page's source HTML lives in,
+     * so relative links inside it can be resolved against the right base. Prefers
+     * the model's primary path (href, then files[0]); falls back to the located
+     * payload's path relative to the package root.
+     *
+     * @param item $modelitem The page item.
+     * @param string $contentpath Absolute path to the located payload.
+     * @return string Package-relative directory ('' at the package root).
+     */
+    private function source_basedir(item $modelitem, string $contentpath): string {
+        $relative = $modelitem->href !== '' ? $modelitem->href : ($modelitem->files[0] ?? '');
+        if ($relative === '' && str_starts_with($contentpath, $this->packageroot . '/')) {
+            $relative = substr($contentpath, strlen($this->packageroot) + 1);
+        }
+        $dir = dirname((string) $relative);
+        return ($dir === '.' || $dir === '/' || $dir === '\\') ? '' : ltrim($dir, '/');
     }
 
     /**
