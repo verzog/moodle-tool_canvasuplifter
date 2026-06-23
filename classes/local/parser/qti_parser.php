@@ -232,11 +232,15 @@ class qti_parser {
         if ($text === '') {
             return false;
         }
-        // Never treat a decline/negation as an affirmation, even when it also
-        // contains an affirmative word (e.g. "I do not agree", "I disagree").
+        // Reject only when the affirmation verb itself is negated (e.g. "I do
+        // not agree", "I don't accept", "I disagree"). A prohibition elsewhere
+        // in an otherwise affirmative acknowledgment ("I understand that I do
+        // not have permission to share answers") must not read as a decline.
+        $affirmverb = 'agree|accept|acknowledge|consent|certify|confirm';
         if (
             preg_match('/\b(disagree|decline|refuse|reject)\b/', $text)
-            || str_contains($text, 'do not') || str_contains($text, "n't") || str_contains($text, 'not agree')
+            || preg_match('/\b(not|cannot|never)\s+(' . $affirmverb . ')\b/', $text)
+            || preg_match('/n[\'\x{2019}]t\s+(' . $affirmverb . ')\b/u', $text)
         ) {
             return false;
         }
@@ -253,13 +257,14 @@ class qti_parser {
         $openers = [
             'yes', 'i agree', 'i accept', 'i acknowledge', 'i understand', 'i consent',
             'i confirm', 'i certify', 'i have read', 'accept', 'agree', 'acknowledge',
+            'confirm', 'certify',
         ];
         foreach ($openers as $opener) {
             if (str_starts_with($text, $opener)) {
                 return true;
             }
         }
-        return (bool) preg_match('/\b(agree|accept|acknowledge|consent|understood)$/', $text);
+        return (bool) preg_match('/\b(agree|accept|acknowledge|consent|certify|confirm|understood)$/', $text);
     }
 
     /**

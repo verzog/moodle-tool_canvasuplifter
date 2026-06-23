@@ -194,6 +194,61 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * An acknowledgment whose statement contains an internal prohibition ("I
+     * understand that I do not have permission ...") is still an affirmation:
+     * only a negation of the acceptance verb itself counts as a decline, so it
+     * gains a "No" distractor rather than being dropped as unimportable.
+     *
+     * @return void
+     */
+    public function test_acknowledgment_with_embedded_prohibition_gets_no_distractor(): void {
+        $statement = 'I understand that I do not have permission to share answers';
+        $pres = '<presentation><material><mattext>Honor code</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext texttype="text/plain">' . $statement
+            . '</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+        $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+        $q = $r['questions'][0];
+
+        $this->assertCount(2, $q->answers);
+        $this->assertSame($statement, trim($q->answers[0]['text']));
+        $this->assertSame('No', $q->answers[1]['text']);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * Bare confirm/certify click-throughs ("Confirm", "Confirm receipt",
+     * "Certify compliance") are the same single-option affirmations as Accept
+     * and Acknowledge, so they too gain a "No" distractor and import.
+     *
+     * @return void
+     */
+    public function test_bare_confirm_certify_get_no_distractor(): void {
+        foreach (['Confirm', 'Confirm receipt', 'Certify compliance', 'Certify'] as $optiontext) {
+            $pres = '<presentation><material><mattext>Receipt</mattext></material>'
+                . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+                . '<response_label ident="A"><material><mattext texttype="text/plain">' . $optiontext
+                . '</mattext></material></response_label>'
+                . '</render_choice></response_lid></presentation>';
+            $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+                . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+                . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+            $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+            $q = $r['questions'][0];
+
+            $this->assertCount(2, $q->answers, "$optiontext should gain a distractor");
+            $this->assertSame('No', $q->answers[1]['text']);
+            $this->assertTrue($q->is_importable(), "$optiontext should be importable");
+        }
+    }
+
+    /**
      * A bare item reference (an ident with no presentation, as Canvas New
      * Quizzes export) yields no question but is counted as unresolved, so the
      * builder can report missing content rather than an empty assessment.
