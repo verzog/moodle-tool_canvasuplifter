@@ -37,6 +37,15 @@ class manifest_parser {
     protected string $basedir;
 
     /**
+     * @var array Identifiers of resources consumed as an empty structural
+     *            container at some organisation occurrence (so they title a
+     *            section/folder rather than build). Kept off the orphan list
+     *            without mutating the shared resource, so the SAME resource
+     *            referenced elsewhere as a real leaf still attaches and reports.
+     */
+    private array $containerconsumed = [];
+
+    /**
      * Constructor.
      *
      * @param string $basedir Absolute path to the extracted .imscc directory.
@@ -69,6 +78,7 @@ class manifest_parser {
             throw new \RuntimeException('errorbadmanifestxml');
         }
 
+        $this->containerconsumed = [];
         $course = new course_model();
         $course->fullname = $this->read_course_title($dom);
         $course->weightingscheme = $this->read_weighting_scheme();
@@ -119,6 +129,7 @@ class manifest_parser {
         foreach ($resources as $identifier => $resourceitem) {
             if (
                 empty($placed[$identifier])
+                && empty($this->containerconsumed[$identifier])
                 && $resourceitem->kind !== item::KIND_UNKNOWN
                 && !$resourceitem->suppressed
             ) {
@@ -301,15 +312,14 @@ class manifest_parser {
 
             $modelitem->kind = $this->classify($type, $href, $modelitem->files);
             $materialtype = $this->read_d2l_material_type($resource);
-            // D2L emits its course "modules" as empty contentmodule <resource>s
-            // that exist only to title a section, and its syllabus/news/links as
-            // metadata-only XML. Suppress just those — they neither attach as
-            // phantom activities nor surface as "Additional resources" junk —
-            // while the module hierarchy still becomes sections via the
-            // organisation tree. Everything else flows through, including D2L's
-            // d2lquiz / d2lquestionlibrary assessment exports and any resource
-            // whose payload is simply missing, so the report can place or
-            // skip-and-explain it rather than dropping it silently.
+            // Suppress only known structural placeholders here: D2L's empty
+            // contentmodule <resource>s (which exist only to title a module) and
+            // its metadata resources (news/syllabus/links). A generic empty
+            // container can't be recognised from the resource alone — that it
+            // acts as a section/folder is only visible from the organisation
+            // tree, so attach_resource() handles that case. Everything else flows
+            // through, including unsupported types and missing-payload exports, so
+            // the report can flag or skip-and-explain them rather than drop them.
             $ismodulenode = $materialtype === 'contentmodule'
                 && $href === '' && empty($modelitem->files) && $modelitem->inlinexml === '';
             if ($ismodulenode || in_array($materialtype, self::D2L_METADATA_MATERIAL_TYPES, true)) {
@@ -858,8 +868,10 @@ class manifest_parser {
             }
             $section = new section_model($title);
             if ($sectionnode->getAttribute('identifierref') !== '') {
-                // The section node is itself a leaf (an item with its own
-                // resource); attach it as the section's first item.
+                // Attach the section node's own resource as the section's first
+                // item; attach_resource() skips it when the node is an empty
+                // structural container (a module/folder that only titles the
+                // section), so it doesn't surface as a phantom payload-less item.
                 $this->attach_resource($sectionnode, $resources, $section);
             }
             // Walk the whole subtree so descendants inside folder wrappers
@@ -932,11 +944,49 @@ class manifest_parser {
         if ($resourceitem->bundlemember || $resourceitem->suppressed) {
             return;
         }
+        // An item that nests child <item>s but whose resource is an empty plain
+        // file is a structural container (a section/folder node — a D2L
+        // contentmodule, or a plain empty webcontent folder), so it only titles
+        // the section. Skip it here instead of attaching a phantom payload-less
+        // activity ahead of the real children, and record the identifier so the
+        // orphan pass leaves it out — without mutating the shared resource, so
+        // the same resource referenced elsewhere as a real leaf still attaches.
+        // Buildable kinds (a missing-payload assignment/quiz/…) and unknown types
+        // are NOT containers: a leaf, or any non-file kind, is left to attach so
+        // it still reaches its builder / the report.
+        if ($this->is_empty_container($node, $resourceitem)) {
+            $this->containerconsumed[$resourceitem->identifier] = true;
+            return;
+        }
         $title = $this->item_title($node);
         if ($title !== '') {
             $resourceitem->title = $title;
         }
         $section->add_item($resourceitem);
+    }
+
+    /**
+     * Whether an organisation <item> acts as an empty structural container — it
+     * nests child <item>s and the resource it references is an empty plain file
+     * (KIND_FILE with no href, <file> or inline descriptor), so it exists only
+     * to title the section/folder rather than to be built. Buildable kinds and
+     * unknown types are excluded: a missing-payload assignment or an unsupported
+     * resource must still attach so the report can skip-and-explain it.
+     *
+     * @param DOMElement $node The organisation <item>.
+     * @param item $resourceitem The resource the item references.
+     * @return bool
+     */
+    private function is_empty_container(DOMElement $node, item $resourceitem): bool {
+        if ($resourceitem->kind !== item::KIND_FILE) {
+            return false;
+        }
+        if (count($this->child_items($node)) === 0) {
+            return false;
+        }
+        return $resourceitem->href === ''
+            && empty($resourceitem->files)
+            && $resourceitem->inlinexml === '';
     }
 
     /**
