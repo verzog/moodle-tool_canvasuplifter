@@ -149,6 +149,7 @@ Everything lives under `~/.moodle-plugin-ci` (outside the repo).
 | 2 | Discussions → forums, announcements → news forum | Done |
 | 3 | Quizzes + `mod_qbank` question banks (QTI import) | Done |
 | 4 | Gradebook categories with Canvas weights, LTI placeholders, in-section labels, Canvas rubrics → `gradingform_rubric`, CC 1.3 IMS Assignment profile | Done |
+| 5 | Asynchronous **analyse**: run extract + parse + report as an adhoc task behind the existing polled status page, and move the remote-URL fetch into the task too, so large packages don't time out the web request (the build is already async; this closes the server-side gap that complements the optional `local_chunkupload` upload support) | Planned |
 
 ## Path to beta
 
