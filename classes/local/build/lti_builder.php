@@ -39,6 +39,9 @@ class lti_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var string|null Why the last build returned null, for course_builder's skip report. */
+    public ?string $skipreason = null;
+
     /**
      * Constructor.
      *
@@ -76,7 +79,23 @@ class lti_builder {
             : ($cartridge['title'] !== '' ? $cartridge['title'] : 'External tool');
 
         $moduleinfo = $this->moduleinfo($course, $sectionnum, (int) $module->id, $name, $cartridge);
-        $created = add_moduleinfo($moduleinfo, $course);
+        try {
+            $created = add_moduleinfo($moduleinfo, $course);
+        } catch (\Throwable $e) {
+            // The mod_lti module re-fetches a tool URL it thinks is a cartridge
+            // (one ending in .xml, or serving XML) and throws if that remote
+            // document can't be read — common when the tool's host is gone. That
+            // escapes add_moduleinfo() with its delegated transaction still open,
+            // which would otherwise abort the whole adhoc task ("Task left
+            // transaction open") and make Moodle retry it, building duplicate
+            // courses. Roll the orphaned transaction back and skip just this tool
+            // so the rest of the course still builds.
+            if ($DB->is_transaction_started()) {
+                $DB->force_transaction_rollback();
+            }
+            $this->skipreason = 'external tool could not be created (' . $e->getMessage() . ')';
+            return null;
+        }
         return (int) $created->coursemodule;
     }
 
