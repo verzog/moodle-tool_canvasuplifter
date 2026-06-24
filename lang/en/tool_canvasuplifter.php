@@ -38,6 +38,8 @@ $string['builtcoursesummary'] = 'Built {$a->created} of {$a->itemcount} content 
 $string['canvasuplifter:use'] = 'Upload a Canvas package and view the conversion report';
 $string['chosenbuildoptions'] = 'Using the options you chose above — combine consecutive pages: '
     . '{$a->grouping}; also build a runnable quiz from each standalone bank: {$a->quiz}.';
+$string['chunkuploadactive'] = 'Large packages upload in chunks (the local_chunkupload plugin is installed), '
+    . 'so they are not limited by this server\'s PHP upload size.';
 $string['colbuildsnow'] = 'Builds now';
 $string['colconfidence'] = 'Mapping';
 $string['colcount'] = 'Count';
@@ -72,6 +74,8 @@ $string['extraquizzesbuilt'] = 'Also built {$a} runnable quiz(zes) from standalo
 $string['itemcount'] = 'Content items';
 $string['itemdetailheading'] = 'Item-by-item detail';
 $string['jobstatusis'] = 'Status: {$a}.';
+$string['largepackagehint'] = 'For a very large package, paste a download URL above instead of uploading — '
+    . 'or install the local_chunkupload plugin to upload big files in chunks past this server\'s upload size limit.';
 $string['lti_placeholder_note'] = 'Imported as a hidden placeholder from a Canvas LTI link. Configure or replace the external tool (set the consumer key and shared secret, or pick a preconfigured tool) and unhide the activity before students use it.';
 $string['matrixcolsupported'] = 'Converts';
 $string['matrixcoltype'] = 'Question type';

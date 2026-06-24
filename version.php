@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026062401;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026062402;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Carry Canvas quiz settings (assessment_meta.xml) onto mod_quiz.
-$plugin->release   = '0.31.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Optional local_chunkupload support for large package uploads.
+$plugin->release   = '0.32.0';
