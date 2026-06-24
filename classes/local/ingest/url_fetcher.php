@@ -22,7 +22,10 @@ namespace tool_canvasuplifter\local\ingest;
  * Follows redirects under Moodle's curl security policy, sends a browser-like
  * User-Agent (many WAF-fronted repositories such as SkillsCommons reject the
  * default MoodleBot agent), and — when a URL resolves to an HTML landing page
- * rather than a zip — extracts the package download link and follows it once.
+ * rather than a zip — finds the package download link and follows it. For
+ * DSpace 7 (Angular) repositories, whose item pages render their file links
+ * client-side, it resolves the package through the DSpace REST API
+ * (see {@see dspace_resolver}) instead of scraping the empty page shell.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -35,6 +38,8 @@ class url_fetcher {
     public const ERROR_TOOBIG = 'errordownloadtoobig';
     /** @var string Error key: the URL resolved to something that isn't a package. */
     public const ERROR_NOPACKAGE = 'errordownloadnopackage';
+    /** @var string Error key: a JavaScript-rendered repository page we cannot scrape. */
+    public const ERROR_JSPAGE = 'errordownloadjspage';
 
     /** @var string Browser-like User-Agent so WAF/CDN-fronted repositories serve the file. */
     private const FETCH_USER_AGENT =
@@ -84,21 +89,47 @@ class url_fetcher {
         }
 
         // Not a zip. If it's an HTML landing page (common for repositories like
-        // SkillsCommons), pull the package link out of it and follow that once.
+        // SkillsCommons), find the package download link and follow it.
         if ($this->looks_like_html($target)) {
             $html = (string) @file_get_contents($target, false, null, 0, self::HTML_SCAN_BYTES);
-            $link = download_link_extractor::find($html, $this->lastfinalurl ?? $url);
             @unlink($target);
-            if ($link === null || $link === $url) {
-                $this->lastdetail = $this->detail('the URL returned a web page with no package download link');
-                throw new \RuntimeException(self::ERROR_NOPACKAGE);
+            $pageurl = $this->lastfinalurl ?? $url;
+
+            // DSpace 7 (Angular) item pages render their file links client-side,
+            // so a server-side fetch only sees an empty shell. Resolve the
+            // package through the REST API the JS app would have called.
+            $isdspace = dspace_resolver::looks_like_dspace_shell($html);
+            if ($isdspace) {
+                $resturl = $this->resolve_via_dspace_rest($pageurl, $html);
+                if ($resturl !== null) {
+                    $target = $this->download_to($resturl, $maxbytes);
+                    if ($this->looks_like_zip($target)) {
+                        return $target;
+                    }
+                    @unlink($target);
+                }
             }
-            $target = $this->download_to($link, $maxbytes);
-            if ($this->looks_like_zip($target)) {
-                return $target;
+
+            // Scrape a download link out of the HTML (server-rendered DSpace,
+            // MERLOT, OER Commons and the like) and follow it once.
+            $link = download_link_extractor::find($html, $pageurl);
+            if ($link !== null && $link !== $url) {
+                $target = $this->download_to($link, $maxbytes);
+                if ($this->looks_like_zip($target)) {
+                    return $target;
+                }
+                @unlink($target);
             }
-            @unlink($target);
-            $this->lastdetail = $this->detail('the extracted download link did not resolve to a package');
+
+            // Nothing resolved. A DSpace/JS shell needs the user to paste the
+            // direct file link, so report that specifically; otherwise report a
+            // generic "no link on the page".
+            if ($isdspace) {
+                $this->lastdetail = $this->detail('the DSpace page builds its file links with JavaScript and the REST '
+                    . 'lookup found no Common Cartridge bitstream');
+                throw new \RuntimeException(self::ERROR_JSPAGE);
+            }
+            $this->lastdetail = $this->detail('the URL returned a web page with no package download link');
             throw new \RuntimeException(self::ERROR_NOPACKAGE);
         }
 
@@ -174,6 +205,119 @@ class url_fetcher {
         }
 
         return $target;
+    }
+
+    /**
+     * Resolve a DSpace 7 item page to its Common Cartridge download URL through
+     * the REST API, trying each candidate REST base until one resolves.
+     *
+     * @param string $pageurl The (post-redirect) URL of the fetched page.
+     * @param string $html The fetched page HTML, scanned for a REST base hint.
+     * @return string|null Absolute download URL of the package bitstream, or null if it could not be resolved.
+     */
+    private function resolve_via_dspace_rest(string $pageurl, string $html): ?string {
+        $ref = dspace_resolver::parse_reference($pageurl);
+        if ($ref === null) {
+            return null;
+        }
+        foreach (dspace_resolver::rest_base_candidates($pageurl, $html) as $base) {
+            $href = $this->dspace_package_from_base($base, $ref);
+            if ($href !== null) {
+                return $href;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolve the package bitstream for an item against one REST base: fetch the
+     * item, then its bundles with bitstreams, then pick the .imscc/.zip file.
+     *
+     * @param string $base REST API base URL ending in "/server".
+     * @param array $ref Item reference: ['uuid' => string] or ['handle' => string].
+     * @return string|null The bitstream content href, or null if this base could not resolve it.
+     */
+    private function dspace_package_from_base(string $base, array $ref): ?string {
+        if (isset($ref['uuid'])) {
+            $item = $this->http_get_json($base . '/api/core/items/' . $ref['uuid']);
+        } else {
+            // The pid/find endpoint issues a 302 to the item endpoint; curl follows it.
+            $item = $this->http_get_json($base . '/api/pid/find?id=' . self::encode_handle($ref['handle']));
+        }
+        if (!is_array($item) || empty($item['uuid'])) {
+            return null;
+        }
+        $bundleshref = $item['_links']['bundles']['href']
+            ?? ($base . '/api/core/items/' . $item['uuid'] . '/bundles');
+        $bundles = $this->http_get_json(self::with_query($bundleshref, 'embed=bitstreams'));
+        if (!is_array($bundles)) {
+            return null;
+        }
+        $href = dspace_resolver::pick_href(dspace_resolver::bitstreams_from_bundles($bundles));
+        if ($href !== null) {
+            return $href;
+        }
+        // Bitstreams were not embedded; follow each bundle's bitstreams link.
+        foreach (dspace_resolver::bundle_bitstreams_hrefs($bundles) as $bhref) {
+            $collection = $this->http_get_json($bhref);
+            if (is_array($collection)) {
+                $href = dspace_resolver::pick_href(dspace_resolver::bitstreams_from_collection($collection));
+                if ($href !== null) {
+                    return $href;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * GET a URL expected to return JSON and decode it, following redirects under
+     * Moodle's curl security policy and sending the browser User-Agent. Returns
+     * null on any transport error, non-2xx status or non-JSON body.
+     *
+     * @param string $url Absolute HTTP(S) URL.
+     * @return array|null Decoded JSON as an associative array, or null.
+     */
+    private function http_get_json(string $url): ?array {
+        $curl = new \curl();
+        $curl->setHeader('Accept: application/json');
+        $body = $curl->get($url, [], [
+            'CURLOPT_FOLLOWLOCATION' => 1,
+            'CURLOPT_MAXREDIRS' => 5,
+            'CURLOPT_CONNECTTIMEOUT' => 30,
+            'CURLOPT_TIMEOUT' => 120,
+            'CURLOPT_SSL_VERIFYPEER' => 1,
+            'CURLOPT_SSL_VERIFYHOST' => 2,
+            'CURLOPT_USERAGENT' => self::FETCH_USER_AGENT,
+        ]);
+        $httpcode = (int) ($curl->info['http_code'] ?? 0);
+        if (!empty($curl->errno) || $httpcode >= 400 || !is_string($body) || $body === '') {
+            return null;
+        }
+        $data = json_decode($body, true);
+        return is_array($data) ? $data : null;
+    }
+
+    /**
+     * Percent-encode a Handle for the pid/find query while leaving its slash
+     * literal, which DSpace expects (e.g. "taaccct/4632").
+     *
+     * @param string $handle The Handle string.
+     * @return string The encoded value.
+     */
+    private static function encode_handle(string $handle): string {
+        return str_replace('%2F', '/', rawurlencode($handle));
+    }
+
+    /**
+     * Append a query fragment to a URL with the right separator.
+     *
+     * @param string $url The base URL.
+     * @param string $query The query fragment, e.g. "embed=bitstreams".
+     * @return string
+     */
+    private static function with_query(string $url, string $query): string {
+        return $url . (strpos($url, '?') === false ? '?' : '&') . $query;
     }
 
     /**
