@@ -17,6 +17,8 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\course_builder;
+use tool_canvasuplifter\local\build\lesson_builder;
+use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\parser\manifest_parser;
 
 /**
@@ -180,10 +182,51 @@ XML;
         $this->assertSame(3, $DB->count_records('lesson_pages', ['lessonid' => $lesson->id]));
         // One navigation button per content page.
         $this->assertSame(3, $DB->count_records('lesson_answers', ['lessonid' => $lesson->id]));
+        // The left-hand page menu is on, so all folded pages are listed up front.
+        $this->assertSame(1, (int) $lesson->displayleft);
 
         $page = $DB->get_record('lesson_pages', ['lessonid' => $lesson->id, 'title' => 'Page One'], '*', MUST_EXIST);
         $this->assertStringContainsString('@@PLUGINFILE@@/img/logo.png', $page->contents);
         $this->assertStringContainsString('mod/lesson/view.php', $page->contents);
         $this->assertStringContainsString('pageid=', $page->contents);
+    }
+
+    /**
+     * An unpublished Canvas page in a grouped run is kept out of the lesson's
+     * left-hand menu: its page-level display flag is off (the menu only lists
+     * pages whose display is set), while published pages stay listed.
+     *
+     * @return void
+     */
+    public function test_unpublished_page_is_hidden_from_lesson_menu(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $course = $DB->get_record('course', ['id' => $this->getDataGenerator()->create_course()->id], '*', MUST_EXIST);
+        $dir = make_request_directory();
+        file_put_contents($dir . '/p1.html', '<p>Published.</p>');
+        file_put_contents($dir . '/p2.html', '<p>Draft.</p>');
+
+        $published = new item('v', 'Published Page');
+        $published->kind = item::KIND_PAGE;
+        $published->href = 'p1.html';
+        $published->files = ['p1.html'];
+        $published->isvisible = true;
+
+        $draft = new item('h', 'Draft Page');
+        $draft->kind = item::KIND_PAGE;
+        $draft->href = 'p2.html';
+        $draft->files = ['p2.html'];
+        $draft->isvisible = false;
+
+        $result = (new lesson_builder($dir))->build_group($course, 0, 'Reading', [$published, $draft]);
+        $this->assertNotNull($result);
+        $lessonid = (int) $DB->get_field('course_modules', 'instance', ['id' => $result['cmid']], MUST_EXIST);
+
+        $vis = $DB->get_record('lesson_pages', ['lessonid' => $lessonid, 'title' => 'Published Page'], '*', MUST_EXIST);
+        $hidden = $DB->get_record('lesson_pages', ['lessonid' => $lessonid, 'title' => 'Draft Page'], '*', MUST_EXIST);
+        $this->assertSame(1, (int) $vis->display);
+        $this->assertSame(0, (int) $hidden->display);
     }
 }
