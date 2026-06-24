@@ -60,12 +60,13 @@ final class dspace_resolver {
     }
 
     /**
-     * Parse a DSpace UI URL into the reference needed to resolve its item:
-     * either an item UUID (from /items/<uuid> or /entities/<type>/<uuid>) or a
+     * Parse a DSpace UI URL into the reference needed to resolve its download:
+     * an item UUID (from /items/<uuid> or /entities/<type>/<uuid>), a bitstream
+     * UUID (from /bitstreams/<uuid>/... such as a copied download link), or a
      * Handle (from /handle/<prefix>/<suffix>).
      *
      * @param string $url The pasted/landing page URL.
-     * @return array|null ['uuid' => string] or ['handle' => string], or null if neither is present.
+     * @return array|null ['uuid'|'bitstream' => string] or ['handle' => string], or null if none is present.
      */
     public static function parse_reference(string $url): ?array {
         $path = (string) parse_url($url, PHP_URL_PATH);
@@ -74,6 +75,9 @@ final class dspace_resolver {
         }
         if (preg_match('~/(?:items|entities/[^/]+)/(' . self::UUID . ')~i', $path, $m)) {
             return ['uuid' => strtolower($m[1])];
+        }
+        if (preg_match('~/bitstreams/(' . self::UUID . ')~i', $path, $m)) {
+            return ['bitstream' => strtolower($m[1])];
         }
         if (preg_match('~/handle/([^/]+/[^/?#]+)~i', $path, $m)) {
             return ['handle' => rtrim($m[1], '/')];

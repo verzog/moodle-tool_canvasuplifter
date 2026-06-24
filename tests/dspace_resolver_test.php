@@ -66,6 +66,15 @@ final class dspace_resolver_test extends \basic_testcase {
             ['uuid' => '4e465893-02a5-4c68-b2a8-afbbd897e795'],
             dspace_resolver::parse_reference('https://x.edu/entities/publication/4E465893-02A5-4C68-B2A8-AFBBD897E795')
         );
+        $this->assertSame(
+            ['bitstream' => 'c97a5264-087d-4fd2-9302-9436e1bffc77'],
+            dspace_resolver::parse_reference('https://x.edu/bitstreams/c97a5264-087d-4fd2-9302-9436e1bffc77/download')
+        );
+        $this->assertSame(
+            ['bitstream' => 'c97a5264-087d-4fd2-9302-9436e1bffc77'],
+            dspace_resolver::parse_reference('https://x.edu/server/api/core/bitstreams/'
+                . 'C97A5264-087D-4FD2-9302-9436E1BFFC77/content')
+        );
         $this->assertNull(dspace_resolver::parse_reference('https://www.skillscommons.org/communities/abc'));
         $this->assertNull(dspace_resolver::parse_reference('https://example.org/'));
     }

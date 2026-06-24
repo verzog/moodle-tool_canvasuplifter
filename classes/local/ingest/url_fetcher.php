@@ -233,14 +233,28 @@ class url_fetcher {
     }
 
     /**
-     * Resolve the package bitstream for an item against one REST base: fetch the
-     * item, then its bundles with bitstreams, then pick the .imscc/.zip file.
+     * Resolve the package download for a reference against one REST base. A
+     * directly-referenced bitstream (e.g. a copied .../bitstreams/<uuid>/download
+     * link) is its own package, so its content endpoint is returned straight
+     * away; otherwise fetch the item, then its bundles with bitstreams, then pick
+     * the .imscc/.zip file.
      *
      * @param string $base REST API base URL ending in "/server".
-     * @param array $ref Item reference: ['uuid' => string] or ['handle' => string].
+     * @param array $ref Reference: ['uuid'|'bitstream' => string] or ['handle' => string].
      * @return string|null The bitstream content href, or null if this base could not resolve it.
      */
     private function dspace_package_from_base(string $base, array $ref): ?string {
+        if (isset($ref['bitstream'])) {
+            // Validate the bitstream exists at this base before committing to it, so a
+            // split-host install still falls through to the REST host when the UI host
+            // has no API. Prefer the content href the API reports over a synthesised one.
+            $bitstream = $this->http_get_json($base . '/api/core/bitstreams/' . $ref['bitstream']);
+            if (!is_array($bitstream)) {
+                return null;
+            }
+            return $bitstream['_links']['content']['href']
+                ?? ($base . '/api/core/bitstreams/' . $ref['bitstream'] . '/content');
+        }
         $item = $this->dspace_item($base, $ref);
         if ($item === null) {
             return null;
