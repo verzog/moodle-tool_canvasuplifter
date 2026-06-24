@@ -171,6 +171,98 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * Build a course of one section holding the given ordered item kinds, so the
+     * page-grouping reflection can be probed.
+     *
+     * @param array $kinds Ordered item::KIND_* values for the section.
+     * @return course_model
+     */
+    private function course_with_kinds(array $kinds): course_model {
+        $course = new course_model();
+        $section = new section_model('Unit');
+        foreach ($kinds as $i => $kind) {
+            $modelitem = new item('i' . $i, 'Item ' . $i);
+            $modelitem->kind = $kind;
+            $section->add_item($modelitem);
+        }
+        $course->add_section($section);
+        return $course;
+    }
+
+    /**
+     * Map the aggregate rows by "kind|target" for convenient assertions.
+     *
+     * @param array $report A built report.
+     * @return array<string, array>
+     */
+    private function rows_by_target(array $report): array {
+        $bykey = [];
+        foreach ($report['rows'] as $row) {
+            $bykey[$row['kind'] . '|' . $row['target']] = $row;
+        }
+        return $bykey;
+    }
+
+    /**
+     * With the page-grouping option set, a run of consecutive pages is reported
+     * as building into a single book (or lesson), so the analysis reflects the
+     * choice the admin made before analysing.
+     *
+     * @return void
+     */
+    public function test_pagegrouping_reflects_consecutive_pages(): void {
+        $course = $this->course_with_kinds([item::KIND_PAGE, item::KIND_PAGE, item::KIND_PAGE]);
+
+        $book = $this->rows_by_target((new conversion_report($course, null, 'book'))->build());
+        $this->assertArrayHasKey('page|mod_book', $book);
+        $this->assertSame(3, $book['page|mod_book']['count']);
+        $this->assertArrayNotHasKey('page|mod_page', $book);
+        $this->assertSame('note_page_grouped_book', $book['page|mod_book']['note']);
+        $this->assertTrue($book['page|mod_book']['buildsnow']);
+
+        $lesson = $this->rows_by_target((new conversion_report($course, null, 'lesson'))->build());
+        $this->assertArrayHasKey('page|mod_lesson', $lesson);
+        $this->assertSame('note_page_grouped_lesson', $lesson['page|mod_lesson']['note']);
+    }
+
+    /**
+     * The section drill-down and builds-now total reflect grouping too: grouped
+     * pages target the book and still count as building now.
+     *
+     * @return void
+     */
+    public function test_pagegrouping_reflects_in_section_detail(): void {
+        $course = $this->course_with_kinds([item::KIND_PAGE, item::KIND_PAGE]);
+
+        $report = (new conversion_report($course, null, 'book'))->build();
+
+        $this->assertSame(2, $report['buildsnowtotal']);
+        foreach ($report['sections'][0]['items'] as $detailitem) {
+            $this->assertSame('mod_book', $detailitem['target']);
+        }
+    }
+
+    /**
+     * Without the option, the same consecutive pages are reported individually
+     * as mod_page, and a lone page broken by another activity never groups even
+     * when the option is on.
+     *
+     * @return void
+     */
+    public function test_pagegrouping_off_and_lone_pages_stay_pages(): void {
+        $course = $this->course_with_kinds([item::KIND_PAGE, item::KIND_PAGE]);
+        $off = $this->rows_by_target((new conversion_report($course, null, ''))->build());
+        $this->assertSame(2, $off['page|mod_page']['count']);
+        $this->assertArrayNotHasKey('page|mod_book', $off);
+
+        // Page, assignment, page: two runs of a single page each, so neither groups.
+        $broken = $this->course_with_kinds([item::KIND_PAGE, item::KIND_ASSIGNMENT, item::KIND_PAGE]);
+        $on = $this->rows_by_target((new conversion_report($broken, null, 'book'))->build());
+        $this->assertSame(2, $on['page|mod_page']['count']);
+        $this->assertArrayNotHasKey('page|mod_book', $on);
+    }
+
+    /**
      * Given a package root, the matrix tallies supported question types and
      * lists unsupported ones by their Canvas profile.
      *

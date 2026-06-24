@@ -36,6 +36,8 @@ $string['buildstatusheading'] = 'Build status';
 $string['builtcoursesummary'] = 'Built {$a->created} of {$a->itemcount} content items across '
     . '{$a->sectioncount} sections ({$a->skipped} skipped).';
 $string['canvasuplifter:use'] = 'Upload a Canvas package and view the conversion report';
+$string['chosenbuildoptions'] = 'Using the options you chose above — combine consecutive pages: '
+    . '{$a->grouping}; also build a runnable quiz from each standalone bank: {$a->quiz}.';
 $string['colbuildsnow'] = 'Builds now';
 $string['colconfidence'] = 'Mapping';
 $string['colcount'] = 'Count';
@@ -86,6 +88,10 @@ $string['note_file'] = 'Files convert directly to file resources.';
 $string['note_lti'] = 'Imported as a hidden placeholder; the admin must reconfigure the consumer key and shared secret (or pick a preconfigured tool) and unhide the activity before students use it.';
 $string['note_page'] = 'Pages convert, including embedded images and internal links to other '
     . 'pages, files and URLs. Links to content types that are not built yet are left unchanged.';
+$string['note_page_grouped_book'] = 'Combined with their neighbouring pages into a single book (mod_book), '
+    . 'one chapter per page, because you chose to combine consecutive pages.';
+$string['note_page_grouped_lesson'] = 'Combined with their neighbouring pages into a single lesson (mod_lesson), '
+    . 'one page per page, because you chose to combine consecutive pages.';
 $string['note_questionbank'] = 'Imported as question bank (mod_qbank) activities.';
 $string['note_quiz'] = 'Becomes a Moodle quiz; questions convert where the QTI question type is supported.';
 $string['note_subheader'] = 'Canvas module subheaders become Moodle labels with the heading as the body.';
@@ -106,7 +112,7 @@ $string['packageurl_help'] = 'Alternatively, paste an HTTPS link to a Canvas .im
     . 'Note: signed CloudFront / S3 URLs are often IP-pinned and will fail when fetched server-side.';
 $string['pagegrouping'] = 'Combine consecutive pages';
 $string['pagegrouping_book'] = 'Into a book (mod_book)';
-$string['pagegrouping_help'] = 'Canvas wiki pages normally build as one Page activity (mod_page) each, which can leave a long run of separate pages. Choose Book or Lesson to combine each run of two or more consecutive pages into a single activity — one book chapter or lesson page per Canvas page — named after its section. A lone page between other activities stays a Page. Links between the combined pages are rewritten to point at the right chapter/page. The analysis report still lists each page individually, as the report is produced before this build-time choice is made.';
+$string['pagegrouping_help'] = 'Canvas wiki pages normally build as one Page activity (mod_page) each, which can leave a long run of separate pages. Choose Book or Lesson to combine each run of two or more consecutive pages into a single activity — one book chapter or lesson page per Canvas page — named after its section. A lone page between other activities stays a Page. Links between the combined pages are rewritten to point at the right chapter/page. Choose this before analysing and the report reflects it, showing those pages building into a book or lesson.';
 $string['pagegrouping_lesson'] = 'Into a lesson (mod_lesson)';
 $string['pagegrouping_none'] = 'No — one page activity each';
 $string['placement_extras'] = 'Additional resources section';
