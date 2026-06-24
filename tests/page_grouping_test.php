@@ -16,6 +16,7 @@
 
 namespace tool_canvasuplifter;
 
+use tool_canvasuplifter\local\build\book_builder;
 use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\build\lesson_builder;
 use tool_canvasuplifter\local\model\item;
@@ -228,5 +229,88 @@ XML;
         $hidden = $DB->get_record('lesson_pages', ['lessonid' => $lessonid, 'title' => 'Draft Page'], '*', MUST_EXIST);
         $this->assertSame(1, (int) $vis->display);
         $this->assertSame(0, (int) $hidden->display);
+    }
+
+    /**
+     * Build a folded-bundle page (an index.html plus a sibling image referenced
+     * by relative URL) and return the item plus its package root, so the book
+     * and lesson tests can assert both builders import the bundle's assets.
+     *
+     * @return array [string package root, item the bundle page]
+     */
+    private function build_bundle_page(): array {
+        $dir = make_request_directory();
+        mkdir($dir . '/bundle/assets', 0777, true);
+        // A 1x1 PNG so the bundled image resolves to a real file.
+        file_put_contents(
+            $dir . '/bundle/assets/pic.png',
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+        );
+        file_put_contents(
+            $dir . '/bundle/index.html',
+            '<p>Bundle page <img src="assets/pic.png" alt="pic"></p>'
+        );
+
+        $page = new item('b', 'Bundle Page');
+        $page->kind = item::KIND_PAGE;
+        $page->href = 'bundle/index.html';
+        $page->files = ['bundle/index.html'];
+        $page->bundleassets = [['source' => 'bundle/assets/pic.png', 'relpath' => 'assets/pic.png']];
+
+        return [$dir, $page];
+    }
+
+    /**
+     * A folded-bundle page combined into a book carries its sibling assets: the
+     * relative image reference is rewritten to @@PLUGINFILE@@ and the file is
+     * imported into the chapter's file area so it resolves.
+     *
+     * @return void
+     */
+    public function test_book_grouping_imports_bundle_assets(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        [$root, $page] = $this->build_bundle_page();
+        $course = $DB->get_record('course', ['id' => $this->getDataGenerator()->create_course()->id], '*', MUST_EXIST);
+
+        $result = (new book_builder($root))->build_group($course, 0, 'Reading', [$page, $page]);
+        $this->assertNotNull($result);
+        $bookid = (int) $DB->get_field('course_modules', 'instance', ['id' => $result['cmid']], MUST_EXIST);
+
+        $chapter = $DB->get_record('book_chapters', ['bookid' => $bookid], '*', IGNORE_MULTIPLE);
+        $this->assertStringContainsString('@@PLUGINFILE@@/assets/pic.png', $chapter->content);
+
+        $context = \context_module::instance($result['cmid']);
+        $fs = get_file_storage();
+        $this->assertTrue($fs->file_exists($context->id, 'mod_book', 'chapter', $chapter->id, '/assets/', 'pic.png'));
+    }
+
+    /**
+     * A folded-bundle page combined into a lesson carries its sibling assets:
+     * the relative image reference is rewritten to @@PLUGINFILE@@ and the file
+     * is imported into the lesson page's file area so it resolves.
+     *
+     * @return void
+     */
+    public function test_lesson_grouping_imports_bundle_assets(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        [$root, $page] = $this->build_bundle_page();
+        $course = $DB->get_record('course', ['id' => $this->getDataGenerator()->create_course()->id], '*', MUST_EXIST);
+
+        $result = (new lesson_builder($root))->build_group($course, 0, 'Reading', [$page, $page]);
+        $this->assertNotNull($result);
+        $lessonid = (int) $DB->get_field('course_modules', 'instance', ['id' => $result['cmid']], MUST_EXIST);
+
+        $lpage = $DB->get_record('lesson_pages', ['lessonid' => $lessonid], '*', IGNORE_MULTIPLE);
+        $this->assertStringContainsString('@@PLUGINFILE@@/assets/pic.png', $lpage->contents);
+
+        $context = \context_module::instance($result['cmid']);
+        $fs = get_file_storage();
+        $this->assertTrue($fs->file_exists($context->id, 'mod_lesson', 'page_contents', $lpage->id, '/assets/', 'pic.png'));
     }
 }

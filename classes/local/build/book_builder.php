@@ -109,6 +109,15 @@ class book_builder {
             }
             // Strip ILIAS viewer chrome (no-op for non-ILIAS HTML) before storing.
             $html = ilias_cleaner::clean($html);
+            // Rewrite relative refs to a folded bundle's sibling assets (eXe /
+            // ILIAS CSS, JS, images) to @@PLUGINFILE@@ before storing; the files
+            // themselves are imported into the chapter file area below. Runs
+            // before the cross-resource link pass so a page's own assets are
+            // left alone by it.
+            $bundleassets = $page->bundleassets ?? [];
+            if (!empty($bundleassets)) {
+                $html = bundle_assets::rewrite_refs($html, $bundleassets);
+            }
             // Turn relative cross-resource links (ILIAS module-to-module) into
             // object-reference tokens, resolved to activity URLs by the grouped
             // second link pass. Done per chapter so each resolves against its
@@ -136,6 +145,12 @@ class book_builder {
             $newhtml = $embedder->embed($context->id, 'mod_book', 'chapter', $html, $chapterid);
             if ($newhtml !== $html) {
                 $DB->set_field('book_chapters', 'content', $newhtml, ['id' => $chapterid]);
+            }
+
+            // Copy the folded bundle's sibling files into this chapter's file
+            // area so the @@PLUGINFILE@@ refs rewritten above resolve.
+            if (!empty($bundleassets)) {
+                bundle_assets::import($this->packageroot, $context->id, 'mod_book', 'chapter', $chapterid, $bundleassets);
             }
 
             $url = (new \moodle_url('/mod/book/view.php', ['id' => $cmid, 'chapterid' => $chapterid]))->out(false);

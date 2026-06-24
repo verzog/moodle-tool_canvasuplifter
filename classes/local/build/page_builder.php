@@ -96,7 +96,7 @@ class page_builder {
         // HTML already points at the eventual pluginfile URLs.
         $bundleassets = $modelitem->bundleassets ?? [];
         if (!empty($bundleassets)) {
-            $content = $this->rewrite_bundle_refs($content, $bundleassets);
+            $content = bundle_assets::rewrite_refs($content, $bundleassets);
         }
 
         // Turn relative cross-resource links (ILIAS learning modules linking to
@@ -137,108 +137,11 @@ class page_builder {
 
         // Import bundle siblings (CSS/JS/images referenced by relative URL).
         if (!empty($bundleassets)) {
-            $this->import_bundle_assets($cmid, $bundleassets);
+            $contextid = \context_module::instance($cmid)->id;
+            bundle_assets::import($this->packageroot, $contextid, 'mod_page', 'content', 0, $bundleassets);
         }
 
         return $cmid;
-    }
-
-    /**
-     * Rewrite relative href/src URLs that point at known bundle assets to
-     * Moodle pluginfile references. Anything that doesn't match a listed
-     * asset (external links, in-page anchors, javascript: URLs) is left alone.
-     *
-     * @param string $content The original page HTML.
-     * @param array $bundleassets List of ['source','relpath'] entries.
-     * @return string Rewritten HTML.
-     */
-    private function rewrite_bundle_refs(string $content, array $bundleassets): string {
-        $assetset = [];
-        foreach ($bundleassets as $asset) {
-            $rel = ltrim((string) ($asset['relpath'] ?? ''), '/');
-            if ($rel !== '') {
-                $assetset[$rel] = true;
-            }
-        }
-        if (empty($assetset)) {
-            return $content;
-        }
-        // Capture the URL path (up to a ?/# suffix) and the suffix separately
-        // so cache-busting query strings and #fragments survive the rewrite.
-        // Absolute URLs (http://, https://, //host, /root) are left alone.
-        // Delimiter ~ so the literal '#' in the URL char classes doesn't
-        // terminate the pattern early (which would only see [^"\'?] and
-        // throw "Unknown modifier ']'").
-        $pattern = '~\b(href|src)\s*=\s*(["\'])([^"\'?#]+)([?#][^"\']*)?\2~i';
-        return (string) preg_replace_callback($pattern, function (array $m) use ($assetset): string {
-            $path = $m[3];
-            $suffix = $m[4] ?? '';
-            if (
-                $path === '' || $path[0] === '/'
-                || strpos($path, '://') !== false || strpos($path, '//') === 0
-            ) {
-                return $m[0];
-            }
-            $candidate = ltrim(preg_replace('#^\./#', '', $path), '/');
-            // Match on the decoded path: the package-relative bundle asset paths
-            // are decoded, but the HTML may carry a percent-encoded URL — either
-            // authored that way or encoded when an upstream DOM pass (the ILIAS
-            // cleaner) re-serialised a path with a space or a non-ASCII
-            // character. Without this, "data/my pic.jpg" stored as
-            // "data/my%20pic.jpg" would never match and the link would 404.
-            $decoded = rawurldecode($candidate);
-            if (!isset($assetset[$decoded])) {
-                return $m[0];
-            }
-            // Emit a re-encoded path so a reserved character in the filename
-            // (a literal # or ?) cannot terminate the URL early — e.g. the
-            // decoded "data/a#b.png" must be written as "data/a%23b.png", not
-            // "data/a#b.png" which the browser would treat as a fragment.
-            $encoded = implode('/', array_map('rawurlencode', explode('/', $decoded)));
-            return $m[1] . '=' . $m[2] . '@@PLUGINFILE@@/' . $encoded . $suffix . $m[2];
-        }, $content);
-    }
-
-    /**
-     * Copy bundle sibling files into the page's content filearea so the
-     * rewritten pluginfile URLs resolve. Each asset is stored at its
-     * relative-to-anchor path so the same path the HTML references is also
-     * the path inside pluginfile.
-     *
-     * @param int $cmid The page's course module id.
-     * @param array $bundleassets List of ['source','relpath'] entries.
-     * @return void
-     */
-    private function import_bundle_assets(int $cmid, array $bundleassets): void {
-        $context = \context_module::instance($cmid);
-        $fs = get_file_storage();
-        foreach ($bundleassets as $asset) {
-            $source = (string) ($asset['source'] ?? '');
-            $relpath = ltrim((string) ($asset['relpath'] ?? ''), '/');
-            if ($source === '' || $relpath === '') {
-                continue;
-            }
-            $absolute = safe_path::within($this->packageroot, $source);
-            if ($absolute === null || !is_readable($absolute)) {
-                continue;
-            }
-            $filename = basename($relpath);
-            $filepath = '/' . trim((string) dirname($relpath), '/.');
-            if ($filepath !== '/' && !str_ends_with($filepath, '/')) {
-                $filepath .= '/';
-            }
-            if ($fs->file_exists($context->id, 'mod_page', 'content', 0, $filepath, $filename)) {
-                continue;
-            }
-            $fs->create_file_from_pathname([
-                'contextid' => $context->id,
-                'component' => 'mod_page',
-                'filearea' => 'content',
-                'itemid' => 0,
-                'filepath' => $filepath,
-                'filename' => $filename,
-            ], $absolute);
-        }
     }
 
     /**
