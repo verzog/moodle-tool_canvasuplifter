@@ -143,27 +143,40 @@ class upload_form extends moodleform {
     }
 
     /**
-     * Whether the given chunkupload id was uploaded by the current user, with
-     * its upload complete. The submitted packagefile value is an opaque id from
-     * the POST body and local_chunkupload does not scope its own lookups by
-     * user, so confirm ownership here: a forged id pointing at another user's
-     * upload must not be accepted (which would copy their package into this
-     * user's area and then delete their temp upload).
+     * Whether a chunkupload id belongs to the current user. The submitted
+     * packagefile value is an opaque id from the POST body and local_chunkupload
+     * scopes none of its own lookups by user, so confirm ownership before
+     * trusting a token: a forged id pointing at another user's upload must not
+     * be accepted (which would copy their package into this user's area and then
+     * delete their temp upload).
      *
      * @param int $id The submitted chunkupload id.
      * @return bool
      */
-    private function chunkupload_owned_and_complete(int $id): bool {
+    private function chunkupload_owned(int $id): bool {
         global $DB, $USER;
-        if ($id <= 0) {
-            return false;
-        }
-        // The upload row must belong to the submitting user.
-        if (!$DB->record_exists('local_chunkupload_files', ['id' => $id, 'userid' => $USER->id])) {
-            return false;
+        return $id > 0 && $DB->record_exists('local_chunkupload_files', ['id' => $id, 'userid' => $USER->id]);
+    }
+
+    /**
+     * Resolve a chunkupload id to the path of a *completed* upload owned by the
+     * current user, or null. local_chunkupload creates a tracking token as soon
+     * as the field renders, and its is_file_uploaded() reports true for that
+     * bare token, so a started-but-empty form (or a URL-only submission, where
+     * the token still exists) would otherwise look like an uploaded file —
+     * tripping the "both sources" error or reaching the file copy with no file.
+     * Confirm completion from the file itself: present, readable and non-empty.
+     *
+     * @param int $id The submitted chunkupload id.
+     * @return string|null Absolute path to the completed upload, or null.
+     */
+    private function chunkupload_completed_path(int $id): ?string {
+        if (!$this->chunkupload_owned($id)) {
+            return null;
         }
         $class = self::CHUNKUPLOAD_CLASS;
-        return $class::is_file_uploaded($id);
+        $path = $class::get_path_for_id($id);
+        return (is_string($path) && is_readable($path) && filesize($path) > 0) ? $path : null;
     }
 
     /**
@@ -176,13 +189,7 @@ class upload_form extends moodleform {
      */
     public function get_uploaded_package_path(\stdClass $data): ?string {
         if ($this->usingchunkupload) {
-            $id = (int) ($data->packagefile ?? 0);
-            if (!$this->chunkupload_owned_and_complete($id)) {
-                return null;
-            }
-            $class = self::CHUNKUPLOAD_CLASS;
-            $path = $class::get_path_for_id($id);
-            return is_string($path) && is_readable($path) ? $path : null;
+            return $this->chunkupload_completed_path((int) ($data->packagefile ?? 0));
         }
         return $this->save_temp_file('packagefile') ?: null;
     }
@@ -202,7 +209,7 @@ class upload_form extends moodleform {
         }
         $id = (int) ($data->packagefile ?? 0);
         // Only release an upload this user owns — never another user's row.
-        if ($this->chunkupload_owned_and_complete($id)) {
+        if ($this->chunkupload_owned($id)) {
             $class = self::CHUNKUPLOAD_CLASS;
             $class::delete_file($id);
         }
@@ -218,7 +225,7 @@ class upload_form extends moodleform {
     public function validation($data, $files): array {
         $errors = parent::validation($data, $files);
         if ($this->usingchunkupload) {
-            $hasfile = $this->chunkupload_owned_and_complete((int) ($data['packagefile'] ?? 0));
+            $hasfile = $this->chunkupload_completed_path((int) ($data['packagefile'] ?? 0)) !== null;
         } else {
             $hasfile = !empty($this->get_draft_files('packagefile'));
         }
