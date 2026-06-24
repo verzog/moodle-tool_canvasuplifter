@@ -245,7 +245,15 @@ class url_fetcher {
      */
     private function dspace_package_from_base(string $base, array $ref): ?string {
         if (isset($ref['bitstream'])) {
-            return $base . '/api/core/bitstreams/' . $ref['bitstream'] . '/content';
+            // Validate the bitstream exists at this base before committing to it, so a
+            // split-host install still falls through to the REST host when the UI host
+            // has no API. Prefer the content href the API reports over a synthesised one.
+            $bitstream = $this->http_get_json($base . '/api/core/bitstreams/' . $ref['bitstream']);
+            if (!is_array($bitstream)) {
+                return null;
+            }
+            return $bitstream['_links']['content']['href']
+                ?? ($base . '/api/core/bitstreams/' . $ref['bitstream'] . '/content');
         }
         $item = $this->dspace_item($base, $ref);
         if ($item === null) {
