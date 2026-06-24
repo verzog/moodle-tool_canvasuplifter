@@ -25,11 +25,12 @@ require_once($CFG->libdir . '/formslib.php');
 /**
  * Upload form for a Canvas .imscc package.
  *
- * When the optional local_chunkupload plugin is installed the package field
- * uses its chunked uploader, so a large .imscc is sent in small pieces over
- * AJAX and isn't bound by PHP's upload_max_filesize/post_max_size or a
- * reverse-proxy upload timeout. Without that plugin the form falls back to the
- * stock filepicker and behaves exactly as before — the dependency is soft.
+ * Offers three ways to supply a package: the standard Moodle file picker (the
+ * main control), a download URL, and — only when the optional local_chunkupload
+ * plugin is installed — an extra chunked-upload field for very large packages
+ * that would exceed PHP's per-request upload limit (those hosted on repository
+ * sites, for example). The chunkupload field is a soft, additive option: when
+ * the plugin is absent the form is just the file picker plus the URL field.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -39,8 +40,11 @@ class upload_form extends moodleform {
     /** Fully-qualified class of the chunkupload form element / file API. */
     private const CHUNKUPLOAD_CLASS = 'local_chunkupload\\chunkupload_form_element';
 
-    /** @var bool Whether this form rendered the package field as a chunkupload element. */
-    private bool $usingchunkupload = false;
+    /** @var bool Whether the optional chunkupload field was added to the form. */
+    private bool $chunkuploadoffered = false;
+
+    /** @var bool Whether get_uploaded_package_path() resolved the file via the chunkupload field. */
+    private bool $resolvedviachunkupload = false;
 
     /**
      * Define the form fields.
@@ -51,9 +55,20 @@ class upload_form extends moodleform {
         global $CFG;
         $mform = $this->_form;
 
+        // The standard Moodle file picker is the main control.
+        $mform->addElement(
+            'filepicker',
+            'packagefile',
+            get_string('packagefile', 'tool_canvasuplifter'),
+            null,
+            ['accepted_types' => ['.imscc', '.zip']]
+        );
+        $mform->addHelpButton('packagefile', 'packagefile', 'tool_canvasuplifter');
+
+        // Optional extra field for very large packages, only when the
+        // local_chunkupload plugin is installed. registerElementType is
+        // idempotent, so it is safe to call on every form build.
         if (self::chunkupload_available()) {
-            // Register and use local_chunkupload's element. registerElementType
-            // is idempotent, so it is safe to call on every form build.
             \MoodleQuickForm::registerElementType(
                 'chunkupload',
                 "$CFG->dirroot/local/chunkupload/classes/chunkupload_form_element.php",
@@ -61,26 +76,16 @@ class upload_form extends moodleform {
             );
             $mform->addElement(
                 'chunkupload',
-                'packagefile',
-                get_string('packagefile', 'tool_canvasuplifter'),
+                'packagelargefile',
+                get_string('packagelargefile', 'tool_canvasuplifter'),
                 null,
-                // Pass -1, chunkupload's "unlimited" sentinel. Capping at the
-                // site upload limit ($CFG->maxbytes) would defeat the purpose:
-                // that limit is usually low because of PHP's per-request
-                // ceiling, which chunked upload exists to get around.
+                // Pass -1, chunkupload's "unlimited" sentinel; the point of the
+                // field is to exceed PHP's per-request upload ceiling.
                 ['maxbytes' => -1, 'accepted_types' => ['.imscc', '.zip']]
             );
-            $this->usingchunkupload = true;
-        } else {
-            $mform->addElement(
-                'filepicker',
-                'packagefile',
-                get_string('packagefile', 'tool_canvasuplifter'),
-                null,
-                ['accepted_types' => ['.imscc', '.zip']]
-            );
+            $mform->addHelpButton('packagelargefile', 'packagelargefile', 'tool_canvasuplifter');
+            $this->chunkuploadoffered = true;
         }
-        $mform->addHelpButton('packagefile', 'packagefile', 'tool_canvasuplifter');
 
         $mform->addElement(
             'text',
@@ -134,12 +139,13 @@ class upload_form extends moodleform {
     }
 
     /**
-     * Whether this form rendered the package field with the chunkupload element.
+     * Whether the most recent get_uploaded_package_path() resolved the package
+     * from the chunkupload field (so the caller cleans up the right temp store).
      *
      * @return bool
      */
     public function used_chunkupload(): bool {
-        return $this->usingchunkupload;
+        return $this->resolvedviachunkupload;
     }
 
     /**
@@ -180,34 +186,40 @@ class upload_form extends moodleform {
     }
 
     /**
-     * Resolve the uploaded package to a readable path on disk, regardless of
-     * which uploader the form used. For chunkupload the submitted value is the
-     * upload id; for the filepicker we copy the draft file to a temp path.
+     * Resolve the supplied package to a readable path on disk, preferring the
+     * large-file (chunkupload) field when it carries a completed upload and
+     * otherwise copying the file picker's draft to a temp path. Returns null
+     * when neither field has a usable file.
      *
      * @param \stdClass $data Submitted form data from get_data().
      * @return string|null Absolute path to the package, or null if none uploaded.
      */
     public function get_uploaded_package_path(\stdClass $data): ?string {
-        if ($this->usingchunkupload) {
-            return $this->chunkupload_completed_path((int) ($data->packagefile ?? 0));
+        if ($this->chunkuploadoffered) {
+            $path = $this->chunkupload_completed_path((int) ($data->packagelargefile ?? 0));
+            if ($path !== null) {
+                $this->resolvedviachunkupload = true;
+                return $path;
+            }
         }
+        $this->resolvedviachunkupload = false;
         return $this->save_temp_file('packagefile') ?: null;
     }
 
     /**
-     * Release the uploaded package's temporary storage after it has been copied
-     * into the plugin's own file area. For chunkupload this removes its tracking
-     * row and temp file; for the filepicker the caller unlinks its own
-     * save_temp_file() copy, so there is nothing to do here.
+     * Release a chunkupload large-file upload after it has been copied into the
+     * plugin's own file area (removing its tracking row and temp file). A file
+     * picker upload is a save_temp_file() copy the caller unlinks itself, so
+     * there is nothing to do for it here.
      *
      * @param \stdClass $data Submitted form data from get_data().
      * @return void
      */
     public function cleanup_uploaded_package(\stdClass $data): void {
-        if (!$this->usingchunkupload) {
+        if (!$this->chunkuploadoffered) {
             return;
         }
-        $id = (int) ($data->packagefile ?? 0);
+        $id = (int) ($data->packagelargefile ?? 0);
         // Only release an upload this user owns — never another user's row.
         if ($this->chunkupload_owned($id)) {
             $class = self::CHUNKUPLOAD_CLASS;
@@ -216,7 +228,7 @@ class upload_form extends moodleform {
     }
 
     /**
-     * Require exactly one of file or URL.
+     * Require exactly one package source: file picker, large-file upload or URL.
      *
      * @param array $data Submitted form data.
      * @param array $files Submitted files.
@@ -224,15 +236,15 @@ class upload_form extends moodleform {
      */
     public function validation($data, $files): array {
         $errors = parent::validation($data, $files);
-        if ($this->usingchunkupload) {
-            $hasfile = $this->chunkupload_completed_path((int) ($data['packagefile'] ?? 0)) !== null;
-        } else {
-            $hasfile = !empty($this->get_draft_files('packagefile'));
-        }
+        $hasfile = !empty($this->get_draft_files('packagefile'));
+        $haslarge = $this->chunkuploadoffered
+            && $this->chunkupload_completed_path((int) ($data['packagelargefile'] ?? 0)) !== null;
         $hasurl = !empty(trim((string)($data['packageurl'] ?? '')));
-        if (!$hasfile && !$hasurl) {
+
+        $sources = (int) $hasfile + (int) $haslarge + (int) $hasurl;
+        if ($sources === 0) {
             $errors['packagefile'] = get_string('errornosource', 'tool_canvasuplifter');
-        } else if ($hasfile && $hasurl) {
+        } else if ($sources > 1) {
             $errors['packageurl'] = get_string('errorbothsources', 'tool_canvasuplifter');
         } else if ($hasurl && !preg_match('#^https?://#i', $data['packageurl'])) {
             $errors['packageurl'] = get_string('errorbadurl', 'tool_canvasuplifter');
