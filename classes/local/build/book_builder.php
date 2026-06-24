@@ -107,6 +107,8 @@ class book_builder {
             if ($html === null) {
                 continue;
             }
+            // Strip ILIAS viewer chrome (no-op for non-ILIAS HTML) before storing.
+            $html = ilias_cleaner::clean($html);
             // Turn relative cross-resource links (ILIAS module-to-module) into
             // object-reference tokens, resolved to activity URLs by the grouped
             // second link pass. Done per chapter so each resolves against its
