@@ -94,7 +94,8 @@ $string['note_page_grouped_book'] = 'Combined with their neighbouring pages into
 $string['note_page_grouped_lesson'] = 'Combined with their neighbouring pages into a single lesson (mod_lesson), '
     . 'one page per page, because you chose to combine consecutive pages.';
 $string['note_questionbank'] = 'Imported as question bank (mod_qbank) activities.';
-$string['note_quiz'] = 'Becomes a Moodle quiz; questions convert where the QTI question type is supported.';
+$string['note_quiz'] = 'Becomes a Moodle quiz; the Canvas time limit, attempts, scoring, availability dates, '
+    . 'navigation and password carry over, and questions convert where the QTI question type is supported.';
 $string['note_subheader'] = 'Canvas module subheaders become Moodle labels with the heading as the body.';
 $string['note_unknown'] = 'Resource type not recognised; these are skipped.';
 $string['note_url'] = 'External links convert directly.';
