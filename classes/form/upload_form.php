@@ -64,9 +64,11 @@ class upload_form extends moodleform {
                 'packagefile',
                 get_string('packagefile', 'tool_canvasuplifter'),
                 null,
-                // 0 = the site default; chunkupload streams in pieces, so PHP's
-                // per-request upload limit no longer caps the package size.
-                ['maxbytes' => (int) $CFG->maxbytes, 'accepted_types' => ['.imscc', '.zip']]
+                // Pass -1, chunkupload's "unlimited" sentinel. Capping at the
+                // site upload limit ($CFG->maxbytes) would defeat the purpose:
+                // that limit is usually low because of PHP's per-request
+                // ceiling, which chunked upload exists to get around.
+                ['maxbytes' => -1, 'accepted_types' => ['.imscc', '.zip']]
             );
             $this->usingchunkupload = true;
         } else {
@@ -141,6 +143,30 @@ class upload_form extends moodleform {
     }
 
     /**
+     * Whether the given chunkupload id was uploaded by the current user, with
+     * its upload complete. The submitted packagefile value is an opaque id from
+     * the POST body and local_chunkupload does not scope its own lookups by
+     * user, so confirm ownership here: a forged id pointing at another user's
+     * upload must not be accepted (which would copy their package into this
+     * user's area and then delete their temp upload).
+     *
+     * @param int $id The submitted chunkupload id.
+     * @return bool
+     */
+    private function chunkupload_owned_and_complete(int $id): bool {
+        global $DB, $USER;
+        if ($id <= 0) {
+            return false;
+        }
+        // The upload row must belong to the submitting user.
+        if (!$DB->record_exists('local_chunkupload_files', ['id' => $id, 'userid' => $USER->id])) {
+            return false;
+        }
+        $class = self::CHUNKUPLOAD_CLASS;
+        return $class::is_file_uploaded($id);
+    }
+
+    /**
      * Resolve the uploaded package to a readable path on disk, regardless of
      * which uploader the form used. For chunkupload the submitted value is the
      * upload id; for the filepicker we copy the draft file to a temp path.
@@ -151,10 +177,10 @@ class upload_form extends moodleform {
     public function get_uploaded_package_path(\stdClass $data): ?string {
         if ($this->usingchunkupload) {
             $id = (int) ($data->packagefile ?? 0);
-            $class = self::CHUNKUPLOAD_CLASS;
-            if ($id <= 0 || !$class::is_file_uploaded($id)) {
+            if (!$this->chunkupload_owned_and_complete($id)) {
                 return null;
             }
+            $class = self::CHUNKUPLOAD_CLASS;
             $path = $class::get_path_for_id($id);
             return is_string($path) && is_readable($path) ? $path : null;
         }
@@ -175,7 +201,8 @@ class upload_form extends moodleform {
             return;
         }
         $id = (int) ($data->packagefile ?? 0);
-        if ($id > 0) {
+        // Only release an upload this user owns — never another user's row.
+        if ($this->chunkupload_owned_and_complete($id)) {
             $class = self::CHUNKUPLOAD_CLASS;
             $class::delete_file($id);
         }
@@ -191,9 +218,7 @@ class upload_form extends moodleform {
     public function validation($data, $files): array {
         $errors = parent::validation($data, $files);
         if ($this->usingchunkupload) {
-            $id = (int) ($data['packagefile'] ?? 0);
-            $class = self::CHUNKUPLOAD_CLASS;
-            $hasfile = $id > 0 && $class::is_file_uploaded($id);
+            $hasfile = $this->chunkupload_owned_and_complete((int) ($data['packagefile'] ?? 0));
         } else {
             $hasfile = !empty($this->get_draft_files('packagefile'));
         }

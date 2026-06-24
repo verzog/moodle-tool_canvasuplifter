@@ -103,6 +103,12 @@ if ($data = $form->get_data()) {
             ]);
             \core\task\manager::queue_adhoc_task($task);
 
+            // The redirect() below ends the request, so the finally block never
+            // runs on this path; release the chunkupload temp now that the
+            // package is safely stored, rather than leaving it for plugin cron.
+            if ($usedchunkupload) {
+                $form->cleanup_uploaded_package($data);
+            }
             redirect(new moodle_url('/admin/tool/canvasuplifter/status.php', ['jobid' => $jobid]));
         }
 
