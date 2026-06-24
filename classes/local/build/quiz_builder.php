@@ -273,16 +273,25 @@ class quiz_builder {
      */
     private function apply_hide_results(quiz_settings $settings, array &$overlay): void {
         if ($settings->hideresults === 'always') {
+            // Never reveal results: clear every review option at all four
+            // phases. This includes the attempt review itself — left on, it
+            // would still expose the questions and the student's own responses.
             $whens = ['during', 'immediately', 'open', 'closed'];
         } else if ($settings->hideresults === 'until_after_last_attempt') {
-            $whens = ['during', 'immediately', 'open'];
+            // Moodle can't gate review on "attempts exhausted", so hide results
+            // while the attempt is in progress and in the immediate post-submit
+            // window, then reveal them in the open phase. That shows results
+            // shortly after submission — effectively "after the last attempt"
+            // for the common single-attempt quiz — and never hides them forever,
+            // which clearing the open phase would do when no close date is set.
+            $whens = ['during', 'immediately'];
         } else {
             return;
         }
-        $results = ['correctness', 'maxmarks', 'marks', 'specificfeedback', 'generalfeedback',
+        $fields = ['attempt', 'correctness', 'maxmarks', 'marks', 'specificfeedback', 'generalfeedback',
             'rightanswer', 'overallfeedback'];
         foreach ($whens as $when) {
-            foreach ($results as $field) {
+            foreach ($fields as $field) {
                 $overlay[$field . $when] = 0;
             }
         }

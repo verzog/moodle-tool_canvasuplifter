@@ -479,7 +479,13 @@ XML;
 
         // Explicit zero points -> ungraded (0) max, not the 100-point default.
         $this->assertEqualsWithDelta(0.0, (float) $quiz->grade, 0.001);
-        // With hide_results=always, the result-revealing review bits clear everywhere.
+        // With hide_results=always, every review bit clears everywhere —
+        // including the attempt review, so responses aren't visible after
+        // submission. mod_quiz always forces the DURING bit back on (a student
+        // must see their attempt while taking it), so assert only that the
+        // post-submission phases of the attempt review are clear.
+        $postsubmission = ~\mod_quiz\question\display_options::DURING;
+        $this->assertSame(0, (int) $quiz->reviewattempt & $postsubmission);
         $this->assertEquals(0, (int) $quiz->reviewcorrectness);
         $this->assertEquals(0, (int) $quiz->reviewrightanswer);
         $this->assertEquals(0, (int) $quiz->reviewoverallfeedback);
