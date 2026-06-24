@@ -44,6 +44,8 @@ $report = null;
 $error = null;
 $storedfileid = null;
 $selectedcategory = null;
+$selectedpagegrouping = '';
+$selectedquizfrombank = 0;
 
 if ($data = $form->get_data()) {
     $extractdir = make_request_directory();
@@ -73,6 +75,11 @@ if ($data = $form->get_data()) {
         $storedfile = $fs->create_file_from_pathname($filerecord, $temppackage);
         $storedfileid = (int) $storedfile->get_id();
         $selectedcategory = (int) $data->categoryid;
+        // Capture the build options chosen on the upload form, so the report
+        // reflects them and the build-from-report form reuses them without
+        // asking again.
+        $selectedpagegrouping = clean_param($data->pagegrouping ?? '', PARAM_ALPHA);
+        $selectedquizfrombank = empty($data->quizfrombank) ? 0 : 1;
 
         if ($buildrequested) {
             require_capability(
@@ -96,7 +103,7 @@ if ($data = $form->get_data()) {
 
         $root = (new package())->extract($temppackage, $extractdir);
         $course = (new manifest_parser($root))->parse();
-        $report = (new conversion_report($course, $root))->build();
+        $report = (new conversion_report($course, $root, $selectedpagegrouping))->build();
     } catch (\RuntimeException $e) {
         // The exception message is one of the package::ERROR_* string keys.
         $key = $e->getMessage();
@@ -351,40 +358,28 @@ if ($report === null) {
         );
         $form .= html_writer::end_div();
         $form .= html_writer::end_div();
-        $form .= html_writer::start_div('form-check mb-2');
+        // The build options were chosen on the upload form before analysing and
+        // the report above already reflects them, so carry them through as the
+        // values this build will use rather than presenting the controls again.
         $form .= html_writer::empty_tag('input', [
-            'type' => 'checkbox',
+            'type' => 'hidden',
             'name' => 'quizfrombank',
-            'value' => '1',
-            'id' => 'quizfrombank',
-            'class' => 'form-check-input',
+            'value' => $selectedquizfrombank ? '1' : '0',
         ]);
-        $form .= html_writer::tag(
-            'label',
-            get_string('quizfrombank', 'tool_canvasuplifter'),
-            ['for' => 'quizfrombank', 'class' => 'form-check-label']
-        );
-        $form .= html_writer::end_div();
-        $form .= html_writer::start_div('form-group row mb-2');
-        $form .= html_writer::tag(
-            'label',
-            get_string('pagegrouping', 'tool_canvasuplifter'),
-            ['for' => 'reportpagegrouping', 'class' => 'col-md-3 col-form-label']
-        );
-        $form .= html_writer::start_div('col-md-9');
-        $form .= html_writer::select(
-            [
-                '' => get_string('pagegrouping_none', 'tool_canvasuplifter'),
-                'book' => get_string('pagegrouping_book', 'tool_canvasuplifter'),
-                'lesson' => get_string('pagegrouping_lesson', 'tool_canvasuplifter'),
-            ],
-            'pagegrouping',
-            '',
-            false,
-            ['id' => 'reportpagegrouping', 'class' => 'form-control']
-        );
-        $form .= html_writer::end_div();
-        $form .= html_writer::end_div();
+        $form .= html_writer::empty_tag('input', [
+            'type' => 'hidden',
+            'name' => 'pagegrouping',
+            'value' => $selectedpagegrouping,
+        ]);
+        $groupinglabels = [
+            '' => get_string('pagegrouping_none', 'tool_canvasuplifter'),
+            'book' => get_string('pagegrouping_book', 'tool_canvasuplifter'),
+            'lesson' => get_string('pagegrouping_lesson', 'tool_canvasuplifter'),
+        ];
+        $form .= html_writer::tag('p', get_string('chosenbuildoptions', 'tool_canvasuplifter', [
+            'grouping' => $groupinglabels[$selectedpagegrouping] ?? $groupinglabels[''],
+            'quiz' => $selectedquizfrombank ? get_string('yes') : get_string('no'),
+        ]), ['class' => 'text-muted']);
         $form .= html_writer::div(
             html_writer::empty_tag('input', [
                 'type' => 'submit',

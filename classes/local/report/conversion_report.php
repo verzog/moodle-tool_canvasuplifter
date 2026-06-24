@@ -53,15 +53,23 @@ class conversion_report {
     /** @var string|null Extracted package root, for reading QTI files; null if unavailable. */
     protected ?string $packageroot;
 
+    /** @var string Page-grouping choice to reflect: '' (off), 'book' or 'lesson'. */
+    protected string $pagegrouping;
+
+    /** @var array<int, bool> spl_object_id of each page item that will be folded into a book/lesson. */
+    protected array $groupedpages = [];
+
     /**
      * Constructor.
      *
      * @param course_model $course The parsed course model.
      * @param string|null $packageroot Extracted package root, enabling the question-type matrix.
+     * @param string $pagegrouping Page-grouping choice to reflect: '' (off), 'book' or 'lesson'.
      */
-    public function __construct(course_model $course, ?string $packageroot = null) {
+    public function __construct(course_model $course, ?string $packageroot = null, string $pagegrouping = '') {
         $this->course = $course;
         $this->packageroot = $packageroot !== null ? rtrim($packageroot, '/') : null;
+        $this->pagegrouping = in_array($pagegrouping, ['book', 'lesson'], true) ? $pagegrouping : '';
     }
 
     /**
@@ -124,7 +132,91 @@ class conversion_report {
         if ($modelitem->kind === item::KIND_QUIZ && !$referenced) {
             return $this->plan_for(item::KIND_QUESTIONBANK);
         }
+        // With page grouping on, a page in a run of two or more consecutive
+        // pages folds into a single book/lesson rather than its own mod_page.
+        if (
+            $this->pagegrouping !== ''
+            && $modelitem->kind === item::KIND_PAGE
+            && isset($this->groupedpages[spl_object_id($modelitem)])
+        ) {
+            return $this->grouped_page_plan();
+        }
         return $this->plan_for($modelitem->kind);
+    }
+
+    /**
+     * The plan a grouped page reports against: a book chapter or lesson page.
+     *
+     * @return array{target: string, confidence: string, note: string}
+     */
+    protected function grouped_page_plan(): array {
+        if ($this->pagegrouping === 'lesson') {
+            return ['target' => 'mod_lesson', 'confidence' => self::CONFIDENCE_FULL, 'note' => 'note_page_grouped_lesson'];
+        }
+        return ['target' => 'mod_book', 'confidence' => self::CONFIDENCE_FULL, 'note' => 'note_page_grouped_book'];
+    }
+
+    /**
+     * Identify every page item that will be folded into a book/lesson, mirroring
+     * the builder's segmentation: within each ordered item list, a maximal run of
+     * two or more consecutive pages is grouped (a lone page stays a mod_page).
+     * Sections and the "extras" orphan list group; the syllabus, lifted to the
+     * course top and built individually, does not.
+     *
+     * @return array<int, bool> Set of spl_object_id keyed true for grouped pages.
+     */
+    protected function compute_grouped_pages(): array {
+        if ($this->pagegrouping === '') {
+            return [];
+        }
+        $grouped = [];
+        foreach ($this->course->sections as $sectionmodel) {
+            $this->mark_grouped_runs($sectionmodel->items, $grouped);
+        }
+        $extras = [];
+        foreach ($this->course->orphans as $modelitem) {
+            if (!$modelitem->is_syllabus()) {
+                $extras[] = $modelitem;
+            }
+        }
+        $this->mark_grouped_runs($extras, $grouped);
+        return $grouped;
+    }
+
+    /**
+     * Mark each page in every 2+ consecutive-page run within an ordered item
+     * list as grouped.
+     *
+     * @param array $items The items in build order.
+     * @param array $grouped Set of spl_object_id (modified in place).
+     * @return void
+     */
+    protected function mark_grouped_runs(array $items, array &$grouped): void {
+        $run = [];
+        foreach ($items as $modelitem) {
+            if ($modelitem->kind === item::KIND_PAGE) {
+                $run[] = $modelitem;
+                continue;
+            }
+            $this->flush_run_marks($run, $grouped);
+            $run = [];
+        }
+        $this->flush_run_marks($run, $grouped);
+    }
+
+    /**
+     * Record a run as grouped when it holds two or more pages.
+     *
+     * @param array $run The accumulated consecutive page items.
+     * @param array $grouped Set of spl_object_id (modified in place).
+     * @return void
+     */
+    protected function flush_run_marks(array $run, array &$grouped): void {
+        if (count($run) >= 2) {
+            foreach ($run as $page) {
+                $grouped[spl_object_id($page)] = true;
+            }
+        }
     }
 
     /**
@@ -198,6 +290,9 @@ class conversion_report {
      * @return array<string, mixed>
      */
     public function build(): array {
+        // Resolve which pages fold into a book/lesson first, so every view below
+        // (aggregate rows, per-section detail, orphans) reports them consistently.
+        $this->groupedpages = $this->compute_grouped_pages();
         $counts = $this->counts_by_kind();
 
         // Group by content type and the target it will actually build into, so a
