@@ -48,6 +48,9 @@ class url_fetcher {
     /** @var int Bytes of an HTML response to scan for a download link. */
     private const HTML_SCAN_BYTES = 1048576;
 
+    /** @var int Cap on bitstream pages followed per bundle, guarding against runaway pagination. */
+    private const DSPACE_MAX_PAGES = 20;
+
     /** @var string|null Diagnostic detail from the last failed fetch. */
     private ?string $lastdetail = null;
 
@@ -248,22 +251,31 @@ class url_fetcher {
         if (!is_array($bundles)) {
             return null;
         }
-        $href = dspace_resolver::pick_href(dspace_resolver::bitstreams_from_bundles($bundles));
-        if ($href !== null) {
-            return $href;
+        // The .imscc is the definitive package: if it is among the embedded
+        // bitstreams, take it without any further requests.
+        $embedded = dspace_resolver::bitstreams_from_bundles($bundles);
+        $imscc = dspace_resolver::find_href($embedded, 'imscc');
+        if ($imscc !== null) {
+            return $imscc;
         }
-        // Bitstreams were not embedded (or spilled past the embedded page); follow
-        // each bundle's bitstreams link, requesting a page large enough to hold them.
+        // Otherwise the embedded list may be empty or only a first page: page through
+        // each bundle's full bitstreams collection, following DSpace's pagination
+        // links, and pick across the complete set — so a package on a later page is
+        // not missed and a support .zip is not returned ahead of an .imscc that
+        // paginated out of view.
+        $bitstreams = $embedded;
         foreach (dspace_resolver::bundle_bitstreams_hrefs($bundles) as $bhref) {
-            $collection = $this->http_get_json(dspace_resolver::with_page_size($bhref));
-            if (is_array($collection)) {
-                $href = dspace_resolver::pick_href(dspace_resolver::bitstreams_from_collection($collection));
-                if ($href !== null) {
-                    return $href;
+            $next = dspace_resolver::with_page_size($bhref);
+            for ($page = 0; $next !== null && $page < self::DSPACE_MAX_PAGES; $page++) {
+                $collection = $this->http_get_json($next);
+                if (!is_array($collection)) {
+                    break;
                 }
+                $bitstreams = array_merge($bitstreams, dspace_resolver::bitstreams_from_collection($collection));
+                $next = dspace_resolver::next_page_href($collection);
             }
         }
-        return null;
+        return dspace_resolver::pick_href($bitstreams);
     }
 
     /**

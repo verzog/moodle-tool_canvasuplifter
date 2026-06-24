@@ -219,15 +219,44 @@ final class dspace_resolver {
      */
     public static function pick_href(array $bitstreams): ?string {
         foreach (['imscc', 'zip'] as $ext) {
-            foreach ($bitstreams as $bitstream) {
-                $name = (string) ($bitstream['name'] ?? '');
-                $href = (string) ($bitstream['_links']['content']['href'] ?? '');
-                if ($href !== '' && preg_match('~\.' . $ext . '($|\?)~i', $name)) {
-                    return $href;
-                }
+            $href = self::find_href($bitstreams, $ext);
+            if ($href !== null) {
+                return $href;
             }
         }
         return null;
+    }
+
+    /**
+     * The content (download) URL of the first bitstream whose name ends in the
+     * given extension, or null if none match. Lets the caller insist on the
+     * definitive .imscc before settling for an ambiguous .zip.
+     *
+     * @param array $bitstreams List of bitstream objects (associative arrays).
+     * @param string $ext The package extension without the dot, e.g. "imscc".
+     * @return string|null The content href, or null.
+     */
+    public static function find_href(array $bitstreams, string $ext): ?string {
+        foreach ($bitstreams as $bitstream) {
+            $name = (string) ($bitstream['name'] ?? '');
+            $href = (string) ($bitstream['_links']['content']['href'] ?? '');
+            if ($href !== '' && preg_match('~\.' . preg_quote($ext, '~') . '($|\?)~i', $name)) {
+                return $href;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The next-page href of a paged bitstreams collection response, used to walk
+     * DSpace's HAL pagination when a bundle's bitstreams span several pages.
+     *
+     * @param array $collection Decoded JSON of a bitstreams collection response.
+     * @return string|null The next page URL, or null if this is the last page.
+     */
+    public static function next_page_href(array $collection): ?string {
+        $href = $collection['_links']['next']['href'] ?? '';
+        return is_string($href) && $href !== '' ? $href : null;
     }
 
     /**

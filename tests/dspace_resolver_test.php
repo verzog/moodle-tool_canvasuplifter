@@ -189,6 +189,31 @@ final class dspace_resolver_test extends \basic_testcase {
     }
 
     /**
+     * find_href matches only the requested extension, letting a caller demand the
+     * definitive .imscc before falling back to a .zip; next_page_href reads the
+     * HAL next link, returning null when this is the last page.
+     *
+     * @return void
+     */
+    public function test_find_href_and_pagination(): void {
+        $bitstreams = [
+            ['name' => 'support.zip', '_links' => ['content' => ['href' => 'https://x/zip']]],
+            ['name' => 'course.imscc', '_links' => ['content' => ['href' => 'https://x/imscc']]],
+        ];
+        $this->assertSame('https://x/imscc', dspace_resolver::find_href($bitstreams, 'imscc'));
+        $this->assertSame('https://x/zip', dspace_resolver::find_href($bitstreams, 'zip'));
+        $this->assertNull(dspace_resolver::find_href($bitstreams, 'tar'));
+
+        $page = ['_links' => ['next' => ['href' => self::REST . '/core/bundles/9a/bitstreams?page=1&size=100']]];
+        $this->assertSame(
+            self::REST . '/core/bundles/9a/bitstreams?page=1&size=100',
+            dspace_resolver::next_page_href($page)
+        );
+        $this->assertNull(dspace_resolver::next_page_href(['_links' => ['self' => ['href' => 'https://x']]]));
+        $this->assertNull(dspace_resolver::next_page_href([]));
+    }
+
+    /**
      * The fallback path reads a bundle's bitstreams link and a flat bitstreams
      * collection response.
      *
