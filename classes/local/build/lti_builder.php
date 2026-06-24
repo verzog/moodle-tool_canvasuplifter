@@ -79,6 +79,9 @@ class lti_builder {
             : ($cartridge['title'] !== '' ? $cartridge['title'] : 'External tool');
 
         $moduleinfo = $this->moduleinfo($course, $sectionnum, (int) $module->id, $name, $cartridge);
+        // Remember whether a transaction was already open before we call in: if
+        // one was, it belongs to the caller and we must not touch it.
+        $callerintransaction = $DB->is_transaction_started();
         try {
             $created = add_moduleinfo($moduleinfo, $course);
         } catch (\Throwable $e) {
@@ -88,8 +91,16 @@ class lti_builder {
             // escapes add_moduleinfo() with its delegated transaction still open,
             // which would otherwise abort the whole adhoc task ("Task left
             // transaction open") and make Moodle retry it, building duplicate
-            // courses. Roll the orphaned transaction back and skip just this tool
-            // so the rest of the course still builds.
+            // courses.
+            //
+            // Only clean up the transaction add_moduleinfo() opened. If the
+            // caller already had one of its own, force_transaction_rollback()
+            // would silently discard the caller's earlier writes too, so in that
+            // case re-throw and let the caller's own transaction handling deal
+            // with it (the course builder calls us with no outer transaction).
+            if ($callerintransaction) {
+                throw $e;
+            }
             if ($DB->is_transaction_started()) {
                 $DB->force_transaction_rollback();
             }
