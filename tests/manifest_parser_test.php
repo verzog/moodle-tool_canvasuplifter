@@ -1104,6 +1104,9 @@ XML;
         // $CANVAS_OBJECT_REFERENCE$ links targeting the fallback still resolve
         // to the built assignment once course_builder publishes the URL map.
         $this->assertSame(['r_fb'], $attached->aliasids);
+        // It also carries the fallback's source path, so a relative link to the
+        // fallback HTML resolves to the assignment via the path map.
+        $this->assertSame(['fb/a.html'], $attached->aliaspaths);
     }
 
     /**

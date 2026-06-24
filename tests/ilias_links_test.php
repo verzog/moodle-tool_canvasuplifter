@@ -17,6 +17,8 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\course_builder;
+use tool_canvasuplifter\local\build\page_payload;
+use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\parser\manifest_parser;
 
 /**
@@ -29,6 +31,8 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\build\course_builder
  * @covers     \tool_canvasuplifter\local\build\page_builder
+ * @covers     \tool_canvasuplifter\local\build\book_builder
+ * @covers     \tool_canvasuplifter\local\build\page_payload
  * @covers     \tool_canvasuplifter\local\build\link_rewriter
  */
 final class ilias_links_test extends \advanced_testcase {
@@ -129,5 +133,126 @@ XML;
         $fs = get_file_storage();
         $context = \context_module::instance($acm->id);
         $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/', 'delos_cont.css'));
+    }
+
+    /**
+     * With page grouping set to "book", the two modules fold into one book and
+     * module A's relative cross-module link resolves to module B's chapter URL,
+     * rather than being left as a dead ../lm_b/index.html link.
+     *
+     * @return void
+     */
+    public function test_relative_link_resolves_in_grouped_book(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_ilias_fixture();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root, null, 0, false, 'book'))->build($coursemodel);
+
+        $books = get_fast_modinfo($report['courseid'])->get_instances_of('book');
+        $this->assertCount(1, $books);
+        $book = reset($books);
+
+        $chapters = $DB->get_records('book_chapters', ['bookid' => $book->instance], 'pagenum ASC');
+        $this->assertCount(2, $chapters);
+        $chapters = array_values($chapters);
+        $intro = $chapters[0];
+        $target = $chapters[1];
+
+        // The link resolves to module B's chapter inside the same book, not the
+        // raw relative path.
+        $this->assertStringContainsString(
+            '/mod/book/view.php?id=' . $book->id . '&chapterid=' . $target->id,
+            $intro->content
+        );
+        $this->assertStringNotContainsString('../lm_b/index.html', $intro->content);
+        $this->assertStringNotContainsString('CANVAS_OBJECT_REFERENCE', $intro->content);
+    }
+
+    /**
+     * A page that links by relative path to a CC variant fallback's HTML
+     * resolves to the preferred activity (the assignment the variant swaps in),
+     * even though the fallback resource itself is suppressed and never built.
+     *
+     * @return void
+     */
+    public function test_relative_link_to_variant_fallback_resolves(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        mkdir($dir . '/fb');
+        mkdir($dir . '/asg');
+        file_put_contents($dir . '/wiki_content/p.html', '<p>See <a href="../fb/a.html">the lab</a>.</p>');
+        file_put_contents($dir . '/fb/a.html', '<p>Fallback handout.</p>');
+        file_put_contents(
+            $dir . '/asg/a.xml',
+            '<?xml version="1.0"?>'
+            . '<assignment xmlns="http://www.imsglobal.org/xsd/imscc_extensions/assignment" identifier="a1">'
+            . '<title>Real Lab</title>'
+            . '<gradable points_possible="5">true</gradable>'
+            . '<submission_formats><format type="html"/></submission_formats>'
+            . '</assignment>'
+        );
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest xmlns="http://www.imsglobal.org/xsd/imsccv1p2/imscp_v1p1"'
+            . ' xmlns:cpx="http://www.imsglobal.org/xsd/imsccv1p2/imscpext_v1p0" identifier="m">'
+            . '<organizations><organization identifier="org" structure="rooted-hierarchy">'
+            . '<item identifier="root">'
+            . '<item identifier="i_p" identifierref="r_p"><title>Intro</title></item>'
+            . '<item identifier="i_lab" identifierref="r_fb"><title>Lab Report</title></item>'
+            . '</item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_p" type="webcontent" href="wiki_content/p.html">'
+            . '<file href="wiki_content/p.html"/></resource>'
+            . '<resource identifier="r_fb" type="webcontent" href="fb/a.html">'
+            . '<cpx:variant identifierref="r_asg"/><file href="fb/a.html"/></resource>'
+            . '<resource identifier="r_asg" type="assignment_xmlv1p0" href="asg/a.xml"><file href="asg/a.xml"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $category = $this->getDataGenerator()->create_category();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $assigns = $modinfo->get_instances_of('assign');
+        $this->assertCount(1, $assigns);
+        $assigncm = reset($assigns);
+        $pages = $modinfo->get_instances_of('page');
+        $pagecm = reset($pages);
+
+        $page = $DB->get_record('page', ['id' => $pagecm->instance]);
+        // The relative link to the suppressed fallback path resolves to the
+        // assignment the variant swapped in.
+        $this->assertStringContainsString('/mod/assign/view.php?id=' . $assigncm->id, $page->content);
+        $this->assertStringNotContainsString('../fb/a.html', $page->content);
+    }
+
+    /**
+     * page_payload::basedir() resolves against the file actually read: when a
+     * page item lists a readable file in one folder and an href in another,
+     * locate() uses the file list first, so the base directory must match the
+     * folder of that file (not the href).
+     *
+     * @return void
+     */
+    public function test_basedir_uses_file_actually_read(): void {
+        $root = make_request_directory();
+        mkdir($root . '/real');
+        file_put_contents($root . '/real/page.html', '<p>Body.</p>');
+
+        $modelitem = new item('r1', 'Page');
+        // The locate() order tries files[] before href; only the file is readable.
+        $modelitem->files = ['real/page.html'];
+        $modelitem->href = 'ghost/page.html';
+
+        $this->assertSame('real', page_payload::basedir($root, $modelitem));
     }
 }

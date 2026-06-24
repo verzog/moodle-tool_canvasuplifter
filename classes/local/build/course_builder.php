@@ -84,6 +84,9 @@ class course_builder {
     /** @var array Canvas rubric library (id => spec) for the current build; see course_model::$rubrics. */
     private array $rubrics = [];
 
+    /** @var array<string, string> Package-relative path => identifier, for resolving relative cross-resource links. */
+    private array $pathtoid = [];
+
     /**
      * Constructor.
      *
@@ -153,12 +156,13 @@ class course_builder {
         $this->rubrics = $coursemodel->rubrics;
 
         // Map each buildable resource's primary source path to its identifier so
-        // page_builder can turn relative cross-resource links (ILIAS learning
-        // modules linking to each other by path) into object-reference tokens.
-        $pathtoid = $this->build_pathtoid($coursemodel);
+        // the page and grouped book/lesson builders can turn relative
+        // cross-resource links (ILIAS learning modules linking to each other by
+        // path) into object-reference tokens.
+        $this->pathtoid = $this->build_pathtoid($coursemodel);
 
         $builders = [
-            item::KIND_PAGE => new page_builder($this->packageroot, $pathtoid),
+            item::KIND_PAGE => new page_builder($this->packageroot, $this->pathtoid),
             item::KIND_URL => new url_builder($this->packageroot),
             item::KIND_FILE => new file_builder($this->packageroot),
             item::KIND_ASSIGNMENT => new assign_builder($this->packageroot),
@@ -452,9 +456,9 @@ class course_builder {
         if (!$this->groupbuilderinit) {
             $this->groupbuilderinit = true;
             if ($this->pagegrouping === 'book') {
-                $this->groupbuilder = new book_builder($this->packageroot);
+                $this->groupbuilder = new book_builder($this->packageroot, $this->pathtoid);
             } else if ($this->pagegrouping === 'lesson') {
-                $this->groupbuilder = new lesson_builder($this->packageroot);
+                $this->groupbuilder = new lesson_builder($this->packageroot, $this->pathtoid);
             }
         }
         return $this->groupbuilder;
@@ -780,10 +784,16 @@ class course_builder {
             if (!isset(self::KIND_TO_MOD[$modelitem->kind])) {
                 continue;
             }
+            // Map the resource's own primary path, plus the source paths of any
+            // variant fallbacks it stands in for (those resources are suppressed
+            // and so never appear here themselves, but a relative link to their
+            // HTML must still resolve to this preferred activity).
             $primary = $modelitem->href !== '' ? $modelitem->href : ($modelitem->files[0] ?? '');
-            $primary = ltrim((string) $primary, '/');
-            if ($primary !== '' && !isset($map[$primary])) {
-                $map[$primary] = $modelitem->identifier;
+            foreach (array_merge([$primary], $modelitem->aliaspaths) as $path) {
+                $path = ltrim((string) $path, '/');
+                if ($path !== '' && !isset($map[$path])) {
+                    $map[$path] = $modelitem->identifier;
+                }
             }
         }
         return $map;

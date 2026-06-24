@@ -45,13 +45,18 @@ class lesson_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var array<string, string> Package-relative path => resource identifier, for relative-link rewriting. */
+    private array $pathtoid;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param array $pathtoid Map of package-relative path to resource identifier (for cross-resource links).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, array $pathtoid = []) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->pathtoid = $pathtoid;
     }
 
     /**
@@ -106,6 +111,14 @@ class lesson_builder {
             $html = page_payload::html($this->packageroot, $page);
             if ($html === null) {
                 continue;
+            }
+            // Turn relative cross-resource links (ILIAS module-to-module) into
+            // object-reference tokens, resolved to activity URLs by the grouped
+            // second link pass. Done per page so each resolves against its own
+            // source directory.
+            if (!empty($this->pathtoid)) {
+                $basedir = page_payload::basedir($this->packageroot, $page);
+                $html = (new link_rewriter())->rewrite_relative_links($html, $basedir, $this->pathtoid);
             }
             $record = (object) [
                 'lessonid' => $lessonid,

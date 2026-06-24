@@ -153,6 +153,66 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * Only the href of navigational <a> anchors is rewritten. A relative
+     * stylesheet (or other non-anchor reference) whose path also backs a file
+     * resource is left alone, so the page keeps its CSS after import.
+     *
+     * @return void
+     */
+    public function test_rewrite_relative_links_only_touches_anchors(): void {
+        $html = '<link rel="stylesheet" href="../shared/site.css">'
+            . '<a href="../shared/site.css">Download the stylesheet</a>';
+        $pathtoid = ['shared/site.css' => 'res_css'];
+
+        $out = (new link_rewriter())->rewrite_relative_links($html, 'lessons', $pathtoid);
+
+        // The <link> stylesheet reference is untouched.
+        $this->assertStringContainsString('<link rel="stylesheet" href="../shared/site.css">', $out);
+        // The <a> navigational link to the same file is rewritten.
+        $this->assertStringContainsString('<a href="$CANVAS_OBJECT_REFERENCE$/ilias/res_css">', $out);
+    }
+
+    /**
+     * A preserved query suffix is joined to the resolved activity URL with "&",
+     * not a second "?", so the generated link is valid (the activity URLs
+     * already carry ?id=...). Fragments append as-is.
+     *
+     * @return void
+     */
+    public function test_object_reference_suffix_joins_without_double_question(): void {
+        $rewriter = new link_rewriter();
+        $urlmap = ['id:r1' => 'https://moodle.test/mod/page/view.php?id=42'];
+
+        $query = $rewriter->rewrite_internal_links('<a href="$CANVAS_OBJECT_REFERENCE$/ilias/r1?obj=5">x</a>', $urlmap);
+        $this->assertStringContainsString('href="https://moodle.test/mod/page/view.php?id=42&obj=5"', $query);
+        $this->assertStringNotContainsString('?id=42?', $query);
+
+        $frag = $rewriter->rewrite_internal_links('<a href="$CANVAS_OBJECT_REFERENCE$/ilias/r1#sec">x</a>', $urlmap);
+        $this->assertStringContainsString('href="https://moodle.test/mod/page/view.php?id=42#sec"', $frag);
+
+        $both = $rewriter->rewrite_internal_links('<a href="$CANVAS_OBJECT_REFERENCE$/ilias/r1?a=1#s">x</a>', $urlmap);
+        $this->assertStringContainsString('href="https://moodle.test/mod/page/view.php?id=42&a=1#s"', $both);
+    }
+
+    /**
+     * End to end, a relative <a> link carrying a query string resolves to a
+     * valid activity URL: the relative rewrite preserves the suffix and the
+     * object-reference pass joins it correctly.
+     *
+     * @return void
+     */
+    public function test_relative_link_query_suffix_stays_valid(): void {
+        $rewriter = new link_rewriter();
+        $pathtoid = ['lm_b/index.html' => 'r_b'];
+
+        $tokenised = $rewriter->rewrite_relative_links('<a href="../lm_b/index.html?obj=5">B</a>', 'lm_a', $pathtoid);
+        $resolved = $rewriter->rewrite_internal_links($tokenised, ['id:r_b' => 'https://moodle.test/mod/page/view.php?id=7']);
+
+        $this->assertStringContainsString('href="https://moodle.test/mod/page/view.php?id=7&obj=5"', $resolved);
+        $this->assertStringNotContainsString('?id=7?', $resolved);
+    }
+
+    /**
      * normalize_path() collapses '.'/'..' against the base directory and refuses
      * references that climb above the package root.
      *
