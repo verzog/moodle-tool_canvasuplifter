@@ -42,6 +42,39 @@ class page_payload {
      * @return string|null Absolute path, or null if nothing is readable.
      */
     public static function locate(string $packageroot, item $modelitem): ?string {
+        $found = self::locate_relative($packageroot, $modelitem);
+        return $found === null ? null : $found[1];
+    }
+
+    /**
+     * Package-relative directory of the HTML file that actually backs a page
+     * item, so relative links inside it resolve against the right base. Uses the
+     * same files-then-href order as {@see locate()}, so the base directory always
+     * matches the file whose content was read (not whichever path comes first in
+     * the manifest).
+     *
+     * @param string $packageroot Absolute path to the extracted package root.
+     * @param item $modelitem The page item.
+     * @return string Package-relative directory ('' at the package root, or when nothing is readable).
+     */
+    public static function basedir(string $packageroot, item $modelitem): string {
+        $found = self::locate_relative($packageroot, $modelitem);
+        if ($found === null) {
+            return '';
+        }
+        $dir = dirname(ltrim($found[0], '/'));
+        return ($dir === '.' || $dir === '/' || $dir === '\\') ? '' : $dir;
+    }
+
+    /**
+     * Find the first readable candidate file backing a page item, returning both
+     * its manifest-relative path and its absolute path.
+     *
+     * @param string $packageroot Absolute path to the extracted package root.
+     * @param item $modelitem The page item.
+     * @return array|null [relative path, absolute path], or null if none is readable.
+     */
+    private static function locate_relative(string $packageroot, item $modelitem): ?array {
         $root = rtrim($packageroot, '/');
         $candidates = $modelitem->files;
         if ($modelitem->href !== '') {
@@ -50,7 +83,7 @@ class page_payload {
         foreach ($candidates as $relative) {
             $absolute = safe_path::within($root, $relative);
             if ($absolute !== null && is_readable($absolute)) {
-                return $absolute;
+                return [$relative, $absolute];
             }
         }
         return null;

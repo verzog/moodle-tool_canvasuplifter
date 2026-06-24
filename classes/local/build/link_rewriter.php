@@ -89,14 +89,122 @@ class link_rewriter {
             return $urlmap['wiki:' . $slug] ?? $matches[0];
         }, $html) ?? $html;
 
-        // Object references: $CANVAS_OBJECT_REFERENCE$/<type>/<identifier>.
-        $objectpattern = '~(?:\$CANVAS_OBJECT_REFERENCE\$|%24CANVAS_OBJECT_REFERENCE%24)/[^/"\'\s>]+/([^"\'\s>?#]*)~i';
+        // Object references: $CANVAS_OBJECT_REFERENCE$/<type>/<identifier>, plus
+        // any trailing ?query/#fragment the source link carried.
+        $objectpattern = '~(?:\$CANVAS_OBJECT_REFERENCE\$|%24CANVAS_OBJECT_REFERENCE%24)'
+            . '/[^/"\'\s>]+/([^"\'\s>?#]*)([?#][^"\'\s>]*)?~i';
         $html = preg_replace_callback($objectpattern, function ($matches) use ($urlmap) {
             $id = rawurldecode($matches[1]);
-            return $urlmap['id:' . $id] ?? $matches[0];
+            if (!isset($urlmap['id:' . $id])) {
+                return $matches[0];
+            }
+            return self::join_suffix($urlmap['id:' . $id], $matches[2] ?? '');
         }, $html) ?? $html;
 
         return $html;
+    }
+
+    /**
+     * Append a preserved ?query/#fragment suffix to a resolved activity URL
+     * without producing a double "?": the generated Moodle URLs already carry
+     * "?id=…", so a suffix that also opens a query string is joined with "&".
+     *
+     * @param string $url The resolved activity URL.
+     * @param string $suffix The carried suffix ('' / '?…' / '#…' / '?…#…').
+     * @return string The combined URL.
+     */
+    private static function join_suffix(string $url, string $suffix): string {
+        if ($suffix === '') {
+            return $url;
+        }
+        if ($suffix[0] === '?' && strpos($url, '?') !== false) {
+            $suffix = '&' . substr($suffix, 1);
+        }
+        return $url . $suffix;
+    }
+
+    /**
+     * Rewrite relative cross-resource links to Canvas object-reference tokens.
+     *
+     * Non-Canvas exporters (e.g. ILIAS) link between learning modules with plain
+     * relative paths like <a href="../OTHER_LM/index.html"> rather than Canvas
+     * placeholder tokens. Given the package directory the page's source HTML
+     * lives in and a map of package-relative path => built resource identifier,
+     * this resolves such a link to its target resource and rewrites it to a
+     * $CANVAS_OBJECT_REFERENCE$ token, so the existing internal-link pass turns
+     * it into the real activity URL once every target is built. Absolute URLs,
+     * in-page anchors, mailto:/javascript: schemes and references that don't
+     * resolve to a built resource are left untouched.
+     *
+     * Only the href of navigational <a> anchors is considered. Other relative
+     * references (a <link rel="stylesheet">, a <base href>, an <img src>) are
+     * left alone so a stylesheet or image whose path also happens to back a
+     * file resource is not turned into an activity URL.
+     *
+     * @param string $html The page HTML (after file/bundle rewriting).
+     * @param string $basedir Package-relative directory of the page's source HTML ('' at root).
+     * @param array $pathtoid Map of package-relative path to resource identifier.
+     * @return string The rewritten HTML.
+     */
+    public function rewrite_relative_links(string $html, string $basedir, array $pathtoid): string {
+        if (empty($pathtoid)) {
+            return $html;
+        }
+        // Rewrite the href only within <a …> opening tags, leaving every other
+        // element's references (link/base/img/…) untouched.
+        return (string) preg_replace_callback('~<a\b[^>]*>~i', function (array $tag) use ($basedir, $pathtoid): string {
+            return (string) preg_replace_callback(
+                '~\bhref\s*=\s*(["\'])([^"\']+)\1~i',
+                function (array $m) use ($basedir, $pathtoid): string {
+                    $value = $m[2];
+                    // Keep any ?query / #fragment suffix so it survives the rewrite.
+                    $path = (string) preg_replace('/[?#].*$/', '', $value);
+                    $suffix = substr($value, strlen($path));
+                    if ($path === '' || $path[0] === '#' || $path[0] === '/') {
+                        return $m[0];
+                    }
+                    // Leave protocol-relative (//host) and scheme URLs (http:, mailto:, …).
+                    if (str_starts_with($path, '//') || preg_match('~^[a-z][a-z0-9+.\-]*:~i', $path)) {
+                        return $m[0];
+                    }
+                    $resolved = self::normalize_path($basedir, rawurldecode($path));
+                    if ($resolved === null || !isset($pathtoid[$resolved])) {
+                        return $m[0];
+                    }
+                    return 'href=' . $m[1] . '$CANVAS_OBJECT_REFERENCE$/ilias/' . $pathtoid[$resolved] . $suffix . $m[1];
+                },
+                $tag[0]
+            );
+        }, $html) ?? $html;
+    }
+
+    /**
+     * Resolve a relative reference against a base directory into a normalised,
+     * root-relative package path, collapsing '.' and '..' segments.
+     *
+     * @param string $basedir Package-relative directory ('' at root).
+     * @param string $relative The relative reference (no scheme, not root-absolute).
+     * @return string|null The normalised path, or null if it escapes the package root.
+     */
+    public static function normalize_path(string $basedir, string $relative): ?string {
+        $combined = trim($basedir, '/');
+        $combined = $combined === '' ? $relative : $combined . '/' . $relative;
+        $segments = [];
+        foreach (explode('/', $combined) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+            if ($segment === '..') {
+                if (empty($segments)) {
+                    // The reference climbs above the package root; treat as unresolvable.
+                    return null;
+                }
+                array_pop($segments);
+                continue;
+            }
+            $segments[] = $segment;
+        }
+        return implode('/', $segments);
     }
 
     /**

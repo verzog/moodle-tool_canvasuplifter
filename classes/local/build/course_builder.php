@@ -84,6 +84,9 @@ class course_builder {
     /** @var array Canvas rubric library (id => spec) for the current build; see course_model::$rubrics. */
     private array $rubrics = [];
 
+    /** @var array<string, string> Package-relative path => identifier, for resolving relative cross-resource links. */
+    private array $pathtoid = [];
+
     /**
      * Constructor.
      *
@@ -152,8 +155,14 @@ class course_builder {
         // when each assignment is built.
         $this->rubrics = $coursemodel->rubrics;
 
+        // Map each buildable resource's primary source path to its identifier so
+        // the page and grouped book/lesson builders can turn relative
+        // cross-resource links (ILIAS learning modules linking to each other by
+        // path) into object-reference tokens.
+        $this->pathtoid = $this->build_pathtoid($coursemodel);
+
         $builders = [
-            item::KIND_PAGE => new page_builder($this->packageroot),
+            item::KIND_PAGE => new page_builder($this->packageroot, $this->pathtoid),
             item::KIND_URL => new url_builder($this->packageroot),
             item::KIND_FILE => new file_builder($this->packageroot),
             item::KIND_ASSIGNMENT => new assign_builder($this->packageroot),
@@ -447,9 +456,9 @@ class course_builder {
         if (!$this->groupbuilderinit) {
             $this->groupbuilderinit = true;
             if ($this->pagegrouping === 'book') {
-                $this->groupbuilder = new book_builder($this->packageroot);
+                $this->groupbuilder = new book_builder($this->packageroot, $this->pathtoid);
             } else if ($this->pagegrouping === 'lesson') {
-                $this->groupbuilder = new lesson_builder($this->packageroot);
+                $this->groupbuilder = new lesson_builder($this->packageroot, $this->pathtoid);
             }
         }
         return $this->groupbuilder;
@@ -751,6 +760,43 @@ class course_builder {
                 $urlmap['wiki:' . $slug] = $url;
             }
         }
+    }
+
+    /**
+     * Build a package-path => identifier map of every buildable resource, used
+     * to resolve relative cross-resource links (e.g. ILIAS learning modules
+     * that link to each other by path rather than Canvas placeholder tokens).
+     *
+     * Only resources that actually build and get recorded in the URL map are
+     * included: bundle members (folded into another page) and deliberately
+     * suppressed resources are skipped, as is anything with no buildable module
+     * mapping, so a rewritten link never points at a target that won't exist.
+     *
+     * @param course_model $coursemodel Parsed package.
+     * @return array<string, string> Package-relative path => resource identifier.
+     */
+    private function build_pathtoid(course_model $coursemodel): array {
+        $map = [];
+        foreach ($coursemodel->all_items() as $modelitem) {
+            if ($modelitem->identifier === '' || $modelitem->bundlemember || $modelitem->suppressed) {
+                continue;
+            }
+            if (!isset(self::KIND_TO_MOD[$modelitem->kind])) {
+                continue;
+            }
+            // Map the resource's own primary path, plus the source paths of any
+            // variant fallbacks it stands in for (those resources are suppressed
+            // and so never appear here themselves, but a relative link to their
+            // HTML must still resolve to this preferred activity).
+            $primary = $modelitem->href !== '' ? $modelitem->href : ($modelitem->files[0] ?? '');
+            foreach (array_merge([$primary], $modelitem->aliaspaths) as $path) {
+                $path = ltrim((string) $path, '/');
+                if ($path !== '' && !isset($map[$path])) {
+                    $map[$path] = $modelitem->identifier;
+                }
+            }
+        }
+        return $map;
     }
 
     /**

@@ -145,6 +145,15 @@ class item {
     public array $aliasids = [];
 
     /**
+     * @var string[] Package-relative source paths of variant fallback resources
+     *               this (preferred) item stands in for. A page that links by
+     *               relative path to the fallback's HTML must resolve to this
+     *               item's activity, just as $aliasids does for object-reference
+     *               links. Populated by the manifest parser's variant swap.
+     */
+    public array $aliaspaths = [];
+
+    /**
      * @var string Alternative activity name used when this item builds as a
      *             mod_qbank (always for KIND_QUESTIONBANK, and for orphan
      *             KIND_QUIZ items that course_builder converts to banks).

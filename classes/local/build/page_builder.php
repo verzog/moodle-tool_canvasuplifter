@@ -35,13 +35,18 @@ class page_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var array<string, string> Package-relative path => resource identifier, for relative-link rewriting. */
+    private array $pathtoid;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param array $pathtoid Map of package-relative path to resource identifier (for cross-resource links).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, array $pathtoid = []) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->pathtoid = $pathtoid;
     }
 
     /**
@@ -87,6 +92,16 @@ class page_builder {
         $bundleassets = $modelitem->bundleassets ?? [];
         if (!empty($bundleassets)) {
             $content = $this->rewrite_bundle_refs($content, $bundleassets);
+        }
+
+        // Turn relative cross-resource links (ILIAS learning modules linking to
+        // each other by path) into $CANVAS_OBJECT_REFERENCE$ tokens, resolved to
+        // real activity URLs by course_builder's second link pass. Runs after
+        // bundle rewriting so a page's own assets (already @@PLUGINFILE@@) are
+        // left alone, and only when a path map was supplied.
+        if (!empty($this->pathtoid)) {
+            $basedir = page_payload::basedir($this->packageroot, $modelitem);
+            $content = (new link_rewriter())->rewrite_relative_links($content, $basedir, $this->pathtoid);
         }
 
         $moduleinfo = (object) [

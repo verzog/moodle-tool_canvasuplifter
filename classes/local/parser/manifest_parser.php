@@ -1023,6 +1023,14 @@ class manifest_parser {
         if (!in_array($fallback->identifier, $preferred->aliasids, true)) {
             $preferred->aliasids[] = $fallback->identifier;
         }
+        // Likewise carry the fallback's source path: a page that links by
+        // relative path to the fallback HTML (rather than by object reference)
+        // must still resolve to the preferred activity, but the fallback is
+        // suppressed and so never reaches the path map on its own.
+        $fallbackpath = $this->primary_path($fallback);
+        if ($fallbackpath !== '' && !in_array($fallbackpath, $preferred->aliaspaths, true)) {
+            $preferred->aliaspaths[] = $fallbackpath;
+        }
         return $preferred;
     }
 
