@@ -150,7 +150,7 @@ final class build_resilience_test extends \advanced_testcase {
         ], 'dummy');
 
         $jobs = new job_manager();
-        $jobid = $jobs->create((int) $admin->id, (int) $category->id, (int) $file->get_id());
+        $jobid = $jobs->create((int) $admin->id, (int) $category->id, job_manager::KIND_BUILD, (int) $file->get_id());
         // Pretend a prior run already built course 4242 and marked the job done.
         $jobs->mark_done($jobid, 4242, ['courseid' => 4242]);
 

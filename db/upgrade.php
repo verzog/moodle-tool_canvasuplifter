@@ -56,5 +56,31 @@ function xmldb_tool_canvasuplifter_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026061104, 'tool', 'canvasuplifter');
     }
 
+    if ($oldversion < 2026062405) {
+        $table = new xmldb_table('tool_canvasuplifter_jobs');
+
+        // Whether a run produces a report (analyse) or a course (build).
+        // Existing rows are builds, which is the default.
+        $kind = new xmldb_field('kind', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'build', 'userid');
+        if (!$dbman->field_exists($table, $kind)) {
+            $dbman->add_field($table, $kind);
+        }
+
+        // Remote package URL fetched in the task, for runs started from a URL.
+        $packageurl = new xmldb_field('packageurl', XMLDB_TYPE_TEXT, null, null, null, null, null, 'fileid');
+        if (!$dbman->field_exists($table, $packageurl)) {
+            $dbman->add_field($table, $packageurl);
+        }
+
+        // A URL run has no stored file until its task fetches one, so fileid
+        // becomes nullable.
+        $fileid = new xmldb_field('fileid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'categoryid');
+        if ($dbman->field_exists($table, $fileid)) {
+            $dbman->change_field_notnull($table, $fileid);
+        }
+
+        upgrade_plugin_savepoint(true, 2026062405, 'tool', 'canvasuplifter');
+    }
+
     return true;
 }

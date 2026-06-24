@@ -48,7 +48,8 @@ if (in_array($job->status, [job_manager::STATUS_QUEUED, job_manager::STATUS_RUNN
 }
 
 echo $OUTPUT->header();
-echo $OUTPUT->heading(get_string('buildstatusheading', 'tool_canvasuplifter'));
+$headingkey = $job->kind === job_manager::KIND_ANALYSE ? 'analysestatusheading' : 'buildstatusheading';
+echo $OUTPUT->heading(get_string($headingkey, 'tool_canvasuplifter'));
 
 $statuslabel = get_string('status_' . $job->status, 'tool_canvasuplifter');
 echo html_writer::tag('p', get_string('jobstatusis', 'tool_canvasuplifter', $statuslabel));
@@ -73,10 +74,28 @@ echo html_writer::div($bar, 'progress', ['style' => 'height: 1.25rem;']);
 echo html_writer::tag('p', s($progresslabel) . ' (' . $percent . '%)', ['class' => 'text-muted mt-2']);
 
 if ($job->status === job_manager::STATUS_FAILED) {
-    echo $OUTPUT->notification(format_text($job->errormsg, FORMAT_PLAIN), \core\output\notification::NOTIFY_ERROR);
+    // Ingest/package failures are recorded as lang-string keys; resolve them.
+    $msg = (string) $job->errormsg;
+    if (get_string_manager()->string_exists($msg, 'tool_canvasuplifter')) {
+        $msg = get_string($msg, 'tool_canvasuplifter');
+    }
+    echo $OUTPUT->notification(format_text($msg, FORMAT_PLAIN), \core\output\notification::NOTIFY_ERROR);
 }
 
-if ($job->status === job_manager::STATUS_DONE && $job->courseid) {
+if ($job->status === job_manager::STATUS_DONE && $job->kind === job_manager::KIND_ANALYSE) {
+    // Show the conversion report and offer to build the same package.
+    $report = json_decode((string) $job->report, true) ?: [];
+    $renderer = $PAGE->get_renderer('tool_canvasuplifter');
+    echo $renderer->analysis($report);
+    if (!empty($job->fileid)) {
+        echo $renderer->build_from_report_form(
+            (int) $job->fileid,
+            (int) $job->categoryid,
+            (string) ($report['pagegrouping'] ?? ''),
+            (int) ($report['quizfrombank'] ?? 0)
+        );
+    }
+} else if ($job->status === job_manager::STATUS_DONE && $job->courseid) {
     $report = json_decode((string) $job->report, true) ?: [];
     echo html_writer::tag('p', get_string('builtcoursesummary', 'tool_canvasuplifter', [
         'sectioncount' => (int) ($report['sectioncount'] ?? 0),

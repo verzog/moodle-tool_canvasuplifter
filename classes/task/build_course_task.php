@@ -16,14 +16,14 @@
 
 namespace tool_canvasuplifter\task;
 
-use core\task\adhoc_task;
 use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\ingest\package;
 use tool_canvasuplifter\local\job_manager;
 use tool_canvasuplifter\local\parser\manifest_parser;
 
 /**
- * Adhoc task that extracts the stored Canvas package and builds the course.
+ * Adhoc task that obtains the Canvas package (downloading a URL job, or reading
+ * a stored upload) and builds the course.
  *
  * Custom data shape: {jobid: int, quizfrombank?: int, pagegrouping?: string}.
  *
@@ -31,7 +31,7 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class build_course_task extends adhoc_task {
+class build_course_task extends package_job_task {
     /**
      * Run the build.
      */
@@ -71,8 +71,10 @@ class build_course_task extends adhoc_task {
         $extractdir = make_request_directory();
         $temppackage = null;
         try {
-            $jobs->set_progress($jobid, 1, get_string('progressextract', 'tool_canvasuplifter'));
-            $temppackage = $this->copy_stored_file_to_temp((int) $job->fileid);
+            // Downloads a URL job (recording the stored file for reuse) or copies
+            // the stored upload.
+            $temppackage = $this->resolve_package($jobs, $job);
+            $jobs->set_progress($jobid, 2, get_string('progressextract', 'tool_canvasuplifter'));
             $root = (new package())->extract($temppackage, $extractdir);
 
             $jobs->set_progress($jobid, 3, get_string('progressparse', 'tool_canvasuplifter'));
@@ -96,23 +98,5 @@ class build_course_task extends adhoc_task {
                 @unlink($temppackage);
             }
         }
-    }
-
-    /**
-     * Copy the stored package file out to a normal temp file so the existing
-     * ingest pipeline (which uses ZipArchive on a path) can read it.
-     *
-     * @param int $fileid stored_file id.
-     * @return string Path to the temp copy.
-     */
-    private function copy_stored_file_to_temp(int $fileid): string {
-        $fs = get_file_storage();
-        $file = $fs->get_file_by_id($fileid);
-        if (!$file) {
-            throw new \RuntimeException("Stored file $fileid not found");
-        }
-        $target = tempnam(make_request_directory(), 'canvasuplifter_');
-        $file->copy_content_to($target);
-        return $target;
     }
 }
