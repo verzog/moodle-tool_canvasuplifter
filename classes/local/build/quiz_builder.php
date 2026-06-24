@@ -278,13 +278,19 @@ class quiz_builder {
             // would still expose the questions and the student's own responses.
             $whens = ['during', 'immediately', 'open', 'closed'];
         } else if ($settings->hideresults === 'until_after_last_attempt') {
-            // Moodle can't gate review on "attempts exhausted", so hide results
-            // while the attempt is in progress and in the immediate post-submit
-            // window, then reveal them in the open phase. That shows results
-            // shortly after submission — effectively "after the last attempt"
-            // for the common single-attempt quiz — and never hides them forever,
-            // which clearing the open phase would do when no close date is set.
-            $whens = ['during', 'immediately'];
+            // Show results only after the student's last attempt. Moodle can't
+            // gate review on "attempts exhausted", so approximate by attempt
+            // count, always hiding during the attempt and the immediate
+            // post-submit window. For a single attempt (the common case) the
+            // first attempt is the last, so reveal results in the open phase —
+            // and crucially do NOT clear that phase, which would hide them
+            // forever when no close date is set. For multiple or unlimited
+            // attempts a non-final attempt would otherwise expose results in
+            // the open phase before the last attempt, so hide that phase too and
+            // reveal only once the quiz has closed. Canvas always writes
+            // allowed_attempts, defaulting to a single attempt when absent.
+            $multipleattempts = $settings->allowedattempts === -1 || $settings->allowedattempts >= 2;
+            $whens = $multipleattempts ? ['during', 'immediately', 'open'] : ['during', 'immediately'];
         } else {
             return;
         }

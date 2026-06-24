@@ -492,4 +492,77 @@ XML;
         // The QTI file was found despite the meta being listed first.
         $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
     }
+
+    /**
+     * Write a package whose quiz hides results until after the last attempt,
+     * with the given number of allowed attempts.
+     *
+     * @param string $dirname Unique sub-folder name under quiz/.
+     * @param int $attempts Canvas allowed_attempts (-1 for unlimited).
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_until_last(string $dirname, int $attempts): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/' . $dirname);
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="' . $dirname . '" title="Quiz"><section ident="s1">'
+            . $this->mcitem() . $this->fibitem()
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/' . $dirname . '/qti.xml', $qti);
+        $meta = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz identifier="' . $dirname . '" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Quiz</title>'
+            . '<hide_results>until_after_last_attempt</hide_results>'
+            . '<allowed_attempts>' . $attempts . '</allowed_attempts>'
+            . '</quiz>';
+        file_put_contents($dir . '/quiz/' . $dirname . '/assessment_meta.xml', $meta);
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item></item>'
+            . '</item></organization></organizations>'
+            . '<resources><resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="quiz/' . $dirname . '/qti.xml"/></resource></resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * hide_results=until_after_last_attempt maps by attempt count: a
+     * multiple-attempt quiz keeps results hidden in the "later while open"
+     * phase (so a non-final attempt can't reveal them before the last), while a
+     * single-attempt quiz reveals them then (its first attempt is its last, and
+     * clearing that phase would hide them forever with no close date).
+     *
+     * @return void
+     */
+    public function test_until_after_last_attempt_respects_attempt_count(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $open = \mod_quiz\question\display_options::LATER_WHILE_OPEN;
+
+        // Multiple attempts: the open phase must be hidden.
+        $rootmulti = $this->build_fixture_until_last('multi', 3);
+        $category = $this->getDataGenerator()->create_category();
+        $modelmulti = (new manifest_parser($rootmulti))->parse();
+        $reportmulti = (new course_builder($category->id, $rootmulti))->build($modelmulti);
+        $cmsmulti = get_fast_modinfo($reportmulti['courseid'])->get_instances_of('quiz');
+        $cmmulti = reset($cmsmulti);
+        $quizmulti = $DB->get_record('quiz', ['id' => $cmmulti->instance], '*', MUST_EXIST);
+        $this->assertSame(0, (int) $quizmulti->reviewmarks & $open);
+        $this->assertSame(0, (int) $quizmulti->reviewrightanswer & $open);
+
+        // Single attempt: the open phase reveals results (not hidden forever).
+        $rootsingle = $this->build_fixture_until_last('single', 1);
+        $modelsingle = (new manifest_parser($rootsingle))->parse();
+        $reportsingle = (new course_builder($category->id, $rootsingle))->build($modelsingle);
+        $cmssingle = get_fast_modinfo($reportsingle['courseid'])->get_instances_of('quiz');
+        $cmsingle = reset($cmssingle);
+        $quizsingle = $DB->get_record('quiz', ['id' => $cmsingle->instance], '*', MUST_EXIST);
+        $this->assertSame($open, (int) $quizsingle->reviewmarks & $open);
+    }
 }
