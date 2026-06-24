@@ -351,6 +351,67 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A decline that opens with an affirmative read-confirmation phrase but then
+     * negates the acceptance verb ("I have read and do not agree", "I have read
+     * and do not consent") is still a refusal, so it is left for review rather
+     * than gaining a false "No".
+     *
+     * @return void
+     */
+    public function test_read_and_decline_opener_is_rejected(): void {
+        foreach (['I have read and do not agree', 'I have read and do not consent'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(1, $q->answers, "$optiontext must not gain a distractor");
+            $this->assertFalse($q->is_importable(), "$optiontext must stay for review");
+        }
+    }
+
+    /**
+     * An explicit refusal phrase whose refusal verb governs a trailing
+     * affirmation verb ("I refuse to agree", "I decline to accept", "I reject
+     * consent") is a decline, so no distractor is fabricated.
+     *
+     * @return void
+     */
+    public function test_refusal_verb_phrases_are_left_alone(): void {
+        foreach (['I refuse to agree', 'I decline to accept', 'I reject consent'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(1, $q->answers, "$optiontext must not gain a distractor");
+            $this->assertFalse($q->is_importable(), "$optiontext must stay for review");
+        }
+    }
+
+    /**
+     * A negated "understood" response ("Not understood", "I have not
+     * understood") is a negative, so it is left for review rather than being
+     * read as the closing affirmation "understood".
+     *
+     * @return void
+     */
+    public function test_negated_understood_is_left_alone(): void {
+        foreach (['Not understood', 'I have not understood'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(1, $q->answers, "$optiontext must not gain a distractor");
+            $this->assertFalse($q->is_importable(), "$optiontext must stay for review");
+        }
+    }
+
+    /**
+     * Explicit negative-consent labels ("No consent", "Non-consent", "I give no
+     * consent") are declines, so the trailing "consent" must not fabricate a
+     * "No" and make the refusal importable.
+     *
+     * @return void
+     */
+    public function test_no_consent_labels_are_declines(): void {
+        foreach (['No consent', 'Non-consent', 'I give no consent'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(1, $q->answers, "$optiontext must not gain a distractor");
+            $this->assertFalse($q->is_importable(), "$optiontext must stay for review");
+        }
+    }
+
+    /**
      * A bare item reference (an ident with no presentation, as Canvas New
      * Quizzes export) yields no question but is counted as unresolved, so the
      * builder can report missing content rather than an empty assessment.

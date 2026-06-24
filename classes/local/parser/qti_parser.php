@@ -247,14 +247,32 @@ class qti_parser {
             return true;
         }
 
+        // Decline guard: reject when a negation, refusal or "no" word governs a
+        // nearby acceptance verb, so an explicit decline is never turned into a
+        // fabricated "Yes". The acceptance verb must FOLLOW the deny word (within
+        // a few words), which covers adjacent and short-gap negations ("I do not
+        // agree", "I do not wish to agree", "I don't want to accept"), refusal
+        // verbs ("I refuse to agree", "I reject consent"), negated understanding
+        // ("Not understood", "I have not understood") and no/non consent ("No
+        // consent", "Non-consent"). Hyphens are read as spaces so "Non-consent"
+        // is two words. Because the acceptance verb must come after the deny
+        // word, a prohibition the option merely acknowledges leaves the leading
+        // affirmation intact ("I understand that I do not have permission ...",
+        // "I acknowledge that I must reject plagiarism"). Run before the opener
+        // match so a decline opening with an affirmative phrase ("I have read and
+        // do not agree") is still rejected.
+        $deny = "not|never|cannot|no|non|\\w*n't|disagree|decline|refuse|reject";
+        $accept = $affirmverb . '|understood|understand';
+        $guardtext = str_replace('-', ' ', $text);
+        if (preg_match('/\b(?:' . $deny . ')(?:\s+\w+){0,3}\s+(?:' . $accept . ')\b/', $guardtext)) {
+            return false;
+        }
+
         // Affirmative opener: the option begins with a whole affirmation verb or
         // phrase ("I have read and agree", "Consent to participate", "Accept").
         // The trailing \b requires the complete word, so "Acceptable Use Policy"
         // and "Agreement form" (which only start with the letters) are left for
-        // review. Openers are checked before the decline guard so an affirmation
-        // that merely mentions a prohibited action ("I acknowledge that I must
-        // reject plagiarism", "I understand that I do not have permission to
-        // share answers") is still recognised.
+        // review.
         $openers = [
             'yes', 'i agree', 'i accept', 'i acknowledge', 'i understand', 'i consent',
             'i confirm', 'i certify', 'i have read', 'accept', 'agree', 'acknowledge',
@@ -265,19 +283,9 @@ class qti_parser {
             return true;
         }
 
-        // Decline guard: with affirmative openers already accepted, a negation
-        // that governs the affirmation verb means the option is a refusal, so do
-        // not fabricate a "No" — whether the negation is adjacent ("I do not
-        // agree") or separated ("I do not wish to agree", "I don't want to
-        // accept"). Refusals that merely end in a non-affirmation word ("I
-        // disagree") never reach the trailing-verb test below, so need no case.
-        $hasnegation = (bool) preg_match("/\\bnot\\b|\\bnever\\b|\\bcannot\\b|n't/", $text);
-        if ($hasnegation && preg_match('/\b(?:' . $affirmverb . ')\b/', $text)) {
-            return false;
-        }
-
         // Closing affirmation verb ("By selecting this option, I agree.", "By
-        // continuing, I accept!"). Tolerate trailing punctuation/whitespace.
+        // continuing, I accept!"). Tolerate trailing punctuation/whitespace. The
+        // decline guard above has already removed negated/refused forms.
         return (bool) preg_match('/\b(?:' . $affirmverb . '|understood)[\s\p{P}]*$/u', $text);
     }
 
