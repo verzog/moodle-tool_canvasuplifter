@@ -51,6 +51,7 @@ class provider implements
             'userid' => 'privacy:metadata:tool_canvasuplifter_jobs:userid',
             'status' => 'privacy:metadata:tool_canvasuplifter_jobs:status',
             'categoryid' => 'privacy:metadata:tool_canvasuplifter_jobs:categoryid',
+            'packageurl' => 'privacy:metadata:tool_canvasuplifter_jobs:packageurl',
             'courseid' => 'privacy:metadata:tool_canvasuplifter_jobs:courseid',
             'errormsg' => 'privacy:metadata:tool_canvasuplifter_jobs:errormsg',
             'timecreated' => 'privacy:metadata:tool_canvasuplifter_jobs:timecreated',
@@ -116,6 +117,7 @@ class provider implements
                 $data[] = (object) [
                     'status' => $job->status,
                     'categoryid' => $job->categoryid,
+                    'packageurl' => $job->packageurl,
                     'courseid' => $job->courseid,
                     'errormsg' => $job->errormsg,
                     'timecreated' => transform::datetime($job->timecreated),

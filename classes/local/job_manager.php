@@ -33,31 +33,61 @@ class job_manager {
     /** Aborted; see errormsg. */
     public const STATUS_FAILED = 'failed';
 
+    /** Run that produces a conversion report only. */
+    public const KIND_ANALYSE = 'analyse';
+    /** Run that creates a course. */
+    public const KIND_BUILD = 'build';
+
     /** Database table name. */
     public const TABLE = 'tool_canvasuplifter_jobs';
 
     /**
      * Insert a queued job row and return its id.
      *
+     * Exactly one of $fileid (an already-stored upload) or $packageurl (a remote
+     * package the task will fetch) is given; the other is null.
+     *
      * @param int $userid Admin user.
      * @param int $categoryid Course category for the new course.
-     * @param int $fileid stored_file::get_id() for the package file.
+     * @param string $kind One of the KIND_* constants.
+     * @param int|null $fileid stored_file::get_id() for an uploaded package, or null.
+     * @param string|null $packageurl Remote package URL to fetch in the task, or null.
      * @return int Job id.
      */
-    public function create(int $userid, int $categoryid, int $fileid): int {
+    public function create(
+        int $userid,
+        int $categoryid,
+        string $kind,
+        ?int $fileid = null,
+        ?string $packageurl = null
+    ): int {
         global $DB;
         $now = time();
         return $DB->insert_record(self::TABLE, (object) [
             'userid' => $userid,
+            'kind' => $kind,
             'status' => self::STATUS_QUEUED,
             'categoryid' => $categoryid,
             'fileid' => $fileid,
+            'packageurl' => $packageurl,
             'courseid' => null,
             'report' => null,
             'errormsg' => null,
             'timecreated' => $now,
             'timemodified' => $now,
         ]);
+    }
+
+    /**
+     * Record the stored package file a URL run's task fetched, so a later build
+     * can reuse it without downloading again.
+     *
+     * @param int $jobid Job id.
+     * @param int $fileid stored_file::get_id() of the fetched package.
+     * @return void
+     */
+    public function set_fileid(int $jobid, int $fileid): void {
+        $this->update($jobid, ['fileid' => $fileid]);
     }
 
     /**
@@ -106,6 +136,23 @@ class job_manager {
         $this->update($jobid, [
             'status' => self::STATUS_DONE,
             'courseid' => $courseid,
+            'report' => json_encode($report),
+            'progress' => 100,
+            'progressmessage' => '',
+        ]);
+    }
+
+    /**
+     * Mark an analyse job done and store its conversion report. No course is
+     * created, so courseid stays null.
+     *
+     * @param int $jobid Job id.
+     * @param array $report Conversion report.
+     * @return void
+     */
+    public function mark_analysed(int $jobid, array $report): void {
+        $this->update($jobid, [
+            'status' => self::STATUS_DONE,
             'report' => json_encode($report),
             'progress' => 100,
             'progressmessage' => '',
