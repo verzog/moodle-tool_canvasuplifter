@@ -61,6 +61,7 @@ $string['errorbadmanifestxml'] = 'The imsmanifest.xml file could not be parsed a
 $string['errorbadurl'] = 'The download URL must start with http:// or https://.';
 $string['errorbothsources'] = 'Provide either a file or a URL, not both.';
 $string['errordownloadfailed'] = 'The Canvas package could not be downloaded from that URL.';
+$string['errordownloadjspage'] = 'That page builds its download links with JavaScript (a DSpace repository), so the file link is not in the page we receive, and the repository\'s API did not return a Common Cartridge file. Open the page in your browser, then copy the direct file link under "Files" (it looks like .../bitstreams/<id>/download) and paste that here.';
 $string['errordownloadnopackage'] = 'That URL did not return a Common Cartridge package. If it is a repository landing page, link directly to the .imscc download.';
 $string['errordownloadtoobig'] = 'The downloaded file is larger than the site upload limit.';
 $string['errorjobnotfound'] = 'That build job no longer exists.';
