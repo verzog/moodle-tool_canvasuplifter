@@ -40,6 +40,13 @@ final class dspace_resolver {
     private const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 
     /**
+     * @var int Page size requested for bitstream listings. DSpace defaults to 20
+     * and commonly caps at 100; this lifts a package on a later page into view
+     * while still being honoured exactly by the typical server maximum.
+     */
+    private const PAGE_SIZE = 100;
+
+    /**
      * Whether the HTML is a DSpace Angular app (an un-rendered shell, or a
      * server-rendered page) rather than some other repository's HTML. Used to
      * decide whether a REST resolution attempt is worthwhile.
@@ -72,6 +79,49 @@ final class dspace_resolver {
             return ['handle' => rtrim($m[1], '/')];
         }
         return null;
+    }
+
+    /**
+     * The item-lookup URLs to try for a reference against one REST base, best
+     * first. A UUID resolves directly. A Handle is tried both bare and with the
+     * "hdl:" prefix that DSpace's pid/find documents and some instances require,
+     * since others accept the bare form — trying both avoids giving up early.
+     *
+     * @param string $base REST API base URL ending in "/server".
+     * @param array $ref Item reference: ['uuid' => string] or ['handle' => string].
+     * @return string[] Absolute lookup URLs.
+     */
+    public static function item_lookup_urls(string $base, array $ref): array {
+        if (isset($ref['uuid'])) {
+            return [$base . '/api/core/items/' . $ref['uuid']];
+        }
+        $encoded = self::encode_handle((string) ($ref['handle'] ?? ''));
+        return [
+            $base . '/api/pid/find?id=' . $encoded,
+            $base . '/api/pid/find?id=hdl:' . $encoded,
+        ];
+    }
+
+    /**
+     * The bundles listing URL with bitstreams embedded and the page sized up, so
+     * a package on an item with many files is not missed on the default page.
+     *
+     * @param string $href The item's bundles href.
+     * @return string
+     */
+    public static function bundles_url(string $href): string {
+        return self::add_query($href, 'embed=bitstreams&size=' . self::PAGE_SIZE);
+    }
+
+    /**
+     * Append the page-size query that lifts a bitstreams collection above
+     * DSpace's default page, used when following a bundle's bitstreams link.
+     *
+     * @param string $href The bitstreams collection href.
+     * @return string
+     */
+    public static function with_page_size(string $href): string {
+        return self::add_query($href, 'size=' . self::PAGE_SIZE);
     }
 
     /**
@@ -178,5 +228,27 @@ final class dspace_resolver {
             }
         }
         return null;
+    }
+
+    /**
+     * Percent-encode a Handle for the pid/find query while leaving its slash
+     * literal, which DSpace expects (e.g. "taaccct/4632").
+     *
+     * @param string $handle The Handle string.
+     * @return string The encoded value.
+     */
+    private static function encode_handle(string $handle): string {
+        return str_replace('%2F', '/', rawurlencode($handle));
+    }
+
+    /**
+     * Append a query fragment to a URL with the right separator.
+     *
+     * @param string $url The base URL, optionally already carrying a query.
+     * @param string $query The query fragment, e.g. "size=100".
+     * @return string
+     */
+    private static function add_query(string $url, string $query): string {
+        return $url . (strpos($url, '?') === false ? '?' : '&') . $query;
     }
 }

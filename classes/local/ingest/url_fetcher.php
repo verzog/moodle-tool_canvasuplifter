@@ -238,18 +238,13 @@ class url_fetcher {
      * @return string|null The bitstream content href, or null if this base could not resolve it.
      */
     private function dspace_package_from_base(string $base, array $ref): ?string {
-        if (isset($ref['uuid'])) {
-            $item = $this->http_get_json($base . '/api/core/items/' . $ref['uuid']);
-        } else {
-            // The pid/find endpoint issues a 302 to the item endpoint; curl follows it.
-            $item = $this->http_get_json($base . '/api/pid/find?id=' . self::encode_handle($ref['handle']));
-        }
-        if (!is_array($item) || empty($item['uuid'])) {
+        $item = $this->dspace_item($base, $ref);
+        if ($item === null) {
             return null;
         }
         $bundleshref = $item['_links']['bundles']['href']
             ?? ($base . '/api/core/items/' . $item['uuid'] . '/bundles');
-        $bundles = $this->http_get_json(self::with_query($bundleshref, 'embed=bitstreams'));
+        $bundles = $this->http_get_json(dspace_resolver::bundles_url($bundleshref));
         if (!is_array($bundles)) {
             return null;
         }
@@ -257,14 +252,35 @@ class url_fetcher {
         if ($href !== null) {
             return $href;
         }
-        // Bitstreams were not embedded; follow each bundle's bitstreams link.
+        // Bitstreams were not embedded (or spilled past the embedded page); follow
+        // each bundle's bitstreams link, requesting a page large enough to hold them.
         foreach (dspace_resolver::bundle_bitstreams_hrefs($bundles) as $bhref) {
-            $collection = $this->http_get_json($bhref);
+            $collection = $this->http_get_json(dspace_resolver::with_page_size($bhref));
             if (is_array($collection)) {
                 $href = dspace_resolver::pick_href(dspace_resolver::bitstreams_from_collection($collection));
                 if ($href !== null) {
                     return $href;
                 }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolve a reference to its DSpace item JSON against one REST base, trying
+     * each candidate lookup URL (a Handle is attempted both bare and "hdl:"-
+     * prefixed) until one returns an item. The pid/find endpoint issues a 302 to
+     * the item endpoint, which curl follows.
+     *
+     * @param string $base REST API base URL ending in "/server".
+     * @param array $ref Item reference: ['uuid' => string] or ['handle' => string].
+     * @return array|null The decoded item JSON, or null if none resolved.
+     */
+    private function dspace_item(string $base, array $ref): ?array {
+        foreach (dspace_resolver::item_lookup_urls($base, $ref) as $lookup) {
+            $item = $this->http_get_json($lookup);
+            if (is_array($item) && !empty($item['uuid'])) {
+                return $item;
             }
         }
         return null;
@@ -296,28 +312,6 @@ class url_fetcher {
         }
         $data = json_decode($body, true);
         return is_array($data) ? $data : null;
-    }
-
-    /**
-     * Percent-encode a Handle for the pid/find query while leaving its slash
-     * literal, which DSpace expects (e.g. "taaccct/4632").
-     *
-     * @param string $handle The Handle string.
-     * @return string The encoded value.
-     */
-    private static function encode_handle(string $handle): string {
-        return str_replace('%2F', '/', rawurlencode($handle));
-    }
-
-    /**
-     * Append a query fragment to a URL with the right separator.
-     *
-     * @param string $url The base URL.
-     * @param string $query The query fragment, e.g. "embed=bitstreams".
-     * @return string
-     */
-    private static function with_query(string $url, string $query): string {
-        return $url . (strpos($url, '?') === false ? '?' : '&') . $query;
     }
 
     /**

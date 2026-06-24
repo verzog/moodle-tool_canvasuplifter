@@ -71,6 +71,52 @@ final class dspace_resolver_test extends \basic_testcase {
     }
 
     /**
+     * A UUID yields a single direct item URL; a Handle yields both the bare and
+     * the "hdl:"-prefixed pid/find forms (with the handle slash kept literal), so
+     * an instance that requires either form still resolves.
+     *
+     * @return void
+     */
+    public function test_item_lookup_urls(): void {
+        $base = 'https://library.skillscommons.org/server';
+
+        $this->assertSame(
+            [$base . '/api/core/items/4e465893-02a5-4c68-b2a8-afbbd897e795'],
+            dspace_resolver::item_lookup_urls($base, ['uuid' => '4e465893-02a5-4c68-b2a8-afbbd897e795'])
+        );
+
+        $this->assertSame(
+            [
+                $base . '/api/pid/find?id=taaccct/4632',
+                $base . '/api/pid/find?id=hdl:taaccct/4632',
+            ],
+            dspace_resolver::item_lookup_urls($base, ['handle' => 'taaccct/4632'])
+        );
+    }
+
+    /**
+     * The bundles URL embeds bitstreams and lifts the page size; following a
+     * bundle's bitstreams link sizes the page up too, so a package on a later
+     * page is still found. Both respect an existing query string.
+     *
+     * @return void
+     */
+    public function test_paginated_listing_urls(): void {
+        $bundles = self::REST . '/core/items/9a/bundles';
+        $this->assertSame(
+            $bundles . '?embed=bitstreams&size=100',
+            dspace_resolver::bundles_url($bundles)
+        );
+
+        $collection = self::REST . '/core/bundles/9a/bitstreams';
+        $this->assertSame($collection . '?size=100', dspace_resolver::with_page_size($collection));
+        $this->assertSame(
+            $collection . '?page=0&size=100',
+            dspace_resolver::with_page_size($collection . '?page=0')
+        );
+    }
+
+    /**
      * Candidate REST bases prefer an in-page hint, then the UI host's /server,
      * then the sibling library.* host for www.* split-host deployments.
      *
