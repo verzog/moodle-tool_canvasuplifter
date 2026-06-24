@@ -401,4 +401,89 @@ XML;
         // Questions still import.
         $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
     }
+
+    /**
+     * Write a package whose quiz resource lists assessment_meta.xml *before* the
+     * QTI file, with an explicit zero-point survey that hides results. Exercises
+     * three edge cases at once: the meta file must not be read as the QTI doc,
+     * an explicit 0 points must give a 0 max grade (not the 100-point default),
+     * and hide_results=always must clear the result-revealing review options.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_zero_points_hidden(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/z');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="z" title="Survey"><section ident="s1">'
+            . $this->mcitem() . $this->fibitem()
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/z/qti.xml', $qti);
+        $meta = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz identifier="z" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Survey</title>'
+            . '<quiz_type>survey</quiz_type>'
+            . '<points_possible>0.0</points_possible>'
+            . '<hide_results>always</hide_results>'
+            . '</quiz>';
+        file_put_contents($dir . '/quiz/z/assessment_meta.xml', $meta);
+        // The meta file is listed before the QTI file on purpose.
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Survey</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/z/assessment_meta.xml"/>
+      <file href="quiz/z/qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * An explicit zero-point survey that hides results builds with a 0 maximum
+     * grade and the result-revealing review options cleared, and its questions
+     * still import even though the manifest lists assessment_meta.xml first.
+     *
+     * @return void
+     */
+    public function test_zero_points_and_hidden_results(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_zero_points_hidden();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizcm = reset($modinfo->get_instances_of('quiz'));
+        $quiz = $DB->get_record('quiz', ['id' => $quizcm->instance], '*', MUST_EXIST);
+
+        // Explicit zero points -> ungraded (0) max, not the 100-point default.
+        $this->assertEqualsWithDelta(0.0, (float) $quiz->grade, 0.001);
+        // With hide_results=always, the result-revealing review bits clear everywhere.
+        $this->assertEquals(0, (int) $quiz->reviewcorrectness);
+        $this->assertEquals(0, (int) $quiz->reviewrightanswer);
+        $this->assertEquals(0, (int) $quiz->reviewoverallfeedback);
+        // The QTI file was found despite the meta being listed first.
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
+    }
 }
