@@ -44,6 +44,9 @@ final class build_resilience_test extends \advanced_testcase {
     public function test_unreadable_cartridge_url_does_not_leak_transaction(): void {
         global $DB;
         $this->resetAfterTest(true);
+        // PHPUnit normally wraps each test in a transaction; drop that so this
+        // mirrors the real adhoc task, which builds with no outer transaction.
+        $this->preventResetByRollback();
         $this->setAdminUser();
 
         $course = $DB->get_record('course', ['id' => $this->getDataGenerator()->create_course()->id], '*', MUST_EXIST);
@@ -72,6 +75,53 @@ final class build_resilience_test extends \advanced_testcase {
         $this->assertFalse($DB->is_transaction_started());
         // Nothing was left half-created.
         $this->assertSame(0, $DB->count_records('lti'));
+    }
+
+    /**
+     * When the caller already holds its own transaction, a failing tool build
+     * must NOT force-roll-back that outer transaction (which would silently
+     * discard the caller's earlier writes). The failure is re-thrown for the
+     * caller to handle, and the still-open transaction is left untouched.
+     *
+     * @return void
+     */
+    public function test_caller_owned_transaction_is_not_force_rolled_back(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        // Start from no ambient transaction so the only open one is the caller's,
+        // started explicitly below.
+        $this->preventResetByRollback();
+        $this->setAdminUser();
+
+        $course = $DB->get_record('course', ['id' => $this->getDataGenerator()->create_course()->id], '*', MUST_EXIST);
+
+        $dir = make_request_directory();
+        $xml = '<cartridge_basiclti_link xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0">'
+            . '<blti:title>Dead Tool</blti:title>'
+            . '<blti:launch_url>https://localhost:9/dead.xml</blti:launch_url>'
+            . '</cartridge_basiclti_link>';
+        file_put_contents($dir . '/lti.xml', $xml);
+
+        $modelitem = new item('r_lti', 'Dead Tool');
+        $modelitem->kind = item::KIND_LTI;
+        $modelitem->href = 'lti.xml';
+        $modelitem->files = ['lti.xml'];
+
+        $transaction = $DB->start_delegated_transaction();
+        $threw = false;
+        try {
+            (new lti_builder($dir))->build($course, 0, $modelitem);
+        } catch (\Throwable $e) {
+            $threw = true;
+        }
+
+        // The failure was propagated, not swallowed, and the caller's
+        // transaction was left open for the caller to roll back itself.
+        $this->assertTrue($threw);
+        $this->assertTrue($DB->is_transaction_started());
+
+        // Clean up the transaction we opened in the test.
+        $DB->force_transaction_rollback();
     }
 
     /**
