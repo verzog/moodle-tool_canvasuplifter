@@ -279,6 +279,7 @@ class course_builder {
         $this->rewrite_grouped_content($rewritetargets, $urlmap);
         $this->rewrite_forum_links((int) $course->id, $urlmap);
         $this->rewrite_assign_links((int) $course->id, $urlmap);
+        $this->rewrite_quiz_links((int) $course->id, $urlmap);
 
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
@@ -945,6 +946,33 @@ class course_builder {
             $newintro = $rewriter->rewrite_internal_links((string) $assign->intro, $urlmap);
             if ($newintro !== $assign->intro) {
                 $DB->set_field('assign', 'intro', $newintro, ['id' => $assign->id]);
+            }
+        }
+    }
+
+    /**
+     * Rewrite internal Canvas links in built quiz intros.
+     *
+     * quiz_builder carries the Canvas quiz description (from assessment_meta.xml)
+     * into the quiz intro, which can include $WIKI_REFERENCE$ or
+     * $CANVAS_OBJECT_REFERENCE$ placeholders. As with pages, forums and
+     * assignments, the URL map isn't complete when each quiz is created, so
+     * resolve them here once every link target exists.
+     *
+     * @param int $courseid The built course id.
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_quiz_links(int $courseid, array $urlmap): void {
+        global $DB;
+        if (empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        foreach ($DB->get_records('quiz', ['course' => $courseid], '', 'id, intro') as $quiz) {
+            $newintro = $rewriter->rewrite_internal_links((string) $quiz->intro, $urlmap);
+            if ($newintro !== $quiz->intro) {
+                $DB->set_field('quiz', 'intro', $newintro, ['id' => $quiz->id]);
             }
         }
     }

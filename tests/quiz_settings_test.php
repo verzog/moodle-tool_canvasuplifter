@@ -183,4 +183,65 @@ final class quiz_settings_test extends \basic_testcase {
         $this->assertSame(0, $settings->allowedattempts);
         $this->assertNull($settings->shuffleanswers);
     }
+
+    /**
+     * An explicit zero-point assessment is distinguished from one that omits
+     * points: haspoints is true and points is 0.0, so the builder can set an
+     * ungraded (0) maximum rather than the 100-point default.
+     *
+     * @return void
+     */
+    public function test_explicit_zero_points(): void {
+        $present = quiz_settings::parse(
+            '<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Survey</title><quiz_type>survey</quiz_type>'
+            . '<points_possible>0.0</points_possible></quiz>'
+        );
+        $this->assertTrue($present->haspoints);
+        $this->assertSame(0.0, $present->points);
+
+        $absent = quiz_settings::parse(
+            '<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0"><title>Q</title></quiz>'
+        );
+        $this->assertFalse($absent->haspoints);
+        $this->assertSame(0.0, $absent->points);
+    }
+
+    /**
+     * The hide_results setting is read and lower-cased.
+     *
+     * @return void
+     */
+    public function test_hide_results_parsed(): void {
+        $always = quiz_settings::parse(
+            '<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<hide_results>always</hide_results></quiz>'
+        );
+        $this->assertSame('always', $always->hideresults);
+
+        $none = quiz_settings::parse(
+            '<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0"><title>Q</title></quiz>'
+        );
+        $this->assertSame('', $none->hideresults);
+    }
+
+    /**
+     * Dates fall back to the root per field: when the <assignment> child carries
+     * only some dates and the quiz root carries the rest, every date resolves.
+     *
+     * @return void
+     */
+    public function test_per_field_date_fallback(): void {
+        $xml = '<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Q</title>'
+            . '<unlock_at>2030-08-01T00:00:00Z</unlock_at>'
+            . '<assignment><due_at>2030-09-01T23:59:00Z</due_at></assignment>'
+            . '</quiz>';
+
+        $settings = quiz_settings::parse($xml);
+
+        // The due date comes from the assignment child; unlock falls back to the root.
+        $this->assertSame(strtotime('2030-09-01T23:59:00Z'), $settings->duedate);
+        $this->assertSame(strtotime('2030-08-01T00:00:00Z'), $settings->unlockat);
+    }
 }

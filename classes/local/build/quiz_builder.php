@@ -219,7 +219,9 @@ class quiz_builder {
         if ($grademethod !== null) {
             $overlay['grademethod'] = $grademethod;
         }
-        if ($settings->points > 0) {
+        if ($settings->haspoints) {
+            // Carry the Canvas maximum, including an explicit 0 — a zero-point
+            // (ungraded) quiz or survey must not inherit the 100-point default.
             $overlay['grade'] = $settings->points;
         }
         if ($settings->shuffleanswers !== null) {
@@ -252,7 +254,53 @@ class quiz_builder {
                 $overlay['rightanswer' . $when] = 0;
             }
         }
+        $this->apply_hide_results($settings, $overlay);
         return $overlay;
+    }
+
+    /**
+     * Honour Canvas's hide_results setting by clearing the review options that
+     * reveal a student's results — score, per-question correctness, feedback and
+     * the right answer. 'always' hides them at every phase; 'until_after_last_
+     * attempt' hides them while the quiz is in progress or open and reveals them
+     * only once it has closed. The attempt-review option is left untouched so a
+     * student can still see the questions. Moodle has no exact equivalent of
+     * Canvas's per-attempt gate, so this is a faithful best effort.
+     *
+     * @param quiz_settings $settings Parsed assessment_meta.xml.
+     * @param array $overlay Moodle review flags to set (modified in place).
+     * @return void
+     */
+    private function apply_hide_results(quiz_settings $settings, array &$overlay): void {
+        if ($settings->hideresults === 'always') {
+            // Never reveal results: clear every review option at all four
+            // phases. This includes the attempt review itself — left on, it
+            // would still expose the questions and the student's own responses.
+            $whens = ['during', 'immediately', 'open', 'closed'];
+        } else if ($settings->hideresults === 'until_after_last_attempt') {
+            // Show results only after the student's last attempt. Moodle can't
+            // gate review on "attempts exhausted", so approximate by attempt
+            // count, always hiding during the attempt and the immediate
+            // post-submit window. For a single attempt (the common case) the
+            // first attempt is the last, so reveal results in the open phase —
+            // and crucially do NOT clear that phase, which would hide them
+            // forever when no close date is set. For multiple or unlimited
+            // attempts a non-final attempt would otherwise expose results in
+            // the open phase before the last attempt, so hide that phase too and
+            // reveal only once the quiz has closed. Canvas always writes
+            // allowed_attempts, defaulting to a single attempt when absent.
+            $multipleattempts = $settings->allowedattempts === -1 || $settings->allowedattempts >= 2;
+            $whens = $multipleattempts ? ['during', 'immediately', 'open'] : ['during', 'immediately'];
+        } else {
+            return;
+        }
+        $fields = ['attempt', 'correctness', 'maxmarks', 'marks', 'specificfeedback', 'generalfeedback',
+            'rightanswer', 'overallfeedback'];
+        foreach ($whens as $when) {
+            foreach ($fields as $field) {
+                $overlay[$field . $when] = 0;
+            }
+        }
     }
 
     /**
@@ -311,6 +359,13 @@ class quiz_builder {
             $candidates[] = $modelitem->href;
         }
         foreach ($candidates as $relative) {
+            // The sibling assessment_meta.xml is also an .xml on the file list;
+            // it carries the quiz configuration, not the questions, so never
+            // accept it as the QTI document (which would parse zero questions
+            // and drop the quiz).
+            if (str_ends_with($relative, 'assessment_meta.xml')) {
+                continue;
+            }
             if (!preg_match('/\.xml(\.qti)?$/i', $relative)) {
                 continue;
             }

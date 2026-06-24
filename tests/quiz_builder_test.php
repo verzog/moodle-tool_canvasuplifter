@@ -401,4 +401,168 @@ XML;
         // Questions still import.
         $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
     }
+
+    /**
+     * Write a package whose quiz resource lists assessment_meta.xml *before* the
+     * QTI file, with an explicit zero-point survey that hides results. Exercises
+     * three edge cases at once: the meta file must not be read as the QTI doc,
+     * an explicit 0 points must give a 0 max grade (not the 100-point default),
+     * and hide_results=always must clear the result-revealing review options.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_zero_points_hidden(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/z');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="z" title="Survey"><section ident="s1">'
+            . $this->mcitem() . $this->fibitem()
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/z/qti.xml', $qti);
+        $meta = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz identifier="z" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Survey</title>'
+            . '<quiz_type>survey</quiz_type>'
+            . '<points_possible>0.0</points_possible>'
+            . '<hide_results>always</hide_results>'
+            . '</quiz>';
+        file_put_contents($dir . '/quiz/z/assessment_meta.xml', $meta);
+        // The meta file is listed before the QTI file on purpose.
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Survey</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/z/assessment_meta.xml"/>
+      <file href="quiz/z/qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * An explicit zero-point survey that hides results builds with a 0 maximum
+     * grade and the result-revealing review options cleared, and its questions
+     * still import even though the manifest lists assessment_meta.xml first.
+     *
+     * @return void
+     */
+    public function test_zero_points_and_hidden_results(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_zero_points_hidden();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizcm = reset($modinfo->get_instances_of('quiz'));
+        $quiz = $DB->get_record('quiz', ['id' => $quizcm->instance], '*', MUST_EXIST);
+
+        // Explicit zero points -> ungraded (0) max, not the 100-point default.
+        $this->assertEqualsWithDelta(0.0, (float) $quiz->grade, 0.001);
+        // With hide_results=always, every review bit clears everywhere —
+        // including the attempt review, so responses aren't visible after
+        // submission. mod_quiz always forces the DURING bit back on (a student
+        // must see their attempt while taking it), so assert only that the
+        // post-submission phases of the attempt review are clear.
+        $postsubmission = ~\mod_quiz\question\display_options::DURING;
+        $this->assertSame(0, (int) $quiz->reviewattempt & $postsubmission);
+        $this->assertEquals(0, (int) $quiz->reviewcorrectness);
+        $this->assertEquals(0, (int) $quiz->reviewrightanswer);
+        $this->assertEquals(0, (int) $quiz->reviewoverallfeedback);
+        // The QTI file was found despite the meta being listed first.
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
+    }
+
+    /**
+     * Write a package whose quiz hides results until after the last attempt,
+     * with the given number of allowed attempts.
+     *
+     * @param string $dirname Unique sub-folder name under quiz/.
+     * @param int $attempts Canvas allowed_attempts (-1 for unlimited).
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_until_last(string $dirname, int $attempts): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/' . $dirname);
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="' . $dirname . '" title="Quiz"><section ident="s1">'
+            . $this->mcitem() . $this->fibitem()
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/' . $dirname . '/qti.xml', $qti);
+        $meta = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz identifier="' . $dirname . '" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Quiz</title>'
+            . '<hide_results>until_after_last_attempt</hide_results>'
+            . '<allowed_attempts>' . $attempts . '</allowed_attempts>'
+            . '</quiz>';
+        file_put_contents($dir . '/quiz/' . $dirname . '/assessment_meta.xml', $meta);
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item></item>'
+            . '</item></organization></organizations>'
+            . '<resources><resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="quiz/' . $dirname . '/qti.xml"/></resource></resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * hide_results=until_after_last_attempt maps by attempt count: a
+     * multiple-attempt quiz keeps results hidden in the "later while open"
+     * phase (so a non-final attempt can't reveal them before the last), while a
+     * single-attempt quiz reveals them then (its first attempt is its last, and
+     * clearing that phase would hide them forever with no close date).
+     *
+     * @return void
+     */
+    public function test_until_after_last_attempt_respects_attempt_count(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $open = \mod_quiz\question\display_options::LATER_WHILE_OPEN;
+
+        // Multiple attempts: the open phase must be hidden.
+        $rootmulti = $this->build_fixture_until_last('multi', 3);
+        $category = $this->getDataGenerator()->create_category();
+        $modelmulti = (new manifest_parser($rootmulti))->parse();
+        $reportmulti = (new course_builder($category->id, $rootmulti))->build($modelmulti);
+        $cmsmulti = get_fast_modinfo($reportmulti['courseid'])->get_instances_of('quiz');
+        $cmmulti = reset($cmsmulti);
+        $quizmulti = $DB->get_record('quiz', ['id' => $cmmulti->instance], '*', MUST_EXIST);
+        $this->assertSame(0, (int) $quizmulti->reviewmarks & $open);
+        $this->assertSame(0, (int) $quizmulti->reviewrightanswer & $open);
+
+        // Single attempt: the open phase reveals results (not hidden forever).
+        $rootsingle = $this->build_fixture_until_last('single', 1);
+        $modelsingle = (new manifest_parser($rootsingle))->parse();
+        $reportsingle = (new course_builder($category->id, $rootsingle))->build($modelsingle);
+        $cmssingle = get_fast_modinfo($reportsingle['courseid'])->get_instances_of('quiz');
+        $cmsingle = reset($cmssingle);
+        $quizsingle = $DB->get_record('quiz', ['id' => $cmsingle->instance], '*', MUST_EXIST);
+        $this->assertSame($open, (int) $quizsingle->reviewmarks & $open);
+    }
 }

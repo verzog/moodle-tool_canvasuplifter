@@ -53,6 +53,15 @@ class quiz_settings {
     public float $points = 0.0;
 
     /**
+     * @var bool Whether Canvas actually exported a points value. Distinguishes an
+     *           explicit zero-point assessment (ungraded quiz/survey) from a
+     *           package that simply omits points, so the builder can set the
+     *           Moodle max grade to 0 in the former case rather than keeping the
+     *           generic 100-point default.
+     */
+    public bool $haspoints = false;
+
+    /**
      * @var int Allowed attempts: Canvas uses -1 for unlimited and a positive
      *          count otherwise. 0 means Canvas did not specify (never a real
      *          Canvas value), so the builder keeps its default.
@@ -70,6 +79,13 @@ class quiz_settings {
 
     /** @var bool|null Whether students may see the correct answers (null when unset). */
     public ?bool $showcorrectanswers = null;
+
+    /**
+     * @var string Canvas hide_results: '' (results shown), 'always' (never shown)
+     *             or 'until_after_last_attempt' (shown only once attempts are
+     *             used up). Lower-cased.
+     */
+    public string $hideresults = '';
 
     /** @var bool|null Whether to present one question per page (null when unset). */
     public ?bool $onequestionatatime = null;
@@ -125,6 +141,7 @@ class quiz_settings {
         $settings->description = self::child_text($root, 'description');
         $settings->quiztype = strtolower(self::child_text($root, 'quiz_type'));
         $settings->scoringpolicy = strtolower(self::child_text($root, 'scoring_policy'));
+        $settings->hideresults = strtolower(self::child_text($root, 'hide_results'));
         $settings->accesscode = self::child_text($root, 'access_code');
         $settings->ipfilter = self::child_text($root, 'ip_filter');
 
@@ -145,12 +162,13 @@ class quiz_settings {
         $settings->cantgoback = self::bool_text($root, 'cant_go_back');
 
         // Availability dates live inside the <assignment> child for graded
-        // quizzes; fall back to the root for exports that flatten them.
+        // quizzes; fall back to the root per field, so a partially flattened
+        // export that carries one date on the root and another on the child
+        // still surfaces both.
         $assignment = self::first_child_named($root, 'assignment');
-        $datesource = $assignment ?? $root;
-        $settings->duedate = self::timestamp(self::child_text($datesource, 'due_at'));
-        $settings->unlockat = self::timestamp(self::child_text($datesource, 'unlock_at'));
-        $settings->lockat = self::timestamp(self::child_text($datesource, 'lock_at'));
+        $settings->duedate = self::timestamp(self::date_value($assignment, $root, 'due_at'));
+        $settings->unlockat = self::timestamp(self::date_value($assignment, $root, 'unlock_at'));
+        $settings->lockat = self::timestamp(self::date_value($assignment, $root, 'lock_at'));
         // The graded quiz's points usually live on the <assignment> child; prefer
         // the quiz-level value when present, otherwise borrow the assignment's.
         if ($points === '' && $assignment !== null) {
@@ -158,6 +176,7 @@ class quiz_settings {
         }
         if ($points !== '') {
             $settings->points = max(0.0, (float) $points);
+            $settings->haspoints = true;
         }
 
         return $settings;
@@ -182,6 +201,26 @@ class quiz_settings {
      */
     public function is_survey(): bool {
         return $this->quiztype === 'survey' || $this->quiztype === 'graded_survey';
+    }
+
+    /**
+     * Read a date-ish field preferring the <assignment> child but falling back
+     * to the quiz root, per field. Canvas puts availability dates on the child
+     * for graded quizzes, but some exports flatten one or more onto the root.
+     *
+     * @param DOMElement|null $assignment The <assignment> child, or null.
+     * @param DOMElement $root The quiz root element.
+     * @param string $name Local name of the date field.
+     * @return string The first non-empty value (child then root), or ''.
+     */
+    private static function date_value(?DOMElement $assignment, DOMElement $root, string $name): string {
+        if ($assignment !== null) {
+            $value = self::child_text($assignment, $name);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+        return self::child_text($root, $name);
     }
 
     /**
