@@ -297,4 +297,108 @@ XML;
         // Two one-mark questions give a total of 2.
         $this->assertEqualsWithDelta(2.0, (float) $quiz->sumgrades, 0.001);
     }
+
+    /**
+     * Write a package whose QTI assessment has a sibling assessment_meta.xml
+     * carrying real Canvas quiz configuration.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_with_meta(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/am');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="am" title="Chapter 1 Quiz"><section ident="s1">'
+            . $this->mcitem() . $this->fibitem()
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/am/qti.xml', $qti);
+        $meta = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz identifier="am" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Chapter 1 Quiz</title>'
+            . '<description>&lt;p&gt;Read carefully.&lt;/p&gt;</description>'
+            . '<shuffle_answers>false</shuffle_answers>'
+            . '<scoring_policy>keep_latest</scoring_policy>'
+            . '<quiz_type>assignment</quiz_type>'
+            . '<points_possible>50.0</points_possible>'
+            . '<show_correct_answers>false</show_correct_answers>'
+            . '<allowed_attempts>2</allowed_attempts>'
+            . '<one_question_at_a_time>true</one_question_at_a_time>'
+            . '<cant_go_back>true</cant_go_back>'
+            . '<access_code>letmein</access_code>'
+            . '<ip_filter>192.168.0.0/24</ip_filter>'
+            . '<time_limit>30</time_limit>'
+            . '<assignment identifier="am_a">'
+            . '<unlock_at>2030-08-01T00:00:00Z</unlock_at>'
+            . '<lock_at>2030-09-08T23:59:00Z</lock_at>'
+            . '</assignment>'
+            . '</quiz>';
+        file_put_contents($dir . '/quiz/am/assessment_meta.xml', $meta);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Chapter 1 Quiz</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/am/qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * The real Canvas quiz configuration in assessment_meta.xml is carried onto
+     * the built mod_quiz instead of leaving it on generic defaults.
+     *
+     * @return void
+     */
+    public function test_settings_carried_over_from_meta(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/mod/quiz/lib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_with_meta();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        $quiz = $DB->get_record('quiz', ['id' => $quizcm->instance], '*', MUST_EXIST);
+
+        $this->assertEquals(30 * 60, (int) $quiz->timelimit);
+        $this->assertEquals(2, (int) $quiz->attempts);
+        $this->assertEquals(QUIZ_ATTEMPTLAST, (int) $quiz->grademethod);
+        $this->assertEqualsWithDelta(50.0, (float) $quiz->grade, 0.001);
+        $this->assertEquals(0, (int) $quiz->shuffleanswers);
+        $this->assertEquals(1, (int) $quiz->questionsperpage);
+        $this->assertSame(QUIZ_NAVMETHOD_SEQ, $quiz->navmethod);
+        $this->assertSame('letmein', $quiz->password);
+        $this->assertSame('192.168.0.0/24', $quiz->subnet);
+        $this->assertEquals(strtotime('2030-08-01T00:00:00Z'), (int) $quiz->timeopen);
+        $this->assertEquals(strtotime('2030-09-08T23:59:00Z'), (int) $quiz->timeclose);
+        // With show_correct_answers=false, the right-answer review bit clears everywhere.
+        $this->assertEquals(0, (int) $quiz->reviewrightanswer);
+        // The description carries over as the quiz intro.
+        $this->assertStringContainsString('Read carefully.', $quiz->intro);
+        // Questions still import.
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
+    }
 }

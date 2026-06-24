@@ -20,6 +20,7 @@ use stdClass;
 use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\model\qti_question;
 use tool_canvasuplifter\local\parser\qti_parser;
+use tool_canvasuplifter\local\parser\quiz_settings;
 
 /**
  * Creates a mod_quiz activity from a Canvas QTI assessment.
@@ -27,6 +28,13 @@ use tool_canvasuplifter\local\parser\qti_parser;
  * The questions are imported into the quiz's own context (see
  * {@see question_importer}) and then added to the quiz as slots. Unsupported
  * question types are skipped; if none remain, no quiz is created.
+ *
+ * The quiz's configuration (time limit, attempts, scoring policy, availability
+ * dates, navigation, password, ...) comes from the sibling assessment_meta.xml
+ * that Canvas exports alongside the QTI questions; {@see quiz_settings} reads it
+ * and {@see settings_overlay()} maps it onto the moduleinfo defaults. When the
+ * meta file is absent (e.g. a question-bank-only export) the generic defaults
+ * stand.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -78,15 +86,23 @@ class quiz_builder {
             return null;
         }
 
+        // Read the sibling assessment_meta.xml for the real quiz configuration;
+        // the QTI file carries only the questions.
+        $metapath = $this->locate_meta($modelitem, $qtipath);
+        $settings = $metapath !== null
+            ? quiz_settings::parse((string) @file_get_contents($metapath))
+            : new quiz_settings();
+
         $name = $modelitem->title !== '' ? $modelitem->title
-            : ($parsed['title'] !== '' ? $parsed['title'] : 'Quiz');
+            : ($settings->title !== '' ? $settings->title
+            : ($parsed['title'] !== '' ? $parsed['title'] : 'Quiz'));
 
         $module = $DB->get_record('modules', ['name' => 'quiz']);
         if (!$module) {
             return null;
         }
 
-        $moduleinfo = (object) array_merge($this->quiz_defaults(), [
+        $moduleinfo = (object) array_merge($this->quiz_defaults(), $this->settings_overlay($settings), [
             'modulename' => 'quiz',
             'module' => $module->id,
             'course' => $course->id,
@@ -94,13 +110,23 @@ class quiz_builder {
             'visible' => 1,
             'cmidnumber' => '',
             'name' => $name,
-            'intro' => '',
+            'intro' => $settings->description,
             'introformat' => FORMAT_HTML,
         ]);
         $created = add_moduleinfo($moduleinfo, $course);
         $cmid = (int) $created->coursemodule;
 
         $context = \context_module::instance($cmid);
+        // Import any files the description embeds and rewrite the intro to
+        // pluginfile refs, mirroring assign_builder's handling.
+        if ($settings->description !== '') {
+            $newintro = (new file_embedder($this->packageroot))
+                ->embed($context->id, 'mod_quiz', 'intro', $settings->description);
+            if ($newintro !== $settings->description) {
+                $DB->set_field('quiz', 'intro', $newintro, ['id' => (int) $created->instance]);
+            }
+        }
+
         $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath));
         if (empty($questionids)) {
             // Nothing imported despite some questions looking convertible; don't
@@ -168,6 +194,109 @@ class quiz_builder {
             'showuserpicture' => 0,
             'showblocks' => 0,
         ]);
+    }
+
+    /**
+     * Map the parsed Canvas quiz settings onto the moduleinfo keys that should
+     * override quiz_defaults(). Only keys Canvas actually specified are
+     * returned, so an absent assessment_meta.xml (or a field Canvas omitted)
+     * leaves the generic default in place.
+     *
+     * @param quiz_settings $settings Parsed assessment_meta.xml.
+     * @return array Sparse moduleinfo overrides, merged over quiz_defaults().
+     */
+    private function settings_overlay(quiz_settings $settings): array {
+        $overlay = [];
+        if ($settings->timelimit > 0) {
+            // Canvas records minutes; Moodle stores the limit in seconds.
+            $overlay['timelimit'] = $settings->timelimit * 60;
+        }
+        if ($settings->allowedattempts !== 0) {
+            // Canvas -1 (unlimited) maps to Moodle's 0; a positive count carries over.
+            $overlay['attempts'] = $settings->allowedattempts < 0 ? 0 : $settings->allowedattempts;
+        }
+        $grademethod = $this->map_scoring_policy($settings->scoringpolicy);
+        if ($grademethod !== null) {
+            $overlay['grademethod'] = $grademethod;
+        }
+        if ($settings->points > 0) {
+            $overlay['grade'] = $settings->points;
+        }
+        if ($settings->shuffleanswers !== null) {
+            $overlay['shuffleanswers'] = $settings->shuffleanswers ? 1 : 0;
+        }
+        if ($settings->onequestionatatime !== null) {
+            // One question per page -> 1; all questions on one page -> 0.
+            $overlay['questionsperpage'] = $settings->onequestionatatime ? 1 : 0;
+        }
+        if ($settings->cantgoback !== null) {
+            $overlay['navmethod'] = $settings->cantgoback ? QUIZ_NAVMETHOD_SEQ : QUIZ_NAVMETHOD_FREE;
+        }
+        if ($settings->accesscode !== '') {
+            $overlay['quizpassword'] = $settings->accesscode;
+        }
+        if ($settings->ipfilter !== '') {
+            $overlay['subnet'] = $settings->ipfilter;
+        }
+        if ($settings->unlockat !== 0) {
+            $overlay['timeopen'] = $settings->unlockat;
+        }
+        $close = $settings->close_time();
+        if ($close !== 0) {
+            $overlay['timeclose'] = $close;
+        }
+        // When Canvas hides the correct answers, switch off the right-answer
+        // review option at every phase; the other review defaults stand.
+        if ($settings->showcorrectanswers === false) {
+            foreach (['during', 'immediately', 'open', 'closed'] as $when) {
+                $overlay['rightanswer' . $when] = 0;
+            }
+        }
+        return $overlay;
+    }
+
+    /**
+     * Map a Canvas scoring_policy to a Moodle grademethod constant.
+     *
+     * @param string $policy Canvas scoring_policy (keep_highest/keep_latest/keep_average).
+     * @return int|null The QUIZ_* grademethod constant, or null when unrecognised/unset.
+     */
+    private function map_scoring_policy(string $policy): ?int {
+        switch ($policy) {
+            case 'keep_highest':
+                return QUIZ_GRADEHIGHEST;
+            case 'keep_latest':
+                return QUIZ_ATTEMPTLAST;
+            case 'keep_average':
+                return QUIZ_GRADEAVERAGE;
+        }
+        return null;
+    }
+
+    /**
+     * Locate the assessment_meta.xml carrying this quiz's configuration. Canvas
+     * ships it as a sibling of the QTI assessment file (in the same folder),
+     * exported as a separate learning-application resource that the manifest
+     * parser suppresses — so it is not on the model item's file list. Prefer an
+     * explicit assessment_meta.xml entry when one is present, otherwise look
+     * beside the QTI file we already resolved.
+     *
+     * @param item $modelitem The quiz item.
+     * @param string $qtipath Absolute path of the resolved QTI assessment file.
+     * @return string|null Absolute path within the package, or null.
+     */
+    private function locate_meta(item $modelitem, string $qtipath): ?string {
+        foreach ($modelitem->files as $relative) {
+            if (!str_ends_with($relative, 'assessment_meta.xml')) {
+                continue;
+            }
+            $absolute = safe_path::within($this->packageroot, $relative);
+            if ($absolute !== null && is_readable($absolute)) {
+                return $absolute;
+            }
+        }
+        $sibling = dirname($qtipath) . '/assessment_meta.xml';
+        return is_readable($sibling) ? $sibling : null;
     }
 
     /**
