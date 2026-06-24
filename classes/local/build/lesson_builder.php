@@ -114,6 +114,15 @@ class lesson_builder {
             }
             // Strip ILIAS viewer chrome (no-op for non-ILIAS HTML) before storing.
             $html = ilias_cleaner::clean($html);
+            // Rewrite relative refs to a folded bundle's sibling assets (eXe /
+            // ILIAS CSS, JS, images) to @@PLUGINFILE@@ before storing; the files
+            // themselves are imported into the page file area below. Runs before
+            // the cross-resource link pass so a page's own assets are left alone
+            // by it.
+            $bundleassets = $page->bundleassets ?? [];
+            if (!empty($bundleassets)) {
+                $html = bundle_assets::rewrite_refs($html, $bundleassets);
+            }
             // Turn relative cross-resource links (ILIAS module-to-module) into
             // object-reference tokens, resolved to activity URLs by the grouped
             // second link pass. Done per page so each resolves against its own
@@ -145,6 +154,12 @@ class lesson_builder {
             $newhtml = $embedder->embed($context->id, 'mod_lesson', 'page_contents', $html, $pageid);
             if ($newhtml !== $html) {
                 $DB->set_field('lesson_pages', 'contents', $newhtml, ['id' => $pageid]);
+            }
+
+            // Copy the folded bundle's sibling files into this page's file area
+            // so the @@PLUGINFILE@@ refs rewritten above resolve.
+            if (!empty($bundleassets)) {
+                bundle_assets::import($this->packageroot, $context->id, 'mod_lesson', 'page_contents', $pageid, $bundleassets);
             }
 
             // A content (branch table) page needs at least one navigation button;
