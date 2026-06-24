@@ -228,16 +228,65 @@ class qti_parser {
      */
     protected function looks_affirmative(string $html): bool {
         $text = strtolower(trim(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5)));
+        // Normalise a curly apostrophe to a straight one so "don't" matches
+        // regardless of the quote style the export used.
+        $text = str_replace("\u{2019}", "'", $text);
         $text = trim((string) preg_replace('/\s+/', ' ', $text));
         if ($text === '') {
             return false;
         }
-        $affirmations = ['yes', 'y', 'true', 't', 'agree', 'i agree', 'i understand', 'i do', 'ok', 'okay', 'correct'];
+        $affirmverb = 'agree|accept|acknowledge|consent|certify|confirm';
+
+        // Exact one-word / short-phrase affirmations.
+        $affirmations = [
+            'yes', 'y', 'true', 't', 'ok', 'okay', 'correct', 'i do',
+            'agree', 'accept', 'acknowledge', 'understood',
+            'i agree', 'i accept', 'i acknowledge', 'i understand', 'i consent', 'i confirm', 'i certify',
+        ];
         if (in_array($text, $affirmations, true)) {
             return true;
         }
-        return str_starts_with($text, 'yes') || str_starts_with($text, 'i agree')
-            || str_starts_with($text, 'i understand');
+
+        // Decline guard: reject when a negation, refusal or "no" word governs a
+        // nearby acceptance verb, so an explicit decline is never turned into a
+        // fabricated "Yes". The acceptance verb must FOLLOW the deny word (within
+        // a few words), which covers adjacent and short-gap negations ("I do not
+        // agree", "I do not wish to agree", "I don't want to accept"), refusal
+        // verbs ("I refuse to agree", "I reject consent"), negated understanding
+        // ("Not understood", "I have not understood") and no/non consent ("No
+        // consent", "Non-consent"). Hyphens are read as spaces so "Non-consent"
+        // is two words. Because the acceptance verb must come after the deny
+        // word, a prohibition the option merely acknowledges leaves the leading
+        // affirmation intact ("I understand that I do not have permission ...",
+        // "I acknowledge that I must reject plagiarism"). Run before the opener
+        // match so a decline opening with an affirmative phrase ("I have read and
+        // do not agree") is still rejected.
+        $deny = "not|never|cannot|no|non|\\w*n't|disagree|decline|refuse|reject";
+        $accept = $affirmverb . '|understood|understand';
+        $guardtext = str_replace('-', ' ', $text);
+        if (preg_match('/\b(?:' . $deny . ')(?:\s+\w+){0,3}\s+(?:' . $accept . ')\b/', $guardtext)) {
+            return false;
+        }
+
+        // Affirmative opener: the option begins with a whole affirmation verb or
+        // phrase ("I have read and agree", "Consent to participate", "Accept").
+        // The trailing \b requires the complete word, so "Acceptable Use Policy"
+        // and "Agreement form" (which only start with the letters) are left for
+        // review.
+        $openers = [
+            'yes', 'i agree', 'i accept', 'i acknowledge', 'i understand', 'i consent',
+            'i confirm', 'i certify', 'i have read', 'accept', 'agree', 'acknowledge',
+            'confirm', 'certify', 'consent',
+        ];
+        $openerpattern = '/^(?:' . implode('|', array_map(fn($o) => preg_quote($o, '/'), $openers)) . ')\b/';
+        if (preg_match($openerpattern, $text)) {
+            return true;
+        }
+
+        // Closing affirmation verb ("By selecting this option, I agree.", "By
+        // continuing, I accept!"). Tolerate trailing punctuation/whitespace. The
+        // decline guard above has already removed negated/refused forms.
+        return (bool) preg_match('/\b(?:' . $affirmverb . '|understood)[\s\p{P}]*$/u', $text);
     }
 
     /**

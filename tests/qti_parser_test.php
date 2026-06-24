@@ -59,6 +59,28 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * Parse a single-option multiple-choice item whose only (correct) option is
+     * the given text, returning the built question. Used to probe the
+     * acknowledgment-recovery heuristic.
+     *
+     * @param string $optiontext The single option's text.
+     * @return qti_question
+     */
+    private function single_option_question(string $optiontext): qti_question {
+        $pres = '<presentation><material><mattext>Statement</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext texttype="text/plain">' . $optiontext
+            . '</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+        $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+        return $r['questions'][0];
+    }
+
+    /**
      * Multiple choice: correct option scores 100, others 0; feedback attaches.
      *
      * @return void
@@ -140,6 +162,253 @@ final class qti_parser_test extends \basic_testcase {
 
         $this->assertCount(1, $q->answers);
         $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * A consent/acceptance statement ("I have read and agree", "I accept") is an
+     * affirmation too, so its single correct option also gains a "No" distractor
+     * and becomes importable. Covers Canvas copyright/acceptance click-throughs.
+     *
+     * @return void
+     */
+    public function test_acceptance_statement_gets_no_distractor(): void {
+        foreach (['I have read and agree', 'I accept', 'I acknowledge the terms', 'Accept'] as $optiontext) {
+            $pres = '<presentation><material><mattext>Copyright Notice</mattext></material>'
+                . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+                . '<response_label ident="A"><material><mattext texttype="text/plain">' . $optiontext
+                . '</mattext></material></response_label>'
+                . '</render_choice></response_lid></presentation>';
+            $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+                . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+                . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+            $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+            $q = $r['questions'][0];
+
+            $this->assertCount(2, $q->answers, "$optiontext should gain a distractor");
+            $this->assertSame($optiontext, trim($q->answers[0]['text']));
+            $this->assertSame('No', $q->answers[1]['text']);
+            $this->assertTrue($q->is_importable(), "$optiontext should be importable");
+        }
+    }
+
+    /**
+     * A single-option statement that declines ("I do not agree") is not an
+     * affirmation, so it is left unimportable rather than gaining a false "No".
+     *
+     * @return void
+     */
+    public function test_single_option_decline_is_left_alone(): void {
+        $pres = '<presentation><material><mattext>Terms</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext texttype="text/plain">I do not agree</mattext>'
+            . '</material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+        $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+        $q = $r['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * An acknowledgment whose statement contains an internal prohibition ("I
+     * understand that I do not have permission ...") is still an affirmation:
+     * only a negation of the acceptance verb itself counts as a decline, so it
+     * gains a "No" distractor rather than being dropped as unimportable.
+     *
+     * @return void
+     */
+    public function test_acknowledgment_with_embedded_prohibition_gets_no_distractor(): void {
+        $statement = 'I understand that I do not have permission to share answers';
+        $pres = '<presentation><material><mattext>Honor code</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext texttype="text/plain">' . $statement
+            . '</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+        $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+        $q = $r['questions'][0];
+
+        $this->assertCount(2, $q->answers);
+        $this->assertSame($statement, trim($q->answers[0]['text']));
+        $this->assertSame('No', $q->answers[1]['text']);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * Bare confirm/certify click-throughs ("Confirm", "Confirm receipt",
+     * "Certify compliance") are the same single-option affirmations as Accept
+     * and Acknowledge, so they too gain a "No" distractor and import.
+     *
+     * @return void
+     */
+    public function test_bare_confirm_certify_get_no_distractor(): void {
+        foreach (['Confirm', 'Confirm receipt', 'Certify compliance', 'Certify'] as $optiontext) {
+            $pres = '<presentation><material><mattext>Receipt</mattext></material>'
+                . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+                . '<response_label ident="A"><material><mattext texttype="text/plain">' . $optiontext
+                . '</mattext></material></response_label>'
+                . '</render_choice></response_lid></presentation>';
+            $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+                . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+                . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+            $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+            $q = $r['questions'][0];
+
+            $this->assertCount(2, $q->answers, "$optiontext should gain a distractor");
+            $this->assertSame('No', $q->answers[1]['text']);
+            $this->assertTrue($q->is_importable(), "$optiontext should be importable");
+        }
+    }
+
+    /**
+     * An option that merely starts with the letters of an affirmation verb but
+     * is a noun phrase ("Acceptable Use Policy", "Agreement form") is not an
+     * affirmation: the opener match requires the whole word, so no distractor is
+     * fabricated and the single-option item is left for review.
+     *
+     * @return void
+     */
+    public function test_opener_requires_whole_word(): void {
+        foreach (['Acceptable Use Policy', 'Agreement form'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(1, $q->answers, "$optiontext must not gain a distractor");
+            $this->assertFalse($q->is_importable(), "$optiontext must stay for review");
+        }
+    }
+
+    /**
+     * A decline whose negation is separated from the affirmation verb ("I do not
+     * wish to agree", "I don't want to accept") is still a refusal, so it is left
+     * unimportable rather than gaining a false "No".
+     *
+     * @return void
+     */
+    public function test_separated_negation_decline_is_left_alone(): void {
+        foreach (['I do not wish to agree', "I don't want to accept"] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(1, $q->answers, "$optiontext must not gain a distractor");
+            $this->assertFalse($q->is_importable(), "$optiontext must stay for review");
+        }
+    }
+
+    /**
+     * An affirmative acknowledgment that mentions a prohibited action ("I
+     * acknowledge that I must reject plagiarism", "I understand I may refuse
+     * unsafe work") is recognised: reject/refuse inside the acknowledged policy
+     * text must not be mistaken for the option itself being a decline.
+     *
+     * @return void
+     */
+    public function test_acknowledgment_mentioning_prohibition_is_affirmative(): void {
+        foreach (['I acknowledge that I must reject plagiarism', 'I understand I may refuse unsafe work'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(2, $q->answers, "$optiontext should gain a distractor");
+            $this->assertSame('No', $q->answers[1]['text']);
+            $this->assertTrue($q->is_importable(), "$optiontext should be importable");
+        }
+    }
+
+    /**
+     * Bare consent click-throughs ("Consent to participate", "Consent to
+     * recording") are affirmations too, so their single correct option gains a
+     * "No" distractor and imports.
+     *
+     * @return void
+     */
+    public function test_bare_consent_gets_no_distractor(): void {
+        foreach (['Consent to participate', 'Consent to recording'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(2, $q->answers, "$optiontext should gain a distractor");
+            $this->assertSame('No', $q->answers[1]['text']);
+            $this->assertTrue($q->is_importable(), "$optiontext should be importable");
+        }
+    }
+
+    /**
+     * A consent option that closes with an affirmation verb followed by ordinary
+     * punctuation ("By selecting this option, I agree.", "By continuing, I
+     * accept!") is recognised, so it gains a distractor and imports.
+     *
+     * @return void
+     */
+    public function test_trailing_affirmation_tolerates_punctuation(): void {
+        foreach (['By selecting this option, I agree.', 'By continuing, I accept!'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(2, $q->answers, "$optiontext should gain a distractor");
+            $this->assertSame('No', $q->answers[1]['text']);
+            $this->assertTrue($q->is_importable(), "$optiontext should be importable");
+        }
+    }
+
+    /**
+     * A decline that opens with an affirmative read-confirmation phrase but then
+     * negates the acceptance verb ("I have read and do not agree", "I have read
+     * and do not consent") is still a refusal, so it is left for review rather
+     * than gaining a false "No".
+     *
+     * @return void
+     */
+    public function test_read_and_decline_opener_is_rejected(): void {
+        foreach (['I have read and do not agree', 'I have read and do not consent'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(1, $q->answers, "$optiontext must not gain a distractor");
+            $this->assertFalse($q->is_importable(), "$optiontext must stay for review");
+        }
+    }
+
+    /**
+     * An explicit refusal phrase whose refusal verb governs a trailing
+     * affirmation verb ("I refuse to agree", "I decline to accept", "I reject
+     * consent") is a decline, so no distractor is fabricated.
+     *
+     * @return void
+     */
+    public function test_refusal_verb_phrases_are_left_alone(): void {
+        foreach (['I refuse to agree', 'I decline to accept', 'I reject consent'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(1, $q->answers, "$optiontext must not gain a distractor");
+            $this->assertFalse($q->is_importable(), "$optiontext must stay for review");
+        }
+    }
+
+    /**
+     * A negated "understood" response ("Not understood", "I have not
+     * understood") is a negative, so it is left for review rather than being
+     * read as the closing affirmation "understood".
+     *
+     * @return void
+     */
+    public function test_negated_understood_is_left_alone(): void {
+        foreach (['Not understood', 'I have not understood'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(1, $q->answers, "$optiontext must not gain a distractor");
+            $this->assertFalse($q->is_importable(), "$optiontext must stay for review");
+        }
+    }
+
+    /**
+     * Explicit negative-consent labels ("No consent", "Non-consent", "I give no
+     * consent") are declines, so the trailing "consent" must not fabricate a
+     * "No" and make the refusal importable.
+     *
+     * @return void
+     */
+    public function test_no_consent_labels_are_declines(): void {
+        foreach (['No consent', 'Non-consent', 'I give no consent'] as $optiontext) {
+            $q = $this->single_option_question($optiontext);
+            $this->assertCount(1, $q->answers, "$optiontext must not gain a distractor");
+            $this->assertFalse($q->is_importable(), "$optiontext must stay for review");
+        }
     }
 
     /**
