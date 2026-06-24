@@ -1,0 +1,165 @@
+/*
+ * Styling for content imported by tool_canvasuplifter.
+ *
+ * Every rule is scoped to the .canvasuplifter-content wrapper the builders put
+ * around imported page / lesson / book HTML (see content_styler), so nothing
+ * here affects the rest of Moodle even though the file is loaded site-wide by
+ * Moodle's CSS aggregation.
+ */
+
+.canvasuplifter-content {
+    max-width: 70rem;
+    margin: 1rem auto;
+    padding: 1.75rem 2rem;
+    line-height: 1.65;
+    color: #1f2a24;
+    background: #fff;
+    border: 1px solid #dfe6e1;
+    border-top: 4px solid #2c6e49;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(20, 50, 35, 0.08);
+}
+
+.canvasuplifter-content > :first-child {
+    margin-top: 0;
+}
+
+.canvasuplifter-content h1,
+.canvasuplifter-content h2,
+.canvasuplifter-content h3,
+.canvasuplifter-content h4 {
+    margin: 1.4em 0 0.5em;
+    line-height: 1.25;
+    font-weight: 700;
+    color: #2c6e49;
+}
+
+.canvasuplifter-content h1,
+.canvasuplifter-content h2 {
+    padding-bottom: 0.3em;
+    border-bottom: 2px solid #e7efe9;
+}
+
+.canvasuplifter-content p {
+    margin: 0 0 1em;
+}
+
+.canvasuplifter-content ul,
+.canvasuplifter-content ol {
+    margin: 0 0 1em;
+    padding-left: 1.5em;
+}
+
+.canvasuplifter-content li {
+    margin: 0.25em 0;
+}
+
+.canvasuplifter-content a {
+    color: #1d6f8b;
+    text-decoration: none;
+}
+
+.canvasuplifter-content a:hover {
+    text-decoration: underline;
+}
+
+.canvasuplifter-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 1px 6px rgba(20, 50, 35, 0.12);
+}
+
+.canvasuplifter-content blockquote {
+    margin: 1em 0;
+    padding: 0.5em 1.2em;
+    font-style: italic;
+    color: #3a4742;
+    background: #f4f8f5;
+    border-left: 4px solid #2c6e49;
+}
+
+.canvasuplifter-content table {
+    width: 100%;
+    margin: 1em 0;
+    border-collapse: collapse;
+}
+
+.canvasuplifter-content th,
+.canvasuplifter-content td {
+    padding: 0.5em 0.75em;
+    text-align: left;
+    border: 1px solid #dfe6e1;
+}
+
+.canvasuplifter-content th {
+    background: #eef4f0;
+}
+
+.canvasuplifter-content tbody tr:nth-child(even) {
+    background: #f8faf9;
+}
+
+.canvasuplifter-content pre,
+.canvasuplifter-content code {
+    font-family: SFMono-Regular, Menlo, Consolas, monospace;
+    background: #f2f5f3;
+    border-radius: 6px;
+}
+
+.canvasuplifter-content pre {
+    padding: 0.9em 1.1em;
+    overflow: auto;
+}
+
+.canvasuplifter-content code {
+    padding: 0.1em 0.4em;
+}
+
+.canvasuplifter-content hr {
+    margin: 1.5em 0;
+    border: 0;
+    border-top: 1px solid #e7efe9;
+}
+
+/* Links to downloadable files become buttons with a download affordance. */
+.canvasuplifter-content a[href$=".pdf" i],
+.canvasuplifter-content a[href$=".doc" i],
+.canvasuplifter-content a[href$=".docx" i],
+.canvasuplifter-content a[href$=".ppt" i],
+.canvasuplifter-content a[href$=".pptx" i],
+.canvasuplifter-content a[href$=".xls" i],
+.canvasuplifter-content a[href$=".xlsx" i],
+.canvasuplifter-content a[href$=".zip" i] {
+    display: inline-block;
+    margin: 0.2em 0;
+    padding: 0.4em 0.9em;
+    font-weight: 600;
+    color: #fff;
+    background: #2c6e49;
+    border-radius: 6px;
+}
+
+.canvasuplifter-content a[href$=".pdf" i]::before,
+.canvasuplifter-content a[href$=".doc" i]::before,
+.canvasuplifter-content a[href$=".docx" i]::before,
+.canvasuplifter-content a[href$=".ppt" i]::before,
+.canvasuplifter-content a[href$=".pptx" i]::before,
+.canvasuplifter-content a[href$=".xls" i]::before,
+.canvasuplifter-content a[href$=".xlsx" i]::before,
+.canvasuplifter-content a[href$=".zip" i]::before {
+    margin-right: 0.45em;
+    content: "\2193";
+}
+
+.canvasuplifter-content a[href$=".pdf" i]:hover,
+.canvasuplifter-content a[href$=".doc" i]:hover,
+.canvasuplifter-content a[href$=".docx" i]:hover,
+.canvasuplifter-content a[href$=".ppt" i]:hover,
+.canvasuplifter-content a[href$=".pptx" i]:hover,
+.canvasuplifter-content a[href$=".xls" i]:hover,
+.canvasuplifter-content a[href$=".xlsx" i]:hover,
+.canvasuplifter-content a[href$=".zip" i]:hover {
+    background: #24583a;
+    text-decoration: none;
+}
