@@ -127,7 +127,11 @@ class lesson_builder {
                 'qtype' => self::PAGE_CONTENT,
                 'qoption' => 0,
                 'layout' => 1,
-                'display' => 1,
+                // The left-hand menu lists pages where display is set; keep
+                // unpublished Canvas pages out of it (and off the direct links)
+                // by mirroring the page's visibility, as the book builder does
+                // with its chapter "hidden" flag.
+                'display' => $page->isvisible ? 1 : 0,
                 'timecreated' => $now,
                 'timemodified' => $now,
                 'title' => page_payload::title($page),
