@@ -126,6 +126,9 @@ class book_builder {
                 $basedir = page_payload::basedir($this->packageroot, $page);
                 $html = (new link_rewriter())->rewrite_relative_links($html, $basedir, $this->pathtoid);
             }
+            // Wrap so the plugin stylesheet (scoped to this class) can style the
+            // imported content without affecting the rest of Moodle.
+            $html = content_styler::wrap($html);
             $chapter = (object) [
                 'bookid' => $bookid,
                 'pagenum' => $pagenum,

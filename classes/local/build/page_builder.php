@@ -109,6 +109,10 @@ class page_builder {
             $content = (new link_rewriter())->rewrite_relative_links($content, $basedir, $this->pathtoid);
         }
 
+        // Wrap the imported HTML so the plugin stylesheet (scoped to this class)
+        // can style it without affecting the rest of Moodle.
+        $content = content_styler::wrap($content);
+
         $moduleinfo = (object) [
             'modulename' => 'page',
             'module' => $module->id,
