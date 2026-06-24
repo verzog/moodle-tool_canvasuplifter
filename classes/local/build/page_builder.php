@@ -180,17 +180,22 @@ class page_builder {
                 return $m[0];
             }
             $candidate = ltrim(preg_replace('#^\./#', '', $path), '/');
-            // Match (and emit) the decoded path: the package-relative bundle
-            // asset paths are decoded, but the HTML may carry a percent-encoded
-            // URL — either authored that way or encoded when an upstream DOM pass
-            // (the ILIAS cleaner) re-serialised a path with a space or a
-            // non-ASCII character. Without this, "data/my pic.jpg" stored as
+            // Match on the decoded path: the package-relative bundle asset paths
+            // are decoded, but the HTML may carry a percent-encoded URL — either
+            // authored that way or encoded when an upstream DOM pass (the ILIAS
+            // cleaner) re-serialised a path with a space or a non-ASCII
+            // character. Without this, "data/my pic.jpg" stored as
             // "data/my%20pic.jpg" would never match and the link would 404.
-            $candidate = rawurldecode($candidate);
-            if (!isset($assetset[$candidate])) {
+            $decoded = rawurldecode($candidate);
+            if (!isset($assetset[$decoded])) {
                 return $m[0];
             }
-            return $m[1] . '=' . $m[2] . '@@PLUGINFILE@@/' . $candidate . $suffix . $m[2];
+            // Emit a re-encoded path so a reserved character in the filename
+            // (a literal # or ?) cannot terminate the URL early — e.g. the
+            // decoded "data/a#b.png" must be written as "data/a%23b.png", not
+            // "data/a#b.png" which the browser would treat as a fragment.
+            $encoded = implode('/', array_map('rawurlencode', explode('/', $decoded)));
+            return $m[1] . '=' . $m[2] . '@@PLUGINFILE@@/' . $encoded . $suffix . $m[2];
         }, $content);
     }
 

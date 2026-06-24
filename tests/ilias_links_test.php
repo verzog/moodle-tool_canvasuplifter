@@ -269,14 +269,15 @@ XML;
         $this->resetAfterTest(true);
         $this->setAdminUser();
 
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
         $dir = make_request_directory();
         mkdir($dir . '/lm/data', 0777, true);
         file_put_contents($dir . '/lm/delos_cont.css', '.ilc {}');
-        // A 1x1 PNG so the embedded image resolves to a real file.
-        file_put_contents(
-            $dir . '/lm/data/my pic.png',
-            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
-        );
+        // Two assets whose names carry characters that must be URL-encoded: a
+        // space and a reserved "#" (the latter would otherwise read as a URL
+        // fragment).
+        file_put_contents($dir . '/lm/data/my pic.png', $png);
+        file_put_contents($dir . '/lm/data/a#b.png', $png);
         file_put_contents(
             $dir . '/lm/index.html',
             '<html><head><link rel="stylesheet" href="delos_cont.css"></head><body>'
@@ -284,7 +285,7 @@ XML;
             . '<table class="ilc_table_MainTable"><tr>'
             . '<td width="275"><table class="ilc_table_Navigation"><tr><td>Activities</td></tr></table></td>'
             . '<td><table class="ilc_table_TextTable"><tr><td class="ilc_table_cell_Cell2">'
-            . '<p>Body</p><img src="data/my pic.png" alt="pic">'
+            . '<p>Body</p><img src="data/my pic.png" alt="pic"><img src="data/a%23b.png" alt="hash">'
             . '</td></tr></table></td>'
             . '</tr></table></td></tr></table></body></html>'
         );
@@ -294,7 +295,8 @@ XML;
             . '<item identifier="i1" identifierref="r_lm"><title>Module</title></item>'
             . '</item></organization></organizations>'
             . '<resources><resource identifier="r_lm" type="webcontent" href="lm/index.html">'
-            . '<file href="lm/index.html"/><file href="lm/delos_cont.css"/><file href="lm/data/my pic.png"/>'
+            . '<file href="lm/index.html"/><file href="lm/delos_cont.css"/>'
+            . '<file href="lm/data/my pic.png"/><file href="lm/data/a#b.png"/>'
             . '</resource></resources></manifest>';
         file_put_contents($dir . '/imsmanifest.xml', $manifest);
 
@@ -306,14 +308,19 @@ XML;
         $pagecm = reset($pages);
         $page = $DB->get_record('page', ['id' => $pagecm->instance], '*', MUST_EXIST);
 
-        // The cleaner removed the navigation but kept the content image, and
-        // bundle rewriting matched the space-bearing path despite encoding.
+        // The cleaner removed the navigation but kept the content images, and
+        // bundle rewriting matched the encoded paths and re-emitted them encoded
+        // so the reserved characters survive as a valid URL.
         $this->assertStringNotContainsString('Activities', $page->content);
-        $this->assertStringContainsString('@@PLUGINFILE@@/data/my pic.png', $page->content);
-        $this->assertStringNotContainsString('data/my%20pic.png', $page->content);
+        $this->assertStringContainsString('@@PLUGINFILE@@/data/my%20pic.png', $page->content);
+        $this->assertStringContainsString('@@PLUGINFILE@@/data/a%23b.png', $page->content);
+        // The decoded (broken) forms must not be emitted.
+        $this->assertStringNotContainsString('@@PLUGINFILE@@/data/my pic.png', $page->content);
+        $this->assertStringNotContainsString('@@PLUGINFILE@@/data/a#b.png', $page->content);
 
         $context = \context_module::instance($pagecm->id);
         $fs = get_file_storage();
         $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/data/', 'my pic.png'));
+        $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/data/', 'a#b.png'));
     }
 }
