@@ -199,6 +199,11 @@ class lesson_builder {
      * lesson_add_instance() never read an undefined property and the build is
      * a plain, ungraded, linear reading lesson.
      *
+     * displayleft is on so the lesson always shows its left-hand page menu: with
+     * a run of pages folded into one lesson, the menu lists every page up front
+     * so it is immediately clear what content the lesson holds. displayleftif is
+     * 0 (no minimum grade) so the menu shows on an ungraded reading lesson.
+     *
      * @return array
      */
     private static function lesson_defaults(): array {
@@ -209,7 +214,7 @@ class lesson_builder {
             'nextpagedefault' => 0, 'feedback' => 1, 'minquestions' => 0, 'maxpages' => 0,
             'timelimit' => 0, 'retake' => 1, 'activitylink' => 0, 'mediaheight' => 100,
             'mediawidth' => 650, 'mediaclose' => 0, 'slideshow' => 0, 'width' => 640,
-            'height' => 480, 'bgcolor' => '#FFFFFF', 'displayleft' => 0, 'displayleftif' => 0,
+            'height' => 480, 'bgcolor' => '#FFFFFF', 'displayleft' => 1, 'displayleftif' => 0,
             'progressbar' => 0, 'available' => 0, 'deadline' => 0, 'completionendreached' => 0,
             'completiontimespent' => 0, 'allowofflineattempts' => 0,
         ];

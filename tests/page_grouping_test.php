@@ -180,6 +180,8 @@ XML;
         $this->assertSame(3, $DB->count_records('lesson_pages', ['lessonid' => $lesson->id]));
         // One navigation button per content page.
         $this->assertSame(3, $DB->count_records('lesson_answers', ['lessonid' => $lesson->id]));
+        // The left-hand page menu is on, so all folded pages are listed up front.
+        $this->assertSame(1, (int) $lesson->displayleft);
 
         $page = $DB->get_record('lesson_pages', ['lessonid' => $lesson->id, 'title' => 'Page One'], '*', MUST_EXIST);
         $this->assertStringContainsString('@@PLUGINFILE@@/img/logo.png', $page->contents);
