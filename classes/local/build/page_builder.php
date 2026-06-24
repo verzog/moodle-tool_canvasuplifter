@@ -86,6 +86,11 @@ class page_builder {
 
         $title = $modelitem->title !== '' ? $modelitem->title : pathinfo($modelitem->href, PATHINFO_FILENAME);
 
+        // Strip ILIAS viewer chrome (the "Activities" navigation column, focus
+        // scripts and "not available" dialogs) so only the page content imports.
+        // A no-op for non-ILIAS HTML.
+        $content = ilias_cleaner::clean($content);
+
         // For bundle-promoted pages, rewrite relative <link>/<script>/<img>
         // references to @@PLUGINFILE@@ before the page is stored, so the saved
         // HTML already points at the eventual pluginfile URLs.
