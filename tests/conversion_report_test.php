@@ -243,6 +243,48 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * Grouping is tracked per occurrence, not per object: the manifest parser
+     * shares one resource object across sections, so the same page can sit in a
+     * 2+ page run in one section and as a lone page in another. Each occurrence
+     * must report the target the builder would actually create there.
+     *
+     * @return void
+     */
+    public function test_pagegrouping_is_per_occurrence_not_per_object(): void {
+        $course = new course_model();
+
+        $shared = new item('shared', 'Shared');
+        $shared->kind = item::KIND_PAGE;
+
+        // Section one: a run of two pages (the shared page groups here).
+        $runsection = new section_model('Run');
+        $first = new item('p1', 'First');
+        $first->kind = item::KIND_PAGE;
+        $runsection->add_item($first);
+        $runsection->add_item($shared);
+        $course->add_section($runsection);
+
+        // Section two: the SAME shared object, alone before an assignment.
+        $lonesection = new section_model('Lone');
+        $lonesection->add_item($shared);
+        $assign = new item('a1', 'Essay');
+        $assign->kind = item::KIND_ASSIGNMENT;
+        $lonesection->add_item($assign);
+        $course->add_section($lonesection);
+
+        $report = (new conversion_report($course, null, 'book'))->build();
+
+        // The run occurrence folds into the book; the lone occurrence stays a page.
+        $this->assertSame('mod_book', $report['sections'][0]['items'][1]['target']);
+        $this->assertSame('mod_page', $report['sections'][1]['items'][0]['target']);
+
+        // The aggregate splits the page kind across both targets, not all-book.
+        $bykey = $this->rows_by_target($report);
+        $this->assertSame(2, $bykey['page|mod_book']['count']);
+        $this->assertSame(1, $bykey['page|mod_page']['count']);
+    }
+
+    /**
      * Without the option, the same consecutive pages are reported individually
      * as mod_page, and a lone page broken by another activity never groups even
      * when the option is on.

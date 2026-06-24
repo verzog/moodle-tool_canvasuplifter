@@ -56,9 +56,6 @@ class conversion_report {
     /** @var string Page-grouping choice to reflect: '' (off), 'book' or 'lesson'. */
     protected string $pagegrouping;
 
-    /** @var array<int, bool> spl_object_id of each page item that will be folded into a book/lesson. */
-    protected array $groupedpages = [];
-
     /**
      * Constructor.
      *
@@ -126,19 +123,16 @@ class conversion_report {
      *
      * @param item $modelitem The item.
      * @param bool $referenced Whether it is linked from the course.
+     * @param bool $grouped Whether this page occurrence folds into a book/lesson.
      * @return array Plan {target, confidence, note}.
      */
-    protected function effective_plan(item $modelitem, bool $referenced): array {
+    protected function effective_plan(item $modelitem, bool $referenced, bool $grouped = false): array {
         if ($modelitem->kind === item::KIND_QUIZ && !$referenced) {
             return $this->plan_for(item::KIND_QUESTIONBANK);
         }
-        // With page grouping on, a page in a run of two or more consecutive
-        // pages folds into a single book/lesson rather than its own mod_page.
-        if (
-            $this->pagegrouping !== ''
-            && $modelitem->kind === item::KIND_PAGE
-            && isset($this->groupedpages[spl_object_id($modelitem)])
-        ) {
+        // A page in a run of two or more consecutive pages folds into a single
+        // book/lesson rather than its own mod_page.
+        if ($grouped && $modelitem->kind === item::KIND_PAGE) {
             return $this->grouped_page_plan();
         }
         return $this->plan_for($modelitem->kind);
@@ -157,66 +151,75 @@ class conversion_report {
     }
 
     /**
-     * Identify every page item that will be folded into a book/lesson, mirroring
-     * the builder's segmentation: within each ordered item list, a maximal run of
-     * two or more consecutive pages is grouped (a lone page stays a mod_page).
-     * Sections and the "extras" orphan list group; the syllabus, lifted to the
-     * course top and built individually, does not.
+     * Per-position "is this page grouped?" flags for one ordered item list,
+     * mirroring course_builder::segment_items(): a maximal run of two or more
+     * consecutive pages is grouped (a lone page stays a mod_page). Flags are
+     * keyed by position so the SAME resource object appearing once in a run and
+     * elsewhere as a lone page is reported correctly at each occurrence (the
+     * manifest parser shares one object across sections).
      *
-     * @return array<int, bool> Set of spl_object_id keyed true for grouped pages.
+     * @param array $items The items in build order.
+     * @return array<int, bool> A flag per item index; true where the page groups.
      */
-    protected function compute_grouped_pages(): array {
+    protected function grouped_flags(array $items): array {
+        $flags = array_fill(0, count($items), false);
         if ($this->pagegrouping === '') {
-            return [];
+            return $flags;
         }
-        $grouped = [];
-        foreach ($this->course->sections as $sectionmodel) {
-            $this->mark_grouped_runs($sectionmodel->items, $grouped);
+        $run = [];
+        foreach ($items as $i => $modelitem) {
+            if ($modelitem->kind === item::KIND_PAGE) {
+                $run[] = $i;
+                continue;
+            }
+            $this->flush_run_flags($run, $flags);
+            $run = [];
         }
+        $this->flush_run_flags($run, $flags);
+        return $flags;
+    }
+
+    /**
+     * Mark a run's positions grouped when it holds two or more pages.
+     *
+     * @param array $run Item indices of the current consecutive-page run.
+     * @param array $flags Per-position flags (modified in place).
+     * @return void
+     */
+    protected function flush_run_flags(array $run, array &$flags): void {
+        if (count($run) >= 2) {
+            foreach ($run as $pos) {
+                $flags[$pos] = true;
+            }
+        }
+    }
+
+    /**
+     * Per-position grouped flags for the orphan list, aligned to
+     * course_model::$orphans. Only the "extras" (everything but the syllabus,
+     * which is lifted to the course top and built individually) are segmented,
+     * exactly as course_builder does.
+     *
+     * @return array<int, bool> A flag per orphan index; true where the page groups.
+     */
+    protected function orphan_grouped_flags(): array {
+        $orphans = $this->course->orphans;
+        $flags = array_fill(0, count($orphans), false);
+        if ($this->pagegrouping === '') {
+            return $flags;
+        }
+        $extraindices = [];
         $extras = [];
-        foreach ($this->course->orphans as $modelitem) {
+        foreach ($orphans as $i => $modelitem) {
             if (!$modelitem->is_syllabus()) {
+                $extraindices[] = $i;
                 $extras[] = $modelitem;
             }
         }
-        $this->mark_grouped_runs($extras, $grouped);
-        return $grouped;
-    }
-
-    /**
-     * Mark each page in every 2+ consecutive-page run within an ordered item
-     * list as grouped.
-     *
-     * @param array $items The items in build order.
-     * @param array $grouped Set of spl_object_id (modified in place).
-     * @return void
-     */
-    protected function mark_grouped_runs(array $items, array &$grouped): void {
-        $run = [];
-        foreach ($items as $modelitem) {
-            if ($modelitem->kind === item::KIND_PAGE) {
-                $run[] = $modelitem;
-                continue;
-            }
-            $this->flush_run_marks($run, $grouped);
-            $run = [];
+        foreach ($this->grouped_flags($extras) as $k => $isgrouped) {
+            $flags[$extraindices[$k]] = $isgrouped;
         }
-        $this->flush_run_marks($run, $grouped);
-    }
-
-    /**
-     * Record a run as grouped when it holds two or more pages.
-     *
-     * @param array $run The accumulated consecutive page items.
-     * @param array $grouped Set of spl_object_id (modified in place).
-     * @return void
-     */
-    protected function flush_run_marks(array $run, array &$grouped): void {
-        if (count($run) >= 2) {
-            foreach ($run as $page) {
-                $grouped[spl_object_id($page)] = true;
-            }
-        }
+        return $flags;
     }
 
     /**
@@ -226,10 +229,11 @@ class conversion_report {
      * @param array $grouped Accumulator keyed by "kind|target" (modified in place).
      * @param item $modelitem The item.
      * @param bool $referenced Whether it is linked from the course.
+     * @param bool $isgrouped Whether this page occurrence folds into a book/lesson.
      * @return void
      */
-    protected function accumulate(array &$grouped, item $modelitem, bool $referenced): void {
-        $plan = $this->effective_plan($modelitem, $referenced);
+    protected function accumulate(array &$grouped, item $modelitem, bool $referenced, bool $isgrouped = false): void {
+        $plan = $this->effective_plan($modelitem, $referenced, $isgrouped);
         $key = $modelitem->kind . '|' . $plan['target'];
         if (!isset($grouped[$key])) {
             $grouped[$key] = [
@@ -290,22 +294,22 @@ class conversion_report {
      * @return array<string, mixed>
      */
     public function build(): array {
-        // Resolve which pages fold into a book/lesson first, so every view below
-        // (aggregate rows, per-section detail, orphans) reports them consistently.
-        $this->groupedpages = $this->compute_grouped_pages();
         $counts = $this->counts_by_kind();
 
         // Group by content type and the target it will actually build into, so a
         // kind that splits by reference (e.g. quiz -> mod_quiz when linked,
-        // mod_qbank when orphaned) is reported honestly.
+        // mod_qbank when orphaned) is reported honestly. Grouping is resolved per
+        // list position, matching the builder's per-section segmentation.
         $grouped = [];
         foreach ($this->course->sections as $sectionmodel) {
-            foreach ($sectionmodel->items as $modelitem) {
-                $this->accumulate($grouped, $modelitem, true);
+            $flags = $this->grouped_flags($sectionmodel->items);
+            foreach ($sectionmodel->items as $i => $modelitem) {
+                $this->accumulate($grouped, $modelitem, true, $flags[$i]);
             }
         }
-        foreach ($this->course->orphans as $modelitem) {
-            $this->accumulate($grouped, $modelitem, false);
+        $orphanflags = $this->orphan_grouped_flags();
+        foreach ($this->course->orphans as $i => $modelitem) {
+            $this->accumulate($grouped, $modelitem, false, $orphanflags[$i]);
         }
         ksort($grouped);
 
@@ -455,8 +459,9 @@ class conversion_report {
         $sections = [];
         foreach ($this->course->sections as $sectionmodel) {
             $items = [];
-            foreach ($sectionmodel->items as $modelitem) {
-                $entry = $this->effective_plan($modelitem, true);
+            $flags = $this->grouped_flags($sectionmodel->items);
+            foreach ($sectionmodel->items as $i => $modelitem) {
+                $entry = $this->effective_plan($modelitem, true, $flags[$i]);
                 $items[] = [
                     'title' => $this->display_title($modelitem, true),
                     'kind' => $modelitem->kind,
@@ -477,8 +482,9 @@ class conversion_report {
      */
     protected function orphan_detail(): array {
         $orphans = [];
-        foreach ($this->course->orphans as $modelitem) {
-            $entry = $this->effective_plan($modelitem, false);
+        $flags = $this->orphan_grouped_flags();
+        foreach ($this->course->orphans as $i => $modelitem) {
+            $entry = $this->effective_plan($modelitem, false, $flags[$i]);
             $orphans[] = [
                 'title' => $this->display_title($modelitem, false),
                 'kind' => $modelitem->kind,
