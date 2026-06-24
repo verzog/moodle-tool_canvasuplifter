@@ -51,13 +51,18 @@ if ($data = $form->get_data()) {
     $extractdir = make_request_directory();
     $temppackage = null;
     $fetcher = null;
+    $usedchunkupload = false;
     $buildrequested = !empty($data->buildbutton);
     try {
         if (!empty(trim((string)($data->packageurl ?? '')))) {
             $fetcher = new url_fetcher();
             $temppackage = $fetcher->fetch(trim($data->packageurl));
         } else {
-            $temppackage = $form->save_temp_file('packagefile');
+            // Resolve through the form so the chunkupload uploader (when the
+            // local_chunkupload plugin is installed) and the stock filepicker
+            // both yield a readable package path.
+            $temppackage = $form->get_uploaded_package_path($data);
+            $usedchunkupload = $form->used_chunkupload();
         }
 
         // Always persist the package: lets the report page offer a "Build"
@@ -98,6 +103,12 @@ if ($data = $form->get_data()) {
             ]);
             \core\task\manager::queue_adhoc_task($task);
 
+            // The redirect() below ends the request, so the finally block never
+            // runs on this path; release the chunkupload temp now that the
+            // package is safely stored, rather than leaving it for plugin cron.
+            if ($usedchunkupload) {
+                $form->cleanup_uploaded_package($data);
+            }
             redirect(new moodle_url('/admin/tool/canvasuplifter/status.php', ['jobid' => $jobid]));
         }
 
@@ -114,7 +125,11 @@ if ($data = $form->get_data()) {
             $error .= ' (' . s($fetcher->get_last_detail()) . ')';
         }
     } finally {
-        if ($temppackage !== null && file_exists($temppackage)) {
+        if ($usedchunkupload) {
+            // The package was copied into our own file area above; let
+            // local_chunkupload drop its tracking row and temp file.
+            $form->cleanup_uploaded_package($data);
+        } else if ($temppackage !== null && file_exists($temppackage)) {
             @unlink($temppackage);
         }
     }
@@ -161,6 +176,10 @@ if ($error !== null) {
 }
 
 if ($report === null) {
+    // Tell the admin how large packages are handled: chunked upload when
+    // local_chunkupload is installed, otherwise point at the URL field.
+    $hintkey = upload_form::chunkupload_available() ? 'chunkuploadactive' : 'largepackagehint';
+    echo html_writer::tag('p', get_string($hintkey, 'tool_canvasuplifter'), ['class' => 'text-muted']);
     $form->display();
 } else {
     echo $OUTPUT->heading(get_string('reportheading', 'tool_canvasuplifter'));
