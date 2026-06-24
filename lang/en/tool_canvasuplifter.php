@@ -38,8 +38,8 @@ $string['builtcoursesummary'] = 'Built {$a->created} of {$a->itemcount} content 
 $string['canvasuplifter:use'] = 'Upload a Canvas package and view the conversion report';
 $string['chosenbuildoptions'] = 'Using the options you chose above — combine consecutive pages: '
     . '{$a->grouping}; also build a runnable quiz from each standalone bank: {$a->quiz}.';
-$string['chunkuploadactive'] = 'Large packages upload in chunks (the local_chunkupload plugin is installed), '
-    . 'so they are not limited by this server\'s PHP upload size.';
+$string['chunkuploadactive'] = 'For a very large package, use the optional "Large package (chunked upload)" '
+    . 'field below — it uploads in chunks (via local_chunkupload) and isn\'t limited by this server\'s PHP upload size.';
 $string['colbuildsnow'] = 'Builds now';
 $string['colconfidence'] = 'Mapping';
 $string['colcount'] = 'Count';
@@ -61,7 +61,7 @@ $string['defaultcoursename'] = 'Imported Canvas course';
 $string['defaultlessonname'] = 'Course pages';
 $string['errorbadmanifestxml'] = 'The imsmanifest.xml file could not be parsed as XML.';
 $string['errorbadurl'] = 'The download URL must start with http:// or https://.';
-$string['errorbothsources'] = 'Provide either a file or a URL, not both.';
+$string['errorbothsources'] = 'Provide just one package source, not several.';
 $string['errordownloadfailed'] = 'The Canvas package could not be downloaded from that URL.';
 $string['errordownloadjspage'] = 'That page builds its download links with JavaScript (a DSpace repository), so the file link is not in the page we receive, and the repository\'s API did not return a Common Cartridge file. Open the page in your browser, then copy the direct file link under "Files" (it looks like .../bitstreams/<id>/download) and paste that here.';
 $string['errordownloadnopackage'] = 'That URL did not return a Common Cartridge package. If it is a repository landing page, link directly to the .imscc download.';
@@ -112,6 +112,11 @@ $string['orphansheading'] = 'Unreferenced resources';
 $string['packagefile'] = 'Canvas export (.imscc)';
 $string['packagefile_help'] = 'Upload a course exported from Canvas as a Common Cartridge file. '
     . 'Analyse-only inspects the file; Build course creates a new Moodle course.';
+$string['packagelargefile'] = 'Large package (chunked upload)';
+$string['packagelargefile_help'] = 'Optional. For a package larger than this server\'s upload limit, '
+    . 'use this field instead of the file picker above — it uploads the file in small chunks (via the '
+    . 'local_chunkupload plugin), so PHP\'s per-request upload size doesn\'t apply. Leave it empty to use '
+    . 'the file picker or a download URL.';
 $string['packageurl'] = 'Download URL';
 $string['packageurl_help'] = 'Alternatively, paste an HTTPS link to a Canvas .imscc file '
     . '(for example a signed S3 link or a direct download URL). The site upload limit applies. '
