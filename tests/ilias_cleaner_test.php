@@ -100,6 +100,30 @@ final class ilias_cleaner_test extends \basic_testcase {
     }
 
     /**
+     * A blank gutter cell between the navigation column and the content cell is
+     * skipped: the content (in the ilc_table_TextTable cell) is returned rather
+     * than the empty spacer that comes first.
+     *
+     * @return void
+     */
+    public function test_blank_gutter_cell_is_skipped(): void {
+        $html = '<html><body><table class="ilc_page_cont_PageContainer"><tr><td>'
+            . '<table class="ilc_table_MainTable"><tr>'
+            . '<td width="275"><table class="ilc_table_Navigation"><tr><td>Activities</td></tr></table></td>'
+            . '<td width="20">&nbsp;</td>'
+            . '<td><table class="ilc_table_TextTable"><tr><td class="ilc_table_cell_Cell2">'
+            . '<h1>Real Lesson Content</h1></td></tr></table></td>'
+            . '</tr></table></td></tr></table></body></html>';
+
+        $out = ilias_cleaner::clean($html);
+
+        $this->assertStringContainsString('Real Lesson Content', $out);
+        $this->assertStringNotContainsString('Activities', $out);
+        // The gutter cell was not returned in place of the content.
+        $this->assertStringNotContainsString('width="20"', $out);
+    }
+
+    /**
      * Non-ILIAS HTML (Canvas, eXe, plain webcontent) carries none of the ILIAS
      * layout markers and is returned byte-for-byte unchanged.
      *

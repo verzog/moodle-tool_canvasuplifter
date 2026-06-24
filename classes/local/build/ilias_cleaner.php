@@ -110,8 +110,10 @@ class ilias_cleaner {
     }
 
     /**
-     * Serialise the content cell of a single ILIAS layout table: the direct
-     * cell of its first row that does not contain the navigation table.
+     * Serialise the content cell of a single ILIAS layout table. The content
+     * lives in the cell holding the ilc_table_TextTable; the navigation column
+     * is excluded and any blank gutter cell between them is skipped, so the
+     * real lesson content is returned rather than an empty spacer.
      *
      * @param DOMDocument $dom The owner document.
      * @param DOMXPath $xpath The document's xpath.
@@ -119,19 +121,64 @@ class ilias_cleaner {
      * @return string The content cell's inner HTML, or '' if none is found.
      */
     private static function content_cell_html(DOMDocument $dom, DOMXPath $xpath, DOMNode $maintable): string {
-        // The direct data cells of the layout row (loadHTML wraps rows in tbody).
+        // The direct data cells of the layout row (loadHTML wraps rows in tbody),
+        // minus the navigation column.
         $cells = $xpath->query('child::tbody/child::tr[1]/child::td | child::tr[1]/child::td', $maintable);
+        $nonnav = [];
         foreach ($cells as $cell) {
-            if ($xpath->query('descendant::table[' . self::has_class('ilc_table_Navigation') . ']', $cell)->length > 0) {
-                continue;
+            if ($xpath->query('descendant::table[' . self::has_class('ilc_table_Navigation') . ']', $cell)->length === 0) {
+                $nonnav[] = $cell;
             }
-            $html = '';
-            foreach ($cell->childNodes as $child) {
-                $html .= self::node_html($dom, $child);
-            }
-            return $html;
         }
-        return '';
+        // Prefer the cell that holds the ILIAS content table; then any cell that
+        // actually has content; only as a last resort the first non-nav cell.
+        foreach ($nonnav as $cell) {
+            if ($xpath->query('descendant::table[' . self::has_class('ilc_table_TextTable') . ']', $cell)->length > 0) {
+                return self::inner_html($dom, $cell);
+            }
+        }
+        foreach ($nonnav as $cell) {
+            if (self::cell_has_content($cell)) {
+                return self::inner_html($dom, $cell);
+            }
+        }
+        return $nonnav === [] ? '' : self::inner_html($dom, $nonnav[0]);
+    }
+
+    /**
+     * Whether a cell carries real content rather than being a blank spacer:
+     * non-whitespace text (ignoring &nbsp;) or a meaningful element.
+     *
+     * @param DOMNode $cell The table cell.
+     * @return bool
+     */
+    private static function cell_has_content(DOMNode $cell): bool {
+        $text = (string) preg_replace('/[\s\x{a0}]+/u', '', (string) $cell->textContent);
+        if ($text !== '') {
+            return true;
+        }
+        $meaningful = ['img', 'table', 'ul', 'ol', 'object', 'video', 'audio', 'iframe'];
+        foreach ($cell->getElementsByTagName('*') as $element) {
+            if (in_array(strtolower($element->localName), $meaningful, true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Serialise a node's children to HTML.
+     *
+     * @param DOMDocument $dom The owner document.
+     * @param DOMNode $node The node whose children to serialise.
+     * @return string
+     */
+    private static function inner_html(DOMDocument $dom, DOMNode $node): string {
+        $html = '';
+        foreach ($node->childNodes as $child) {
+            $html .= self::node_html($dom, $child);
+        }
+        return $html;
     }
 
     /**

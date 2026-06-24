@@ -180,6 +180,13 @@ class page_builder {
                 return $m[0];
             }
             $candidate = ltrim(preg_replace('#^\./#', '', $path), '/');
+            // Match (and emit) the decoded path: the package-relative bundle
+            // asset paths are decoded, but the HTML may carry a percent-encoded
+            // URL — either authored that way or encoded when an upstream DOM pass
+            // (the ILIAS cleaner) re-serialised a path with a space or a
+            // non-ASCII character. Without this, "data/my pic.jpg" stored as
+            // "data/my%20pic.jpg" would never match and the link would 404.
+            $candidate = rawurldecode($candidate);
             if (!isset($assetset[$candidate])) {
                 return $m[0];
             }

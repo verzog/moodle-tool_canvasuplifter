@@ -255,4 +255,65 @@ XML;
 
         $this->assertSame('real', page_payload::basedir($root, $modelitem));
     }
+
+    /**
+     * A bundle asset whose filename contains a space still resolves after the
+     * ILIAS cleaner's DOM pass: the cleaner percent-encodes the path in the
+     * stored HTML, but bundle rewriting decodes the candidate so it still maps
+     * to @@PLUGINFILE@@ and the file is imported, rather than 404ing.
+     *
+     * @return void
+     */
+    public function test_bundle_asset_with_space_resolves_after_cleaning(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/lm/data', 0777, true);
+        file_put_contents($dir . '/lm/delos_cont.css', '.ilc {}');
+        // A 1x1 PNG so the embedded image resolves to a real file.
+        file_put_contents(
+            $dir . '/lm/data/my pic.png',
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+        );
+        file_put_contents(
+            $dir . '/lm/index.html',
+            '<html><head><link rel="stylesheet" href="delos_cont.css"></head><body>'
+            . '<table class="ilc_page_cont_PageContainer"><tr><td>'
+            . '<table class="ilc_table_MainTable"><tr>'
+            . '<td width="275"><table class="ilc_table_Navigation"><tr><td>Activities</td></tr></table></td>'
+            . '<td><table class="ilc_table_TextTable"><tr><td class="ilc_table_cell_Cell2">'
+            . '<p>Body</p><img src="data/my pic.png" alt="pic">'
+            . '</td></tr></table></td>'
+            . '</tr></table></td></tr></table></body></html>'
+        );
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org"><item identifier="root">'
+            . '<item identifier="i1" identifierref="r_lm"><title>Module</title></item>'
+            . '</item></organization></organizations>'
+            . '<resources><resource identifier="r_lm" type="webcontent" href="lm/index.html">'
+            . '<file href="lm/index.html"/><file href="lm/delos_cont.css"/><file href="lm/data/my pic.png"/>'
+            . '</resource></resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $category = $this->getDataGenerator()->create_category();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $pages = get_fast_modinfo($report['courseid'])->get_instances_of('page');
+        $pagecm = reset($pages);
+        $page = $DB->get_record('page', ['id' => $pagecm->instance], '*', MUST_EXIST);
+
+        // The cleaner removed the navigation but kept the content image, and
+        // bundle rewriting matched the space-bearing path despite encoding.
+        $this->assertStringNotContainsString('Activities', $page->content);
+        $this->assertStringContainsString('@@PLUGINFILE@@/data/my pic.png', $page->content);
+        $this->assertStringNotContainsString('data/my%20pic.png', $page->content);
+
+        $context = \context_module::instance($pagecm->id);
+        $fs = get_file_storage();
+        $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/data/', 'my pic.png'));
+    }
 }
