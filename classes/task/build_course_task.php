@@ -52,6 +52,16 @@ class build_course_task extends adhoc_task {
             return;
         }
 
+        // If a previous run already finished this job, do not build a second
+        // copy. The course build can succeed and mark the job done, yet the task
+        // still be reported failed afterwards (e.g. a leaked DB transaction),
+        // which makes Moodle retry the adhoc task; without this guard each retry
+        // would build another duplicate course.
+        if ($job->status === job_manager::STATUS_DONE && !empty($job->courseid)) {
+            mtrace("build_course_task: job $jobid already built course {$job->courseid}; skipping rebuild");
+            return;
+        }
+
         $jobs->mark_running($jobid);
 
         // Build runs as the admin who queued the job so file API draft
