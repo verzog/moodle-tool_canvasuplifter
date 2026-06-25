@@ -40,7 +40,8 @@ $string['canvasuplifter:use'] = 'Upload a Canvas package and view the conversion
 $string['chosenbuildoptions'] = 'Using the options you chose above — combine consecutive pages: '
     . '{$a->grouping}; also build a runnable quiz from each standalone bank: {$a->quiz}.';
 $string['chunkuploadactive'] = 'For a very large package, use the optional "Large package (chunked upload)" '
-    . 'field below — it uploads in chunks (via local_chunkupload) and isn\'t limited by this server\'s PHP upload size.';
+    . 'field below — it uploads in chunks and isn\'t limited by this server\'s PHP upload size.';
+$string['cleanup_task'] = 'Clean up stale chunked uploads';
 $string['colbuildsnow'] = 'Builds now';
 $string['colconfidence'] = 'Mapping';
 $string['colcount'] = 'Count';
@@ -60,6 +61,7 @@ $string['coursename'] = 'Course name';
 $string['defaultbookname'] = 'Course pages';
 $string['defaultcoursename'] = 'Imported Canvas course';
 $string['defaultlessonname'] = 'Course pages';
+$string['deletefile'] = 'Delete file from Moodle';
 $string['errorbadmanifestxml'] = 'The imsmanifest.xml file could not be parsed as XML.';
 $string['errorbadurl'] = 'The download URL must start with http:// or https://.';
 $string['errorbothsources'] = 'Provide just one package source, not several.';
@@ -75,8 +77,6 @@ $string['extraquizzesbuilt'] = 'Also built {$a} runnable quiz(zes) from standalo
 $string['itemcount'] = 'Content items';
 $string['itemdetailheading'] = 'Item-by-item detail';
 $string['jobstatusis'] = 'Status: {$a}.';
-$string['largepackagehint'] = 'For a very large package, paste a download URL above instead of uploading — '
-    . 'or install the local_chunkupload plugin to upload big files in chunks past this server\'s upload size limit.';
 $string['lti_placeholder_note'] = 'Imported as a hidden placeholder from a Canvas LTI link. Configure or replace the external tool (set the consumer key and shared secret, or pick a preconfigured tool) and unhide the activity before students use it.';
 $string['matrixcolsupported'] = 'Converts';
 $string['matrixcoltype'] = 'Question type';
@@ -88,6 +88,7 @@ $string['matrixheading'] = 'Question-type matrix';
 $string['matrixsupported_incomplete'] = 'Skipped (incomplete)';
 $string['matrixsupported_no'] = 'Skipped';
 $string['matrixsupported_yes'] = 'Yes';
+$string['maxsize'] = 'Maximum file size: {$a}';
 $string['note_assignment'] = 'Name, instructions, due dates and Canvas rubrics (including per-rating long descriptions) convert. CC 1.3 IMS assignment-profile packages from non-Canvas exporters are also recognised. Outcome links do not carry across.';
 $string['note_discussion'] = 'Discussion topics become forums with the prompt as the opening post; Canvas does not export the replies, so existing threads do not carry across.';
 $string['note_file'] = 'Files convert directly to file resources.';
@@ -115,9 +116,8 @@ $string['packagefile_help'] = 'Upload a course exported from Canvas as a Common 
     . 'Analyse-only inspects the file; Build course creates a new Moodle course.';
 $string['packagelargefile'] = 'Large package (chunked upload)';
 $string['packagelargefile_help'] = 'Optional. For a package larger than this server\'s upload limit, '
-    . 'use this field instead of the file picker above — it uploads the file in small chunks (via the '
-    . 'local_chunkupload plugin), so PHP\'s per-request upload size doesn\'t apply. Leave it empty to use '
-    . 'the file picker or a download URL.';
+    . 'use this field instead of the file picker above — it uploads the file in small chunks, so PHP\'s '
+    . 'per-request upload size doesn\'t apply. Leave it empty to use the file picker or a download URL.';
 $string['packageurl'] = 'Download URL';
 $string['packageurl_help'] = 'Alternatively, paste an HTTPS link to a Canvas .imscc file '
     . '(for example a signed S3 link or a direct download URL). The site upload limit applies. '
@@ -130,7 +130,13 @@ $string['pagegrouping_none'] = 'No — one page activity each';
 $string['placement_extras'] = 'Additional resources section';
 $string['placement_top'] = 'Top of course';
 $string['pluginname'] = 'Canvas Uplifter';
+$string['privacy:chunkspath'] = 'Chunked uploads';
 $string['privacy:jobspath'] = 'Canvas Uplifter build jobs';
+$string['privacy:metadata:tool_canvasuplifter_chunks'] = 'Temporary records of large packages uploaded in chunks before they are saved.';
+$string['privacy:metadata:tool_canvasuplifter_chunks:contextid'] = 'The context in which the file was uploaded.';
+$string['privacy:metadata:tool_canvasuplifter_chunks:filename'] = 'The name of the uploaded file.';
+$string['privacy:metadata:tool_canvasuplifter_chunks:lastmodified'] = 'The time the upload was last modified.';
+$string['privacy:metadata:tool_canvasuplifter_chunks:userid'] = 'The user who uploaded the file.';
 $string['privacy:metadata:tool_canvasuplifter_jobs'] = 'Details of each Canvas-to-Moodle build run started by a user.';
 $string['privacy:metadata:tool_canvasuplifter_jobs:categoryid'] = 'The course category the build targeted.';
 $string['privacy:metadata:tool_canvasuplifter_jobs:courseid'] = 'The course created by the build, if any.';
@@ -158,6 +164,15 @@ $string['readytobuildheading'] = 'Build this course';
 $string['reportheading'] = 'Conversion report';
 $string['sectioncount'] = 'Sections';
 $string['sectionitemscount'] = '{$a->title} ({$a->count} items)';
+$string['setting:chunksize'] = 'Chunk size (MB)';
+$string['setting:chunksize_desc'] = 'Size of each chunk sent to the server when uploading a large package, in megabytes.';
+$string['setting:state0duration'] = 'Keep unused upload tokens for';
+$string['setting:state0duration_desc'] = 'How long an upload token that was generated but never used is kept before the cleanup task removes it.';
+$string['setting:state1duration'] = 'Keep unfinished uploads for';
+$string['setting:state1duration_desc'] = 'How long a partially uploaded file is kept before the cleanup task removes it.';
+$string['setting:state2duration'] = 'Keep completed uploads for';
+$string['setting:state2duration_desc'] = 'How long a completed upload that was never consumed is kept before the cleanup task removes it.';
+$string['settings'] = 'Chunked upload settings';
 $string['skipreasonsheading'] = 'Skip reasons (debug)';
 $string['status_done'] = 'Done';
 $string['status_failed'] = 'Failed';
@@ -167,8 +182,11 @@ $string['syllabuspage'] = 'Syllabus';
 $string['targetcategory'] = 'Target course category';
 $string['targetcategory_help'] = 'The new course will be created in this category. '
     . 'You need the "create courses" capability in the chosen category.';
+$string['tokenexpired'] = 'The upload token has expired. Try refreshing the page to receive a new one.';
 $string['unknownheading'] = 'Unclassified resource types (debug)';
 $string['untitledsection'] = 'Untitled section';
+$string['uploaded'] = 'File uploaded';
+$string['uploadnotfinished'] = 'Upload did not finish!';
 $string['warningsheading'] = 'Notes and warnings';
 $string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';

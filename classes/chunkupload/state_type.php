@@ -15,18 +15,31 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Plugin version and metadata.
+ * Upload states for the chunked-upload field.
+ *
+ * Folded in from local_chunkupload (2020 Laura Troost, Nina Herrmann WWU).
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2020 Laura Troost, Nina Herrmann WWU
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
+namespace tool_canvasuplifter\chunkupload;
 
-$plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026062500;      // YYYYMMDDXX. This release.
-$plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
-$plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Chunked upload folded in; no local_chunkupload dependency.
-$plugin->release   = '0.36.0';
+/**
+ * Upload states for the chunked-upload field.
+ *
+ * @package    tool_canvasuplifter
+ * @copyright  2020 Laura Troost, Nina Herrmann WWU
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+class state_type {
+    /** @var int Token generated when the field rendered, no upload yet. */
+    const UNUSED_TOKEN_GENERATED = 0;
+
+    /** @var int Upload has started but not all chunks have arrived. */
+    const UPLOAD_STARTED = 1;
+
+    /** @var int All chunks received; the file is complete. */
+    const UPLOAD_COMPLETED = 2;
+}

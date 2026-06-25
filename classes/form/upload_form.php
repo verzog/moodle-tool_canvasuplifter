@@ -26,11 +26,11 @@ require_once($CFG->libdir . '/formslib.php');
  * Upload form for a Canvas .imscc package.
  *
  * Offers three ways to supply a package: the standard Moodle file picker (the
- * main control), a download URL, and — only when the optional local_chunkupload
- * plugin is installed — an extra chunked-upload field for very large packages
- * that would exceed PHP's per-request upload limit (those hosted on repository
- * sites, for example). The chunkupload field is a soft, additive option: when
- * the plugin is absent the form is just the file picker plus the URL field.
+ * main control), a download URL, and an extra chunked-upload field for very
+ * large packages that would exceed PHP's per-request upload limit (those hosted
+ * on repository sites, for example). The chunked uploader is bundled with this
+ * plugin (folded in from the former local_chunkupload), so the field is always
+ * available.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -38,7 +38,7 @@ require_once($CFG->libdir . '/formslib.php');
  */
 class upload_form extends moodleform {
     /** Fully-qualified class of the chunkupload form element / file API. */
-    private const CHUNKUPLOAD_CLASS = 'local_chunkupload\\chunkupload_form_element';
+    private const CHUNKUPLOAD_CLASS = 'tool_canvasuplifter\\chunkupload\\form_element';
 
     /** @var bool Whether the optional chunkupload field was added to the form. */
     private bool $chunkuploadoffered = false;
@@ -65,13 +65,13 @@ class upload_form extends moodleform {
         );
         $mform->addHelpButton('packagefile', 'packagefile', 'tool_canvasuplifter');
 
-        // Optional extra field for very large packages, only when the
-        // local_chunkupload plugin is installed. registerElementType is
-        // idempotent, so it is safe to call on every form build.
+        // Extra field for very large packages that exceed PHP's per-request
+        // upload ceiling. registerElementType is idempotent, so it is safe to
+        // call on every form build.
         if (self::chunkupload_available()) {
             \MoodleQuickForm::registerElementType(
                 'chunkupload',
-                "$CFG->dirroot/local/chunkupload/classes/chunkupload_form_element.php",
+                "$CFG->dirroot/admin/tool/canvasuplifter/classes/chunkupload/form_element.php",
                 self::CHUNKUPLOAD_CLASS
             );
             $mform->addElement(
@@ -128,14 +128,14 @@ class upload_form extends moodleform {
     }
 
     /**
-     * Whether the optional local_chunkupload plugin is installed, so the package
-     * field can use its chunked uploader for large files.
+     * Whether the chunked-upload field can be offered. The uploader is bundled
+     * with this plugin, so it is always available; kept as a method so callers
+     * read intent rather than a bare true.
      *
      * @return bool
      */
     public static function chunkupload_available(): bool {
-        global $CFG;
-        return file_exists("$CFG->dirroot/local/chunkupload/classes/chunkupload_form_element.php");
+        return true;
     }
 
     /**
@@ -150,25 +150,25 @@ class upload_form extends moodleform {
 
     /**
      * Whether a chunkupload id belongs to the current user. The submitted
-     * packagefile value is an opaque id from the POST body and local_chunkupload
-     * scopes none of its own lookups by user, so confirm ownership before
-     * trusting a token: a forged id pointing at another user's upload must not
-     * be accepted (which would copy their package into this user's area and then
-     * delete their temp upload).
+     * packagefile value is an opaque id from the POST body and the chunked
+     * uploader scopes none of its own DB helpers by user, so confirm ownership
+     * before trusting a token: a forged id pointing at another user's upload
+     * must not be accepted (which would copy their package into this user's area
+     * and then delete their temp upload).
      *
      * @param int $id The submitted chunkupload id.
      * @return bool
      */
     private function chunkupload_owned(int $id): bool {
         global $DB, $USER;
-        return $id > 0 && $DB->record_exists('local_chunkupload_files', ['id' => $id, 'userid' => $USER->id]);
+        return $id > 0 && $DB->record_exists('tool_canvasuplifter_chunks', ['id' => $id, 'userid' => $USER->id]);
     }
 
     /**
      * Resolve a chunkupload id to the path of a *completed* upload owned by the
-     * current user, or null. local_chunkupload creates a tracking token as soon
-     * as the field renders, and its is_file_uploaded() reports true for that
-     * bare token, so a started-but-empty form (or a URL-only submission, where
+     * current user, or null. The uploader creates a tracking token as soon as
+     * the field renders, and its is_file_uploaded() reports true for that bare
+     * token, so a started-but-empty form (or a URL-only submission, where
      * the token still exists) would otherwise look like an uploaded file —
      * tripping the "both sources" error or reaching the file copy with no file.
      * Confirm completion from the file itself: present, readable and non-empty.

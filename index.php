@@ -155,10 +155,8 @@ if ($error !== null) {
     echo $OUTPUT->notification($error, \core\output\notification::NOTIFY_ERROR);
 }
 
-// Tell the admin how large packages are handled: chunked upload when
-// local_chunkupload is installed, otherwise point at the URL field.
-$hintkey = upload_form::chunkupload_available() ? 'chunkuploadactive' : 'largepackagehint';
-echo html_writer::tag('p', get_string($hintkey, 'tool_canvasuplifter'), ['class' => 'text-muted']);
+// Point the admin at the built-in chunked-upload field for large packages.
+echo html_writer::tag('p', get_string('chunkuploadactive', 'tool_canvasuplifter'), ['class' => 'text-muted']);
 $form->display();
 
 echo $OUTPUT->footer();

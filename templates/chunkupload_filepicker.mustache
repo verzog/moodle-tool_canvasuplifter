@@ -1,0 +1,56 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template tool_canvasuplifter/chunkupload_filepicker
+
+    Chunked-upload field for a large package. Folded in from
+    local_chunkupload (2020 Justus Dieckmann WWU).
+
+    Example context (json):
+    {
+      "elid": "id_test",
+      "elname": "test",
+      "value": 5313393439,
+      "filenamestring": "Choose a file",
+      "showicon": false,
+      "showdelete": false,
+      "filesize": "2MB"
+    }
+}}
+<input type="hidden" name="{{elname}}" id="{{elid}}" value="{{value}}" class=""/>
+
+<div class="tool_canvasuplifter-chunkupload">
+    <span class="chunkupload-filesize">
+        {{#str}}maxsize, tool_canvasuplifter, {{filesize}}{{/str}}
+    </span>
+    <div class="custom-file">
+        <input type="file" class="custom-file-input" id="{{elid}}_file">
+        <label class="custom-file-label chunkupload-label" for="{{elid}}_file">
+            <span class="chunkupload-browse btn-secondary">{{#str}}browse, core_editor{{/str}}</span>
+            <span class="chunkupload-left">
+                <span class="chunkupload-icon" {{^showicon}}hidden{{/showicon}}>
+                    {{#pix}}i/checked, core,{{#str}} uploaded, tool_canvasuplifter {{/str}}{{/pix}}
+                </span>
+                <span class="chunkupload-progress"></span>
+                <span class="chunkupload-filename">{{filenamestring}}</span>
+            </span>
+        </label>
+        <span class="chunkupload-delete" {{^showdelete}}hidden{{/showdelete}}>
+            {{#pix}}i/delete, core,{{#str}} deletefile, tool_canvasuplifter {{/str}}{{/pix}}
+        </span>
+    </div>
+</div>
