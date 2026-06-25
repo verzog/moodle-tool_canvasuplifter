@@ -313,7 +313,8 @@ class form_element extends \HTML_QuickForm_input implements \templatable {
         global $DB;
         $fs = get_file_storage();
         $record = $DB->get_record('tool_canvasuplifter_chunks', ['id' => $chunkuploadid], '*', IGNORE_MISSING);
-        if (!$record || $record->state !== state_type::UPLOAD_COMPLETED) {
+        // Loose comparison: the DB layer returns the state column as a string.
+        if (!$record || $record->state != state_type::UPLOAD_COMPLETED) {
             return null;
         }
 
