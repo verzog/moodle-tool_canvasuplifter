@@ -85,10 +85,12 @@ class question_importer {
      * @param stdClass $course Course record (qformat needs it for context).
      * @param \context $context The context whose default category receives the questions.
      * @param array $questions Supported {@see \tool_canvasuplifter\local\model\qti_question} objects.
-     * @param string $imagedir Folder for resolving question images.
+     * @param string $imagedir Folder for resolving relative question images.
+     * @param string|null $filebase Package root for resolving $IMS-CC-FILEBASE$ image tokens.
      * @return array The ids of the questions created, in import order.
      */
-    public function import(stdClass $course, \context $context, array $questions, string $imagedir): array {
+    public function import(stdClass $course, \context $context, array $questions, string $imagedir,
+            ?string $filebase = null): array {
         global $CFG, $DB;
         require_once($CFG->libdir . '/questionlib.php');
         require_once($CFG->dirroot . '/question/format.php');
@@ -106,7 +108,7 @@ class question_importer {
         $category = question_get_default_category($context->id, true);
         $contexts = new \core_question\local\bank\question_edit_contexts($context);
 
-        $xml = (new question_xml_writer())->to_moodle_xml($questions, $category->name, $imagedir);
+        $xml = (new question_xml_writer())->to_moodle_xml($questions, $category->name, $imagedir, $filebase);
         $dir = make_request_directory();
         $file = $dir . '/questions.xml';
         file_put_contents($file, $xml);

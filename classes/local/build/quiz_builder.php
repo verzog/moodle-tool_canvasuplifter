@@ -182,7 +182,7 @@ class quiz_builder {
             return $cmid;
         }
 
-        $questionids = (new question_importer())->import($course, $context, $supported, $imagedir);
+        $questionids = (new question_importer())->import($course, $context, $supported, $imagedir, $this->packageroot);
         if (empty($questionids)) {
             // Nothing imported despite some questions looking convertible; don't
             // leave an empty quiz behind.

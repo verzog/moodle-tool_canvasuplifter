@@ -102,7 +102,8 @@ class questionbank_builder {
         $cmid = (int) $created->coursemodule;
 
         $context = \context_module::instance($cmid);
-        $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath));
+        $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath),
+            $this->packageroot);
         if (empty($questionids)) {
             // Nothing imported despite some questions looking convertible; don't
             // leave an empty bank behind.

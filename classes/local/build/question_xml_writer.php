@@ -34,15 +34,21 @@ use tool_canvasuplifter\local\model\qti_question;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class question_xml_writer {
+    /** @var string|null Package root for resolving $IMS-CC-FILEBASE$ tokens, set per render. */
+    private ?string $filebase = null;
+
     /**
      * Render questions as a Moodle XML document.
      *
      * @param array $questions Array of {@see qti_question}.
      * @param string $category Question category path, e.g. "$course$/Imported/Quiz".
      * @param string|null $imagedir Absolute folder to resolve relative images, or null to skip.
+     * @param string|null $filebase Absolute package root for resolving $IMS-CC-FILEBASE$ tokens.
      * @return string Moodle XML.
      */
-    public function to_moodle_xml(array $questions, string $category, ?string $imagedir = null): string {
+    public function to_moodle_xml(array $questions, string $category, ?string $imagedir = null,
+            ?string $filebase = null): string {
+        $this->filebase = $filebase !== null ? rtrim($filebase, '/') : null;
         $out = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<quiz>\n";
         $out .= "  <question type=\"category\">\n    <category><text>"
             . htmlspecialchars($category, ENT_XML1) . "</text></category>\n  </question>\n";
@@ -307,16 +313,19 @@ class question_xml_writer {
      * @return string|null The rewritten URL, or null to leave it alone.
      */
     protected function rewrite_ref(string $value, string $imagedir, array &$files): ?string {
-        if ($value === '' || preg_match('~^(https?:|data:|mailto:|tel:|@@PLUGINFILE@@|#)~i', $value)) {
+        if ($value === '') {
             return null;
         }
-        // Keep any ?query/#fragment suffix off the file lookup but back on the URL.
-        $suffix = '';
-        $path = $value;
-        if (preg_match('/^([^?#]*)([?#].*)$/', $value, $sm)) {
-            $path = $sm[1];
-            $suffix = $sm[2];
+        // Canvas's $IMS-CC-FILEBASE$ token addresses the package's bundled files
+        // (commonly under web_resources/); resolve it against the package root,
+        // mirroring link_rewriter, independent of the per-question image folder.
+        if (preg_match('~^(?:\$IMS-CC-FILEBASE\$|%24IMS-CC-FILEBASE%24)(.*)$~i', $value, $tm)) {
+            return $this->rewrite_filebase_ref($tm[1], $files);
         }
+        if (preg_match('~^(https?:|data:|mailto:|tel:|@@PLUGINFILE@@|#)~i', $value)) {
+            return null;
+        }
+        [$path, $suffix] = $this->split_suffix($value);
         $rel = rawurldecode($path);
         // Null bytes make realpath() throw on PHP 8; refuse them.
         if ($rel === '' || strpos($rel, "\0") !== false) {
@@ -326,10 +335,49 @@ class question_xml_writer {
         if ($abs === null || !is_file($abs)) {
             return null;
         }
-        // Derive the name and subdirectory from the canonical path inside the
-        // assessment folder, so dot segments resolve consistently in both the
-        // stored <file path> and the rewritten URL.
-        $root = realpath($imagedir);
+        return $this->collect_file($abs, $imagedir, $suffix, $files);
+    }
+
+    /**
+     * Resolve a $IMS-CC-FILEBASE$ token reference (everything after the token)
+     * against the package root. Canvas commonly stores the file under
+     * web_resources/, so that location is tried as well.
+     *
+     * @param string $rest The path after the token (may carry ?query/#fragment).
+     * @param array $files Collected files (modified in place).
+     * @return string|null The rewritten @@PLUGINFILE@@ URL, or null to leave it alone.
+     */
+    protected function rewrite_filebase_ref(string $rest, array &$files): ?string {
+        if ($this->filebase === null) {
+            return null;
+        }
+        [$path, $suffix] = $this->split_suffix($rest);
+        $rel = ltrim(rawurldecode($path), '/');
+        if ($rel === '' || strpos($rel, "\0") !== false) {
+            return null;
+        }
+        foreach ([$rel, 'web_resources/' . $rel] as $candidate) {
+            $abs = $this->safe_join($this->filebase, $candidate);
+            if ($abs !== null && is_file($abs)) {
+                return $this->collect_file($abs, $this->filebase, $suffix, $files);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Collect a resolved file's bytes and return its @@PLUGINFILE@@ URL. The
+     * stored <file path>/name and the URL are both derived from the canonical
+     * path inside $base, so dot segments resolve consistently and the two agree.
+     *
+     * @param string $abs Absolute path of the resolved file.
+     * @param string $base Absolute base directory the file was resolved under.
+     * @param string $suffix Any ?query/#fragment to re-append to the URL.
+     * @param array $files Collected files (modified in place).
+     * @return string The @@PLUGINFILE@@ URL.
+     */
+    protected function collect_file(string $abs, string $base, string $suffix, array &$files): string {
+        $root = realpath($base);
         $relcanon = str_replace('\\', '/', ltrim(substr($abs, strlen((string) $root)), '/\\'));
         $name = basename($relcanon);
         $subdir = trim(dirname($relcanon), '/');
@@ -349,6 +397,19 @@ class question_xml_writer {
             ? '/'
             : '/' . implode('/', array_map('rawurlencode', explode('/', $subdir))) . '/';
         return '@@PLUGINFILE@@' . $urlpath . rawurlencode($name) . $suffix;
+    }
+
+    /**
+     * Split a reference into its path and any trailing ?query/#fragment suffix.
+     *
+     * @param string $value The reference value.
+     * @return array A two-element list: [path, suffix].
+     */
+    protected function split_suffix(string $value): array {
+        if (preg_match('/^([^?#]*)([?#].*)$/', $value, $sm)) {
+            return [$sm[1], $sm[2]];
+        }
+        return [$value, ''];
     }
 
     /**

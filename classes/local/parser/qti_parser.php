@@ -189,6 +189,20 @@ class qti_parser {
                 return qti_question::TYPE_ESSAY;
             case 'matching_question':
                 return qti_question::TYPE_MATCHING;
+            case 'multiple_dropdowns_question':
+                // Inline dropdowns: each blank is a response_lid with its own
+                // render_choice and a scored answer — structurally a matching
+                // question, so import it as Moodle match.
+                return qti_question::TYPE_MATCHING;
+            case 'fill_in_multiple_blanks_question':
+                // Canvas authors these either as free-text blanks (response_str,
+                // no choices) or as inline dropdowns (response_lid + render_choice).
+                // Only the choice form maps cleanly to a Moodle match; a free-text
+                // multi-blank has no render_choice and stays unsupported, reported
+                // by its Canvas type name.
+                return $presentation !== null && $this->descendant($presentation, 'render_choice') !== null
+                    ? qti_question::TYPE_MATCHING
+                    : qti_question::TYPE_UNSUPPORTED;
         }
         // Fall back on the response cardinality for unprofiled multiple choice.
         $lid = $presentation !== null ? $this->descendant($presentation, 'response_lid') : null;

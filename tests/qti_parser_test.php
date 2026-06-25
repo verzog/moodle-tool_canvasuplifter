@@ -592,6 +592,75 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * Canvas's inline-choice "cloze" types (multiple_dropdowns_question and the
+     * choice form of fill_in_multiple_blanks_question) are authored as one
+     * response_lid + render_choice per blank, structurally a matching question,
+     * so they import as a Moodle match (one stem/answer pair per blank).
+     *
+     * @return void
+     */
+    public function test_native_dropdowns_and_blanks_become_matching(): void {
+        $blank = function (string $ident, string $stem, string $a1, string $a2): string {
+            return '<response_lid ident="' . $ident . '"><material><mattext>' . $stem . '</mattext></material>'
+                . '<render_choice>'
+                . '<response_label ident="' . $a1 . '"><material><mattext texttype="text/plain">Sensory</mattext>'
+                . '</material></response_label>'
+                . '<response_label ident="' . $a2 . '"><material><mattext texttype="text/plain">Motor</mattext>'
+                . '</material></response_label></render_choice></response_lid>';
+        };
+        foreach (['multiple_dropdowns_question', 'fill_in_multiple_blanks_question'] as $type) {
+            $pres = '<presentation><material><mattext texttype="text/html">Pick for each [I] [II].</mattext></material>'
+                . $blank('response_I', 'I', 'a1', 'a2') . $blank('response_II', 'II', 'b1', 'b2') . '</presentation>';
+            $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+                . '<respcondition><conditionvar><varequal respident="response_I">a1</varequal></conditionvar>'
+                . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+                . '<respcondition><conditionvar><varequal respident="response_II">b2</varequal></conditionvar>'
+                . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+            $item = '<item ident="c1" title="Cloze"><itemmetadata><qtimetadata>'
+                . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>' . $type . '</fieldentry>'
+                . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+            $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+            $this->assertSame(qti_question::TYPE_MATCHING, $q->type, "$type should map to matching");
+            $pairs = [];
+            foreach ($q->subquestions as $sub) {
+                if (trim($sub['text']) !== '') {
+                    $pairs[$this->plain($sub['text'])] = $sub['answer'];
+                }
+            }
+            $this->assertSame('Sensory', $pairs['I']);
+            $this->assertSame('Motor', $pairs['II']);
+            $this->assertTrue($q->is_importable(), "$type should be importable");
+        }
+    }
+
+    /**
+     * A free-text fill_in_multiple_blanks_question (response_str, no
+     * render_choice) has no choices to match, so it stays UNSUPPORTED and is
+     * reported by its Canvas type name rather than mis-imported as an empty match.
+     *
+     * @return void
+     */
+    public function test_free_text_fill_in_blanks_stays_unsupported(): void {
+        $item = '<item ident="fb1" title="Blank"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>The [a] bone connects to the [b] bone.</mattext></material>'
+            . '<response_str ident="response_a"><render_fib/></response_str>'
+            . '<response_str ident="response_b"><render_fib/></response_str></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_a">hip</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing></item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+        $this->assertSame('fill_in_multiple_blanks_question', $q->profile);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
      * A recognised-but-unconvertible Canvas type (e.g. numerical_question) is
      * left UNSUPPORTED and reported by its Canvas type name, rather than being
      * coerced into a wrong Moodle type by the cardinality fallback.
