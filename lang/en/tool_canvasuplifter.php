@@ -170,7 +170,8 @@ $string['reportheading'] = 'Conversion report';
 $string['sectioncount'] = 'Sections';
 $string['sectionitemscount'] = '{$a->title} ({$a->count} items)';
 $string['setting:chunksize'] = 'Chunk size (MB)';
-$string['setting:chunksize_desc'] = 'Size of each chunk sent to the server when uploading a large package, in megabytes.';
+$string['setting:chunksize_desc'] = 'Size of each chunk sent to the server when uploading a large package, in megabytes. '
+    . 'Lower this if large uploads fail — some web servers, reverse proxies and firewalls reject large request bodies.';
 $string['setting:state0duration'] = 'Keep unused upload tokens for';
 $string['setting:state0duration_desc'] = 'How long an upload token that was generated but never used is kept before the cleanup task removes it.';
 $string['setting:state1duration'] = 'Keep unfinished uploads for';

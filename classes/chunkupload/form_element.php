@@ -156,11 +156,11 @@ class form_element extends \HTML_QuickForm_input implements \templatable {
             $html .= $OUTPUT->render_from_template('core_form/filetypes-descriptions', $filetypedescriptions);
         }
 
-        // Fall back to 64 MB if the admin setting has not been written yet, so a
+        // Fall back to 20 MB if the admin setting has not been written yet, so a
         // zero chunk size can never stall the uploader.
         $chunksize = (int) get_config('tool_canvasuplifter', 'chunksize');
         if ($chunksize <= 0) {
-            $chunksize = 64;
+            $chunksize = 20;
         }
 
         $PAGE->requires->js_call_amd('tool_canvasuplifter/chunkupload', 'init', [

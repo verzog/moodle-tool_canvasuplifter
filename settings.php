@@ -49,7 +49,7 @@ if ($hassiteconfig) {
         'tool_canvasuplifter/chunksize',
         new lang_string('setting:chunksize', 'tool_canvasuplifter'),
         new lang_string('setting:chunksize_desc', 'tool_canvasuplifter'),
-        64,
+        20,
         PARAM_INT
     ));
     $settings->add(new admin_setting_configduration(
