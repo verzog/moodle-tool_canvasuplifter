@@ -94,11 +94,14 @@ Background on how Canvas ships quizzes — and why some arrive without questions
 - **"Referenced but not present" quizzes:** when a quiz draws its questions from a
   randomised group or an external question pool/bank instead of hard-coding them
   inside the `<section>`, Canvas may export only the shell — a bare
-  `<item ident="…"/>` with no body — and leave the pool items out of the package.
-  The bodies are then genuinely absent, so the quiz is skipped and reported as
-  *"references N question(s) whose content is not present in the package"*. To
-  recover these, re-export from Canvas with the item banks included, or migrate
-  the New Quizzes to Classic Quizzes first.
+  `<item ident="…"/>` with no body, or an empty `<section/>` (typical of New
+  Quizzes / `cc.exam` exports) — and leave the pool items out of the package. The
+  bodies are then genuinely absent. Rather than dropping the activity, the quiz
+  is built as a **hidden placeholder** carrying the Canvas title and settings
+  (time limit, attempts, dates, …) with an intro note asking a teacher to add the
+  questions; the build report flags how many were imported this way. To recover
+  the original questions, re-export from Canvas with the item banks included, or
+  migrate the New Quizzes to Classic Quizzes first.
 - **Re-importing into Canvas (`ident` reuse):** many authoring tools reuse
   assessment/item `ident`s, and Canvas treats matching ids as separate objects
   unless you tick **"Overwrite assessment content with matching IDs"** during the

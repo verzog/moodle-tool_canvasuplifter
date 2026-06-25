@@ -565,4 +565,198 @@ XML;
         $quizsingle = $DB->get_record('quiz', ['id' => $cmsingle->instance], '*', MUST_EXIST);
         $this->assertSame($open, (int) $quizsingle->reviewmarks & $open);
     }
+
+    /**
+     * Write a package whose quiz is a Canvas exam/New-Quiz shell: a valid
+     * assessment with an empty <section/> (the questions live in an item bank
+     * Canvas didn't export) plus an assessment_meta.xml with real settings.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_empty_shell(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/shell');
+        $qti = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="shell" title="Patient Safety Quiz">'
+            . '<qtimetadata><qtimetadatafield><fieldlabel>cc_profile</fieldlabel>'
+            . '<fieldentry>cc.exam.v0p1</fieldentry></qtimetadatafield></qtimetadata>'
+            . '<section ident="root_section"/>'
+            . '</assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/shell/assessment_qti.xml', $qti);
+        $meta = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz identifier="shell" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Patient Safety Quiz</title>'
+            . '<time_limit>20</time_limit>'
+            . '<allowed_attempts>2</allowed_attempts>'
+            . '</quiz>';
+        file_put_contents($dir . '/quiz/shell/assessment_meta.xml', $meta);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Patient Safety Quiz</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/shell/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A Canvas quiz shell with no questions in the package is imported as a
+     * hidden placeholder carrying its settings, with a teacher-facing note,
+     * rather than being dropped — and the build report warns about it.
+     *
+     * @return void
+     */
+    public function test_question_less_shell_becomes_hidden_placeholder(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_empty_shell();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        // Built (not skipped), and hidden until a teacher adds questions.
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        $this->assertEquals(0, (int) $quizcm->visible);
+
+        $quiz = $DB->get_record('quiz', ['id' => $quizcm->instance], '*', MUST_EXIST);
+        // No questions, but the Canvas settings carried over.
+        $this->assertEquals(0, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
+        $this->assertEquals(20 * 60, (int) $quiz->timelimit);
+        $this->assertEquals(2, (int) $quiz->attempts);
+        // The intro explains what happened, and the report warns about it.
+        $this->assertStringContainsString('without its questions', $quiz->intro);
+        $this->assertStringContainsString('hidden placeholders', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * Write a package whose quiz file is a QTI 2.1 assessment (no QTI 1.2
+     * <assessment>/<section>), which the parser cannot read and which must not
+     * be mistaken for a recoverable Canvas shell.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_non_qti12(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/v2');
+        $qti = '<?xml version="1.0"?>'
+            . '<assessmentTest xmlns="http://www.imsglobal.org/xsd/imsqti_v2p1" identifier="t1" title="QTI 2.1 Quiz">'
+            . '<testPart identifier="p1"><assessmentSection identifier="s1" title="S"/></testPart>'
+            . '</assessmentTest>';
+        file_put_contents($dir . '/quiz/v2/assessment_qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>QTI 2.1 Quiz</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/v2/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A quiz file that isn't a readable QTI 1.2 assessment (here, QTI 2.1) is
+     * reported and skipped, NOT turned into a hidden placeholder — masking the
+     * conversion failure would hide real data loss.
+     *
+     * @return void
+     */
+    public function test_non_qti12_assessment_is_skipped_not_placeholdered(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_non_qti12();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(0, $report['createdcounts']['quiz'] ?? 0);
+        $this->assertCount(0, get_fast_modinfo($report['courseid'])->get_instances_of('quiz'));
+        // It is reported as a skip, not silently created.
+        $this->assertNotEmpty($report['skipreasons']);
+        $this->assertStringNotContainsString('hidden placeholders', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * A broken file with a stray bare <item> but no <assessment>/<section> is a
+     * conversion failure, not a Canvas shell: it must be skipped, not turned
+     * into a hidden placeholder just because it bumps the unresolved count.
+     *
+     * @return void
+     */
+    public function test_bare_item_without_assessment_is_skipped(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/stray');
+        $qti = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<item ident="orphan"/></questestinterop>';
+        file_put_contents($dir . '/quiz/stray/assessment_qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Broken</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/stray/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $this->assertSame(0, $report['createdcounts']['quiz'] ?? 0);
+        $this->assertCount(0, get_fast_modinfo($report['courseid'])->get_instances_of('quiz'));
+        $this->assertStringNotContainsString('hidden placeholders', implode("\n", $report['warnings']));
+    }
 }

@@ -152,6 +152,11 @@ $string['qtype_shortanswer'] = 'Fill in the blank / short answer';
 $string['qtype_truefalse'] = 'True/false';
 $string['quizfrombank'] = 'Also build a runnable quiz from each standalone question bank';
 $string['quizfrombank_help'] = 'Standalone assessments (not linked anywhere in the Canvas course) import as reusable question banks. Tick this to also create a runnable quiz from each one, placed in the "Additional resources" section. Quizzes linked within the course are always built as quizzes regardless of this setting.';
+$string['quizplaceholderintro'] = '<div class="alert alert-warning">This quiz was imported from Canvas '
+    . '<strong>without its questions</strong>. Canvas exported the quiz settings but not the questions — '
+    . 'usually because they live in a New Quizzes item bank that the Common Cartridge export leaves out. '
+    . 'Add the questions here, then make this activity visible to students. To recover the originals, '
+    . 're-export from Canvas with item banks included, or convert the New Quiz to a Classic Quiz first.</div>';
 $string['readytobuildexplain'] = 'The package has been analysed and is held ready. '
     . 'Choose a category and click Build course to create the course in Moodle.';
 $string['readytobuildheading'] = 'Build this course';
@@ -172,6 +177,9 @@ $string['untitledsection'] = 'Untitled section';
 $string['warningsheading'] = 'Notes and warnings';
 $string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';
+$string['warnquizplaceholders'] = '{$a} quiz(zes) were imported as hidden placeholders because Canvas '
+    . 'did not export their questions (e.g. New Quizzes backed by an item bank). Their settings carried '
+    . 'over; add questions and unhide them.';
 $string['warnreportlti'] = 'External (LTI) tools need their keys reconfigured by hand after import.';
 $string['warnreportquiz'] = 'Quiz questions depend on type support; check the question-type matrix.';
 $string['warnreportunclassified'] = 'Some resources could not be classified and will be skipped.';

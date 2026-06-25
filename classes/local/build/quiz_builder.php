@@ -44,6 +44,9 @@ class quiz_builder {
     /** @var string|null Why the last build() returned null, for the skip report. */
     public ?string $skipreason = null;
 
+    /** @var int How many quizzes were built as empty hidden placeholders (no importable questions). */
+    public int $placeholdercount = 0;
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -81,7 +84,21 @@ class quiz_builder {
         $questions = $parsed['questions'];
         $supported = array_filter($questions, fn($q) => $q->type !== qti_question::TYPE_UNSUPPORTED);
         $importable = array_filter($supported, fn($q) => $q->is_importable());
-        if (empty($importable)) {
+
+        // A placeholder is only justified for a genuine but empty Canvas shell:
+        // a readable QTI 1.2 <assessment>/<section>, whether the section is empty
+        // or holds bare item references to questions Canvas didn't export. The
+        // hasassessment flag already requires that structure, so a stray <item>
+        // node in malformed or non-QTI-1.2 XML (where unresolved could be > 0 but
+        // there's no real assessment) is not mistaken for a shell.
+        $isshell = empty($questions) && ($parsed['hasassessment'] ?? false);
+
+        // Report and skip when nothing is importable and it isn't a shell —
+        // either questions are present but unconvertible (unsupported types), or
+        // the file isn't a readable QTI 1.2 assessment at all (malformed, or QTI
+        // 2.x/3.x). Masking such a conversion failure as a placeholder would
+        // hide real data loss.
+        if (empty($importable) && !$isshell) {
             $this->skipreason = question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
             return null;
         }
@@ -102,15 +119,29 @@ class quiz_builder {
             return null;
         }
 
+        // The assessment is a genuine but empty Canvas shell (checked above):
+        // build a hidden placeholder carrying the title and settings, with a note
+        // asking a teacher to add the questions Canvas didn't export, so nothing
+        // bar the absent questions is lost.
+        $isplaceholder = $isshell;
+        $intro = $settings->description;
+        if ($isplaceholder) {
+            $this->placeholdercount++;
+            $intro = get_string('quizplaceholderintro', 'tool_canvasuplifter') . $intro;
+        }
+
         $moduleinfo = (object) array_merge($this->quiz_defaults(), $this->settings_overlay($settings), [
             'modulename' => 'quiz',
             'module' => $module->id,
             'course' => $course->id,
             'section' => $sectionnum,
-            'visible' => 1,
+            // A placeholder has no questions, so keep it hidden until a teacher
+            // adds them; a real quiz is visible (course_builder still hides it
+            // afterwards if the Canvas activity was unpublished).
+            'visible' => $isplaceholder ? 0 : 1,
             'cmidnumber' => '',
             'name' => $name,
-            'intro' => $settings->description,
+            'intro' => $intro,
             'introformat' => FORMAT_HTML,
         ]);
         $created = add_moduleinfo($moduleinfo, $course);
@@ -121,10 +152,15 @@ class quiz_builder {
         // pluginfile refs, mirroring assign_builder's handling.
         if ($settings->description !== '') {
             $newintro = (new file_embedder($this->packageroot))
-                ->embed($context->id, 'mod_quiz', 'intro', $settings->description);
-            if ($newintro !== $settings->description) {
+                ->embed($context->id, 'mod_quiz', 'intro', $intro);
+            if ($newintro !== $intro) {
                 $DB->set_field('quiz', 'intro', $newintro, ['id' => (int) $created->instance]);
             }
+        }
+
+        if ($isplaceholder) {
+            // No questions to import; leave the hidden placeholder for a teacher.
+            return $cmid;
         }
 
         $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath));

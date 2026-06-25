@@ -43,11 +43,17 @@ class qti_parser {
      * into the package (common with New Quizzes). It lets callers tell genuine
      * data loss apart from a truly empty assessment.
      *
+     * The 'hasassessment' flag is true only when the document is a readable
+     * QTI 1.2 assessment (a <assessment> with a <section>), even when it carries
+     * no questions. It lets callers distinguish a genuine but empty Canvas shell
+     * from a file the parser cannot read (malformed XML, or QTI 2.x/3.x), which
+     * also yields no questions but is a conversion failure, not a shell.
+     *
      * @param string $xml The QTI assessment document.
-     * @return array{title: string, questions: array, unresolved: int} Title, parsed questions and bare-reference count.
+     * @return array{title: string, questions: array, unresolved: int, hasassessment: bool} Parsed assessment.
      */
     public function parse(string $xml): array {
-        $result = ['title' => '', 'questions' => [], 'unresolved' => 0];
+        $result = ['title' => '', 'questions' => [], 'unresolved' => 0, 'hasassessment' => false];
         if (trim($xml) === '') {
             return $result;
         }
@@ -63,6 +69,10 @@ class qti_parser {
         $assessments = $dom->getElementsByTagNameNS('*', 'assessment');
         if ($assessments->length > 0 && $assessments->item(0) instanceof DOMElement) {
             $result['title'] = trim($assessments->item(0)->getAttribute('title'));
+            // A QTI 1.2 <assessment> with a <section> is a valid assessment even
+            // when empty. QTI 2.x/3.x use different element names (assessmentTest
+            // / assessmentSection), so neither matches here.
+            $result['hasassessment'] = $dom->getElementsByTagNameNS('*', 'section')->length > 0;
         }
 
         foreach ($dom->getElementsByTagNameNS('*', 'item') as $itemnode) {
