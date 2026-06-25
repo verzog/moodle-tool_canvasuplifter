@@ -29,4 +29,4 @@ $plugin->version   = 2026062500;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
 $plugin->maturity  = MATURITY_ALPHA;  // Chunked upload folded in; no local_chunkupload dependency.
-$plugin->release   = '0.36.0';
+$plugin->release   = '0.37.0';

@@ -300,6 +300,16 @@ class course_builder {
                 $skippedcounts[item::KIND_UNKNOWN]
             );
         }
+        // Canvas quiz/exam shells whose questions weren't in the package were
+        // built as hidden placeholders; flag them so graders know to finish them.
+        $quizbuilder = $builders[item::KIND_QUIZ] ?? null;
+        if ($quizbuilder instanceof quiz_builder && $quizbuilder->placeholdercount > 0) {
+            $warnings[] = get_string(
+                'warnquizplaceholders',
+                'tool_canvasuplifter',
+                $quizbuilder->placeholdercount
+            );
+        }
 
         return [
             'courseid' => (int) $course->id,
