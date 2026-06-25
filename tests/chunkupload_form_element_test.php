@@ -87,6 +87,14 @@ final class chunkupload_form_element_test extends \advanced_testcase {
         $this->make_chunk(100, state_type::UPLOAD_STARTED, 'started.imscc', 'partial');
         $this->assertFalse(form_element::is_file_uploaded(100));
 
+        // A row still in the unused state but with a partial file already on disk
+        // (the start request died after writing the first chunk, before marking
+        // the row complete) must not count as uploaded — otherwise a truncated
+        // package could be accepted.
+        $this->make_chunk(102, state_type::UNUSED_TOKEN_GENERATED, 'racing.imscc', 'first chunk only');
+        $this->assertFileExists(form_element::get_path_for_id(102));
+        $this->assertFalse(form_element::is_file_uploaded(102));
+
         $this->make_chunk(101, state_type::UPLOAD_COMPLETED, 'done.imscc', 'all done');
         $this->assertTrue(form_element::is_file_uploaded(101));
     }

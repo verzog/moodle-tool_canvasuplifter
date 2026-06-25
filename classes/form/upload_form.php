@@ -166,12 +166,14 @@ class upload_form extends moodleform {
 
     /**
      * Resolve a chunkupload id to the path of a *completed* upload owned by the
-     * current user, or null. The uploader creates a tracking token as soon as
-     * the field renders, and its is_file_uploaded() reports true for that bare
-     * token, so a started-but-empty form (or a URL-only submission, where
-     * the token still exists) would otherwise look like an uploaded file —
-     * tripping the "both sources" error or reaching the file copy with no file.
-     * Confirm completion from the file itself: present, readable and non-empty.
+     * current user, or null. Completion is taken from the chunk row state
+     * (is_file_uploaded(), i.e. UPLOAD_COMPLETED) and not merely from a readable
+     * file on disk: the start request writes the first chunk before it marks the
+     * row complete, so a started-but-unfinished or interrupted upload also leaves
+     * a present, readable, non-empty partial file. Trusting the file alone would
+     * let get_data() accept and queue a truncated package. The file is then
+     * re-checked (present, readable, non-empty) in case it was removed after the
+     * row was written.
      *
      * @param int $id The submitted chunkupload id.
      * @return string|null Absolute path to the completed upload, or null.
@@ -181,6 +183,9 @@ class upload_form extends moodleform {
             return null;
         }
         $class = self::CHUNKUPLOAD_CLASS;
+        if (!$class::is_file_uploaded($id)) {
+            return null;
+        }
         $path = $class::get_path_for_id($id);
         return (is_string($path) && is_readable($path) && filesize($path) > 0) ? $path : null;
     }
