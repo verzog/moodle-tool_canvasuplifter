@@ -649,4 +649,66 @@ XML;
         $this->assertStringContainsString('without its questions', $quiz->intro);
         $this->assertStringContainsString('hidden placeholders', implode("\n", $report['warnings']));
     }
+
+    /**
+     * Write a package whose quiz file is a QTI 2.1 assessment (no QTI 1.2
+     * <assessment>/<section>), which the parser cannot read and which must not
+     * be mistaken for a recoverable Canvas shell.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_non_qti12(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/v2');
+        $qti = '<?xml version="1.0"?>'
+            . '<assessmentTest xmlns="http://www.imsglobal.org/xsd/imsqti_v2p1" identifier="t1" title="QTI 2.1 Quiz">'
+            . '<testPart identifier="p1"><assessmentSection identifier="s1" title="S"/></testPart>'
+            . '</assessmentTest>';
+        file_put_contents($dir . '/quiz/v2/assessment_qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>QTI 2.1 Quiz</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/v2/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A quiz file that isn't a readable QTI 1.2 assessment (here, QTI 2.1) is
+     * reported and skipped, NOT turned into a hidden placeholder — masking the
+     * conversion failure would hide real data loss.
+     *
+     * @return void
+     */
+    public function test_non_qti12_assessment_is_skipped_not_placeholdered(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_non_qti12();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(0, $report['createdcounts']['quiz'] ?? 0);
+        $this->assertCount(0, get_fast_modinfo($report['courseid'])->get_instances_of('quiz'));
+        // It is reported as a skip, not silently created.
+        $this->assertNotEmpty($report['skipreasons']);
+        $this->assertStringNotContainsString('hidden placeholders', implode("\n", $report['warnings']));
+    }
 }

@@ -511,4 +511,28 @@ final class qti_parser_test extends \basic_testcase {
         $r = (new qti_parser())->parse($this->assessment('<item ident="ref1" />'));
         $this->assertCount(0, $r['questions']);
     }
+
+    /**
+     * hasassessment marks a readable QTI 1.2 assessment (even an empty shell),
+     * and is false for QTI 2.x or malformed input — so callers can tell a
+     * genuine empty Canvas shell from a file the parser cannot read.
+     *
+     * @return void
+     */
+    public function test_hasassessment_distinguishes_shell_from_unreadable(): void {
+        // Empty QTI 1.2 <assessment>/<section> — a valid shell with no questions.
+        $shell = (new qti_parser())->parse($this->assessment(''));
+        $this->assertTrue($shell['hasassessment']);
+        $this->assertSame([], $shell['questions']);
+
+        // QTI 2.1 (no QTI 1.2 <assessment>/<section>) is not a readable shell.
+        $qti2 = '<?xml version="1.0"?>'
+            . '<assessmentTest xmlns="http://www.imsglobal.org/xsd/imsqti_v2p1" identifier="t1">'
+            . '<testPart identifier="p1"><assessmentSection identifier="s1" title="S"/></testPart>'
+            . '</assessmentTest>';
+        $this->assertFalse((new qti_parser())->parse($qti2)['hasassessment']);
+
+        // Malformed XML is not.
+        $this->assertFalse((new qti_parser())->parse('not xml <<<')['hasassessment']);
+    }
 }

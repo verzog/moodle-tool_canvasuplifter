@@ -85,10 +85,18 @@ class quiz_builder {
         $supported = array_filter($questions, fn($q) => $q->type !== qti_question::TYPE_UNSUPPORTED);
         $importable = array_filter($supported, fn($q) => $q->is_importable());
 
-        // Questions are present in the package but none are convertible (e.g.
-        // unsupported types). There's nothing to seed a useful placeholder with,
-        // so report and skip as before.
-        if (empty($importable) && !empty($questions)) {
+        // A placeholder is only justified for a genuine but empty Canvas shell:
+        // a readable QTI 1.2 assessment whose questions live in an item bank
+        // Canvas didn't export (an empty <section/> or bare item references).
+        $isshell = empty($questions)
+            && (($parsed['hasassessment'] ?? false) || ($parsed['unresolved'] ?? 0) > 0);
+
+        // Report and skip when nothing is importable and it isn't a shell —
+        // either questions are present but unconvertible (unsupported types), or
+        // the file isn't a readable QTI 1.2 assessment at all (malformed, or QTI
+        // 2.x/3.x). Masking such a conversion failure as a placeholder would
+        // hide real data loss.
+        if (empty($importable) && !$isshell) {
             $this->skipreason = question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
             return null;
         }
@@ -109,13 +117,11 @@ class quiz_builder {
             return null;
         }
 
-        // No questions are in the package at all — an empty <section/> or bare
-        // references, typical of a Canvas exam / New Quiz whose questions live in
-        // an item bank Canvas didn't export. Don't drop the activity: build a
-        // hidden placeholder carrying the title and settings, with a note asking
-        // a teacher to add the questions, so nothing bar the absent questions is
-        // lost.
-        $isplaceholder = empty($questions);
+        // The assessment is a genuine but empty Canvas shell (checked above):
+        // build a hidden placeholder carrying the title and settings, with a note
+        // asking a teacher to add the questions Canvas didn't export, so nothing
+        // bar the absent questions is lost.
+        $isplaceholder = $isshell;
         $intro = $settings->description;
         if ($isplaceholder) {
             $this->placeholdercount++;
