@@ -1009,6 +1009,26 @@ class course_builder {
     }
 
     /**
+     * Derive a human course name from an uploaded package's filename, used as a
+     * fallback when the package itself carries no course title (notably D2L /
+     * Brightspace exports, which do not write the course name into the
+     * cartridge). Drops the directory and extension, strips an export-tool
+     * suffix such as "_D2LExport_45210_201581423", tidies separators to spaces,
+     * and never surfaces the plugin's own "canvas-<id>" placeholder names.
+     *
+     * @param string $filename The package filename (or path).
+     * @return string The derived course name, or '' if nothing usable.
+     */
+    public static function name_from_filename(string $filename): string {
+        $base = pathinfo($filename, PATHINFO_FILENAME);
+        if ($base === '' || preg_match('/^canvas-\d+$/i', $base)) {
+            return '';
+        }
+        $base = preg_replace('/[_\- ]*(?:d2l)?export[_\- ].*$/i', '', $base);
+        return trim(preg_replace('/[\s_\-]+/', ' ', (string) $base));
+    }
+
+    /**
      * Create a grade_category for each Canvas assignment group and configure the
      * course-level aggregation when Canvas marks the gradebook as weighted.
      *

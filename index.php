@@ -68,13 +68,21 @@ if ($data = $form->get_data()) {
                 throw new \RuntimeException('errornosource');
             }
             $fs = get_file_storage();
+            // Preserve the uploaded file's name (read before the chunk upload is
+            // released below) so a package with no embedded course title can be
+            // named after it. A unique filepath lets distinct uploads keep their
+            // original names without colliding.
+            $origname = clean_param($form->get_uploaded_filename($data), PARAM_FILE);
+            if ($origname === '') {
+                $origname = 'package.imscc';
+            }
             $filerecord = (object) [
                 'contextid' => context_system::instance()->id,
                 'component' => 'tool_canvasuplifter',
                 'filearea' => 'packages',
                 'itemid' => $USER->id,
-                'filepath' => '/',
-                'filename' => 'canvas-' . time() . '.imscc',
+                'filepath' => '/' . uniqid() . '/',
+                'filename' => $origname,
                 'userid' => $USER->id,
             ];
             $storedfileid = (int) $fs->create_file_from_pathname($filerecord, $temppackage)->get_id();

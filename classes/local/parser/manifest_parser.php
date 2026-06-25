@@ -1106,21 +1106,54 @@ class manifest_parser {
                 break;
             }
         }
-        if ($metadata === null) {
-            return '';
-        }
-        foreach ($metadata->getElementsByTagNameNS('*', 'title') as $titlenode) {
-            foreach ($titlenode->getElementsByTagNameNS('*', 'string') as $stringnode) {
-                $value = trim($stringnode->textContent);
+        if ($metadata !== null) {
+            foreach ($metadata->getElementsByTagNameNS('*', 'title') as $titlenode) {
+                foreach ($titlenode->getElementsByTagNameNS('*', 'string') as $stringnode) {
+                    $value = trim($stringnode->textContent);
+                    if ($value !== '') {
+                        return $value;
+                    }
+                }
+                // No <string> child (some authoring tools inline the text): take
+                // the title element's own text content.
+                $value = trim($titlenode->textContent);
                 if ($value !== '') {
                     return $value;
                 }
             }
-            // No <string> child (some authoring tools inline the text): take
-            // the title element's own text content.
-            $value = trim($titlenode->textContent);
-            if ($value !== '') {
-                return $value;
+        }
+        // Final fallback: the IMS CC organisation's own <title> (a direct child
+        // of <organization>), the conventional place CC packages without a
+        // Canvas course_settings.xml or manifest LOM metadata carry the course
+        // name. Only a direct title child counts — never an <item> title, which
+        // is a module/resource name, not the course name.
+        return $this->read_organization_title($root);
+    }
+
+    /**
+     * Read the course title from a direct <title> child of the first
+     * <organizations>/<organization> in the manifest.
+     *
+     * @param DOMElement $root The manifest document element.
+     * @return string Empty string if not found.
+     */
+    protected function read_organization_title(DOMElement $root): string {
+        foreach ($root->childNodes as $child) {
+            if (!($child instanceof DOMElement) || $child->localName !== 'organizations') {
+                continue;
+            }
+            foreach ($child->childNodes as $org) {
+                if (!($org instanceof DOMElement) || $org->localName !== 'organization') {
+                    continue;
+                }
+                foreach ($org->childNodes as $kid) {
+                    if ($kid instanceof DOMElement && $kid->localName === 'title') {
+                        $value = trim($kid->textContent);
+                        if ($value !== '') {
+                            return $value;
+                        }
+                    }
+                }
             }
         }
         return '';

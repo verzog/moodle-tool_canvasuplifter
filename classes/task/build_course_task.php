@@ -80,6 +80,13 @@ class build_course_task extends package_job_task {
             $jobs->set_progress($jobid, 3, get_string('progressparse', 'tool_canvasuplifter'));
             $coursemodel = (new manifest_parser($root))->parse();
 
+            // A package with no embedded course title (e.g. a D2L/Brightspace
+            // export, which never writes the course name into the cartridge)
+            // falls back to a name derived from the upload filename.
+            if ($coursemodel->fullname === '') {
+                $coursemodel->fullname = course_builder::name_from_filename($this->package_filename($job));
+            }
+
             $report = (new course_builder(
                 (int) $job->categoryid,
                 $root,
@@ -98,5 +105,25 @@ class build_course_task extends package_job_task {
                 @unlink($temppackage);
             }
         }
+    }
+
+    /**
+     * Best-effort original package filename, used to name a course whose package
+     * carries no title: the download URL's basename for a URL job, otherwise the
+     * stored upload's filename.
+     *
+     * @param \stdClass $job The job row.
+     * @return string The filename, or '' if unavailable.
+     */
+    private function package_filename(\stdClass $job): string {
+        if (!empty($job->packageurl)) {
+            $path = parse_url((string) $job->packageurl, PHP_URL_PATH);
+            return is_string($path) ? rawurldecode(basename($path)) : '';
+        }
+        if (!empty($job->fileid)) {
+            $file = get_file_storage()->get_file_by_id((int) $job->fileid);
+            return $file ? $file->get_filename() : '';
+        }
+        return '';
     }
 }

@@ -149,6 +149,31 @@ class upload_form extends moodleform {
     }
 
     /**
+     * The original filename of the uploaded package, for the source that
+     * get_uploaded_package_path() resolved: the chunkupload record's stored name,
+     * or the file picker's draft filename. Call after get_uploaded_package_path()
+     * so the resolved source is known, and before cleanup_uploaded_package()
+     * removes a chunk record.
+     *
+     * @param \stdClass $data Submitted form data from get_data().
+     * @return string The original filename, or '' if none is available.
+     */
+    public function get_uploaded_filename(\stdClass $data): string {
+        if ($this->resolvedviachunkupload) {
+            global $DB, $USER;
+            $id = (int) ($data->packagelargefile ?? 0);
+            $name = $DB->get_field(
+                'tool_canvasuplifter_chunks',
+                'filename',
+                ['id' => $id, 'userid' => $USER->id],
+                IGNORE_MISSING
+            );
+            return is_string($name) ? $name : '';
+        }
+        return (string) $this->get_new_filename('packagefile');
+    }
+
+    /**
      * Whether a chunkupload id belongs to the current user. The submitted
      * packagefile value is an opaque id from the POST body and the chunked
      * uploader scopes none of its own DB helpers by user, so confirm ownership
