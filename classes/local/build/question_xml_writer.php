@@ -68,7 +68,8 @@ class question_xml_writer {
             return '';
         }
         $mtype = $q->type === qti_question::TYPE_SHORTANSWER ? 'shortanswer'
-            : ($q->type === qti_question::TYPE_ESSAY ? 'essay' : 'multichoice');
+            : ($q->type === qti_question::TYPE_ESSAY ? 'essay'
+            : ($q->type === qti_question::TYPE_MATCHING ? 'matching' : 'multichoice'));
 
         $body = "  <question type=\"$mtype\">\n";
         $body .= "    <name><text>" . htmlspecialchars($this->plain($q->name), ENT_XML1) . "</text></name>\n";
@@ -84,6 +85,9 @@ class question_xml_writer {
                 break;
             case 'essay':
                 $body .= $this->essay_xml();
+                break;
+            case 'matching':
+                $body .= $this->matching_xml($q, $imagedir);
                 break;
             default:
                 $body .= "    <single>" . ($q->type === qti_question::TYPE_MULTIANSWER ? 'false' : 'true') . "</single>\n";
@@ -114,6 +118,35 @@ class question_xml_writer {
             }
             $out .= "      " . $this->htmlblock('feedback', $answer['feedback'] ?? '', $imagedir) . "\n";
             $out .= "    </answer>\n";
+        }
+        return $out;
+    }
+
+    /**
+     * Render the matching-specific body: shuffle flag, the standard combined
+     * feedback, and one <subquestion> per stem/answer pair. The stem keeps its
+     * HTML (and any embedded media); the answer is the plain choice text. An
+     * empty-stem subquestion is an answer-only distractor, which Moodle's match
+     * type accepts.
+     *
+     * @param qti_question $q The question.
+     * @param string|null $imagedir Image resolution folder.
+     * @return string
+     */
+    protected function matching_xml(qti_question $q, ?string $imagedir): string {
+        $out = "    <shuffleanswers>true</shuffleanswers>\n";
+        $out .= "    <correctfeedback format=\"html\"><text>Your answer is correct.</text></correctfeedback>\n";
+        $out .= "    <partiallycorrectfeedback format=\"html\"><text>Your answer is partially correct.</text>"
+            . "</partiallycorrectfeedback>\n";
+        $out .= "    <incorrectfeedback format=\"html\"><text>Your answer is incorrect.</text></incorrectfeedback>\n";
+        $out .= "    <shownumcorrect/>\n";
+        foreach ($q->subquestions as $sub) {
+            $stem = (string) ($sub['text'] ?? '');
+            $answer = (string) ($sub['answer'] ?? '');
+            $out .= "    <subquestion format=\"html\">\n";
+            $out .= "      " . $this->htmlblock('__text', $stem, $imagedir, true) . "\n";
+            $out .= "      <answer><text>" . $this->cdata($answer) . "</text></answer>\n";
+            $out .= "    </subquestion>\n";
         }
         return $out;
     }

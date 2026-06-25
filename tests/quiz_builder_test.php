@@ -759,4 +759,148 @@ XML;
         $this->assertCount(0, get_fast_modinfo($report['courseid'])->get_instances_of('quiz'));
         $this->assertStringNotContainsString('hidden placeholders', implode("\n", $report['warnings']));
     }
+
+    /**
+     * A native Canvas matching item (question_type, no cc_profile) with two
+     * scored pairs and one unused choice carried as a distractor.
+     *
+     * @return string
+     */
+    private function nativematchitem(): string {
+        $row = function (string $ident, string $stem): string {
+            return '<response_lid ident="' . $ident . '"><material><mattext texttype="text/html">' . $stem
+                . '</mattext></material><render_choice>'
+                . '<response_label ident="o1"><material><mattext>carpal</mattext></material></response_label>'
+                . '<response_label ident="o2"><material><mattext>popliteal</mattext></material></response_label>'
+                . '<response_label ident="o3"><material><mattext>prone</mattext></material></response_label>'
+                . '</render_choice></response_lid>';
+        };
+        return '<item ident="m1" title="Anatomical terms"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>matching_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">Match the term.</mattext></material>'
+            . $row('rA', 'Wrist area') . $row('rB', 'Back of the knee') . '</presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="rA">o1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50.00</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="rB">o2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50.00</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
+     * A native Canvas true/false item (question_type, no cc_profile).
+     *
+     * @return string
+     */
+    private function nativetfitem(): string {
+        return '<item ident="tf1" title="Cells"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>true_false_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;p&gt;Cells form tissues.&lt;/p&gt;</mattext>'
+            . '</material><response_lid ident="response1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="t"><material><mattext texttype="text/plain">True</mattext></material></response_label>'
+            . '<response_label ident="f"><material><mattext texttype="text/plain">False</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="response1">t</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
+     * Write a package whose Common Cartridge assessment_qti.xml is an empty shell
+     * but whose real questions live in non_cc_assessments/<id>.xml.qti (Canvas's
+     * native dump), keyed by the same id as the quiz folder.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_native_fallback(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/gnative', 0777, true);
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        // The CC wrapper is a valid but empty QTI 1.2 shell.
+        $shell = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnative" title="Week 1 Quiz"><section ident="root_section"/>'
+            . '</assessment></questestinterop>';
+        file_put_contents($dir . '/gnative/assessment_qti.xml', $shell);
+        $meta = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz identifier="gnative" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Week 1 Quiz</title>'
+            . '<time_limit>20</time_limit>'
+            . '<allowed_attempts>2</allowed_attempts>'
+            . '</quiz>';
+        file_put_contents($dir . '/gnative/assessment_meta.xml', $meta);
+        // The native dump holds the actual questions.
+        $native = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnative" title="Week 1 Quiz"><section ident="root_section">'
+            . $this->nativematchitem() . $this->nativetfitem()
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/gnative.xml.qti', $native);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Week 1 Quiz</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="gnative/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * When the Common Cartridge shell is empty, the builder recovers the real
+     * questions from non_cc_assessments/<id>.xml.qti: it builds a visible quiz
+     * (not a hidden placeholder), imports the matching and true/false questions,
+     * and still carries the settings from assessment_meta.xml.
+     *
+     * @return void
+     */
+    public function test_empty_shell_recovered_from_native_dump(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_native_fallback();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        // A real quiz, not a hidden placeholder.
+        $this->assertEquals(1, (int) $quizcm->visible);
+        $this->assertStringNotContainsString('hidden placeholders', implode("\n", $report['warnings']));
+
+        $quiz = $DB->get_record('quiz', ['id' => $quizcm->instance], '*', MUST_EXIST);
+        // Both native questions imported as slots.
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
+        // The settings from assessment_meta.xml still carried over.
+        $this->assertEquals(20 * 60, (int) $quiz->timelimit);
+        $this->assertEquals(2, (int) $quiz->attempts);
+
+        // The matching question became a Moodle match with three subquestions
+        // (two scored pairs plus the carried distractor).
+        $matchq = $DB->get_record('question', ['qtype' => 'match'], '*', MUST_EXIST);
+        $subqs = $DB->get_records('qtype_match_subquestions', ['questionid' => $matchq->id]);
+        $this->assertCount(3, $subqs);
+        $answers = array_map(fn($s) => $s->answertext, array_values($subqs));
+        sort($answers);
+        $this->assertSame(['carpal', 'popliteal', 'prone'], $answers);
+    }
 }

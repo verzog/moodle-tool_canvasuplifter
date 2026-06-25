@@ -59,6 +59,39 @@ final class qti_question_test extends \basic_testcase {
     }
 
     /**
+     * Matching needs at least two complete stem/answer pairs and at least two
+     * distinct answers; thinner sets (one pair, or two pairs sharing a single
+     * answer) are not importable, and answer-only distractors don't count as pairs.
+     *
+     * @return void
+     */
+    public function test_matching_needs_two_pairs_and_two_answers(): void {
+        $match = function (array $subquestions): qti_question {
+            $q = new qti_question();
+            $q->type = qti_question::TYPE_MATCHING;
+            $q->subquestions = $subquestions;
+            return $q;
+        };
+
+        $this->assertTrue($match([
+            ['text' => 'Wrist', 'answer' => 'carpal'],
+            ['text' => 'Knee', 'answer' => 'popliteal'],
+        ])->is_importable());
+        // A single pair is too thin.
+        $this->assertFalse($match([['text' => 'Wrist', 'answer' => 'carpal']])->is_importable());
+        // Two pairs but only one distinct answer leave nothing to choose between.
+        $this->assertFalse($match([
+            ['text' => 'A', 'answer' => 'same'],
+            ['text' => 'B', 'answer' => 'same'],
+        ])->is_importable());
+        // One real pair plus an answer-only distractor is still only one pair.
+        $this->assertFalse($match([
+            ['text' => 'Wrist', 'answer' => 'carpal'],
+            ['text' => '', 'answer' => 'popliteal'],
+        ])->is_importable());
+    }
+
+    /**
      * Short answer needs one answer; essay needs none; unsupported is never importable.
      *
      * @return void

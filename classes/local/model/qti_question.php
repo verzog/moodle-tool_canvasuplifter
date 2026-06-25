@@ -37,6 +37,8 @@ class qti_question {
     public const TYPE_TRUEFALSE = 'truefalse';
     /** Essay -> Moodle essay. */
     public const TYPE_ESSAY = 'essay';
+    /** Matching (Canvas matching_question) -> Moodle match. */
+    public const TYPE_MATCHING = 'matching';
     /** Recognised QTI item we can't yet convert. */
     public const TYPE_UNSUPPORTED = 'unsupported';
 
@@ -56,6 +58,13 @@ class qti_question {
      * @var array Answer rows. Each: ['text' => string, 'fraction' => float, 'feedback' => string].
      */
     public array $answers = [];
+
+    /**
+     * @var array Matching rows (TYPE_MATCHING only). Each: ['text' => string stem HTML,
+     *            'answer' => string answer text]. A row with an empty stem is an
+     *            extra answer-only distractor, as Moodle's match type allows.
+     */
+    public array $subquestions = [];
 
     /** @var string General feedback (HTML), shown after answering. */
     public string $generalfeedback = '';
@@ -79,6 +88,25 @@ class qti_question {
         }
         if ($this->type === self::TYPE_ESSAY) {
             return true;
+        }
+        if ($this->type === self::TYPE_MATCHING) {
+            // Moodle's match type needs at least two complete stem/answer pairs
+            // and at least two distinct answers to choose between; drop anything
+            // thinner so qformat_xml doesn't roll back the whole batch.
+            $pairs = 0;
+            $answers = [];
+            foreach ($this->subquestions as $sub) {
+                $stem = trim((string) ($sub['text'] ?? ''));
+                $answer = trim((string) ($sub['answer'] ?? ''));
+                if ($answer === '') {
+                    continue;
+                }
+                $answers[$answer] = true;
+                if ($stem !== '') {
+                    $pairs++;
+                }
+            }
+            return $pairs >= 2 && count($answers) >= 2;
         }
         $nonempty = 0;
         foreach ($this->answers as $answer) {

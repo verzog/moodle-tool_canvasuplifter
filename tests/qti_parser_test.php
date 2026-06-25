@@ -503,6 +503,127 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * Canvas's native dump (non_cc_assessments/*.xml.qti) labels items with
+     * question_type rather than cc_profile. Those types are mapped explicitly:
+     * a true_false_question becomes a two-option choice with the right answer
+     * scored, and points_possible carries the weight.
+     *
+     * @return void
+     */
+    public function test_native_question_type_true_false(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">&lt;p&gt;Cells form tissues.&lt;/p&gt;</mattext>'
+            . '</material><response_lid ident="response1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="t"><material><mattext texttype="text/plain">True</mattext></material></response_label>'
+            . '<response_label ident="f"><material><mattext texttype="text/plain">False</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="response1">t</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+        $item = '<item ident="tf1" title="Cells"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>true_false_question</fieldentry>'
+            . '</qtimetadatafield>'
+            . '<qtimetadatafield><fieldlabel>points_possible</fieldlabel><fieldentry>0.5</fieldentry></qtimetadatafield>'
+            . '</qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_TRUEFALSE, $q->type);
+        $this->assertSame('true_false_question', $q->profile);
+        $this->assertSame(0.5, $q->defaultmark);
+        $this->assertCount(2, $q->answers);
+        $bytext = [];
+        foreach ($q->answers as $a) {
+            $bytext[trim($a['text'])] = $a['fraction'];
+        }
+        $this->assertSame(100.0, $bytext['True']);
+        $this->assertSame(0.0, $bytext['False']);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A Canvas matching_question parses into one stem/answer subquestion per
+     * response_lid (stem from the row's own material, answer from the
+     * resprocessing-scored choice), and any choice never used as a correct match
+     * is carried as an answer-only distractor.
+     *
+     * @return void
+     */
+    public function test_native_matching_question(): void {
+        $row = function (string $ident, string $stem): string {
+            return '<response_lid ident="' . $ident . '"><material><mattext texttype="text/html">' . $stem
+                . '</mattext></material><render_choice>'
+                . '<response_label ident="o1"><material><mattext>carpal</mattext></material></response_label>'
+                . '<response_label ident="o2"><material><mattext>popliteal</mattext></material></response_label>'
+                . '<response_label ident="o3"><material><mattext>prone</mattext></material></response_label>'
+                . '</render_choice></response_lid>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">Match the term.</mattext></material>'
+            . $row('rA', 'Wrist area') . $row('rB', 'Back of the knee') . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="rA">o1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50.00</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="rB">o2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50.00</setvar></respcondition></resprocessing>';
+        $item = '<item ident="m1" title="Anatomical terms"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>matching_question</fieldentry>'
+            . '</qtimetadatafield>'
+            . '<qtimetadatafield><fieldlabel>points_possible</fieldlabel><fieldentry>2.0</fieldentry></qtimetadatafield>'
+            . '</qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_MATCHING, $q->type);
+        $this->assertSame(2.0, $q->defaultmark);
+        // Two scored pairs plus one answer-only distractor ("prone").
+        $this->assertCount(3, $q->subquestions);
+        $pairs = [];
+        $distractors = [];
+        foreach ($q->subquestions as $sub) {
+            if (trim($sub['text']) === '') {
+                $distractors[] = $sub['answer'];
+            } else {
+                $pairs[$this->plain($sub['text'])] = $sub['answer'];
+            }
+        }
+        $this->assertSame('carpal', $pairs['Wrist area']);
+        $this->assertSame('popliteal', $pairs['Back of the knee']);
+        $this->assertSame(['prone'], $distractors);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A recognised-but-unconvertible Canvas type (e.g. numerical_question) is
+     * left UNSUPPORTED and reported by its Canvas type name, rather than being
+     * coerced into a wrong Moodle type by the cardinality fallback.
+     *
+     * @return void
+     */
+    public function test_native_numerical_stays_unsupported_but_named(): void {
+        $item = '<item ident="n1" title="How many"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>numerical_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>How many bones?</mattext></material>'
+            . '<response_str ident="r1"><render_fib/></response_str></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes></resprocessing></item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+        $this->assertSame('numerical_question', $q->profile);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * Collapse an HTML fragment to plain single-line text (test helper).
+     *
+     * @param string $html The HTML.
+     * @return string
+     */
+    private function plain(string $html): string {
+        return trim((string) preg_replace('/\s+/', ' ', strip_tags(html_entity_decode($html, ENT_QUOTES | ENT_HTML5))));
+    }
+
+    /**
      * Bare item references (exam shells) carry no presentation and are ignored.
      *
      * @return void
