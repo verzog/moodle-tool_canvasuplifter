@@ -70,6 +70,29 @@
     box-shadow: 0 1px 6px rgba(20, 50, 35, 0.12);
 }
 
+/* Embedded documents such as PDF previews span the full content width. */
+.canvasuplifter-content iframe,
+.canvasuplifter-content object,
+.canvasuplifter-content embed {
+    width: 100%;
+    max-width: 100%;
+}
+
+/* Videos stay inside the container, keep their aspect ratio, and gain spacing
+   when several are stacked together. */
+.canvasuplifter-content video {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1em auto;
+}
+
+/* Moodle media-filter player wrappers: contain and space them the same way. */
+.canvasuplifter-content .mediaplugin {
+    max-width: 100%;
+    margin: 1em auto;
+}
+
 .canvasuplifter-content blockquote {
     margin: 1em 0;
     padding: 0.5em 1.2em;

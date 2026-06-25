@@ -72,6 +72,10 @@ if ($USER->id != $record->userid) {
     $senderror('Request was made by a different user!');
 }
 
+// The session lock is deliberately held for the rest of the request: it
+// serialises a same-user form submit against the in-flight chunk, so the submit
+// cannot observe (and reject) a large-file upload that is mid-commit.
+
 switch ($action) {
     case 'start':
         $start = optional_param('start', null, PARAM_INT);

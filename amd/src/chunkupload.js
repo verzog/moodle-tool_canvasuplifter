@@ -125,6 +125,11 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
                 }
             }
         };
+        xhr.onerror = () => {
+            reset();
+            // Network-level failure (proxy/timeout/size limit); strings may be unreachable.
+            notification.alert("Error", "Failure while uploading!", "Ok");
+        };
         xhr.setRequestHeader('Content-Type', 'application/octet-stream');
         xhr.send(slice);
     }
