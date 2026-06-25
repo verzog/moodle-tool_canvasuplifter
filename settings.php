@@ -15,7 +15,8 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Adds the Canvas Uplifter page under Site administration > Courses.
+ * Adds the Canvas Uplifter run page under Site administration > Courses, and a
+ * Canvas Uplifter settings page (chunked upload) under Admin tools.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -33,11 +34,17 @@ if ($hassiteconfig) {
     ));
 
     // Settings for the chunked-upload field on the package upload form
-    // (folded in from the former local_chunkupload plugin).
+    // (folded in from the former local_chunkupload plugin). Titled with the
+    // plugin name so it is discoverable as "Canvas Uplifter" under Admin tools.
     $settings = new admin_settingpage(
         'tool_canvasuplifter_settings',
-        get_string('settings', 'tool_canvasuplifter')
+        get_string('pluginname', 'tool_canvasuplifter')
     );
+    $settings->add(new admin_setting_heading(
+        'tool_canvasuplifter/chunkheading',
+        get_string('settings', 'tool_canvasuplifter'),
+        ''
+    ));
     $settings->add(new admin_setting_configtext(
         'tool_canvasuplifter/chunksize',
         new lang_string('setting:chunksize', 'tool_canvasuplifter'),

@@ -72,6 +72,11 @@ if ($USER->id != $record->userid) {
     $senderror('Request was made by a different user!');
 }
 
+// Authentication is finished and nothing below needs the session, so release
+// the session lock before the potentially long chunk read/write — otherwise a
+// large upload serialises the user's other requests for its whole duration.
+\core\session\manager::write_close();
+
 switch ($action) {
     case 'start':
         $start = optional_param('start', null, PARAM_INT);
