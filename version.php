@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026062502;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026062503;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Course name from organisation title or upload filename when absent.
-$plugin->release   = '0.37.2';
+$plugin->maturity  = MATURITY_ALPHA;  // Recover Canvas quiz questions from native non_cc_assessments dumps.
+$plugin->release   = '0.38.0';

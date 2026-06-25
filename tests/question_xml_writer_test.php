@@ -46,6 +46,59 @@ final class question_xml_writer_test extends \advanced_testcase {
     }
 
     /**
+     * Make a matching question model with two stem/answer pairs and one
+     * answer-only distractor.
+     *
+     * @return qti_question
+     */
+    private function match(): qti_question {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_MATCHING;
+        $q->name = 'Match terms';
+        $q->questiontext = '<p>Match the term</p>';
+        $q->defaultmark = 2.0;
+        $q->subquestions = [
+            ['text' => '<p>Wrist area</p>', 'answer' => 'carpal'],
+            ['text' => '<p>Back of the knee</p>', 'answer' => 'popliteal'],
+            ['text' => '', 'answer' => 'prone'],
+        ];
+        return $q;
+    }
+
+    /**
+     * Matching questions render as a Moodle <question type="matching"> with one
+     * <subquestion> per pair (the distractor carried as an answer-only row), the
+     * shuffle flag and the combined feedback — and the document stays well-formed.
+     *
+     * @return void
+     */
+    public function test_writes_matching(): void {
+        $xml = (new question_xml_writer())->to_moodle_xml([$this->match()], '$course$/Imported/Bank');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml), 'output should be well-formed XML');
+
+        $types = [];
+        foreach ($dom->getElementsByTagName('question') as $q) {
+            $types[] = $q->getAttribute('type');
+        }
+        $this->assertSame(['category', 'matching'], $types);
+
+        // Three subquestions: two real pairs plus the answer-only distractor.
+        $this->assertSame(3, $dom->getElementsByTagName('subquestion')->length);
+        $this->assertStringContainsString('<shuffleanswers>true</shuffleanswers>', $xml);
+        $this->assertStringContainsString('Wrist area', $xml);
+        $this->assertStringContainsString('carpal', $xml);
+        $this->assertStringContainsString('popliteal', $xml);
+        // The distractor is present as an answer with an empty stem.
+        $this->assertStringContainsString('prone', $xml);
+        // Combined feedback is emitted so the question is complete.
+        $this->assertStringContainsString('<correctfeedback format="html">', $xml);
+        // No multichoice scaffolding leaks into a match question.
+        $this->assertStringNotContainsString('<single>', $xml);
+    }
+
+    /**
      * The writer emits a well-formed Moodle XML document with a category and
      * the supported question types.
      *

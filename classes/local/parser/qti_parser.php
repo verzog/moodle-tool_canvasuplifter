@@ -101,15 +101,26 @@ class qti_parser {
      */
     protected function build_question(DOMElement $item): qti_question {
         $question = new qti_question();
-        $question->profile = $this->metadata_field($item, 'cc_profile');
-        $question->defaultmark = (float) ($this->metadata_field($item, 'cc_weighting') ?: 1) ?: 1.0;
+        // Common Cartridge items carry cc_profile; Canvas's native .xml.qti dump
+        // (the non_cc_assessments/ files, used when the CC shell is empty) labels
+        // each item with question_type instead. Read both and remember whichever
+        // is present so the support report can name the question by its kind.
+        $ccprofile = $this->metadata_field($item, 'cc_profile');
+        $canvastype = $this->metadata_field($item, 'question_type');
+        $question->profile = $ccprofile !== '' ? $ccprofile : $canvastype;
+        // CC stores the weight in cc_weighting; Canvas native uses points_possible.
+        $weight = $this->metadata_field($item, 'cc_weighting');
+        if ($weight === '') {
+            $weight = $this->metadata_field($item, 'points_possible');
+        }
+        $question->defaultmark = (float) ($weight ?: 1) ?: 1.0;
 
         $presentation = $this->first_child_element($item, 'presentation');
         $question->questiontext = $presentation !== null ? $this->prompt_text($presentation) : '';
         $question->name = $this->derive_name($item, $question->questiontext);
         $question->generalfeedback = $this->feedback_text($item, 'general_fb');
 
-        $type = $this->map_profile($question->profile, $presentation);
+        $type = $this->map_type($ccprofile, $canvastype, $presentation);
         $question->type = $type;
 
         switch ($type) {
@@ -122,6 +133,9 @@ class qti_parser {
             case qti_question::TYPE_SHORTANSWER:
                 $this->fill_text_answers($item, $question);
                 break;
+            case qti_question::TYPE_MATCHING:
+                $this->fill_matching($item, $presentation, $question);
+                break;
             case qti_question::TYPE_ESSAY:
             default:
                 break;
@@ -130,14 +144,23 @@ class qti_parser {
     }
 
     /**
-     * Map a CC profile to one of our question types.
+     * Map a Canvas/CC item to one of our question types.
      *
-     * @param string $profile The cc_profile value.
+     * The CC profile (cc_profile) is authoritative when present. Canvas's native
+     * .xml.qti dump omits it and labels the kind with question_type instead, so
+     * that is mapped explicitly rather than left to the cardinality fallback —
+     * which alone cannot tell a matching question (many response_lid groups) from
+     * a single multiple choice, nor a recognised-but-unconvertible type (e.g.
+     * numerical) from one we support. The cardinality fallback still catches
+     * unlabelled choice items.
+     *
+     * @param string $ccprofile The cc_profile value (CC packages).
+     * @param string $canvastype The Canvas question_type value (native dumps).
      * @param DOMElement|null $presentation The presentation element (for cardinality).
      * @return string A qti_question::TYPE_* constant.
      */
-    protected function map_profile(string $profile, ?DOMElement $presentation): string {
-        switch ($profile) {
+    protected function map_type(string $ccprofile, string $canvastype, ?DOMElement $presentation): string {
+        switch ($ccprofile) {
             case 'cc.multiple_choice.v0p1':
                 return qti_question::TYPE_MULTICHOICE;
             case 'cc.multiple_response.v0p1':
@@ -149,6 +172,23 @@ class qti_parser {
                 return qti_question::TYPE_SHORTANSWER;
             case 'cc.essay.v0p1':
                 return qti_question::TYPE_ESSAY;
+        }
+        // Canvas native question_type (non_cc_assessments/*.xml.qti). Types with a
+        // faithful Moodle equivalent are mapped; the rest stay UNSUPPORTED so they
+        // are reported by name rather than silently mis-imported.
+        switch ($canvastype) {
+            case 'multiple_choice_question':
+                return qti_question::TYPE_MULTICHOICE;
+            case 'multiple_answers_question':
+                return qti_question::TYPE_MULTIANSWER;
+            case 'true_false_question':
+                return qti_question::TYPE_TRUEFALSE;
+            case 'short_answer_question':
+                return qti_question::TYPE_SHORTANSWER;
+            case 'essay_question':
+                return qti_question::TYPE_ESSAY;
+            case 'matching_question':
+                return qti_question::TYPE_MATCHING;
         }
         // Fall back on the response cardinality for unprofiled multiple choice.
         $lid = $presentation !== null ? $this->descendant($presentation, 'response_lid') : null;
@@ -331,6 +371,114 @@ class qti_parser {
                 }
             }
         }
+    }
+
+    /**
+     * Populate the stem/answer pairs for a matching question.
+     *
+     * Canvas authors each match row as a <response_lid>: its own <material> is the
+     * left-hand stem, its <render_choice> lists the candidate answers (the same
+     * set repeated on every row), and <resprocessing> records which candidate is
+     * correct for that row (respident -> label ident). Each row becomes one
+     * Moodle subquestion (stem + correct answer); any candidate never used as a
+     * correct match is carried as an answer-only distractor row.
+     *
+     * @param DOMElement $item The item element.
+     * @param DOMElement|null $presentation The presentation element.
+     * @param qti_question $question The question being built (modified in place).
+     * @return void
+     */
+    protected function fill_matching(DOMElement $item, ?DOMElement $presentation, qti_question $question): void {
+        if ($presentation === null) {
+            return;
+        }
+        $correct = $this->matching_correct_map($item);
+        $pool = [];
+        $usedanswers = [];
+        foreach ($presentation->childNodes as $lid) {
+            if (!($lid instanceof DOMElement) || $lid->localName !== 'response_lid') {
+                continue;
+            }
+            $stemmaterial = $this->first_child_element($lid, 'material');
+            $stem = $stemmaterial !== null ? $this->mattext($stemmaterial) : '';
+            $options = $this->choice_label_map($lid);
+            foreach ($options as $ident => $text) {
+                $pool[$ident] = $text;
+            }
+            $answerident = $correct[$lid->getAttribute('ident')] ?? '';
+            $answer = $this->plain_answer($options[$answerident] ?? '');
+            if (trim($stem) === '' && $answer === '') {
+                continue;
+            }
+            $question->subquestions[] = ['text' => $stem, 'answer' => $answer];
+            if ($answer !== '') {
+                $usedanswers[$answer] = true;
+            }
+        }
+        foreach ($pool as $text) {
+            $plain = $this->plain_answer($text);
+            if ($plain !== '' && !isset($usedanswers[$plain])) {
+                $usedanswers[$plain] = true;
+                $question->subquestions[] = ['text' => '', 'answer' => $plain];
+            }
+        }
+    }
+
+    /**
+     * Map each matching row's respident to the label ident scored as correct.
+     *
+     * @param DOMElement $item The item element.
+     * @return array Map of respident => correct response_label ident.
+     */
+    protected function matching_correct_map(DOMElement $item): array {
+        $map = [];
+        $resprocessing = $this->first_child_element($item, 'resprocessing');
+        if ($resprocessing === null) {
+            return $map;
+        }
+        foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
+            if (!($cond instanceof DOMElement) || $this->condition_score($cond) <= 0) {
+                continue;
+            }
+            foreach ($cond->getElementsByTagNameNS('*', 'varequal') as $ve) {
+                if (!($ve instanceof DOMElement) || $this->within($ve, 'not')) {
+                    continue;
+                }
+                $respident = $ve->getAttribute('respident');
+                if ($respident !== '') {
+                    $map[$respident] = trim($ve->textContent);
+                }
+            }
+        }
+        return $map;
+    }
+
+    /**
+     * Map a render_choice's response_label idents to their material text.
+     *
+     * @param DOMElement $lid The response_lid element.
+     * @return array Map of label ident => text.
+     */
+    protected function choice_label_map(DOMElement $lid): array {
+        $map = [];
+        foreach ($lid->getElementsByTagNameNS('*', 'response_label') as $label) {
+            if ($label instanceof DOMElement && $label->getAttribute('ident') !== '') {
+                $map[$label->getAttribute('ident')] = $this->material_text($label);
+            }
+        }
+        return $map;
+    }
+
+    /**
+     * Reduce a candidate answer to the plain single-line text Moodle's match type
+     * stores: strip any markup, decode entities and collapse whitespace.
+     *
+     * @param string $html The answer text or HTML.
+     * @return string
+     */
+    protected function plain_answer(string $html): string {
+        $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5);
+        return trim((string) preg_replace('/\s+/', ' ', $text));
     }
 
     /**

@@ -80,10 +80,29 @@ class quiz_builder {
             $this->skipreason = 'no QTI assessment file found';
             return null;
         }
-        $parsed = (new qti_parser())->parse((string) @file_get_contents($qtipath));
+        [$parsed, $supported, $importable] = $this->parse_qti($qtipath);
+        // Common Cartridge question media resolves relative to the quiz folder.
+        $imagedir = dirname($qtipath);
+
+        // When the Common Cartridge assessment_qti.xml is an empty shell (Canvas
+        // routinely exports the questions only to its native dump), fall back to
+        // non_cc_assessments/<id>.xml.qti, which holds the real questions in the
+        // same QTI 1.2 dialect. Only do this when the CC file yields nothing
+        // importable, so a quiz that already converts is left untouched.
+        if (empty($importable)) {
+            $native = $this->locate_native_qti($modelitem, $qtipath);
+            if ($native !== null) {
+                [$nativeparsed, $nativesupported, $nativeimportable] = $this->parse_qti($native);
+                if (!empty($nativeimportable)) {
+                    $parsed = $nativeparsed;
+                    $supported = $nativesupported;
+                    $importable = $nativeimportable;
+                    // Native questions reference media under the package root.
+                    $imagedir = $this->packageroot;
+                }
+            }
+        }
         $questions = $parsed['questions'];
-        $supported = array_filter($questions, fn($q) => $q->type !== qti_question::TYPE_UNSUPPORTED);
-        $importable = array_filter($supported, fn($q) => $q->is_importable());
 
         // A placeholder is only justified for a genuine but empty Canvas shell:
         // a readable QTI 1.2 <assessment>/<section>, whether the section is empty
@@ -163,7 +182,7 @@ class quiz_builder {
             return $cmid;
         }
 
-        $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath));
+        $questionids = (new question_importer())->import($course, $context, $supported, $imagedir);
         if (empty($questionids)) {
             // Nothing imported despite some questions looking convertible; don't
             // leave an empty quiz behind.
@@ -353,6 +372,55 @@ class quiz_builder {
                 return QUIZ_ATTEMPTLAST;
             case 'keep_average':
                 return QUIZ_GRADEAVERAGE;
+        }
+        return null;
+    }
+
+    /**
+     * Parse a QTI assessment file into its question buckets: every parsed
+     * question, those of a Moodle-supported type, and those Moodle can actually
+     * import as they stand.
+     *
+     * @param string $path Absolute path to the QTI assessment XML.
+     * @return array A three-element list: [parsed array, supported[], importable[]].
+     */
+    private function parse_qti(string $path): array {
+        $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
+        $supported = array_filter($parsed['questions'], fn($q) => $q->type !== qti_question::TYPE_UNSUPPORTED);
+        $importable = array_filter($supported, fn($q) => $q->is_importable());
+        return [$parsed, $supported, $importable];
+    }
+
+    /**
+     * Find the native Canvas question dump for this quiz, used when the Common
+     * Cartridge assessment_qti.xml is an empty shell. Canvas writes the real
+     * questions to non_cc_assessments/<resource-id>.xml.qti at the package root,
+     * keyed by the same id as the quiz's CC folder. Prefer an explicit
+     * non_cc_assessments entry on the item's file list, then fall back to
+     * deriving the id from the resolved QTI folder. Never return the file we
+     * already parsed.
+     *
+     * @param item $modelitem The quiz item.
+     * @param string $qtipath Absolute path of the resolved CC QTI file.
+     * @return string|null Absolute path within the package, or null.
+     */
+    private function locate_native_qti(item $modelitem, string $qtipath): ?string {
+        $already = realpath($qtipath);
+        foreach ($modelitem->files as $relative) {
+            if (!preg_match('~(^|/)non_cc_assessments/[^/]+\.xml\.qti$~i', $relative)) {
+                continue;
+            }
+            $absolute = safe_path::within($this->packageroot, $relative);
+            if ($absolute !== null && is_readable($absolute) && realpath($absolute) !== $already) {
+                return $absolute;
+            }
+        }
+        $id = basename(dirname($qtipath));
+        if ($id !== '' && $id !== '.' && $id !== '/') {
+            $candidate = safe_path::within($this->packageroot, 'non_cc_assessments/' . $id . '.xml.qti');
+            if ($candidate !== null && is_readable($candidate) && realpath($candidate) !== $already) {
+                return $candidate;
+            }
         }
         return null;
     }
