@@ -19,7 +19,7 @@ namespace tool_canvasuplifter;
 use tool_canvasuplifter\form\upload_form;
 
 /**
- * Tests for the package upload form's optional chunkupload integration.
+ * Tests for the package upload form's built-in chunked-upload field.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -28,26 +28,25 @@ use tool_canvasuplifter\form\upload_form;
  */
 final class upload_form_test extends \advanced_testcase {
     /**
-     * Without local_chunkupload installed the form must fall back to the stock
-     * filepicker, and detection must report the dependency as absent. This is
-     * the soft-dependency contract: the form builds and works either way.
+     * The chunked uploader is bundled, so it is always available and the form
+     * builds with the large-file field present without a separate plugin.
      *
      * @return void
      */
-    public function test_chunkupload_unavailable_falls_back_to_filepicker(): void {
+    public function test_chunkupload_is_always_available(): void {
         $this->resetAfterTest(true);
         $this->setAdminUser();
 
-        // The test Moodle does not ship local_chunkupload.
-        $this->assertFalse(upload_form::chunkupload_available());
+        $this->assertTrue(upload_form::chunkupload_available());
 
         $form = new upload_form();
+        // Nothing has been submitted yet, so no upload was resolved via chunks.
         $this->assertFalse($form->used_chunkupload());
     }
 
     /**
      * With no file uploaded and no URL given, the form fails validation with an
-     * error on the package field — exercised on the filepicker fallback path.
+     * error on the package field.
      *
      * @return void
      */
@@ -58,5 +57,19 @@ final class upload_form_test extends \advanced_testcase {
         $form = new upload_form();
         $errors = $form->validation(['packageurl' => ''], []);
         $this->assertArrayHasKey('packagefile', $errors);
+    }
+
+    /**
+     * A single URL source that is not http(s) is rejected with a URL error.
+     *
+     * @return void
+     */
+    public function test_validation_rejects_non_http_url(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $form = new upload_form();
+        $errors = $form->validation(['packageurl' => 'ftp://example.com/course.imscc'], []);
+        $this->assertArrayHasKey('packageurl', $errors);
     }
 }

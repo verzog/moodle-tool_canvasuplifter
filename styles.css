@@ -163,3 +163,81 @@
     background: #24583a;
     text-decoration: none;
 }
+
+/*
+ * Chunked-upload field on the package upload form. Folded in from
+ * local_chunkupload (2020 Justus Dieckmann WWU); selectors rescoped to the
+ * .tool_canvasuplifter-chunkupload wrapper.
+ */
+
+.tool_canvasuplifter-chunkupload {
+    width: 100%;
+}
+
+.tool_canvasuplifter-chunkupload .custom-file-input ~ .custom-file-label.chunkupload-label {
+    padding: 0;
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0;
+}
+
+.tool_canvasuplifter-chunkupload .custom-file-input ~ .custom-file-label.chunkupload-label:after {
+    display: none;
+}
+
+.tool_canvasuplifter-chunkupload .chunkupload-label > span {
+    height: 100%;
+    text-align: center;
+    padding: .375rem .75rem;
+}
+
+.tool_canvasuplifter-chunkupload .chunkupload-label .chunkupload-browse {
+    flex: 1 1 20%;
+}
+
+.tool_canvasuplifter-chunkupload .chunkupload-label .chunkupload-left {
+    flex: 1 1 80%;
+    position: relative;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.tool_canvasuplifter-chunkupload .chunkupload-label .chunkupload-left .chunkupload-filename {
+    width: 100%;
+    overflow: hidden;
+    display: inline-block;
+    text-overflow: ellipsis;
+    position: absolute;
+    left: 0;
+}
+
+.tool_canvasuplifter-chunkupload .chunkupload-label .chunkupload-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 100%;
+    background: #71a81a;
+}
+
+.tool_canvasuplifter-chunkupload .chunkupload-label .chunkupload-icon {
+    position: absolute;
+    left: 8px;
+    display: inline-block;
+    vertical-align: top;
+    color: green;
+}
+
+.tool_canvasuplifter-chunkupload .chunkupload-delete {
+    position: absolute;
+    right: 0;
+    top: 0;
+    z-index: 2;
+    padding: .375rem;
+    cursor: pointer;
+}
+
+.tool_canvasuplifter-chunkupload .chunkupload-filesize {
+    float: right;
+}

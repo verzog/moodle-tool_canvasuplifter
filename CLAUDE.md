@@ -20,6 +20,13 @@ Prefer adding new activity types as a `*_builder` with a uniform
 `build(stdClass $course, int $sectionnum, item $modelitem): ?int` signature, and
 register it in `course_builder`'s `$builders` map + `BUILDS_NOW` + `KIND_TO_MOD`.
 
+- `classes/chunkupload/` — the bundled chunked uploader (`form_element`,
+  `state_type`) for the optional "Large package" upload field, folded in from the
+  former `local_chunkupload`. Backed by the `tool_canvasuplifter_chunks` table,
+  the `chunkupload_ajax.php` endpoint (one script, `action`=start/proceed/delete),
+  the `amd/src/chunkupload.js` module and the `cleanup_chunks` scheduled task.
+  After editing `amd/src/chunkupload.js`, rebuild `amd/build/` with `grunt amd`.
+
 ## Validate locally before pushing
 
 CI (`.github/workflows/moodle-ci.yml`) runs `moodle-plugin-ci` against a real

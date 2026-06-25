@@ -82,5 +82,16 @@ function xmldb_tool_canvasuplifter_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026062405, 'tool', 'canvasuplifter');
     }
 
+    if ($oldversion < 2026062500) {
+        // Chunked-upload support was folded in from the former local_chunkupload
+        // plugin, so the package upload form no longer needs it as a separate
+        // install. Create the tracking table for sites upgrading from before.
+        $table = new xmldb_table('tool_canvasuplifter_chunks');
+        if (!$dbman->table_exists($table)) {
+            $dbman->install_one_table_from_xmldb_file(__DIR__ . '/install.xml', 'tool_canvasuplifter_chunks');
+        }
+        upgrade_plugin_savepoint(true, 2026062500, 'tool', 'canvasuplifter');
+    }
+
     return true;
 }
