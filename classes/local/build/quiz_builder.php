@@ -44,6 +44,9 @@ class quiz_builder {
     /** @var string|null Why the last build() returned null, for the skip report. */
     public ?string $skipreason = null;
 
+    /** @var int How many quizzes were built as empty hidden placeholders (no importable questions). */
+    public int $placeholdercount = 0;
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -81,7 +84,11 @@ class quiz_builder {
         $questions = $parsed['questions'];
         $supported = array_filter($questions, fn($q) => $q->type !== qti_question::TYPE_UNSUPPORTED);
         $importable = array_filter($supported, fn($q) => $q->is_importable());
-        if (empty($importable)) {
+
+        // Questions are present in the package but none are convertible (e.g.
+        // unsupported types). There's nothing to seed a useful placeholder with,
+        // so report and skip as before.
+        if (empty($importable) && !empty($questions)) {
             $this->skipreason = question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
             return null;
         }
@@ -102,15 +109,31 @@ class quiz_builder {
             return null;
         }
 
+        // No questions are in the package at all — an empty <section/> or bare
+        // references, typical of a Canvas exam / New Quiz whose questions live in
+        // an item bank Canvas didn't export. Don't drop the activity: build a
+        // hidden placeholder carrying the title and settings, with a note asking
+        // a teacher to add the questions, so nothing bar the absent questions is
+        // lost.
+        $isplaceholder = empty($questions);
+        $intro = $settings->description;
+        if ($isplaceholder) {
+            $this->placeholdercount++;
+            $intro = get_string('quizplaceholderintro', 'tool_canvasuplifter') . $intro;
+        }
+
         $moduleinfo = (object) array_merge($this->quiz_defaults(), $this->settings_overlay($settings), [
             'modulename' => 'quiz',
             'module' => $module->id,
             'course' => $course->id,
             'section' => $sectionnum,
-            'visible' => 1,
+            // A placeholder has no questions, so keep it hidden until a teacher
+            // adds them; a real quiz is visible (course_builder still hides it
+            // afterwards if the Canvas activity was unpublished).
+            'visible' => $isplaceholder ? 0 : 1,
             'cmidnumber' => '',
             'name' => $name,
-            'intro' => $settings->description,
+            'intro' => $intro,
             'introformat' => FORMAT_HTML,
         ]);
         $created = add_moduleinfo($moduleinfo, $course);
@@ -121,10 +144,15 @@ class quiz_builder {
         // pluginfile refs, mirroring assign_builder's handling.
         if ($settings->description !== '') {
             $newintro = (new file_embedder($this->packageroot))
-                ->embed($context->id, 'mod_quiz', 'intro', $settings->description);
-            if ($newintro !== $settings->description) {
+                ->embed($context->id, 'mod_quiz', 'intro', $intro);
+            if ($newintro !== $intro) {
                 $DB->set_field('quiz', 'intro', $newintro, ['id' => (int) $created->instance]);
             }
+        }
+
+        if ($isplaceholder) {
+            // No questions to import; leave the hidden placeholder for a teacher.
+            return $cmid;
         }
 
         $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath));

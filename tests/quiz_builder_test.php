@@ -565,4 +565,88 @@ XML;
         $quizsingle = $DB->get_record('quiz', ['id' => $cmsingle->instance], '*', MUST_EXIST);
         $this->assertSame($open, (int) $quizsingle->reviewmarks & $open);
     }
+
+    /**
+     * Write a package whose quiz is a Canvas exam/New-Quiz shell: a valid
+     * assessment with an empty <section/> (the questions live in an item bank
+     * Canvas didn't export) plus an assessment_meta.xml with real settings.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_empty_shell(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/shell');
+        $qti = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="shell" title="Patient Safety Quiz">'
+            . '<qtimetadata><qtimetadatafield><fieldlabel>cc_profile</fieldlabel>'
+            . '<fieldentry>cc.exam.v0p1</fieldentry></qtimetadatafield></qtimetadata>'
+            . '<section ident="root_section"/>'
+            . '</assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/shell/assessment_qti.xml', $qti);
+        $meta = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz identifier="shell" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Patient Safety Quiz</title>'
+            . '<time_limit>20</time_limit>'
+            . '<allowed_attempts>2</allowed_attempts>'
+            . '</quiz>';
+        file_put_contents($dir . '/quiz/shell/assessment_meta.xml', $meta);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Patient Safety Quiz</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/shell/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A Canvas quiz shell with no questions in the package is imported as a
+     * hidden placeholder carrying its settings, with a teacher-facing note,
+     * rather than being dropped — and the build report warns about it.
+     *
+     * @return void
+     */
+    public function test_question_less_shell_becomes_hidden_placeholder(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_empty_shell();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        // Built (not skipped), and hidden until a teacher adds questions.
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        $this->assertEquals(0, (int) $quizcm->visible);
+
+        $quiz = $DB->get_record('quiz', ['id' => $quizcm->instance], '*', MUST_EXIST);
+        // No questions, but the Canvas settings carried over.
+        $this->assertEquals(0, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
+        $this->assertEquals(20 * 60, (int) $quiz->timelimit);
+        $this->assertEquals(2, (int) $quiz->attempts);
+        // The intro explains what happened, and the report warns about it.
+        $this->assertStringContainsString('without its questions', $quiz->intro);
+        $this->assertStringContainsString('hidden placeholders', implode("\n", $report['warnings']));
+    }
 }
