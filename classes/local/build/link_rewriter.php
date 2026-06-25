@@ -36,6 +36,33 @@ namespace tool_canvasuplifter\local\build;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class link_rewriter {
+    /** @var string Regex fragment matching Canvas's $IMS-CC-FILEBASE$ token, raw or URL-encoded. */
+    public const FILEBASE_TOKEN = '(?:\$IMS-CC-FILEBASE\$|%24IMS-CC-FILEBASE%24)';
+
+    /**
+     * Resolve a decoded, root-relative path from an $IMS-CC-FILEBASE$ token to a
+     * real package file, trying the bare path and the web_resources/ location
+     * Canvas commonly uses. Shared by the page file embedder (filearea storage)
+     * and the question writer (base64 import XML) so the token resolves one way.
+     *
+     * @param string $packageroot Absolute package root.
+     * @param string $relpath Decoded, root-relative reference path.
+     * @return string|null Absolute path within the package, or null if not found.
+     */
+    public static function resolve_filebase(string $packageroot, string $relpath): ?string {
+        $relpath = ltrim($relpath, '/');
+        if ($relpath === '' || strpos($relpath, "\0") !== false) {
+            return null;
+        }
+        foreach ([$relpath, 'web_resources/' . $relpath] as $candidate) {
+            $absolute = safe_path::within($packageroot, $candidate);
+            if ($absolute !== null && is_file($absolute)) {
+                return $absolute;
+            }
+        }
+        return null;
+    }
+
     /**
      * Rewrite embedded-file placeholders to @@PLUGINFILE@@ references.
      *
@@ -47,14 +74,14 @@ class link_rewriter {
     public function rewrite_files(string $html, string $packageroot): array {
         $files = [];
         $seen = [];
-        $pattern = '#(?:\$IMS-CC-FILEBASE\$|%24IMS-CC-FILEBASE%24)([^"\'\s>)]*)#i';
+        $pattern = '#' . self::FILEBASE_TOKEN . '([^"\'\s>)]*)#i';
         $rewritten = preg_replace_callback($pattern, function ($matches) use ($packageroot, &$files, &$seen) {
             $rawpath = preg_replace('/[?#].*$/', '', $matches[1]);
             $decoded = ltrim(rawurldecode((string) $rawpath), '/');
             if ($decoded === '') {
                 return $matches[0];
             }
-            $absolute = $this->resolve_in_package($packageroot, $decoded);
+            $absolute = self::resolve_filebase($packageroot, $decoded);
             if ($absolute === null) {
                 // Cannot find the file; leave the placeholder untouched.
                 return $matches[0];
@@ -205,24 +232,6 @@ class link_rewriter {
             $segments[] = $segment;
         }
         return implode('/', $segments);
-    }
-
-    /**
-     * Resolve a package-relative reference to a real file, trying the common
-     * Canvas file-base locations.
-     *
-     * @param string $root Absolute package root.
-     * @param string $decoded Decoded, root-relative reference path.
-     * @return string|null Absolute path within the package, or null if not found.
-     */
-    private function resolve_in_package(string $root, string $decoded): ?string {
-        foreach ([$decoded, 'web_resources/' . $decoded] as $candidate) {
-            $absolute = safe_path::within($root, $candidate);
-            if ($absolute !== null && is_file($absolute)) {
-                return $absolute;
-            }
-        }
-        return null;
     }
 
     /**

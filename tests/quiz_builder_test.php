@@ -861,6 +861,92 @@ XML;
     }
 
     /**
+     * Write a package with a page and a quiz whose question prompt links to that
+     * page via a Canvas object-reference placeholder.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_question_link(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/ql');
+        mkdir($dir . '/wiki_content', 0777, true);
+        file_put_contents($dir . '/wiki_content/target.html', '<html><body><h1>Target Page</h1></body></html>');
+        $linkhtml = '&lt;p&gt;See &lt;a href="$CANVAS_OBJECT_REFERENCE$/pages/r_page"&gt;the page&lt;/a&gt;&lt;/p&gt;';
+        $mc = '<item ident="qlink" title="Linked"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>cc_profile</fieldlabel><fieldentry>cc.multiple_choice.v0p1</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">' . $linkhtml . '</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext>Alpha</mattext></material></response_label>'
+            . '<response_label ident="B"><material><mattext>Beta</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="ql" title="Linked Quiz"><section ident="s1">' . $mc
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/ql/qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_page" identifierref="r_page"><title>Target Page</title></item>
+          <item identifier="i_q" identifierref="r_quiz"><title>Linked Quiz</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_page" type="webcontent" href="wiki_content/target.html">
+      <file href="wiki_content/target.html"/>
+    </resource>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/ql/qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A $CANVAS_OBJECT_REFERENCE$ link inside imported question text is resolved
+     * to the real Moodle activity URL by the second-pass rewrite, once every
+     * target exists — mirroring the page/forum/intro passes.
+     *
+     * @return void
+     */
+    public function test_question_internal_links_rewritten(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_question_link();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $question = $DB->get_record_select(
+            'question',
+            $DB->sql_like('questiontext', ':needle'),
+            ['needle' => '%the page%'],
+            '*',
+            MUST_EXIST
+        );
+        // The Canvas object-reference token resolved to the page's Moodle URL.
+        $this->assertStringNotContainsString('CANVAS_OBJECT_REFERENCE', $question->questiontext);
+        $this->assertStringContainsString('/mod/page/view.php', $question->questiontext);
+    }
+
+    /**
      * When the Common Cartridge shell is empty, the builder recovers the real
      * questions from non_cc_assessments/<id>.xml.qti: it builds a visible quiz
      * (not a hidden placeholder), imports the matching and true/false questions,

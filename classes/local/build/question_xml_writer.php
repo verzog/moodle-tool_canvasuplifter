@@ -46,8 +46,12 @@ class question_xml_writer {
      * @param string|null $filebase Absolute package root for resolving $IMS-CC-FILEBASE$ tokens.
      * @return string Moodle XML.
      */
-    public function to_moodle_xml(array $questions, string $category, ?string $imagedir = null,
-            ?string $filebase = null): string {
+    public function to_moodle_xml(
+        array $questions,
+        string $category,
+        ?string $imagedir = null,
+        ?string $filebase = null
+    ): string {
         $this->filebase = $filebase !== null ? rtrim($filebase, '/') : null;
         $out = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<quiz>\n";
         $out .= "  <question type=\"category\">\n    <category><text>"
@@ -317,9 +321,9 @@ class question_xml_writer {
             return null;
         }
         // Canvas's $IMS-CC-FILEBASE$ token addresses the package's bundled files
-        // (commonly under web_resources/); resolve it against the package root,
-        // mirroring link_rewriter, independent of the per-question image folder.
-        if (preg_match('~^(?:\$IMS-CC-FILEBASE\$|%24IMS-CC-FILEBASE%24)(.*)$~i', $value, $tm)) {
+        // (commonly under web_resources/); resolve it against the package root via
+        // link_rewriter, independent of the per-question image folder.
+        if (preg_match('~^' . link_rewriter::FILEBASE_TOKEN . '(.*)$~i', $value, $tm)) {
             return $this->rewrite_filebase_ref($tm[1], $files);
         }
         if (preg_match('~^(https?:|data:|mailto:|tel:|@@PLUGINFILE@@|#)~i', $value)) {
@@ -352,17 +356,8 @@ class question_xml_writer {
             return null;
         }
         [$path, $suffix] = $this->split_suffix($rest);
-        $rel = ltrim(rawurldecode($path), '/');
-        if ($rel === '' || strpos($rel, "\0") !== false) {
-            return null;
-        }
-        foreach ([$rel, 'web_resources/' . $rel] as $candidate) {
-            $abs = $this->safe_join($this->filebase, $candidate);
-            if ($abs !== null && is_file($abs)) {
-                return $this->collect_file($abs, $this->filebase, $suffix, $files);
-            }
-        }
-        return null;
+        $abs = link_rewriter::resolve_filebase($this->filebase, rawurldecode($path));
+        return $abs !== null ? $this->collect_file($abs, $this->filebase, $suffix, $files) : null;
     }
 
     /**

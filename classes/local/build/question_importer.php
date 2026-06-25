@@ -89,8 +89,13 @@ class question_importer {
      * @param string|null $filebase Package root for resolving $IMS-CC-FILEBASE$ image tokens.
      * @return array The ids of the questions created, in import order.
      */
-    public function import(stdClass $course, \context $context, array $questions, string $imagedir,
-            ?string $filebase = null): array {
+    public function import(
+        stdClass $course,
+        \context $context,
+        array $questions,
+        string $imagedir,
+        ?string $filebase = null
+    ): array {
         global $CFG, $DB;
         require_once($CFG->libdir . '/questionlib.php');
         require_once($CFG->dirroot . '/question/format.php');

@@ -199,7 +199,9 @@ final class question_xml_writer_test extends \advanced_testcase {
         // Resolved through the web_resources/ fallback and inlined.
         $this->assertStringContainsString('@@PLUGINFILE@@/web_resources/assessment_questions/fig.jpg', $xml);
         $this->assertStringContainsString(
-            '<file name="fig.jpg" path="/web_resources/assessment_questions/" encoding="base64">', $xml);
+            '<file name="fig.jpg" path="/web_resources/assessment_questions/" encoding="base64">',
+            $xml
+        );
         $this->assertStringContainsString(base64_encode($png), $xml);
         // Resolved directly at the package root.
         $this->assertStringContainsString('@@PLUGINFILE@@/diagram.png', $xml);

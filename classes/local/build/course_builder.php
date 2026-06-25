@@ -280,6 +280,7 @@ class course_builder {
         $this->rewrite_forum_links((int) $course->id, $urlmap);
         $this->rewrite_assign_links((int) $course->id, $urlmap);
         $this->rewrite_quiz_links((int) $course->id, $urlmap);
+        $this->rewrite_question_links($this->imported_question_ids($builders), $urlmap);
 
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
@@ -983,6 +984,66 @@ class course_builder {
             $newintro = $rewriter->rewrite_internal_links((string) $quiz->intro, $urlmap);
             if ($newintro !== $quiz->intro) {
                 $DB->set_field('quiz', 'intro', $newintro, ['id' => $quiz->id]);
+            }
+        }
+    }
+
+    /**
+     * Gather the ids of every question imported by the quiz and question-bank
+     * builders during this build.
+     *
+     * @param array $builders The per-kind builder instances.
+     * @return array Imported question ids.
+     */
+    private function imported_question_ids(array $builders): array {
+        $ids = [];
+        foreach ([item::KIND_QUIZ, item::KIND_QUESTIONBANK] as $kind) {
+            $builder = $builders[$kind] ?? null;
+            if ($builder instanceof quiz_builder || $builder instanceof questionbank_builder) {
+                $ids = array_merge($ids, $builder->importedquestionids);
+            }
+        }
+        return $ids;
+    }
+
+    /**
+     * Rewrite internal Canvas links ($WIKI_REFERENCE$/$CANVAS_OBJECT_REFERENCE$)
+     * inside imported question text. Questions are created in the first pass,
+     * before every link target exists, so their HTML carries the placeholders
+     * verbatim; resolve them here once the URL map is complete, mirroring the
+     * page, forum, assignment and quiz-intro passes. Only the questions this
+     * build imported are touched, and only their HTML-bearing fields: the prompt,
+     * the general feedback, and each answer's text and feedback.
+     *
+     * @param array $questionids Ids of the imported questions.
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_question_links(array $questionids, array $urlmap): void {
+        global $DB;
+        if (empty($questionids) || empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        [$insql, $params] = $DB->get_in_or_equal(array_values(array_unique($questionids)), SQL_PARAMS_NAMED);
+
+        $questions = $DB->get_records_select('question', "id $insql", $params, '', 'id, questiontext, generalfeedback');
+        foreach ($questions as $question) {
+            foreach (['questiontext', 'generalfeedback'] as $field) {
+                $new = $rewriter->rewrite_internal_links((string) $question->$field, $urlmap);
+                if ($new !== $question->$field) {
+                    $DB->set_field('question', $field, $new, ['id' => $question->id]);
+                }
+            }
+        }
+
+        $answers = $DB->get_records_select('question_answers', "question $insql", $params, '', 'id, answer, feedback');
+        foreach ($answers as $answer) {
+            foreach (['answer', 'feedback'] as $field) {
+                $new = $rewriter->rewrite_internal_links((string) $answer->$field, $urlmap);
+                if ($new !== $answer->$field) {
+                    $DB->set_field('question_answers', $field, $new, ['id' => $answer->id]);
+                }
             }
         }
     }
