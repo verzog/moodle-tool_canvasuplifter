@@ -711,4 +711,52 @@ XML;
         $this->assertNotEmpty($report['skipreasons']);
         $this->assertStringNotContainsString('hidden placeholders', implode("\n", $report['warnings']));
     }
+
+    /**
+     * A broken file with a stray bare <item> but no <assessment>/<section> is a
+     * conversion failure, not a Canvas shell: it must be skipped, not turned
+     * into a hidden placeholder just because it bumps the unresolved count.
+     *
+     * @return void
+     */
+    public function test_bare_item_without_assessment_is_skipped(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz', 0777, true);
+        mkdir($dir . '/quiz/stray');
+        $qti = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<item ident="orphan"/></questestinterop>';
+        file_put_contents($dir . '/quiz/stray/assessment_qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Broken</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/stray/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $this->assertSame(0, $report['createdcounts']['quiz'] ?? 0);
+        $this->assertCount(0, get_fast_modinfo($report['courseid'])->get_instances_of('quiz'));
+        $this->assertStringNotContainsString('hidden placeholders', implode("\n", $report['warnings']));
+    }
 }

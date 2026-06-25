@@ -86,10 +86,12 @@ class quiz_builder {
         $importable = array_filter($supported, fn($q) => $q->is_importable());
 
         // A placeholder is only justified for a genuine but empty Canvas shell:
-        // a readable QTI 1.2 assessment whose questions live in an item bank
-        // Canvas didn't export (an empty <section/> or bare item references).
-        $isshell = empty($questions)
-            && (($parsed['hasassessment'] ?? false) || ($parsed['unresolved'] ?? 0) > 0);
+        // a readable QTI 1.2 <assessment>/<section>, whether the section is empty
+        // or holds bare item references to questions Canvas didn't export. The
+        // hasassessment flag already requires that structure, so a stray <item>
+        // node in malformed or non-QTI-1.2 XML (where unresolved could be > 0 but
+        // there's no real assessment) is not mistaken for a shell.
+        $isshell = empty($questions) && ($parsed['hasassessment'] ?? false);
 
         // Report and skip when nothing is importable and it isn't a shell —
         // either questions are present but unconvertible (unsupported types), or

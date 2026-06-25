@@ -534,5 +534,13 @@ final class qti_parser_test extends \basic_testcase {
 
         // Malformed XML is not.
         $this->assertFalse((new qti_parser())->parse('not xml <<<')['hasassessment']);
+
+        // A stray bare <item> with no <assessment>/<section> is not a shell,
+        // even though it bumps the unresolved count.
+        $stray = '<?xml version="1.0"?><questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<item ident="orphan"/></questestinterop>';
+        $r = (new qti_parser())->parse($stray);
+        $this->assertFalse($r['hasassessment']);
+        $this->assertSame(1, $r['unresolved']);
     }
 }
