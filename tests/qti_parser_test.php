@@ -636,6 +636,37 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A dropdown/blank question with a single blank is one choice, not a match:
+     * it has only one response_lid, so it falls through to the cardinality
+     * fallback and imports as multiple choice (not a one-pair match, which Moodle
+     * would drop).
+     *
+     * @return void
+     */
+    public function test_single_blank_dropdown_imports_as_multichoice(): void {
+        foreach (['multiple_dropdowns_question', 'fill_in_multiple_blanks_question'] as $type) {
+            $pres = '<presentation><material><mattext texttype="text/html">Pick for [I].</mattext></material>'
+                . '<response_lid ident="response_I"><material><mattext>I</mattext></material><render_choice>'
+                . '<response_label ident="a1"><material><mattext texttype="text/plain">Sensory</mattext></material>'
+                . '</response_label>'
+                . '<response_label ident="a2"><material><mattext texttype="text/plain">Motor</mattext></material>'
+                . '</response_label></render_choice></response_lid></presentation>';
+            $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+                . '<respcondition><conditionvar><varequal respident="response_I">a1</varequal></conditionvar>'
+                . '<setvar varname="SCORE" action="Add">100</setvar></respcondition></resprocessing>';
+            $item = '<item ident="d1" title="One"><itemmetadata><qtimetadata>'
+                . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>' . $type . '</fieldentry>'
+                . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+            $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+            $this->assertSame(qti_question::TYPE_MULTICHOICE, $q->type, "$type with one blank should be multichoice");
+            $this->assertCount(2, $q->answers);
+            $this->assertTrue($q->is_importable(), "$type with one blank should import");
+        }
+    }
+
+    /**
      * A free-text fill_in_multiple_blanks_question (response_str, no
      * render_choice) has no choices to match, so it stays UNSUPPORTED and is
      * reported by its Canvas type name rather than mis-imported as an empty match.

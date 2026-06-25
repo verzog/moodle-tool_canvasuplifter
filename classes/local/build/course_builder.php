@@ -1013,7 +1013,8 @@ class course_builder {
      * verbatim; resolve them here once the URL map is complete, mirroring the
      * page, forum, assignment and quiz-intro passes. Only the questions this
      * build imported are touched, and only their HTML-bearing fields: the prompt,
-     * the general feedback, and each answer's text and feedback.
+     * the general feedback, each answer's text and feedback, and the row stems of
+     * match questions (which carry the dropdown/blank conversions).
      *
      * @param array $questionids Ids of the imported questions.
      * @param array $urlmap Canvas reference key => URL.
@@ -1027,22 +1028,41 @@ class course_builder {
         $rewriter = new link_rewriter();
         [$insql, $params] = $DB->get_in_or_equal(array_values(array_unique($questionids)), SQL_PARAMS_NAMED);
 
-        $questions = $DB->get_records_select('question', "id $insql", $params, '', 'id, questiontext, generalfeedback');
-        foreach ($questions as $question) {
-            foreach (['questiontext', 'generalfeedback'] as $field) {
-                $new = $rewriter->rewrite_internal_links((string) $question->$field, $urlmap);
-                if ($new !== $question->$field) {
-                    $DB->set_field('question', $field, $new, ['id' => $question->id]);
-                }
-            }
-        }
+        $this->rewrite_link_fields($rewriter, $urlmap, 'question', "id $insql", $params, ['questiontext', 'generalfeedback']);
+        $this->rewrite_link_fields($rewriter, $urlmap, 'question_answers', "question $insql", $params, ['answer', 'feedback']);
+        // Match row stems (qtype_match_subquestions.questiontext) — the XML writer
+        // emits them as <subquestion>, so the prompt/answer pass above misses them.
+        // The answertext column is plain choice text and carries no links.
+        $this->rewrite_link_fields($rewriter, $urlmap, 'qtype_match_subquestions', "questionid $insql", $params, ['questiontext']);
+    }
 
-        $answers = $DB->get_records_select('question_answers', "question $insql", $params, '', 'id, answer, feedback');
-        foreach ($answers as $answer) {
-            foreach (['answer', 'feedback'] as $field) {
-                $new = $rewriter->rewrite_internal_links((string) $answer->$field, $urlmap);
-                if ($new !== $answer->$field) {
-                    $DB->set_field('question_answers', $field, $new, ['id' => $answer->id]);
+    /**
+     * Rewrite internal Canvas links in the given HTML fields of the rows a select
+     * matches, writing back only the fields that change.
+     *
+     * @param link_rewriter $rewriter The link rewriter.
+     * @param array $urlmap Canvas reference key => URL.
+     * @param string $table The table to update.
+     * @param string $select The WHERE clause (using the named params).
+     * @param array $params Named SQL parameters for the select.
+     * @param array $fields The HTML field names to rewrite.
+     * @return void
+     */
+    private function rewrite_link_fields(
+        link_rewriter $rewriter,
+        array $urlmap,
+        string $table,
+        string $select,
+        array $params,
+        array $fields
+    ): void {
+        global $DB;
+        $columns = 'id, ' . implode(', ', $fields);
+        foreach ($DB->get_records_select($table, $select, $params, '', $columns) as $row) {
+            foreach ($fields as $field) {
+                $new = $rewriter->rewrite_internal_links((string) $row->$field, $urlmap);
+                if ($new !== $row->$field) {
+                    $DB->set_field($table, $field, $new, ['id' => $row->id]);
                 }
             }
         }

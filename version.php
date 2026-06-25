@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026062505;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026062506;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (confirm against your exact 5.0.x).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Shared filebase resolver; rewrite internal Canvas links in questions.
-$plugin->release   = '0.39.1';
+$plugin->maturity  = MATURITY_ALPHA;  // Keep single-blank dropdowns importable; rewrite match-stem links.
+$plugin->release   = '0.39.2';

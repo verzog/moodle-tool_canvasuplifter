@@ -884,9 +884,28 @@ XML;
             . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
             . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
             . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+        // A matching question whose first row stem carries a Canvas object link,
+        // so its subquestion text must be rewritten in the same pass.
+        $stemlink = '&lt;p&gt;Match &lt;a href="$CANVAS_OBJECT_REFERENCE$/pages/r_page"&gt;the page&lt;/a&gt;&lt;/p&gt;';
+        $choices = '<render_choice>'
+            . '<response_label ident="o1"><material><mattext>One</mattext></material></response_label>'
+            . '<response_label ident="o2"><material><mattext>Two</mattext></material></response_label></render_choice>';
+        $match = '<item ident="qmatch" title="Match"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>matching_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">Match these.</mattext></material>'
+            . '<response_lid ident="rA"><material><mattext texttype="text/html">' . $stemlink . '</mattext></material>'
+            . $choices . '</response_lid>'
+            . '<response_lid ident="rB"><material><mattext>Second</mattext></material>' . $choices . '</response_lid>'
+            . '</presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="rA">o1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="rB">o2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing></item>';
         $qti = '<?xml version="1.0" encoding="utf-8"?>'
             . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
-            . '<assessment ident="ql" title="Linked Quiz"><section ident="s1">' . $mc
+            . '<assessment ident="ql" title="Linked Quiz"><section ident="s1">' . $mc . $match
             . '</section></assessment></questestinterop>';
         file_put_contents($dir . '/quiz/ql/qti.xml', $qti);
         $manifest = <<<'XML'
@@ -938,12 +957,24 @@ XML;
             'question',
             $DB->sql_like('questiontext', ':needle'),
             ['needle' => '%the page%'],
-            '*',
+            'qtype, questiontext',
             MUST_EXIST
         );
         // The Canvas object-reference token resolved to the page's Moodle URL.
         $this->assertStringNotContainsString('CANVAS_OBJECT_REFERENCE', $question->questiontext);
         $this->assertStringContainsString('/mod/page/view.php', $question->questiontext);
+
+        // The same token in a match question's row stem (stored in
+        // qtype_match_subquestions) is resolved too.
+        $sub = $DB->get_record_select(
+            'qtype_match_subquestions',
+            $DB->sql_like('questiontext', ':needle'),
+            ['needle' => '%Match%'],
+            'questiontext',
+            MUST_EXIST
+        );
+        $this->assertStringNotContainsString('CANVAS_OBJECT_REFERENCE', $sub->questiontext);
+        $this->assertStringContainsString('/mod/page/view.php', $sub->questiontext);
     }
 
     /**

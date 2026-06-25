@@ -190,19 +190,18 @@ class qti_parser {
             case 'matching_question':
                 return qti_question::TYPE_MATCHING;
             case 'multiple_dropdowns_question':
-                // Inline dropdowns: each blank is a response_lid with its own
-                // render_choice and a scored answer — structurally a matching
-                // question, so import it as Moodle match.
-                return qti_question::TYPE_MATCHING;
             case 'fill_in_multiple_blanks_question':
-                // Canvas authors these either as free-text blanks (response_str,
-                // no choices) or as inline dropdowns (response_lid + render_choice).
-                // Only the choice form maps cleanly to a Moodle match; a free-text
-                // multi-blank has no render_choice and stays unsupported, reported
-                // by its Canvas type name.
-                return $presentation !== null && $this->descendant($presentation, 'render_choice') !== null
-                    ? qti_question::TYPE_MATCHING
-                    : qti_question::TYPE_UNSUPPORTED;
+                // Inline dropdowns/blanks: each blank is a response_lid with its
+                // own render_choice and a scored answer. Two or more blanks map to
+                // a Moodle match (one stem/answer pair per blank). A single blank
+                // is just one dropdown, and a free-text fill-in-blank has no
+                // choices at all, so both fall through to the cardinality fallback
+                // below — which imports a lone choice list as multiple choice and
+                // leaves a choice-less item unsupported (reported by Canvas type).
+                if ($presentation !== null && $presentation->getElementsByTagNameNS('*', 'response_lid')->length >= 2) {
+                    return qti_question::TYPE_MATCHING;
+                }
+                break;
         }
         // Fall back on the response cardinality for unprofiled multiple choice.
         $lid = $presentation !== null ? $this->descendant($presentation, 'response_lid') : null;
