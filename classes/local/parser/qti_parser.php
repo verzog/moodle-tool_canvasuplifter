@@ -192,14 +192,18 @@ class qti_parser {
             case 'multiple_dropdowns_question':
             case 'fill_in_multiple_blanks_question':
                 // Inline dropdowns/blanks: each blank is a response_lid with its
-                // own render_choice and a scored answer. Two or more blanks map to
-                // a Moodle match (one stem/answer pair per blank). A single blank
-                // is just one dropdown, and a free-text fill-in-blank has no
-                // choices at all, so both fall through to the cardinality fallback
-                // below — which imports a lone choice list as multiple choice and
-                // leaves a choice-less item unsupported (reported by Canvas type).
+                // own render_choice and a scored answer. Two or more blanks become
+                // a Moodle match (one stem/answer pair per blank) — but only when
+                // every blank offers the same choice set, because Moodle match has
+                // a single global answer pool; with per-blank choices one blank's
+                // options would wrongly be offered for another, so leave it
+                // unsupported. A single blank is one dropdown and falls through to
+                // the cardinality fallback (multiple choice); a free-text blank has
+                // no response_lid and falls through to unsupported.
                 if ($presentation !== null && $presentation->getElementsByTagNameNS('*', 'response_lid')->length >= 2) {
-                    return qti_question::TYPE_MATCHING;
+                    return $this->blanks_share_choices($presentation)
+                        ? qti_question::TYPE_MATCHING
+                        : qti_question::TYPE_UNSUPPORTED;
                 }
                 break;
         }
@@ -408,8 +412,10 @@ class qti_parser {
         $correct = $this->matching_correct_map($item);
         $pool = [];
         $usedanswers = [];
-        foreach ($presentation->childNodes as $lid) {
-            if (!($lid instanceof DOMElement) || $lid->localName !== 'response_lid') {
+        // Traverse response_lid descendants (not just direct children) so blanks
+        // wrapped in a <flow> are filled — matching the node set map_type counts.
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if (!($lid instanceof DOMElement)) {
                 continue;
             }
             $stemmaterial = $this->first_child_element($lid, 'material');
@@ -464,6 +470,34 @@ class qti_parser {
             }
         }
         return $map;
+    }
+
+    /**
+     * Whether every dropdown/blank in the presentation offers the same set of
+     * choices. Moodle's match type has one global answer pool, so converting an
+     * inline-dropdown item to a match is only faithful when the blanks share a
+     * choice set; otherwise one blank's options would be offered for another.
+     * Compares the choice texts order-independently (Canvas gives the same option
+     * a different ident in each blank, so idents can't be compared).
+     *
+     * @param DOMElement $presentation The presentation element.
+     * @return bool
+     */
+    protected function blanks_share_choices(DOMElement $presentation): bool {
+        $reference = null;
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if (!($lid instanceof DOMElement)) {
+                continue;
+            }
+            $choices = array_map(fn($t) => $this->plain_answer($t), array_values($this->choice_label_map($lid)));
+            sort($choices);
+            if ($reference === null) {
+                $reference = $choices;
+            } else if ($choices !== $reference) {
+                return false;
+            }
+        }
+        return $reference !== null;
     }
 
     /**

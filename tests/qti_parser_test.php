@@ -636,6 +636,73 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * Inline-dropdown blanks wrapped in a <flow> (a normal QTI presentation
+     * wrapper) are still found: map_type counts response_lid descendants and
+     * fill_matching traverses the same descendants, so the item converts to a
+     * match with one pair per blank rather than an empty (dropped) match.
+     *
+     * @return void
+     */
+    public function test_flow_wrapped_dropdown_blanks_are_traversed(): void {
+        $blank = function (string $ident, string $stem, string $a1, string $a2): string {
+            return '<response_lid ident="' . $ident . '"><material><mattext>' . $stem . '</mattext></material>'
+                . '<render_choice>'
+                . '<response_label ident="' . $a1 . '"><material><mattext>Sensory</mattext></material></response_label>'
+                . '<response_label ident="' . $a2 . '"><material><mattext>Motor</mattext></material></response_label>'
+                . '</render_choice></response_lid>';
+        };
+        $pres = '<presentation><flow><material><mattext>Pick [I] [II].</mattext></material>'
+            . $blank('response_I', 'I', 'a1', 'a2') . $blank('response_II', 'II', 'b1', 'b2') . '</flow></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_I">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_II">b2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="f1" title="Flow"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_MATCHING, $q->type);
+        $pairs = array_filter($q->subquestions, fn($s) => trim($s['text']) !== '');
+        $this->assertCount(2, $pairs);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A dropdown/blank item whose blanks offer different choice sets must NOT be
+     * converted to a Moodle match (whose single global pool would offer one
+     * blank's options for another); it stays unsupported, reported by Canvas type.
+     *
+     * @return void
+     */
+    public function test_dropdown_with_unshared_choices_is_unsupported(): void {
+        $blank = function (string $ident, string $stem, string $o1, string $o2): string {
+            return '<response_lid ident="' . $ident . '"><material><mattext>' . $stem . '</mattext></material>'
+                . '<render_choice>'
+                . '<response_label ident="x1"><material><mattext>' . $o1 . '</mattext></material></response_label>'
+                . '<response_label ident="x2"><material><mattext>' . $o2 . '</mattext></material></response_label>'
+                . '</render_choice></response_lid>';
+        };
+        // Blank one offers colours, blank two offers animals — different pools.
+        $pres = '<presentation><material><mattext>Match [I] [II].</mattext></material>'
+            . $blank('response_I', 'I', 'Red', 'Blue') . $blank('response_II', 'II', 'Cat', 'Dog') . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_I">x1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="u1" title="Unshared"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+        $this->assertSame('multiple_dropdowns_question', $q->profile);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
      * A dropdown/blank question with a single blank is one choice, not a match:
      * it has only one response_lid, so it falls through to the cardinality
      * fallback and imports as multiple choice (not a one-pair match, which Moodle
