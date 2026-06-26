@@ -2,9 +2,10 @@
 
 Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 
-> **Status: alpha, Phase 4 complete.** This release can both *analyse* a
+> **Status: alpha, Phases 0–5 complete.** This release can both *analyse* a
 > Canvas package (report what it contains and how cleanly each part maps to
-> Moodle) and *build* a new Moodle course from it. The builder creates
+> Moodle — run as a background task so large packages don't time out the web
+> request) and *build* a new Moodle course from it. The builder creates
 > sections plus pages (`mod_page`), files (`mod_resource`), URLs (`mod_url`),
 > assignments (`mod_assign`) with optional Canvas rubrics on the
 > `submissions` grading area, quizzes and question banks (`mod_quiz` /
@@ -71,15 +72,23 @@ Admin tools > Canvas Uplifter*.
   lessons have no per-page visibility, so an unpublished page folded into a
   lesson becomes visible.
 - Canvas QTI assessments convert their questions — multiple choice, multiple
-  response, fill-in-blank, true/false and essay. Bundled media in question text
-  (images, video, audio and attachments) is imported with the question; external
-  embeds such as YouTube are left as-is. An assessment **linked in the course**
-  becomes a Moodle quiz (`mod_quiz`) with the questions as slots; a
+  response, fill-in-blank, true/false, essay and matching. Canvas inline-dropdown
+  and choice-form multiple-blank questions import as Moodle matching when every
+  blank shares one choice set (Moodle's match type has a single answer pool);
+  numerical, calculated and free-text multi-blank questions are reported but not
+  yet built. When a Canvas Common Cartridge assessment ships an empty shell, the
+  questions are recovered from Canvas's native QTI dump (`non_cc_assessments`).
+  Bundled media in question text — images, video, audio and attachments,
+  including `$IMS-CC-FILEBASE$` references — is imported with the question, and
+  internal Canvas links in question text are rewritten once their targets exist;
+  external embeds such as YouTube are left as-is. An assessment **linked in the
+  course** becomes a Moodle quiz (`mod_quiz`) with the questions as slots; a
   **standalone/unreferenced** assessment becomes a question bank (`mod_qbank`),
   and a build-time toggle ("Also build a runnable quiz from each standalone
   question bank") will additionally seed a `mod_quiz` from each such bank.
-  Unsupported question types are skipped, and multi-blank fill-in-blank collapses
-  to a single short-answer.
+  Question-less Canvas exam/New-Quiz shells import as hidden placeholder quizzes
+  that carry their settings and a teacher note, so nothing but the absent
+  questions is lost.
 - Discussion topics build as forums, seeded with the Canvas prompt as the
   opening post. Canvas does not export the replies, so existing threads do not
   carry across.
@@ -159,7 +168,8 @@ Everything lives under `~/.moodle-plugin-ci` (outside the repo).
 | 2 | Discussions → forums, announcements → news forum | Done |
 | 3 | Quizzes + `mod_qbank` question banks (QTI import) | Done |
 | 4 | Gradebook categories with Canvas weights, LTI placeholders, in-section labels, Canvas rubrics → `gradingform_rubric`, CC 1.3 IMS Assignment profile | Done |
-| 5 | Asynchronous **analyse**: run extract + parse + report as an adhoc task behind the existing polled status page, and move the remote-URL fetch into the task too, so large packages don't time out the web request (the build is already async; this closes the server-side gap that complements the built-in chunked-upload support) | Planned |
+| 5 | Asynchronous **analyse**: run extract + parse + report as an adhoc task behind the existing polled status page, and move the remote-URL fetch into the task too, so large packages don't time out the web request (the build is already async; this closes the server-side gap that complements the built-in chunked-upload support) | Done |
+| 6 | Learning outcomes, remaining question types (numerical, calculated, free-text multi-blank), and built LTI activities | Planned |
 
 ## Path to beta
 
