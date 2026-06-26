@@ -80,6 +80,17 @@ class file_builder {
 
         // Copy the file into a new draft area; add_moduleinfo will pick it
         // up via the 'files' field and move it into mod_resource/content.
+        // A folded HTML bundle pins the main file at its rebased filearea path
+        // (a subfolder when a parent-directory asset forced the root up a level)
+        // so the page's own relative links keep resolving; a plain file lands at
+        // the root under its basename.
+        $mainrel = ltrim($modelitem->bundlehtmlpath, '/');
+        if ($mainrel === '') {
+            $mainrel = basename($sourcepath);
+        }
+        $mainslash = strrpos($mainrel, '/');
+        $mainpath = $mainslash === false ? '/' : '/' . substr($mainrel, 0, $mainslash + 1);
+        $mainname = $mainslash === false ? $mainrel : substr($mainrel, $mainslash + 1);
         $draftitemid = file_get_unused_draft_itemid();
         $usercontext = \context_user::instance($USER->id);
         $fs = get_file_storage();
@@ -88,8 +99,8 @@ class file_builder {
             'component' => 'user',
             'filearea' => 'draft',
             'itemid' => $draftitemid,
-            'filepath' => '/',
-            'filename' => clean_param(basename($sourcepath), PARAM_FILE),
+            'filepath' => clean_param($mainpath, PARAM_PATH),
+            'filename' => clean_param($mainname, PARAM_FILE),
             'sortorder' => 1,
         ], $sourcepath);
 
