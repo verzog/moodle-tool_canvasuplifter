@@ -80,6 +80,17 @@ class file_builder {
 
         // Copy the file into a new draft area; add_moduleinfo will pick it
         // up via the 'files' field and move it into mod_resource/content.
+        // A folded HTML bundle pins the main file at its rebased filearea path
+        // (a subfolder when a parent-directory asset forced the root up a level)
+        // so the page's own relative links keep resolving; a plain file lands at
+        // the root under its basename.
+        $mainrel = ltrim($modelitem->bundlehtmlpath, '/');
+        if ($mainrel === '') {
+            $mainrel = basename($sourcepath);
+        }
+        $mainslash = strrpos($mainrel, '/');
+        $mainpath = $mainslash === false ? '/' : '/' . substr($mainrel, 0, $mainslash + 1);
+        $mainname = $mainslash === false ? $mainrel : substr($mainrel, $mainslash + 1);
         $draftitemid = file_get_unused_draft_itemid();
         $usercontext = \context_user::instance($USER->id);
         $fs = get_file_storage();
@@ -88,10 +99,39 @@ class file_builder {
             'component' => 'user',
             'filearea' => 'draft',
             'itemid' => $draftitemid,
-            'filepath' => '/',
-            'filename' => clean_param(basename($sourcepath), PARAM_FILE),
+            'filepath' => clean_param($mainpath, PARAM_PATH),
+            'filename' => clean_param($mainname, PARAM_FILE),
             'sortorder' => 1,
         ], $sourcepath);
+
+        // A self-contained HTML file (an interactive exercise) folds its assets
+        // (js/css/images) in alongside it, each at its path relative to the HTML
+        // so the page's own relative links resolve, and displays embedded so it
+        // renders inline and works. The HTML keeps sortorder 1 as the main file.
+        $display = RESOURCELIB_DISPLAY_AUTO;
+        foreach ($modelitem->bundleassets as $asset) {
+            $assetabs = safe_path::within($this->packageroot, (string) ($asset['source'] ?? ''));
+            if ($assetabs === null || !is_file($assetabs) || !is_readable($assetabs)) {
+                continue;
+            }
+            $relpath = ltrim((string) ($asset['relpath'] ?? ''), '/');
+            $slash = strrpos($relpath, '/');
+            $filepath = $slash === false ? '/' : '/' . substr($relpath, 0, $slash + 1);
+            $filename = $slash === false ? $relpath : substr($relpath, $slash + 1);
+            if ($filename === '') {
+                continue;
+            }
+            $fs->create_file_from_pathname([
+                'contextid' => $usercontext->id,
+                'component' => 'user',
+                'filearea' => 'draft',
+                'itemid' => $draftitemid,
+                'filepath' => clean_param($filepath, PARAM_PATH),
+                'filename' => clean_param($filename, PARAM_FILE),
+                'sortorder' => 0,
+            ], $assetabs);
+            $display = RESOURCELIB_DISPLAY_EMBED;
+        }
 
         $moduleinfo = (object) [
             'modulename' => 'resource',
@@ -103,7 +143,7 @@ class file_builder {
             'intro' => '',
             'introformat' => FORMAT_HTML,
             'files' => $draftitemid,
-            'display' => RESOURCELIB_DISPLAY_AUTO,
+            'display' => $display,
             'displayoptions' => serialize([
                 'printintro' => 0,
                 'printlastmodified' => 1,

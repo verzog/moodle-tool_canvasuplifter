@@ -92,9 +92,18 @@ class item {
      *            to import into the page's filearea so relative refs in the
      *            HTML keep working. Each entry: ['source','relpath'] where
      *            source is package-relative and relpath is relative to the
-     *            anchor's folder.
+     *            filearea root (the bundle's common-ancestor folder).
      */
     public array $bundleassets = [];
+
+    /**
+     * @var string For a folded HTML bundle, the filearea path the main HTML
+     *             file is stored at (relative to the bundle's common-ancestor
+     *             root). Usually just the basename, but set to a subfolder path
+     *             when the bundle was rebased so a parent-directory asset
+     *             reference resolves. Empty for a plain (non-bundle) file.
+     */
+    public string $bundlehtmlpath = '';
 
     /**
      * @var bool True when fold_lesson_bundles() demoted this item as a sibling
@@ -103,6 +112,15 @@ class item {
      *           still surfaces real unknowns in sections.
      */
     public bool $bundlemember = false;
+
+    /**
+     * @var bool True when fold_html_asset_bundles() folded this resource's
+     *           payload into an HTML exercise. Unlike $bundlemember the decision
+     *           to hide it is deferred: it is suppressed only if the orphan pass
+     *           finds it was not also placed in the course, so an asset that is
+     *           explicitly published as its own activity still builds.
+     */
+    public bool $htmlbundlemember = false;
 
     /**
      * @var bool True when the manifest parser deliberately classified this
