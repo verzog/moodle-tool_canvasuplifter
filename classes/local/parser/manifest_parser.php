@@ -322,7 +322,11 @@ class manifest_parser {
             // the report can flag or skip-and-explain them rather than drop them.
             $ismodulenode = $materialtype === 'contentmodule'
                 && $href === '' && empty($modelitem->files) && $modelitem->inlinexml === '';
-            if ($ismodulenode || in_array($materialtype, self::D2L_METADATA_MATERIAL_TYPES, true)) {
+            // A resource whose only payload is a .log file is a build/export
+            // artifact (e.g. Blackboard's web_content00001.log), never course
+            // content, so drop it rather than import a junk file resource.
+            $islogartifact = $this->is_log_artifact($href, $modelitem->files);
+            if ($ismodulenode || $islogartifact || in_array($materialtype, self::D2L_METADATA_MATERIAL_TYPES, true)) {
                 $modelitem->kind = item::KIND_UNKNOWN;
                 $modelitem->suppressed = true;
             } else {
@@ -340,6 +344,34 @@ class manifest_parser {
             $items[$identifier] = $modelitem;
         }
         return $items;
+    }
+
+    /**
+     * Whether a resource is just a build/export log artifact: its href and every
+     * <file> it carries are .log files (e.g. Blackboard exports a
+     * web_content00001.log resource). A .log is never course content, so such a
+     * resource is suppressed rather than imported as a file resource. A resource
+     * with no files at all is not treated as a log artifact.
+     *
+     * @param string $href The resource href, if any.
+     * @param array $files The resource's file paths.
+     * @return bool
+     */
+    private function is_log_artifact(string $href, array $files): bool {
+        $paths = $files;
+        if ($href !== '') {
+            $paths[] = $href;
+        }
+        $paths = array_filter($paths, fn($p) => (string) $p !== '');
+        if (empty($paths)) {
+            return false;
+        }
+        foreach ($paths as $path) {
+            if (!preg_match('/\.log$/i', (string) $path)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

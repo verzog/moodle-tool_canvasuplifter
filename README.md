@@ -185,10 +185,14 @@ shapes against `main`:
 - [ ] An **embedded-media-heavy course** — videos, audio, images both in
       page bodies and in QTI question stems — exercises `file_embedder`
       and the question-asset import path end-to-end.
-- [ ] A **non-Canvas CC 1.3 export** (Blackboard Ultra, D2L Brightspace,
-      Schoology, OpenStax Connexions) — exercises the IMS Assignment
-      profile, prefixed namespaces, inline descriptors, and variant
-      targets that PR #57 and #59 added.
+- [x] A **non-Canvas CC export** (Blackboard, D2L Brightspace, Schoology,
+      OpenStax Connexions) — exercises the IMS Assignment profile, prefixed
+      namespaces, inline descriptors, and variant targets that PR #57 and #59
+      added. Validated: **D2L Brightspace** (regression test) and **Blackboard
+      CC 1.2** — a real "Law and Ethics in Medicine" export built cleanly (all
+      content plus 54/54 questions, 0 skipped; its `web_content*.log` build
+      artifact is now filtered, with a regression fixture added). Schoology and
+      OpenStax are still untried.
 - [ ] An **outcomes-heavy course** — Canvas learning outcomes are
       currently dropped (`learning_outcome_identifierref` on rubric
       criteria and assignments). A surviving build here either confirms
