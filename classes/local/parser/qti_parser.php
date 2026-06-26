@@ -661,25 +661,31 @@ class qti_parser {
     }
 
     /**
-     * The prompt text: the first material that belongs to the question prompt
-     * rather than an answer. It is normally a direct child of presentation, but
-     * Canvas may wrap the whole presentation in a <flow>, so descend through
-     * wrappers and take the first material that is not inside a response_lid or
-     * response_str (those carry option/blank text, not the prompt).
+     * The prompt text: every material that belongs to the question prompt rather
+     * than an answer. It is normally a single direct child of presentation, but
+     * Canvas may wrap the whole presentation in a <flow> and interleave several
+     * prompt fragments around the dropdown blanks, so descend through wrappers and
+     * join all materials that are not inside a response_lid or response_str (those
+     * carry option/blank text, not the prompt), in document order.
      *
      * @param DOMElement $presentation The presentation element.
      * @return string HTML.
      */
     protected function prompt_text(DOMElement $presentation): string {
+        $parts = [];
         foreach ($presentation->getElementsByTagNameNS('*', 'material') as $material) {
             if (!($material instanceof DOMElement)) {
                 continue;
             }
-            if (!$this->within($material, 'response_lid') && !$this->within($material, 'response_str')) {
-                return $this->mattext($material);
+            if ($this->within($material, 'response_lid') || $this->within($material, 'response_str')) {
+                continue;
+            }
+            $text = $this->mattext($material);
+            if (trim($text) !== '') {
+                $parts[] = $text;
             }
         }
-        return '';
+        return implode("\n", $parts);
     }
 
     /**

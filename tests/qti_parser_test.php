@@ -673,6 +673,46 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * When a <flow> interleaves several prompt fragments around the blanks, every
+     * fragment is kept in questiontext — not just the first — so the imported
+     * match keeps its full instructions.
+     *
+     * @return void
+     */
+    public function test_flow_interleaved_prompt_fragments_are_all_kept(): void {
+        $blank = function (string $ident, string $stem, string $a1, string $a2): string {
+            return '<response_lid ident="' . $ident . '"><material><mattext>' . $stem . '</mattext></material>'
+                . '<render_choice>'
+                . '<response_label ident="' . $a1 . '"><material><mattext>One</mattext></material></response_label>'
+                . '<response_label ident="' . $a2 . '"><material><mattext>Two</mattext></material></response_label>'
+                . '</render_choice></response_lid>';
+        };
+        $pres = '<presentation><flow>'
+            . '<material><mattext>Start fragment.</mattext></material>'
+            . $blank('rA', 'A', 'a1', 'a2')
+            . '<material><mattext>Middle fragment.</mattext></material>'
+            . $blank('rB', 'B', 'b1', 'b2')
+            . '<material><mattext>End fragment.</mattext></material>'
+            . '</flow></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="rA">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="rB">b2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="i1" title="Interleaved"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_MATCHING, $q->type);
+        // Every prompt fragment is kept, not just the first.
+        $this->assertStringContainsString('Start fragment.', $q->questiontext);
+        $this->assertStringContainsString('Middle fragment.', $q->questiontext);
+        $this->assertStringContainsString('End fragment.', $q->questiontext);
+    }
+
+    /**
      * A dropdown/blank whose response_lids carry only their render_choice (no
      * per-blank stem material — the blanks are labelled by bracketed reference
      * words in the prompt) would convert to a match with empty stems, which the
