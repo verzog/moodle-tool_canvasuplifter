@@ -668,6 +668,38 @@ final class qti_parser_test extends \basic_testcase {
         $pairs = array_filter($q->subquestions, fn($s) => trim($s['text']) !== '');
         $this->assertCount(2, $pairs);
         $this->assertTrue($q->is_importable());
+        // The prompt inside the <flow> is preserved, not dropped.
+        $this->assertStringContainsString('Pick', $q->questiontext);
+    }
+
+    /**
+     * A dropdown/blank whose response_lids carry only their render_choice (no
+     * per-blank stem material — the blanks are labelled by bracketed reference
+     * words in the prompt) would convert to a match with empty stems, which the
+     * importer drops. It is left unsupported instead.
+     *
+     * @return void
+     */
+    public function test_dropdown_without_stems_is_unsupported(): void {
+        $blank = function (string $ident, string $a1, string $a2): string {
+            return '<response_lid ident="' . $ident . '"><render_choice>'
+                . '<response_label ident="' . $a1 . '"><material><mattext>Red</mattext></material></response_label>'
+                . '<response_label ident="' . $a2 . '"><material><mattext>Blue</mattext></material></response_label>'
+                . '</render_choice></response_lid>';
+        };
+        $pres = '<presentation><material><mattext>The [c1] and [c2].</mattext></material>'
+            . $blank('response_c1', 'a1', 'a2') . $blank('response_c2', 'b1', 'b2') . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_c1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="r1" title="Refs"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+        $this->assertFalse($q->is_importable());
     }
 
     /**

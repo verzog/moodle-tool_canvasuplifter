@@ -201,7 +201,7 @@ class qti_parser {
                 // the cardinality fallback (multiple choice); a free-text blank has
                 // no response_lid and falls through to unsupported.
                 if ($presentation !== null && $presentation->getElementsByTagNameNS('*', 'response_lid')->length >= 2) {
-                    return $this->blanks_share_choices($presentation)
+                    return $this->blanks_share_choices($presentation) && $this->blanks_have_stems($presentation)
                         ? qti_question::TYPE_MATCHING
                         : qti_question::TYPE_UNSUPPORTED;
                 }
@@ -501,6 +501,32 @@ class qti_parser {
     }
 
     /**
+     * Whether every dropdown/blank carries its own stem text (a direct <material>
+     * child of the response_lid). Canvas authors some inline dropdowns with only
+     * the render_choice in each response_lid and the blank labelled by a bracketed
+     * reference word in the prompt; those have no per-blank stem, so a Moodle match
+     * would import empty stems and be dropped. Such items are left unsupported
+     * rather than converted to a broken match.
+     *
+     * @param DOMElement $presentation The presentation element.
+     * @return bool
+     */
+    protected function blanks_have_stems(DOMElement $presentation): bool {
+        $seen = false;
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if (!($lid instanceof DOMElement)) {
+                continue;
+            }
+            $seen = true;
+            $material = $this->first_child_element($lid, 'material');
+            if ($material === null || trim($this->mattext($material)) === '') {
+                return false;
+            }
+        }
+        return $seen;
+    }
+
+    /**
      * Map a render_choice's response_label idents to their material text.
      *
      * @param DOMElement $lid The response_lid element.
@@ -635,15 +661,22 @@ class qti_parser {
     }
 
     /**
-     * The prompt text: the first material that is a direct child of presentation.
+     * The prompt text: the first material that belongs to the question prompt
+     * rather than an answer. It is normally a direct child of presentation, but
+     * Canvas may wrap the whole presentation in a <flow>, so descend through
+     * wrappers and take the first material that is not inside a response_lid or
+     * response_str (those carry option/blank text, not the prompt).
      *
      * @param DOMElement $presentation The presentation element.
      * @return string HTML.
      */
     protected function prompt_text(DOMElement $presentation): string {
-        foreach ($presentation->childNodes as $child) {
-            if ($child instanceof DOMElement && $child->localName === 'material') {
-                return $this->mattext($child);
+        foreach ($presentation->getElementsByTagNameNS('*', 'material') as $material) {
+            if (!($material instanceof DOMElement)) {
+                continue;
+            }
+            if (!$this->within($material, 'response_lid') && !$this->within($material, 'response_str')) {
+                return $this->mattext($material);
             }
         }
         return '';
