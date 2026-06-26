@@ -1732,6 +1732,13 @@ class manifest_parser {
      * referenced one), and an asset that is also explicitly placed in the course
      * is left to build as its own activity as well.
      *
+     * Best-effort only — a few reference forms are not followed, so their targets
+     * stay available as their own resources rather than being mis-folded: ES
+     * module `import` graphs from an entry script, HTML embedded as an asset
+     * (`<object data="frame.html">`), and a document `<base href>` overriding the
+     * resolution root. The exercise still embeds; any unfollowed file simply
+     * surfaces separately.
+     *
      * @param array $resources Resource items keyed by identifier (modified in place).
      * @return void
      */
@@ -1741,7 +1748,7 @@ class manifest_parser {
         // package paths so a reference into a sibling folder (../shared/app.js)
         // is preserved rather than dropped.
         $anchors = [];
-        $claimedby = [];
+        $claimants = [];
         foreach ($resources as $resourceitem) {
             if (
                 $resourceitem->kind !== item::KIND_FILE || $resourceitem->bundlemember
@@ -1763,20 +1770,21 @@ class manifest_parser {
             }
             $index = count($anchors);
             $anchors[$index] = ['item' => $resourceitem, 'html' => $primary, 'sources' => $sources];
+            // Record every anchor that references a path, not just the first, so a
+            // resource shared by two exercises feeds both their bundles.
             foreach (array_keys($sources) as $source) {
-                if (!isset($claimedby[$source])) {
-                    $claimedby[$source] = $index;
-                }
+                $claimants[$source][] = $index;
             }
         }
         if (empty($anchors)) {
             return;
         }
         // Phase 2: a standalone resource whose payload an anchor claimed has all
-        // of its files folded into that anchor — so a sibling file the script
-        // pulls in at runtime (e.g. a fetched questions.json) comes along too —
-        // and is marked for deferred suppression so the orphan pass can later
-        // drop it, but only if it was not also placed in the course itself.
+        // of its files folded into every anchor that references it — so a sibling
+        // file the script pulls in at runtime (e.g. a fetched questions.json)
+        // comes along too, into each exercise that shares the resource — and is
+        // marked for deferred suppression so the orphan pass can later drop it,
+        // but only if it was not also placed in the course itself.
         foreach ($resources as $resourceitem) {
             if (
                 !empty($resourceitem->bundleassets) || $resourceitem->bundlemember
@@ -1785,31 +1793,51 @@ class manifest_parser {
                 continue;
             }
             $primary = $this->primary_path($resourceitem);
-            if ($primary === '' || !isset($claimedby[$primary])) {
+            if ($primary === '' || empty($claimants[$primary])) {
                 continue;
             }
-            $sources = &$anchors[$claimedby[$primary]]['sources'];
-            foreach ($this->resource_paths($resourceitem) as $path) {
-                if (!isset($sources[$path]) && $this->resolve_within($path) !== null) {
-                    $sources[$path] = true;
+            $owned = $this->resource_paths($resourceitem);
+            foreach (array_unique($claimants[$primary]) as $index) {
+                $sources = &$anchors[$index]['sources'];
+                foreach ($owned as $path) {
+                    if (!isset($sources[$path]) && $this->resolve_within($path) !== null) {
+                        $sources[$path] = true;
+                    }
                 }
+                unset($sources);
             }
-            unset($sources);
             $resourceitem->htmlbundlemember = true;
         }
         // Phase 3: rebase each bundle's filearea to the common ancestor folder of
         // the HTML and its assets, so a parent-directory reference still resolves
-        // when the resource is served, and record the assets (plus the HTML's own
-        // filearea path) on the anchor for file_builder.
+        // when the resource is served, record the assets (plus the HTML's own
+        // filearea path) on the anchor, and pin the HTML as the resource's main
+        // payload for file_builder.
         foreach ($anchors as $anchor) {
+            $html = $anchor['html'];
             $paths = array_keys($anchor['sources']);
-            $ancestor = $this->common_ancestor(array_merge([$anchor['html']], $paths));
+            $ancestor = $this->common_ancestor(array_merge([$html], $paths));
             $assets = [];
             foreach ($paths as $source) {
                 $assets[] = ['source' => $source, 'relpath' => $this->strip_prefix($ancestor, $source)];
             }
-            $anchor['item']->bundleassets = $assets;
-            $anchor['item']->bundlehtmlpath = $this->strip_prefix($ancestor, $anchor['html']);
+            $item = $anchor['item'];
+            $item->bundleassets = $assets;
+            $item->bundlehtmlpath = $this->strip_prefix($ancestor, $html);
+            // The file builder reads files[] before href, so a resource that
+            // lists an asset ahead of the HTML would otherwise serve that asset's
+            // bytes under the HTML's name. Mirror fold_lesson_bundles(): make href
+            // the HTML and bring it to the front of the file list.
+            $item->href = $html;
+            if (!empty($item->files)) {
+                $reordered = [$html];
+                foreach ($item->files as $file) {
+                    if (strcasecmp($file, $html) !== 0) {
+                        $reordered[] = $file;
+                    }
+                }
+                $item->files = $reordered;
+            }
         }
     }
 

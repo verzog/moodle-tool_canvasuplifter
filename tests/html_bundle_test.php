@@ -242,4 +242,124 @@ final class html_bundle_test extends \advanced_testcase {
             '/shared/data/config.json',
         ], $paths);
     }
+
+    /**
+     * Return the sorted filearea paths of a resource's content area.
+     *
+     * @param int $resourceid The mod_resource instance id.
+     * @return array Sorted '/path/name' strings.
+     */
+    private function resource_filearea_paths(int $resourceid): array {
+        $cm = get_coursemodule_from_instance('resource', $resourceid);
+        $context = \context_module::instance($cm->id);
+        $fs = get_file_storage();
+        $paths = [];
+        foreach ($fs->get_area_files($context->id, 'mod_resource', 'content', 0, 'id', false) as $f) {
+            $paths[] = $f->get_filepath() . $f->get_filename();
+        }
+        sort($paths);
+        return $paths;
+    }
+
+    /**
+     * An asset resource shared by two exercises (its runtime-fetched data file
+     * owned alongside the script) is folded into both bundles, not just the
+     * first one to claim it.
+     *
+     * @return void
+     */
+    public function test_shared_asset_resource_folds_into_every_bundle(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/resourcelib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/ex1', 0777, true);
+        mkdir($dir . '/ex2', 0777, true);
+        mkdir($dir . '/shared/data', 0777, true);
+        $page = fn(string $t) => '<!DOCTYPE html><html><head><title>' . $t . '</title>'
+            . '<script src="../shared/app.js"></script></head><body></body></html>';
+        file_put_contents($dir . '/ex1/a.html', $page('Exercise One'));
+        file_put_contents($dir . '/ex2/b.html', $page('Exercise Two'));
+        file_put_contents($dir . '/shared/app.js', "fetch('data/config.json');");
+        file_put_contents($dir . '/shared/data/config.json', '{"ok":true}');
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i1" identifierref="res_ex1"><title>Exercise One</title></item>'
+            . '<item identifier="i2" identifierref="res_ex2"><title>Exercise Two</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource type="webcontent" identifier="res_ex1" href="ex1/a.html"><file href="ex1/a.html"/></resource>'
+            . '<resource type="webcontent" identifier="res_ex2" href="ex2/b.html"><file href="ex2/b.html"/></resource>'
+            . '<resource type="webcontent" identifier="r_app" href="shared/app.js">'
+            . '<file href="shared/app.js"/><file href="shared/data/config.json"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $category = $this->getDataGenerator()->create_category();
+        (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $this->assertEquals(2, $DB->count_records('resource'));
+        foreach (['Exercise One', 'Exercise Two'] as $name) {
+            $resource = $DB->get_record('resource', ['name' => $name]);
+            $this->assertNotEmpty($resource, "$name should build");
+            $this->assertContains(
+                '/shared/data/config.json',
+                $this->resource_filearea_paths((int) $resource->id),
+                "$name must carry the shared resource's runtime-fetched data file"
+            );
+        }
+    }
+
+    /**
+     * When the HTML resource lists an asset <file> before the HTML href, the
+     * embedded resource still serves the HTML as its main file, not the asset's
+     * bytes under the HTML's name.
+     *
+     * @return void
+     */
+    public function test_html_pinned_as_main_file_despite_file_order(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/resourcelib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/page', 0777, true);
+        $htmlbody = '<!DOCTYPE html><html><head><title>Ordered</title>'
+            . '<link rel="stylesheet" href="style.css"/></head><body>MARKER</body></html>';
+        file_put_contents($dir . '/page/index.html', $htmlbody);
+        file_put_contents($dir . '/page/style.css', '.x{color:red}');
+        // The exporter lists the stylesheet <file> ahead of the HTML href.
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_ex" identifierref="res_index"><title>Ordered Exercise</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource type="webcontent" identifier="res_index" href="page/index.html">'
+            . '<file href="page/style.css"/><file href="page/index.html"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $category = $this->getDataGenerator()->create_category();
+        (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $resource = $DB->get_record('resource', ['name' => 'Ordered Exercise']);
+        $this->assertNotEmpty($resource);
+        $cm = get_coursemodule_from_instance('resource', $resource->id);
+        $context = \context_module::instance($cm->id);
+        $fs = get_file_storage();
+        $html = $fs->get_file($context->id, 'mod_resource', 'content', 0, '/', 'index.html');
+        $this->assertNotEmpty($html, 'the HTML must be stored under its own name');
+        $this->assertStringContainsString(
+            'MARKER',
+            $html->get_content(),
+            'index.html must hold the HTML payload, not the stylesheet bytes'
+        );
+    }
 }

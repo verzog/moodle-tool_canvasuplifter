@@ -18,7 +18,9 @@ quickly.
   `../shared/app.js` still resolves). Every file owned by an absorbed resource is
   folded in (so a script's runtime-`fetch()` data file comes too), and an asset
   that is also explicitly placed in the course still builds as its own activity
-  rather than being hidden.
+  rather than being hidden. A resource shared by several exercises folds into each
+  of their bundles, and the HTML is pinned as the embedded resource's main file
+  regardless of the order the manifest lists its files in.
 
 ## [0.39.9] - 2026-06-26
 
