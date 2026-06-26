@@ -189,6 +189,23 @@ class qti_parser {
                 return qti_question::TYPE_ESSAY;
             case 'matching_question':
                 return qti_question::TYPE_MATCHING;
+            case 'multiple_dropdowns_question':
+            case 'fill_in_multiple_blanks_question':
+                // Inline dropdowns/blanks: each blank is a response_lid with its
+                // own render_choice and a scored answer. Two or more blanks become
+                // a Moodle match (one stem/answer pair per blank) — but only when
+                // every blank offers the same choice set, because Moodle match has
+                // a single global answer pool; with per-blank choices one blank's
+                // options would wrongly be offered for another, so leave it
+                // unsupported. A single blank is one dropdown and falls through to
+                // the cardinality fallback (multiple choice); a free-text blank has
+                // no response_lid and falls through to unsupported.
+                if ($presentation !== null && $presentation->getElementsByTagNameNS('*', 'response_lid')->length >= 2) {
+                    return $this->blanks_share_choices($presentation) && $this->blanks_have_stems($presentation)
+                        ? qti_question::TYPE_MATCHING
+                        : qti_question::TYPE_UNSUPPORTED;
+                }
+                break;
         }
         // Fall back on the response cardinality for unprofiled multiple choice.
         $lid = $presentation !== null ? $this->descendant($presentation, 'response_lid') : null;
@@ -395,8 +412,10 @@ class qti_parser {
         $correct = $this->matching_correct_map($item);
         $pool = [];
         $usedanswers = [];
-        foreach ($presentation->childNodes as $lid) {
-            if (!($lid instanceof DOMElement) || $lid->localName !== 'response_lid') {
+        // Traverse response_lid descendants (not just direct children) so blanks
+        // wrapped in a <flow> are filled — matching the node set map_type counts.
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if (!($lid instanceof DOMElement)) {
                 continue;
             }
             $stemmaterial = $this->first_child_element($lid, 'material');
@@ -451,6 +470,60 @@ class qti_parser {
             }
         }
         return $map;
+    }
+
+    /**
+     * Whether every dropdown/blank in the presentation offers the same set of
+     * choices. Moodle's match type has one global answer pool, so converting an
+     * inline-dropdown item to a match is only faithful when the blanks share a
+     * choice set; otherwise one blank's options would be offered for another.
+     * Compares the choice texts order-independently (Canvas gives the same option
+     * a different ident in each blank, so idents can't be compared).
+     *
+     * @param DOMElement $presentation The presentation element.
+     * @return bool
+     */
+    protected function blanks_share_choices(DOMElement $presentation): bool {
+        $reference = null;
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if (!($lid instanceof DOMElement)) {
+                continue;
+            }
+            $choices = array_map(fn($t) => $this->plain_answer($t), array_values($this->choice_label_map($lid)));
+            sort($choices);
+            if ($reference === null) {
+                $reference = $choices;
+            } else if ($choices !== $reference) {
+                return false;
+            }
+        }
+        return $reference !== null;
+    }
+
+    /**
+     * Whether every dropdown/blank carries its own stem text (a direct <material>
+     * child of the response_lid). Canvas authors some inline dropdowns with only
+     * the render_choice in each response_lid and the blank labelled by a bracketed
+     * reference word in the prompt; those have no per-blank stem, so a Moodle match
+     * would import empty stems and be dropped. Such items are left unsupported
+     * rather than converted to a broken match.
+     *
+     * @param DOMElement $presentation The presentation element.
+     * @return bool
+     */
+    protected function blanks_have_stems(DOMElement $presentation): bool {
+        $seen = false;
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if (!($lid instanceof DOMElement)) {
+                continue;
+            }
+            $seen = true;
+            $material = $this->first_child_element($lid, 'material');
+            if ($material === null || trim($this->mattext($material)) === '') {
+                return false;
+            }
+        }
+        return $seen;
     }
 
     /**
@@ -588,18 +661,31 @@ class qti_parser {
     }
 
     /**
-     * The prompt text: the first material that is a direct child of presentation.
+     * The prompt text: every material that belongs to the question prompt rather
+     * than an answer. It is normally a single direct child of presentation, but
+     * Canvas may wrap the whole presentation in a <flow> and interleave several
+     * prompt fragments around the dropdown blanks, so descend through wrappers and
+     * join all materials that are not inside a response_lid or response_str (those
+     * carry option/blank text, not the prompt), in document order.
      *
      * @param DOMElement $presentation The presentation element.
      * @return string HTML.
      */
     protected function prompt_text(DOMElement $presentation): string {
-        foreach ($presentation->childNodes as $child) {
-            if ($child instanceof DOMElement && $child->localName === 'material') {
-                return $this->mattext($child);
+        $parts = [];
+        foreach ($presentation->getElementsByTagNameNS('*', 'material') as $material) {
+            if (!($material instanceof DOMElement)) {
+                continue;
+            }
+            if ($this->within($material, 'response_lid') || $this->within($material, 'response_str')) {
+                continue;
+            }
+            $text = $this->mattext($material);
+            if (trim($text) !== '') {
+                $parts[] = $text;
             }
         }
-        return '';
+        return implode("\n", $parts);
     }
 
     /**

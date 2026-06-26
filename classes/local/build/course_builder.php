@@ -280,6 +280,7 @@ class course_builder {
         $this->rewrite_forum_links((int) $course->id, $urlmap);
         $this->rewrite_assign_links((int) $course->id, $urlmap);
         $this->rewrite_quiz_links((int) $course->id, $urlmap);
+        $this->rewrite_question_links($this->imported_question_ids($builders), $urlmap);
 
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
@@ -983,6 +984,86 @@ class course_builder {
             $newintro = $rewriter->rewrite_internal_links((string) $quiz->intro, $urlmap);
             if ($newintro !== $quiz->intro) {
                 $DB->set_field('quiz', 'intro', $newintro, ['id' => $quiz->id]);
+            }
+        }
+    }
+
+    /**
+     * Gather the ids of every question imported by the quiz and question-bank
+     * builders during this build.
+     *
+     * @param array $builders The per-kind builder instances.
+     * @return array Imported question ids.
+     */
+    private function imported_question_ids(array $builders): array {
+        $ids = [];
+        foreach ([item::KIND_QUIZ, item::KIND_QUESTIONBANK] as $kind) {
+            $builder = $builders[$kind] ?? null;
+            if ($builder instanceof quiz_builder || $builder instanceof questionbank_builder) {
+                $ids = array_merge($ids, $builder->importedquestionids);
+            }
+        }
+        return $ids;
+    }
+
+    /**
+     * Rewrite internal Canvas links ($WIKI_REFERENCE$/$CANVAS_OBJECT_REFERENCE$)
+     * inside imported question text. Questions are created in the first pass,
+     * before every link target exists, so their HTML carries the placeholders
+     * verbatim; resolve them here once the URL map is complete, mirroring the
+     * page, forum, assignment and quiz-intro passes. Only the questions this
+     * build imported are touched, and only their HTML-bearing fields: the prompt,
+     * the general feedback, each answer's text and feedback, and the row stems of
+     * match questions (which carry the dropdown/blank conversions).
+     *
+     * @param array $questionids Ids of the imported questions.
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_question_links(array $questionids, array $urlmap): void {
+        global $DB;
+        if (empty($questionids) || empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        [$insql, $params] = $DB->get_in_or_equal(array_values(array_unique($questionids)), SQL_PARAMS_NAMED);
+
+        $this->rewrite_link_fields($rewriter, $urlmap, 'question', "id $insql", $params, ['questiontext', 'generalfeedback']);
+        $this->rewrite_link_fields($rewriter, $urlmap, 'question_answers', "question $insql", $params, ['answer', 'feedback']);
+        // Match row stems (qtype_match_subquestions.questiontext) — the XML writer
+        // emits them as <subquestion>, so the prompt/answer pass above misses them.
+        // The answertext column is plain choice text and carries no links.
+        $this->rewrite_link_fields($rewriter, $urlmap, 'qtype_match_subquestions', "questionid $insql", $params, ['questiontext']);
+    }
+
+    /**
+     * Rewrite internal Canvas links in the given HTML fields of the rows a select
+     * matches, writing back only the fields that change.
+     *
+     * @param link_rewriter $rewriter The link rewriter.
+     * @param array $urlmap Canvas reference key => URL.
+     * @param string $table The table to update.
+     * @param string $select The WHERE clause (using the named params).
+     * @param array $params Named SQL parameters for the select.
+     * @param array $fields The HTML field names to rewrite.
+     * @return void
+     */
+    private function rewrite_link_fields(
+        link_rewriter $rewriter,
+        array $urlmap,
+        string $table,
+        string $select,
+        array $params,
+        array $fields
+    ): void {
+        global $DB;
+        $columns = 'id, ' . implode(', ', $fields);
+        foreach ($DB->get_records_select($table, $select, $params, '', $columns) as $row) {
+            foreach ($fields as $field) {
+                $new = $rewriter->rewrite_internal_links((string) $row->$field, $urlmap);
+                if ($new !== $row->$field) {
+                    $DB->set_field($table, $field, $new, ['id' => $row->id]);
+                }
             }
         }
     }

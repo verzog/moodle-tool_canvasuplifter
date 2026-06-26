@@ -47,6 +47,9 @@ class quiz_builder {
     /** @var int How many quizzes were built as empty hidden placeholders (no importable questions). */
     public int $placeholdercount = 0;
 
+    /** @var int[] Ids of every question imported across all build() calls, for the link-rewrite pass. */
+    public array $importedquestionids = [];
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -182,7 +185,7 @@ class quiz_builder {
             return $cmid;
         }
 
-        $questionids = (new question_importer())->import($course, $context, $supported, $imagedir);
+        $questionids = (new question_importer())->import($course, $context, $supported, $imagedir, $this->packageroot);
         if (empty($questionids)) {
             // Nothing imported despite some questions looking convertible; don't
             // leave an empty quiz behind.
@@ -193,6 +196,11 @@ class quiz_builder {
             );
             return null;
         }
+
+        // Record the imported questions so course_builder can resolve any
+        // $WIKI_REFERENCE$/$CANVAS_OBJECT_REFERENCE$ links in their text once
+        // every activity exists (the URL map is incomplete during this build).
+        $this->importedquestionids = array_merge($this->importedquestionids, array_map('intval', $questionids));
 
         $quiz = $DB->get_record('quiz', ['id' => $created->instance], '*', MUST_EXIST);
         $quiz->cmid = $cmid;

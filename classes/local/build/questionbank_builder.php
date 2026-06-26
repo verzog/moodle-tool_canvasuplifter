@@ -38,6 +38,9 @@ class questionbank_builder {
     /** @var string|null Why the last build() returned null, for the skip report. */
     public ?string $skipreason = null;
 
+    /** @var int[] Ids of every question imported across all build() calls, for the link-rewrite pass. */
+    public array $importedquestionids = [];
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -102,7 +105,7 @@ class questionbank_builder {
         $cmid = (int) $created->coursemodule;
 
         $context = \context_module::instance($cmid);
-        $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath));
+        $questionids = (new question_importer())->import($course, $context, $supported, dirname($qtipath), $this->packageroot);
         if (empty($questionids)) {
             // Nothing imported despite some questions looking convertible; don't
             // leave an empty bank behind.
@@ -113,6 +116,9 @@ class questionbank_builder {
             );
             return null;
         }
+        // Record the imported questions so course_builder can resolve any
+        // internal Canvas links in their text once every activity exists.
+        $this->importedquestionids = array_merge($this->importedquestionids, array_map('intval', $questionids));
         return $cmid;
     }
 

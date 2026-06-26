@@ -171,6 +171,54 @@ final class question_xml_writer_test extends \advanced_testcase {
     }
 
     /**
+     * A Canvas $IMS-CC-FILEBASE$ token resolves against the package root — both
+     * directly and via the web_resources/ location Canvas commonly uses — and the
+     * referenced image is inlined; without a package root the token is untouched.
+     *
+     * @return void
+     */
+    public function test_embeds_filebase_token_images(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        mkdir($root . '/web_resources/assessment_questions', 0777, true);
+        $png = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+        );
+        file_put_contents($root . '/web_resources/assessment_questions/fig.jpg', $png);
+        // A second image that sits at the package root (no web_resources prefix).
+        file_put_contents($root . '/diagram.png', 'PNGBYTES');
+
+        $q = $this->choice();
+        $q->questiontext = '<p>See <img src="$IMS-CC-FILEBASE$/assessment_questions/fig.jpg" alt="x">'
+            . ' and <img src="$IMS-CC-FILEBASE$/diagram.png"></p>';
+
+        // Image dir is the (question-local) folder; the token resolves via filebase.
+        $imagedir = make_request_directory();
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $imagedir, $root);
+
+        // Resolved through the web_resources/ fallback and inlined.
+        $this->assertStringContainsString('@@PLUGINFILE@@/web_resources/assessment_questions/fig.jpg', $xml);
+        $this->assertStringContainsString(
+            '<file name="fig.jpg" path="/web_resources/assessment_questions/" encoding="base64">',
+            $xml
+        );
+        $this->assertStringContainsString(base64_encode($png), $xml);
+        // Resolved directly at the package root.
+        $this->assertStringContainsString('@@PLUGINFILE@@/diagram.png', $xml);
+        $this->assertStringContainsString(base64_encode('PNGBYTES'), $xml);
+        // The raw token never survives into the output.
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $xml);
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml), 'output should be well-formed XML');
+
+        // Without a package root, the token is left untouched (no crash, no embed).
+        $xmlnobase = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $imagedir);
+        $this->assertStringContainsString('IMS-CC-FILEBASE', $xmlnobase);
+        $this->assertStringNotContainsString('@@PLUGINFILE@@/web_resources', $xmlnobase);
+    }
+
+    /**
      * Bundled video/audio is inlined like images; external embeds and in-page
      * anchors are left untouched.
      *
