@@ -93,6 +93,35 @@ class file_builder {
             'sortorder' => 1,
         ], $sourcepath);
 
+        // A self-contained HTML file (an interactive exercise) folds its assets
+        // (js/css/images) in alongside it, each at its path relative to the HTML
+        // so the page's own relative links resolve, and displays embedded so it
+        // renders inline and works. The HTML keeps sortorder 1 as the main file.
+        $display = RESOURCELIB_DISPLAY_AUTO;
+        foreach ($modelitem->bundleassets as $asset) {
+            $assetabs = safe_path::within($this->packageroot, (string) ($asset['source'] ?? ''));
+            if ($assetabs === null || !is_file($assetabs) || !is_readable($assetabs)) {
+                continue;
+            }
+            $relpath = ltrim((string) ($asset['relpath'] ?? ''), '/');
+            $slash = strrpos($relpath, '/');
+            $filepath = $slash === false ? '/' : '/' . substr($relpath, 0, $slash + 1);
+            $filename = $slash === false ? $relpath : substr($relpath, $slash + 1);
+            if ($filename === '') {
+                continue;
+            }
+            $fs->create_file_from_pathname([
+                'contextid' => $usercontext->id,
+                'component' => 'user',
+                'filearea' => 'draft',
+                'itemid' => $draftitemid,
+                'filepath' => clean_param($filepath, PARAM_PATH),
+                'filename' => clean_param($filename, PARAM_FILE),
+                'sortorder' => 0,
+            ], $assetabs);
+            $display = RESOURCELIB_DISPLAY_EMBED;
+        }
+
         $moduleinfo = (object) [
             'modulename' => 'resource',
             'module' => $module->id,
@@ -103,7 +132,7 @@ class file_builder {
             'intro' => '',
             'introformat' => FORMAT_HTML,
             'files' => $draftitemid,
-            'display' => RESOURCELIB_DISPLAY_AUTO,
+            'display' => $display,
             'displayoptions' => serialize([
                 'printintro' => 0,
                 'printlastmodified' => 1,

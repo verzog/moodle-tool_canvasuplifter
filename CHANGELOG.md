@@ -5,6 +5,21 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.39.10] - 2026-06-26
+
+- Self-contained interactive HTML exercises (an HTML file plus a folder of
+  js/css/image assets, each exported as its own webcontent resource) now build
+  as a single embedded `mod_resource` with the assets folded in, so the exercise
+  renders inline and works (scripts intact) instead of arriving as a broken HTML
+  file plus dozens of standalone asset activities. Folding now follows assets
+  referenced by a stylesheet's `url()` and `@import` (recursively), `srcset`
+  responsive images, inline `<style>`/`style=""` `url()` references, and
+  parent-directory references (the filearea is rebased to the common ancestor so
+  `../shared/app.js` still resolves). Every file owned by an absorbed resource is
+  folded in (so a script's runtime-`fetch()` data file comes too), and an asset
+  that is also explicitly placed in the course still builds as its own activity
+  rather than being hidden.
+
 ## [0.39.9] - 2026-06-26
 
 - Drop Blackboard's `web_content<NNN>.log` export build artifact instead of

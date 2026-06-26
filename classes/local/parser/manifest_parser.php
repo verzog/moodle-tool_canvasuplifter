@@ -102,6 +102,12 @@ class manifest_parser {
         // don't all surface as standalone mod_resource activities.
         $this->fold_lesson_bundles($resources);
 
+        // Fold a self-contained HTML file's referenced assets (js/css/images,
+        // each often a separate webcontent resource) into the file itself, so an
+        // interactive exercise builds as one inline resource that works, rather
+        // than a broken HTML plus dozens of standalone asset activities.
+        $this->fold_html_asset_bundles($resources);
+
         // Derive titles up front so module_meta clones inherit the recovered name
         // when their module item leaves the title blank, instead of falling back
         // to file slugs. The manifest-organisation path also benefits because
@@ -1696,6 +1702,216 @@ class manifest_parser {
             return;
         }
         $assets[$relpath] = ['source' => $assetpath, 'relpath' => $relpath];
+    }
+
+    /**
+     * Fold each self-contained HTML file's referenced assets into the file.
+     * Canvas (and similar) often export an interactive HTML exercise as one HTML
+     * file plus a folder of js/css/image assets, each its own webcontent
+     * resource. Left alone the HTML imports as a lone (broken) file resource and
+     * every asset as a separate activity. This pass scans each HTML KIND_FILE
+     * resource for the local assets it references (and assets its stylesheets
+     * reference), records them on the HTML item so file_builder imports them
+     * alongside it and displays it embedded, and suppresses the now-absorbed
+     * standalone asset resources.
+     *
+     * @param array $resources Resource items keyed by identifier (modified in place).
+     * @return void
+     */
+    private function fold_html_asset_bundles(array &$resources): void {
+        $claimed = [];
+        foreach ($resources as $resourceitem) {
+            if ($resourceitem->kind !== item::KIND_FILE || $resourceitem->bundlemember || !empty($resourceitem->bundleassets)) {
+                continue;
+            }
+            $primary = $this->primary_path($resourceitem);
+            if ($primary === '' || !preg_match('/\.html?$/i', $primary)) {
+                continue;
+            }
+            $absolute = $this->resolve_within($primary);
+            if ($absolute === null) {
+                continue;
+            }
+            $assets = $this->collect_html_assets($primary, (string) @file_get_contents($absolute));
+            if (empty($assets)) {
+                continue;
+            }
+            $resourceitem->bundleassets = array_values($assets);
+            foreach ($assets as $asset) {
+                $claimed[$asset['source']] = true;
+            }
+        }
+        if (empty($claimed)) {
+            return;
+        }
+        // Suppress the standalone resources whose payload was folded into a
+        // bundle so they no longer surface as their own activities; never
+        // suppress a bundle anchor (a resource that itself folded assets).
+        foreach ($resources as $resourceitem) {
+            if ($resourceitem->bundlemember || !empty($resourceitem->bundleassets)) {
+                continue;
+            }
+            $primary = $this->primary_path($resourceitem);
+            if ($primary !== '' && isset($claimed[$primary])) {
+                $resourceitem->kind = item::KIND_UNKNOWN;
+                $resourceitem->bundlemember = true;
+            }
+        }
+    }
+
+    /**
+     * Collect the package files a self-contained HTML file pulls in: assets it
+     * references directly (script/link/img/media) plus assets referenced by
+     * url() in any stylesheet it loads. Each entry maps a filearea-relative path
+     * (relative to the HTML, so the HTML's own relative links resolve once it is
+     * served) to the package file backing it.
+     *
+     * @param string $htmlpath Package-relative path of the HTML file.
+     * @param string $html The HTML content.
+     * @return array Asset entries keyed by relpath: ['source' => path, 'relpath' => path].
+     */
+    private function collect_html_assets(string $htmlpath, string $html): array {
+        $folder = $this->parent_dir($htmlpath);
+        $assets = [];
+        foreach ($this->html_asset_refs($html) as $ref) {
+            $this->record_referenced_asset($assets, $folder, '', $ref);
+        }
+        // A stylesheet may pull in its own url() assets (background images, fonts).
+        foreach (array_values($assets) as $asset) {
+            if (!preg_match('/\.css$/i', $asset['relpath'])) {
+                continue;
+            }
+            $cssabs = $this->resolve_within($asset['source']);
+            if ($cssabs === null) {
+                continue;
+            }
+            $cssdir = $this->parent_dir($asset['relpath']);
+            foreach ($this->css_asset_refs((string) @file_get_contents($cssabs)) as $ref) {
+                $this->record_referenced_asset($assets, $folder, $cssdir, $ref);
+            }
+        }
+        return $assets;
+    }
+
+    /**
+     * Record one referenced asset if it is a foldable local file. The reference
+     * is resolved relative to $within (a path relative to the HTML folder, e.g.
+     * the folder of a stylesheet); the resulting filearea path must stay at or
+     * below the HTML folder and back a real package file. External URLs, data
+     * URIs, absolute paths, in-page anchors and HTML references (links, not
+     * embeds) are ignored.
+     *
+     * @param array $assets Collected assets keyed by relpath (modified in place).
+     * @param string $htmlfolder Package folder of the HTML file ('' at root).
+     * @param string $within Path (relative to the HTML folder) the ref resolves against.
+     * @param string $ref The raw reference value.
+     * @return void
+     */
+    private function record_referenced_asset(array &$assets, string $htmlfolder, string $within, string $ref): void {
+        $ref = (string) preg_replace('/[?#].*$/', '', trim($ref));
+        if ($ref === '' || preg_match('~^([a-z][a-z0-9+.\-]*:|//|/|#)~i', $ref)) {
+            return;
+        }
+        $relpath = $this->collapse_dots(($within === '' ? '' : $within . '/') . rawurldecode($ref));
+        if ($relpath === null || $relpath === '' || preg_match('/\.html?$/i', $relpath)) {
+            return;
+        }
+        if (isset($assets[$relpath])) {
+            return;
+        }
+        $source = $htmlfolder === '' ? $relpath : $htmlfolder . '/' . $relpath;
+        if ($this->resolve_within($source) === null) {
+            return;
+        }
+        $assets[$relpath] = ['source' => $source, 'relpath' => $relpath];
+    }
+
+    /**
+     * Extract embedded-asset references from HTML: script src, stylesheet/link
+     * href, and media src/poster/data. Navigational <a href> links are
+     * deliberately excluded — they are links to follow, not assets to inline.
+     *
+     * @param string $html The HTML.
+     * @return array Raw reference strings.
+     */
+    private function html_asset_refs(string $html): array {
+        if (trim($html) === '') {
+            return [];
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $dom->loadHTML(
+            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">' . $html,
+            LIBXML_NONET
+        );
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        $refs = [];
+        $tags = ['script' => 'src', 'img' => 'src', 'source' => 'src', 'track' => 'src',
+            'audio' => 'src', 'video' => 'src', 'embed' => 'src', 'object' => 'data', 'link' => 'href'];
+        foreach ($tags as $tag => $attr) {
+            foreach ($dom->getElementsByTagName($tag) as $node) {
+                if (!($node instanceof DOMElement)) {
+                    continue;
+                }
+                if ($node->getAttribute($attr) !== '') {
+                    $refs[] = $node->getAttribute($attr);
+                }
+                if ($tag === 'video' && $node->getAttribute('poster') !== '') {
+                    $refs[] = $node->getAttribute('poster');
+                }
+            }
+        }
+        return $refs;
+    }
+
+    /**
+     * Extract url(...) references from a stylesheet.
+     *
+     * @param string $css The CSS.
+     * @return array Raw reference strings.
+     */
+    private function css_asset_refs(string $css): array {
+        if (!preg_match_all('/url\(\s*[\'"]?([^\'")]+)[\'"]?\s*\)/i', $css, $matches)) {
+            return [];
+        }
+        return $matches[1];
+    }
+
+    /**
+     * Collapse '.' and '..' segments in a relative path, returning null if it
+     * escapes above its root (which cannot be represented in a filearea).
+     *
+     * @param string $path The relative path.
+     * @return string|null The normalised path, or null.
+     */
+    private function collapse_dots(string $path): ?string {
+        $segments = [];
+        foreach (explode('/', str_replace('\\', '/', $path)) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+            if ($segment === '..') {
+                if (empty($segments)) {
+                    return null;
+                }
+                array_pop($segments);
+                continue;
+            }
+            $segments[] = $segment;
+        }
+        return implode('/', $segments);
+    }
+
+    /**
+     * The parent directory of a package-relative path ('' when at the root).
+     *
+     * @param string $path The path.
+     * @return string
+     */
+    private function parent_dir(string $path): string {
+        $pos = strrpos($path, '/');
+        return $pos === false ? '' : substr($path, 0, $pos);
     }
 
     /**
