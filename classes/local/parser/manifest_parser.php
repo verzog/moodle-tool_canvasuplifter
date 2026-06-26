@@ -322,7 +322,15 @@ class manifest_parser {
             // the report can flag or skip-and-explain them rather than drop them.
             $ismodulenode = $materialtype === 'contentmodule'
                 && $href === '' && empty($modelitem->files) && $modelitem->inlinexml === '';
-            if ($ismodulenode || in_array($materialtype, self::D2L_METADATA_MATERIAL_TYPES, true)) {
+            // Blackboard exports its build log as a web_content<NNN>.log resource
+            // (a junk artifact, never course content); drop it rather than import
+            // it as a file. Scoped to that exact naming *and* the instructor-role
+            // LOM metadata Blackboard stamps on the artifact, so a course that
+            // legitimately publishes a .log (e.g. access.log) — or even a
+            // learner-facing file that happens to be named web_content00001.log —
+            // is left alone.
+            $islogartifact = $this->is_build_log_artifact($resource, $href, $modelitem->files);
+            if ($ismodulenode || $islogartifact || in_array($materialtype, self::D2L_METADATA_MATERIAL_TYPES, true)) {
                 $modelitem->kind = item::KIND_UNKNOWN;
                 $modelitem->suppressed = true;
             } else {
@@ -340,6 +348,66 @@ class manifest_parser {
             $items[$identifier] = $modelitem;
         }
         return $items;
+    }
+
+    /**
+     * Whether a resource is Blackboard's export build log: its href and every
+     * <file> it carries are named web_content<NNN>.log, the artifact Blackboard
+     * writes alongside real content, *and* it carries the instructor-role LOM
+     * metadata Blackboard stamps on that artifact. Such a resource is suppressed
+     * rather than imported as a junk file. Requiring both signals keeps the drop
+     * narrow: a course that legitimately ships a .log as material (e.g.
+     * access.log), or even a learner-facing file that happens to be named
+     * web_content00001.log, is left alone because it carries no such metadata. A
+     * resource with no files is not treated as an artifact.
+     *
+     * @param DOMElement $resource The <resource> element.
+     * @param string $href The resource href, if any.
+     * @param array $files The resource's file paths.
+     * @return bool
+     */
+    private function is_build_log_artifact(DOMElement $resource, string $href, array $files): bool {
+        $paths = $files;
+        if ($href !== '') {
+            $paths[] = $href;
+        }
+        $paths = array_filter($paths, fn($p) => (string) $p !== '');
+        if (empty($paths)) {
+            return false;
+        }
+        foreach ($paths as $path) {
+            // Match only Blackboard's numbered build log (web_content<NNN>.log),
+            // not any .log a course might legitimately publish as material.
+            if (!preg_match('~(^|/)web_content\d+\.log$~i', (string) $path)) {
+                return false;
+            }
+        }
+        // The basename alone is not enough — require Blackboard's instructor-role
+        // metadata so a real learner resource named that way is never dropped.
+        return $this->has_instructor_role($resource);
+    }
+
+    /**
+     * Whether a resource carries LOM educational metadata marking it for the
+     * instructor role (<intendedEndUserRole><value>Instructor</value></…>).
+     * Blackboard stamps its build-log artifact this way; learner content does
+     * not. Matched namespace-agnostically by local name so any LOM prefix works.
+     *
+     * @param DOMElement $resource The <resource> element.
+     * @return bool
+     */
+    private function has_instructor_role(DOMElement $resource): bool {
+        foreach ($resource->getElementsByTagNameNS('*', 'intendedEndUserRole') as $role) {
+            if (!($role instanceof DOMElement)) {
+                continue;
+            }
+            foreach ($role->getElementsByTagNameNS('*', 'value') as $value) {
+                if (strcasecmp(trim($value->textContent), 'Instructor') === 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
