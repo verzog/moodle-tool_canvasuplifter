@@ -36,7 +36,9 @@ final class blackboard_import_test extends \advanced_testcase {
      * Build a package shaped like a Blackboard CC 1.2 export: a module holding a
      * real content page and an external web link, plus an unreferenced
      * web_content*.log build-artifact resource (carrying instructor-role LOM
-     * metadata, as Blackboard writes it).
+     * metadata, as Blackboard writes it). It also ships two learner-facing logs
+     * that must survive: a course-authored access.log, and a debug log that
+     * happens to use the web_content<NNN>.log naming but lacks the metadata.
      *
      * @return string Path to the package root.
      */
@@ -49,6 +51,11 @@ final class blackboard_import_test extends \advanced_testcase {
         // A course-authored .log published as real material (must NOT be dropped).
         mkdir($dir . '/logs', 0777, true);
         file_put_contents($dir . '/logs/access.log', "127.0.0.1 - GET /\n");
+        // A learner-facing resource whose file happens to share the artifact's
+        // web_content<NNN>.log naming but carries no instructor-role metadata —
+        // it must be preserved, not dropped on the basename alone.
+        mkdir($dir . '/web_content09999', 0777, true);
+        file_put_contents($dir . '/web_content09999/web_content09999.log', "sample debug output\n");
         mkdir($dir . '/weblink00001', 0777, true);
         file_put_contents(
             $dir . '/weblink00001/weblink00001.xml',
@@ -67,6 +74,7 @@ final class blackboard_import_test extends \advanced_testcase {
           <item identifier="i_page" identifierref="res_page"><title>Lecture 1</title></item>
           <item identifier="i_link" identifierref="res_link"><title>Example link</title></item>
           <item identifier="i_alog" identifierref="res_accesslog"><title>Server access log</title></item>
+          <item identifier="i_dbg" identifierref="res_dbglog"><title>Sample debug output</title></item>
         </item>
       </item>
     </organization>
@@ -86,6 +94,9 @@ final class blackboard_import_test extends \advanced_testcase {
     </resource>
     <resource identifier="res_accesslog" type="webcontent" href="logs/access.log">
       <file href="logs/access.log"/>
+    </resource>
+    <resource identifier="res_dbglog" type="webcontent" href="web_content09999/web_content09999.log">
+      <file href="web_content09999/web_content09999.log"/>
     </resource>
   </resources>
 </manifest>
@@ -128,6 +139,14 @@ XML;
         $this->assertTrue(
             $DB->record_exists_select('resource', $DB->sql_like('name', '?'), ['%access%']),
             'a legitimately published .log must still import'
+        );
+
+        // A learner resource whose file is named web_content09999.log but which
+        // lacks the instructor-role metadata is NOT the build artifact, so the
+        // basename match alone must not drop it.
+        $this->assertTrue(
+            $DB->record_exists_select('resource', $DB->sql_like('name', '?'), ['%debug%']),
+            'a web_content<NNN>.log without instructor metadata must still import'
         );
 
         // Dropping the artifact is silent — it is not a skip or a warning.

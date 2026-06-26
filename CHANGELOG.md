@@ -5,6 +5,14 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.39.9] - 2026-06-26
+
+- Drop Blackboard's `web_content<NNN>.log` export build artifact instead of
+  importing it as a junk file resource — but only when it also carries the
+  instructor-role LOM metadata Blackboard stamps on that artifact, so a course
+  that legitimately publishes a log (even one named that way) is never dropped on
+  the basename alone.
+
 ## [0.39.6] - 2026-06-26
 
 - Ship the full, verbatim GNU GPL v3 licence text in `LICENSE` (was a stub that
