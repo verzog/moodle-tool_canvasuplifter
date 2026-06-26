@@ -46,6 +46,9 @@ final class blackboard_import_test extends \advanced_testcase {
         file_put_contents($dir . '/content00001/page.html', '<html><body><h1>Lecture 1</h1></body></html>');
         mkdir($dir . '/web_content00001', 0777, true);
         file_put_contents($dir . '/web_content00001/web_content00001.log', "export build log\n");
+        // A course-authored .log published as real material (must NOT be dropped).
+        mkdir($dir . '/logs', 0777, true);
+        file_put_contents($dir . '/logs/access.log', "127.0.0.1 - GET /\n");
         mkdir($dir . '/weblink00001', 0777, true);
         file_put_contents(
             $dir . '/weblink00001/weblink00001.xml',
@@ -63,6 +66,7 @@ final class blackboard_import_test extends \advanced_testcase {
         <item identifier="m1"><title>Module 1</title>
           <item identifier="i_page" identifierref="res_page"><title>Lecture 1</title></item>
           <item identifier="i_link" identifierref="res_link"><title>Example link</title></item>
+          <item identifier="i_alog" identifierref="res_accesslog"><title>Server access log</title></item>
         </item>
       </item>
     </organization>
@@ -79,6 +83,9 @@ final class blackboard_import_test extends \advanced_testcase {
         <lom:source>IMSGLC_CC_Rolesv1p2</lom:source><lom:value>Instructor</lom:value>
       </lom:intendedEndUserRole></lom:educational></lom:lom></metadata>
       <file href="web_content00001/web_content00001.log"/>
+    </resource>
+    <resource identifier="res_accesslog" type="webcontent" href="logs/access.log">
+      <file href="logs/access.log"/>
     </resource>
   </resources>
 </manifest>
@@ -115,6 +122,13 @@ XML;
         $haslog = $DB->record_exists_select('resource', $DB->sql_like('name', '?'), ['%web_content%'])
             || $DB->record_exists_select('page', $DB->sql_like('name', '?'), ['%web_content%']);
         $this->assertFalse($haslog, 'the .log build artifact must not be imported');
+
+        // A course-authored .log published as material (access.log) is NOT a
+        // build artifact, so it still imports as a file resource.
+        $this->assertTrue(
+            $DB->record_exists_select('resource', $DB->sql_like('name', '?'), ['%access%']),
+            'a legitimately published .log must still import'
+        );
 
         // Dropping the artifact is silent — it is not a skip or a warning.
         $joined = implode("\n", array_merge($report['skipreasons'], $report['warnings']));

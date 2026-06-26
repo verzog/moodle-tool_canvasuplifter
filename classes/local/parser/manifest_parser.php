@@ -322,10 +322,11 @@ class manifest_parser {
             // the report can flag or skip-and-explain them rather than drop them.
             $ismodulenode = $materialtype === 'contentmodule'
                 && $href === '' && empty($modelitem->files) && $modelitem->inlinexml === '';
-            // A resource whose only payload is a .log file is a build/export
-            // artifact (e.g. Blackboard's web_content00001.log), never course
-            // content, so drop it rather than import a junk file resource.
-            $islogartifact = $this->is_log_artifact($href, $modelitem->files);
+            // Blackboard exports its build log as a web_content<NNN>.log resource
+            // (a junk artifact, never course content); drop it rather than import
+            // it as a file. Scoped to that exact naming so a course that
+            // legitimately publishes a .log (e.g. access.log) is left alone.
+            $islogartifact = $this->is_build_log_artifact($href, $modelitem->files);
             if ($ismodulenode || $islogartifact || in_array($materialtype, self::D2L_METADATA_MATERIAL_TYPES, true)) {
                 $modelitem->kind = item::KIND_UNKNOWN;
                 $modelitem->suppressed = true;
@@ -347,17 +348,18 @@ class manifest_parser {
     }
 
     /**
-     * Whether a resource is just a build/export log artifact: its href and every
-     * <file> it carries are .log files (e.g. Blackboard exports a
-     * web_content00001.log resource). A .log is never course content, so such a
-     * resource is suppressed rather than imported as a file resource. A resource
-     * with no files at all is not treated as a log artifact.
+     * Whether a resource is Blackboard's export build log: its href and every
+     * <file> it carries are named web_content<NNN>.log, the artifact Blackboard
+     * writes alongside real content. Such a resource is suppressed rather than
+     * imported as a junk file. The match is deliberately scoped to that naming so
+     * a course that legitimately ships a .log as material (e.g. access.log) still
+     * imports normally. A resource with no files is not treated as an artifact.
      *
      * @param string $href The resource href, if any.
      * @param array $files The resource's file paths.
      * @return bool
      */
-    private function is_log_artifact(string $href, array $files): bool {
+    private function is_build_log_artifact(string $href, array $files): bool {
         $paths = $files;
         if ($href !== '') {
             $paths[] = $href;
@@ -367,7 +369,9 @@ class manifest_parser {
             return false;
         }
         foreach ($paths as $path) {
-            if (!preg_match('/\.log$/i', (string) $path)) {
+            // Match only Blackboard's numbered build log (web_content<NNN>.log),
+            // not any .log a course might legitimately publish as material.
+            if (!preg_match('~(^|/)web_content\d+\.log$~i', (string) $path)) {
                 return false;
             }
         }
