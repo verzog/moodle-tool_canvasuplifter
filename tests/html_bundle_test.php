@@ -503,4 +503,99 @@ final class html_bundle_test extends \advanced_testcase {
             '/pages/index.html',
         ], $this->resource_filearea_paths((int) $resource->id));
     }
+
+    /**
+     * The first <base> with an href attribute wins, even when that href is
+     * empty: an empty first base leaves resolution at the HTML's own folder, so
+     * a later base is ignored and the same-folder asset is folded.
+     *
+     * @return void
+     */
+    public function test_first_empty_base_href_wins_over_later_base(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/resourcelib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/ex', 0777, true);
+        mkdir($dir . '/assets', 0777, true);
+        $html = '<!DOCTYPE html><html><head><base href=""/><base href="../assets/"/>'
+            . '<script src="app.js"></script></head><body></body></html>';
+        file_put_contents($dir . '/ex/index.html', $html);
+        file_put_contents($dir . '/ex/app.js', '// same-folder app the empty base keeps');
+        file_put_contents($dir . '/assets/app.js', '// decoy the ignored ../assets/ base would pick');
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_ex" identifierref="res_index"><title>Empty Base Exercise</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource type="webcontent" identifier="res_index" href="ex/index.html">'
+            . '<file href="ex/index.html"/></resource>'
+            . '<resource type="webcontent" identifier="r_app" href="ex/app.js"><file href="ex/app.js"/></resource>'
+            . '<resource type="webcontent" identifier="r_decoy" href="assets/app.js">'
+            . '<file href="assets/app.js"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $category = $this->getDataGenerator()->create_category();
+        (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $resource = $DB->get_record('resource', ['name' => 'Empty Base Exercise']);
+        $this->assertEquals(RESOURCELIB_DISPLAY_EMBED, (int) $resource->display);
+        // The same-folder app.js is folded (filearea root 'ex'); the ../assets/
+        // decoy would instead produce /assets/app.js + /ex/index.html.
+        $this->assertSame([
+            '/app.js',
+            '/index.html',
+        ], $this->resource_filearea_paths((int) $resource->id));
+    }
+
+    /**
+     * When an external <base> disables folding, the HTML still builds as the
+     * activity's main file even if the manifest lists a secondary asset ahead of
+     * it in the resource's <file> list.
+     *
+     * @return void
+     */
+    public function test_external_base_keeps_html_as_main_file(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/resourcelib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/ex', 0777, true);
+        $html = '<!DOCTYPE html><html><head><base href="https://cdn.example.com/"/>'
+            . '<link rel="stylesheet" href="style.css"/></head><body>MARKER</body></html>';
+        file_put_contents($dir . '/ex/index.html', $html);
+        file_put_contents($dir . '/ex/style.css', '.x{color:red}');
+        // The exporter lists the stylesheet <file> ahead of the HTML href.
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_ex" identifierref="res_index"><title>CDN Ordered Exercise</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource type="webcontent" identifier="res_index" href="ex/index.html">'
+            . '<file href="ex/style.css"/><file href="ex/index.html"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $category = $this->getDataGenerator()->create_category();
+        (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $resource = $DB->get_record('resource', ['name' => 'CDN Ordered Exercise']);
+        $this->assertNotEmpty($resource);
+        $this->assertSame(['/index.html'], $this->resource_filearea_paths((int) $resource->id));
+        $cm = get_coursemodule_from_instance('resource', $resource->id);
+        $context = \context_module::instance($cm->id);
+        $fs = get_file_storage();
+        $main = $fs->get_file($context->id, 'mod_resource', 'content', 0, '/', 'index.html');
+        $this->assertNotEmpty($main, 'the HTML must be the main file, not the stylesheet');
+        $this->assertStringContainsString('MARKER', $main->get_content());
+    }
 }

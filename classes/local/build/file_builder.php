@@ -166,17 +166,22 @@ class file_builder {
     /**
      * Locate the underlying file inside the extracted package.
      *
-     * Tries files[0] first (the manifest's explicit file list), then href,
-     * skipping anything that isn't a regular readable file.
+     * Tries href first (the resource's declared main payload) then the explicit
+     * file list, skipping anything that isn't a regular readable file. Preferring
+     * href keeps the right file as the activity's main payload even when the
+     * manifest lists a secondary asset ahead of it — without relying on the fold
+     * pass having reordered the file list (it does not run for a resource whose
+     * folding was disabled, e.g. by an external document base).
      *
      * @param item $modelitem
      * @return string|null Absolute path, or null.
      */
     private function source_path(item $modelitem): ?string {
-        $candidates = $modelitem->files;
+        $candidates = [];
         if ($modelitem->href !== '') {
             $candidates[] = $modelitem->href;
         }
+        $candidates = array_merge($candidates, $modelitem->files);
         foreach ($candidates as $relative) {
             $absolute = safe_path::within($this->packageroot, $relative);
             if ($absolute !== null && is_file($absolute) && is_readable($absolute)) {

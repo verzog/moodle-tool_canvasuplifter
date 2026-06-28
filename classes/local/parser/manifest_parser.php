@@ -1900,8 +1900,11 @@ class manifest_parser {
     }
 
     /**
-     * Read the href of the document's first <base> element, query/fragment
-     * stripped. '' when the document declares no base.
+     * Read the href of the document's first href-bearing <base> element,
+     * query/fragment stripped. Browsers use the first <base> that *has* an href
+     * attribute — even an empty one, which leaves resolution at the document's
+     * own folder — and ignore any later base, so the search stops there. '' when
+     * the document declares no href-bearing base (or that href is empty).
      *
      * @param string $html The HTML content.
      * @return string The base href, or ''.
@@ -1919,7 +1922,7 @@ class manifest_parser {
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
         foreach ($dom->getElementsByTagName('base') as $node) {
-            if ($node instanceof DOMElement && $node->getAttribute('href') !== '') {
+            if ($node instanceof DOMElement && $node->hasAttribute('href')) {
                 return (string) preg_replace('/[?#].*$/', '', trim($node->getAttribute('href')));
             }
         }
