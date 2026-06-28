@@ -362,4 +362,98 @@ final class html_bundle_test extends \advanced_testcase {
             'index.html must hold the HTML payload, not the stylesheet bytes'
         );
     }
+
+    /**
+     * A local relative <base href> shifts where the page's relative references
+     * resolve, so the sibling-folder assets it points at are folded in (with the
+     * filearea rebased so the base still resolves once embedded).
+     *
+     * @return void
+     */
+    public function test_relative_base_href_rebases_asset_resolution(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/resourcelib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/pages', 0777, true);
+        mkdir($dir . '/assets', 0777, true);
+        $html = '<!DOCTYPE html><html><head><base href="../assets/"/>'
+            . '<link rel="stylesheet" href="theme.css"/>'
+            . '<script src="app.js"></script></head><body></body></html>';
+        file_put_contents($dir . '/pages/index.html', $html);
+        file_put_contents($dir . '/assets/app.js', '// app');
+        file_put_contents($dir . '/assets/theme.css', '.x{}');
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_ex" identifierref="res_index"><title>Based Exercise</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource type="webcontent" identifier="res_index" href="pages/index.html">'
+            . '<file href="pages/index.html"/></resource>'
+            . '<resource type="webcontent" identifier="r_app" href="assets/app.js"><file href="assets/app.js"/></resource>'
+            . '<resource type="webcontent" identifier="r_css" href="assets/theme.css">'
+            . '<file href="assets/theme.css"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $category = $this->getDataGenerator()->create_category();
+        (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $this->assertEquals(1, $DB->count_records('resource'));
+        $resource = $DB->get_record('resource', ['name' => 'Based Exercise']);
+        $this->assertEquals(RESOURCELIB_DISPLAY_EMBED, (int) $resource->display);
+        $this->assertSame([
+            '/assets/app.js',
+            '/assets/theme.css',
+            '/pages/index.html',
+        ], $this->resource_filearea_paths((int) $resource->id));
+    }
+
+    /**
+     * An absolute/external <base href> makes the document's relative references
+     * point outside the package, so nothing is folded and the HTML is left as a
+     * plain file resource rather than mis-folding the wrong local files.
+     *
+     * @return void
+     */
+    public function test_external_base_href_is_left_unfolded(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/resourcelib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/ex', 0777, true);
+        $html = '<!DOCTYPE html><html><head><base href="https://cdn.example.com/"/>'
+            . '<script src="app.js"></script></head><body></body></html>';
+        file_put_contents($dir . '/ex/index.html', $html);
+        file_put_contents($dir . '/ex/app.js', '// local file the external base does NOT point at');
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_ex" identifierref="res_index"><title>CDN Exercise</title></item>'
+            . '<item identifier="i_js" identifierref="r_app"><title>App Script</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource type="webcontent" identifier="res_index" href="ex/index.html">'
+            . '<file href="ex/index.html"/></resource>'
+            . '<resource type="webcontent" identifier="r_app" href="ex/app.js"><file href="ex/app.js"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $category = $this->getDataGenerator()->create_category();
+        (new course_builder($category->id, $dir))->build($coursemodel);
+
+        // The HTML was not folded: it builds as a plain (non-embedded) resource,
+        // and the local app.js still builds as its own placed activity.
+        $this->assertEquals(2, $DB->count_records('resource'));
+        $resource = $DB->get_record('resource', ['name' => 'CDN Exercise']);
+        $this->assertNotEquals(RESOURCELIB_DISPLAY_EMBED, (int) $resource->display);
+        $this->assertSame(['/index.html'], $this->resource_filearea_paths((int) $resource->id));
+    }
 }

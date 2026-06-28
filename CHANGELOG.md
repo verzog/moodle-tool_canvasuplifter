@@ -5,6 +5,15 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.39.11] - 2026-06-26
+
+- When folding an interactive HTML exercise, honour a local relative document
+  `<base href>` so a page that re-roots its relative references (e.g.
+  `<base href="../assets/">`) has the right files folded in. An absolute or
+  external base (a CDN, a site-root path) is deliberately left alone — its
+  references point outside the package, so the exercise builds as a plain file
+  resource rather than mis-folding unrelated local files.
+
 ## [0.39.10] - 2026-06-26
 
 - Self-contained interactive HTML exercises (an HTML file plus a folder of
