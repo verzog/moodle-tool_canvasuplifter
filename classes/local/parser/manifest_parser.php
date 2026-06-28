@@ -1929,9 +1929,10 @@ class manifest_parser {
     /**
      * Resolve the package folder that a document's relative references resolve
      * against, given its folder and any <base href>. Returns the HTML's own
-     * folder when there is no base; the base's directory (a trailing-slash base
-     * is itself a directory, otherwise its last segment is dropped) when the base
-     * is a local relative path; and null when the base is absolute, external,
+     * folder when there is no base; the base's directory (a trailing-slash or
+     * dot-segment base is itself a directory, otherwise its last segment is the
+     * filename and is dropped after the path is normalised) when the base is a
+     * local relative path; and null when the base is absolute, external,
      * root-absolute or escapes the package — cases whose relative refs point
      * outside the package and so cannot be folded.
      *
@@ -1948,8 +1949,19 @@ class manifest_parser {
             return null;
         }
         $combined = $htmlfolder === '' ? $base : $htmlfolder . '/' . $base;
-        $dir = substr($base, -1) === '/' ? rtrim($combined, '/') : $this->parent_dir($combined);
-        return $this->collapse_dots($dir);
+        // A base denotes a directory when it ends in '/' or its last segment is a
+        // dot-segment (. or ..); its children resolve against the whole
+        // normalised path. Otherwise the last segment is a filename to drop — but
+        // only after normalising, so a base like '..' is resolved as a path
+        // operation, not mistaken for a file literally named '..'.
+        $segments = explode('/', $base);
+        $lastsegment = (string) end($segments);
+        $isdir = substr($base, -1) === '/' || $lastsegment === '.' || $lastsegment === '..';
+        $normalised = $this->collapse_dots($combined);
+        if ($normalised === null) {
+            return null;
+        }
+        return $isdir ? $normalised : $this->parent_dir($normalised);
     }
 
     /**

@@ -456,4 +456,51 @@ final class html_bundle_test extends \advanced_testcase {
         $this->assertNotEquals(RESOURCELIB_DISPLAY_EMBED, (int) $resource->display);
         $this->assertSame(['/index.html'], $this->resource_filearea_paths((int) $resource->id));
     }
+
+    /**
+     * A dot-segment base without a trailing slash (e.g. <base href="..">) is a
+     * path operation, not a filename: it must normalise to the parent folder, so
+     * a root-level asset is folded — not a same-named file beside the HTML.
+     *
+     * @return void
+     */
+    public function test_dot_segment_base_href_normalises_to_parent(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/resourcelib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/pages', 0777, true);
+        $html = '<!DOCTYPE html><html><head><base href=".."/>'
+            . '<script src="app.js"></script></head><body></body></html>';
+        file_put_contents($dir . '/pages/index.html', $html);
+        // The real asset is at the package root; a decoy sits beside the HTML.
+        file_put_contents($dir . '/app.js', '// root app the base points at');
+        file_put_contents($dir . '/pages/app.js', '// decoy beside the HTML');
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_ex" identifierref="res_index"><title>Dotted Exercise</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource type="webcontent" identifier="res_index" href="pages/index.html">'
+            . '<file href="pages/index.html"/></resource>'
+            . '<resource type="webcontent" identifier="r_app" href="app.js"><file href="app.js"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $category = $this->getDataGenerator()->create_category();
+        (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $resource = $DB->get_record('resource', ['name' => 'Dotted Exercise']);
+        $this->assertEquals(RESOURCELIB_DISPLAY_EMBED, (int) $resource->display);
+        // The root app.js (folded at /app.js) is pulled in, beside the HTML kept
+        // in its pages/ subfolder — not the pages/app.js decoy.
+        $this->assertSame([
+            '/app.js',
+            '/pages/index.html',
+        ], $this->resource_filearea_paths((int) $resource->id));
+    }
 }
