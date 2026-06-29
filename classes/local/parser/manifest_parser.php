@@ -1732,12 +1732,13 @@ class manifest_parser {
      * referenced one), and an asset that is also explicitly placed in the course
      * is left to build as its own activity as well.
      *
-     * Best-effort only — a few reference forms are not followed, so their targets
-     * stay available as their own resources rather than being mis-folded: ES
-     * module `import` graphs from an entry script, HTML embedded as an asset
-     * (`<object data="frame.html">`), and a document `<base href>` overriding the
-     * resolution root. The exercise still embeds; any unfollowed file simply
-     * surfaces separately.
+     * Best-effort only — a couple of reference forms are not followed, so their
+     * targets stay available as their own resources rather than being mis-folded:
+     * ES module `import` graphs from an entry script, and HTML embedded as an
+     * asset (`<object data="frame.html">`). The exercise still embeds; any
+     * unfollowed file simply surfaces separately. A document `<base href>` that
+     * is absolute or external is likewise left alone (its refs point outside the
+     * package); a local relative `<base href>` is honoured.
      *
      * @param array $resources Resource items keyed by identifier (modified in place).
      * @return void
@@ -1848,6 +1849,13 @@ class manifest_parser {
      * those reference. Returns a set of package-relative source paths (the keys);
      * the filearea layout is decided later from their common ancestor.
      *
+     * A document <base href> shifts the folder the page's own relative references
+     * (elements and inline CSS) resolve against; it is honoured when it is a local
+     * package folder. An absolute/external/root-absolute base points those refs
+     * outside the package, so they are left unfolded (the asset, if any, surfaces
+     * as its own resource). url()/@import inside an external stylesheet always
+     * resolve against that stylesheet's own folder, never the document base.
+     *
      * @param string $htmlpath Package-relative path of the HTML file.
      * @param string $html The HTML content.
      * @return array Set of package paths (path => true).
@@ -1856,8 +1864,12 @@ class manifest_parser {
         $htmlfolder = $this->parent_dir($htmlpath);
         $sources = [];
         $cssqueue = [];
-        foreach ($this->html_asset_refs($html) as $ref) {
-            $source = $this->record_referenced_asset($sources, $htmlfolder, $ref);
+        $htmlbase = $this->html_base_folder($htmlfolder, $this->html_base_href($html));
+        // A null base means the document's relative refs resolve outside the
+        // package (absolute/external/root base): skip the element and inline-CSS
+        // refs entirely rather than fold the wrong files.
+        foreach ($htmlbase === null ? [] : $this->html_asset_refs($html) as $ref) {
+            $source = $this->record_referenced_asset($sources, $htmlbase, $ref);
             if ($source !== null && preg_match('/\.css$/i', $source)) {
                 $cssqueue[] = $source;
             }
@@ -1885,6 +1897,74 @@ class manifest_parser {
             }
         }
         return $sources;
+    }
+
+    /**
+     * Read the href of the document's first href-bearing <base> element,
+     * query/fragment stripped. Browsers use the first <base> that *has* an href
+     * attribute — even an empty one, which leaves resolution at the document's
+     * own folder — and ignore any later base, so the search stops there. '' when
+     * the document declares no href-bearing base (or that href is empty).
+     *
+     * @param string $html The HTML content.
+     * @return string The base href, or ''.
+     */
+    private function html_base_href(string $html): string {
+        if (trim($html) === '') {
+            return '';
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $dom->loadHTML(
+            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">' . $html,
+            LIBXML_NONET
+        );
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        foreach ($dom->getElementsByTagName('base') as $node) {
+            if ($node instanceof DOMElement && $node->hasAttribute('href')) {
+                return (string) preg_replace('/[?#].*$/', '', trim($node->getAttribute('href')));
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Resolve the package folder that a document's relative references resolve
+     * against, given its folder and any <base href>. Returns the HTML's own
+     * folder when there is no base; the base's directory (a trailing-slash or
+     * dot-segment base is itself a directory, otherwise its last segment is the
+     * filename and is dropped after the path is normalised) when the base is a
+     * local relative path; and null when the base is absolute, external,
+     * root-absolute or escapes the package — cases whose relative refs point
+     * outside the package and so cannot be folded.
+     *
+     * @param string $htmlfolder Package folder of the HTML file ('' at root).
+     * @param string $base The document's <base href>, '' when none.
+     * @return string|null The resolution folder, or null when refs are non-local.
+     */
+    private function html_base_folder(string $htmlfolder, string $base): ?string {
+        if ($base === '') {
+            return $htmlfolder;
+        }
+        $base = rawurldecode($base);
+        if (preg_match('~^([a-z][a-z0-9+.\-]*:|//|/)~i', $base)) {
+            return null;
+        }
+        $combined = $htmlfolder === '' ? $base : $htmlfolder . '/' . $base;
+        // A base denotes a directory when it ends in '/' or its last segment is a
+        // dot-segment (. or ..); its children resolve against the whole
+        // normalised path. Otherwise the last segment is a filename to drop — but
+        // only after normalising, so a base like '..' is resolved as a path
+        // operation, not mistaken for a file literally named '..'.
+        $segments = explode('/', $base);
+        $lastsegment = (string) end($segments);
+        $isdir = substr($base, -1) === '/' || $lastsegment === '.' || $lastsegment === '..';
+        $normalised = $this->collapse_dots($combined);
+        if ($normalised === null) {
+            return null;
+        }
+        return $isdir ? $normalised : $this->parent_dir($normalised);
     }
 
     /**
