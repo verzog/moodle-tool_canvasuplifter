@@ -51,6 +51,19 @@ class renderer extends plugin_renderer_base {
             get_string('itemcount', 'tool_canvasuplifter') . ': ' . (int) ($report['itemcount'] ?? 0)
         );
 
+        // Name the detected source LMS when we recognised one.
+        $source = (string) ($report['source'] ?? '');
+        if (
+            $source !== '' && $source !== 'generic'
+            && get_string_manager()->string_exists('source_' . $source, 'tool_canvasuplifter')
+        ) {
+            $out .= html_writer::tag('p', get_string(
+                'detectedsource',
+                'tool_canvasuplifter',
+                get_string('source_' . $source, 'tool_canvasuplifter')
+            ), ['class' => 'text-muted']);
+        }
+
         $out .= html_writer::tag('p', get_string('buildsnowsummary', 'tool_canvasuplifter', [
             'now' => (int) ($report['buildsnowtotal'] ?? 0),
             'later' => (int) ($report['latertotal'] ?? 0),

@@ -30,6 +30,13 @@ class course_model {
     /** @var string Course short name. */
     public string $shortname = '';
 
+    /**
+     * @var string Detected authoring/export system, one of the
+     *             source_detector constants (e.g. 'canvas', 'angel'); '' when
+     *             detection has not run.
+     */
+    public string $source = '';
+
     /** @var section_model[] Ordered list of sections. */
     public array $sections = [];
 

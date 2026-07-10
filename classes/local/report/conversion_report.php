@@ -338,6 +338,7 @@ class conversion_report {
 
         return [
             'coursename' => $this->course->fullname,
+            'source' => $this->course->source,
             'sectioncount' => count($this->course->sections),
             'itemcount' => count($this->course->all_items()),
             'buildsnowtotal' => $buildsnowtotal,

@@ -474,7 +474,8 @@ XML;
 
         $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
         $modinfo = get_fast_modinfo($report['courseid']);
-        $quizcm = reset($modinfo->get_instances_of('quiz'));
+        $quizinstances = $modinfo->get_instances_of('quiz');
+        $quizcm = reset($quizinstances);
         $quiz = $DB->get_record('quiz', ['id' => $quizcm->instance], '*', MUST_EXIST);
 
         // Explicit zero points -> ungraded (0) max, not the 100-point default.
