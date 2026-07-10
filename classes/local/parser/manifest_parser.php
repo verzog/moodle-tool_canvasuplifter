@@ -36,6 +36,9 @@ class manifest_parser {
     /** @var string Absolute path to the extracted package directory. */
     protected string $basedir;
 
+    /** @var string Detected source system (a source_detector constant), '' before parse(). */
+    protected string $source = '';
+
     /**
      * @var array Identifiers of resources consumed as an empty structural
      *            container at some organisation occurrence (so they title a
@@ -79,7 +82,11 @@ class manifest_parser {
         }
 
         $this->containerconsumed = [];
+        // Recognise the source LMS up front: the report names it, and it gates
+        // exporter-specific cleanup (e.g. dropping ANGEL/eXe _UNREFERENCED_ junk).
+        $this->source = source_detector::detect($this->basedir, $dom);
         $course = new course_model();
+        $course->source = $this->source;
         $course->fullname = $this->read_course_title($dom);
         $course->weightingscheme = $this->read_weighting_scheme();
         $course->gradecategories = $this->read_grade_categories();
@@ -275,6 +282,16 @@ class manifest_parser {
                     return $title;
                 }
             }
+            // Fall back to the first heading when the document's <title> is empty
+            // (common in exported learning-module pages), before giving up on
+            // this candidate. Collapse whitespace and non-breaking spaces.
+            if ($ishtml && preg_match('#<h[1-3][^>]*>(.*?)</h[1-3]>#is', $html, $hm)) {
+                $heading = html_entity_decode(strip_tags($hm[1]), ENT_QUOTES | ENT_HTML5);
+                $heading = trim((string) preg_replace('/[\s\x{00a0}]+/u', ' ', $heading));
+                if ($heading !== '') {
+                    return $heading;
+                }
+            }
         }
         return '';
     }
@@ -361,7 +378,15 @@ class manifest_parser {
             // learner-facing file that happens to be named web_content00001.log —
             // is left alone.
             $islogartifact = $this->is_build_log_artifact($resource, $href, $modelitem->files);
-            if ($ismodulenode || $islogartifact || in_array($materialtype, self::D2L_METADATA_MATERIAL_TYPES, true)) {
+            // ANGEL/eXe exports tag leftover duplicate resources (framework UI
+            // chrome and unreferenced glossary term fragments) with an
+            // _UNREFERENCED_ marker in the identifier. Once such a package is
+            // recognised, drop those rather than importing dozens of junk files.
+            $isunreferenced = $this->is_unreferenced_artifact($identifier);
+            if (
+                $ismodulenode || $islogartifact || $isunreferenced
+                || in_array($materialtype, self::D2L_METADATA_MATERIAL_TYPES, true)
+            ) {
                 $modelitem->kind = item::KIND_UNKNOWN;
                 $modelitem->suppressed = true;
             } else {
@@ -439,6 +464,21 @@ class manifest_parser {
             }
         }
         return false;
+    }
+
+    /**
+     * Whether a resource is an ANGEL/eXe leftover the exporter itself marked as
+     * unreferenced (its identifier carries an _UNREFERENCED_ marker) — framework
+     * UI chrome and duplicate glossary term fragments that would otherwise import
+     * as dozens of junk file resources. Gated on the package being recognised as
+     * ANGEL/eXe so the marker is never acted on for an unrelated source.
+     *
+     * @param string $identifier The resource identifier.
+     * @return bool
+     */
+    private function is_unreferenced_artifact(string $identifier): bool {
+        return in_array($this->source, [source_detector::ANGEL, source_detector::EXE], true)
+            && stripos($identifier, '_UNREFERENCED_') !== false;
     }
 
     /**

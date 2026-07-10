@@ -5,6 +5,20 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.39.13] - 2026-07-10
+
+Better handling of ANGEL/eXe-authored Common Cartridge exports:
+
+- Detect the source LMS from the package (Canvas / Blackboard / D2L / ANGEL /
+  eXe / generic) and name it in the analysis report.
+- Drop the framework junk an ANGEL/eXe export leaves behind — UI chrome images
+  and duplicate glossary term fragments the exporter itself tags `_UNREFERENCED_`
+  — instead of importing dozens of "NTER"-titled resources into the course. On a
+  real 2,100-resource ANGEL export this removed 113 junk resources while keeping
+  every one of the 83 real items.
+- When a page's `<title>` is empty (common in exported learning-module pages),
+  title it from its first heading instead of a slug of the identifier.
+
 ## [0.39.12] - 2026-06-29
 
 Pre-publish hardening from a full code review:
