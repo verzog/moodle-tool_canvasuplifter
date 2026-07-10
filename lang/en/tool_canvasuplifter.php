@@ -66,6 +66,8 @@ $string['detectedsource'] = 'Detected source: {$a}';
 $string['errorbadmanifestxml'] = 'The imsmanifest.xml file could not be parsed as XML.';
 $string['errorbadurl'] = 'The download URL must start with http:// or https://.';
 $string['errorbothsources'] = 'Provide just one package source, not several.';
+$string['errorchunktoolarge'] = 'The server rejected an upload chunk as too large. Ask an administrator to lower the '
+    . '"Chunk size (MB)" setting, then upload the package again.';
 $string['errordownloadfailed'] = 'The Canvas package could not be downloaded from that URL.';
 $string['errordownloadjspage'] = 'That page builds its download links with JavaScript (a DSpace repository), so the file link is not in the page we receive, and the repository\'s API did not return a Common Cartridge file. Open the page in your browser, then copy the direct file link under "Files" (it looks like .../bitstreams/<id>/download) and paste that here.';
 $string['errordownloadnopackage'] = 'That URL did not return a Common Cartridge package. If it is a repository landing page, link directly to the .imscc download.';
@@ -75,6 +77,8 @@ $string['errornomanifest'] = 'No imsmanifest.xml was found, so this is not a val
 $string['errornosource'] = 'Provide a Canvas export file or a download URL.';
 $string['errornotzip'] = 'That file could not be opened as a Common Cartridge (zip) package.';
 $string['errorpackagetoolarge'] = 'That package is too large to extract safely (it expands past the allowed size or file count).';
+$string['erroruploadfailed'] = 'The upload could not be completed after several attempts. Check your connection and try '
+    . 'uploading the package again.';
 $string['extraquizzesbuilt'] = 'Also built {$a} runnable quiz(zes) from standalone question banks (in "Additional resources").';
 $string['itemcount'] = 'Content items';
 $string['itemdetailheading'] = 'Item-by-item detail';

@@ -270,6 +270,106 @@ class form_element extends \HTML_QuickForm_input implements \templatable {
     }
 
     /**
+     * Snapshot of how far the server has actually stored an in-flight upload,
+     * so the browser can reconcile against it after a failed chunk (e.g. a 504
+     * that timed out the response but still committed the write) instead of
+     * dead-ending on a chunk-alignment error. Returns null for an unknown id.
+     *
+     * @param int $id The upload token.
+     * @return array|null Keys state, currentpos, length; or null if not found.
+     */
+    public static function get_progress($id) {
+        global $DB;
+        $record = $DB->get_record(
+            'tool_canvasuplifter_chunks',
+            ['id' => $id],
+            'id, state, currentpos, length',
+            IGNORE_MISSING
+        );
+        if (!$record) {
+            return null;
+        }
+        return [
+            'state' => (int) $record->state,
+            'currentpos' => (int) $record->currentpos,
+            'length' => (int) $record->length,
+        ];
+    }
+
+    /**
+     * Append a "proceed" chunk to a partially uploaded file, tolerating a
+     * re-sent or partially written chunk left behind by an interrupted request.
+     *
+     * The stored currentpos is the source of truth: any bytes a half-finished
+     * attempt wrote past it are truncated before writing, so re-sending a chunk
+     * can never double-append; a chunk already fully stored (the client
+     * retried after a lost response) is accepted as a no-op. The record is
+     * updated and saved on success.
+     *
+     * @param stdClass $record The chunk tracking row (mutated and saved on success).
+     * @param int $start Offset the client believes the chunk begins at.
+     * @param int $end Offset the chunk ends at.
+     * @param string $content The chunk bytes; length must equal end - start.
+     * @return string|null An error message, or null on success.
+     */
+    public static function apply_proceed($record, $start, $end, $content) {
+        global $DB;
+        $error = self::check_proceed($record, $start, $end, $content);
+        if ($error !== null) {
+            return $error;
+        }
+        $currentpos = (int) $record->currentpos;
+        if ($end > $currentpos) {
+            // Trust the stored position: drop any bytes an interrupted retry
+            // left past it, then write only the portion beyond currentpos.
+            $handle = fopen(self::get_path_for_id($record->id), 'r+b');
+            if ($handle === false) {
+                return 'Begin of file does not exist on this server.';
+            }
+            ftruncate($handle, $currentpos);
+            fseek($handle, $currentpos);
+            fwrite($handle, substr($content, $currentpos - $start));
+            fclose($handle);
+            $record->currentpos = $end;
+        }
+        // Otherwise the whole chunk is already stored — accept it as a no-op.
+        $record->state = (int) $record->currentpos == (int) $record->length
+            ? state_type::UPLOAD_COMPLETED : state_type::UPLOAD_STARTED;
+        $record->lastmodified = time();
+        $DB->update_record('tool_canvasuplifter_chunks', $record);
+        return null;
+    }
+
+    /**
+     * Validate a "proceed" chunk against the stored upload before it is written.
+     *
+     * @param stdClass $record The chunk tracking row.
+     * @param int $start Offset the client believes the chunk begins at.
+     * @param int $end Offset the chunk ends at.
+     * @param string $content The chunk bytes; length must equal end - start.
+     * @return string|null An error message, or null if the chunk is acceptable.
+     */
+    protected static function check_proceed($record, $start, $end, $content) {
+        if ($start < 0 || $end < $start) {
+            return 'Filechunk range is invalid.';
+        }
+        if ($start > (int) $record->currentpos) {
+            return 'Filechunk does not begin where the last one left off.';
+        }
+        if ($end > (int) $record->length) {
+            return 'Filechunk is too long and exceeds the length of the whole file.';
+        }
+        if (strlen($content) != $end - $start) {
+            return 'Filechunk is not as long as it should be.';
+        }
+        $path = self::get_path_for_id($record->id);
+        if ($path === null || !file_exists($path)) {
+            return 'Begin of file does not exist on this server.';
+        }
+        return null;
+    }
+
+    /**
      * Returns the base folder where the chunked files are stored.
      *
      * @return string The base folder.
