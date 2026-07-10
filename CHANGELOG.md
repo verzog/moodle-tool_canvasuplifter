@@ -24,6 +24,10 @@ Pre-publish hardening from a full code review:
   free of the build layer, honour leading-dot bundle directories, clamp a
   negative question mark, and count a resource once when disambiguating bank
   titles. Software-only, no behaviour change for well-formed packages.
+- Document the imported-HTML trust model: a "import only trusted packages"
+  warning on the upload page and in the README (the manager-only capability
+  already declares the XSS risk; content is deliberately not purified so
+  script-driven imported pages keep working).
 
 ## [0.39.11] - 2026-06-26
 
