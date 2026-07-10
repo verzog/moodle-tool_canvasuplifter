@@ -44,7 +44,9 @@ final class content_styler {
             return $html;
         }
         $open = '<div class="' . self::WRAPPER_CLASS . '">';
-        if (strpos($html, $open) === 0) {
+        // Compare against the left-trimmed HTML so content that arrives with
+        // leading whitespace isn't wrapped a second time.
+        if (strpos(ltrim($html), $open) === 0) {
             return $html;
         }
         return $open . $html . '</div>';

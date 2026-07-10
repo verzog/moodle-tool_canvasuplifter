@@ -60,12 +60,14 @@ class file_builder {
 
         $sourcepath = $this->source_path($modelitem);
         if ($sourcepath === null) {
-            mtrace(sprintf(
-                'tool_canvasuplifter: file "%s" skipped — no readable payload (href=%s, files=%s)',
-                $modelitem->title,
-                $modelitem->href,
-                implode(',', $modelitem->files)
-            ));
+            if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+                mtrace(sprintf(
+                    'tool_canvasuplifter: file "%s" skipped — no readable payload (href=%s, files=%s)',
+                    $modelitem->title,
+                    $modelitem->href,
+                    implode(',', $modelitem->files)
+                ));
+            }
             return null;
         }
 

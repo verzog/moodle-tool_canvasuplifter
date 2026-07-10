@@ -73,6 +73,7 @@ $string['errorjobnotfound'] = 'That build job no longer exists.';
 $string['errornomanifest'] = 'No imsmanifest.xml was found, so this is not a valid Canvas package.';
 $string['errornosource'] = 'Provide a Canvas export file or a download URL.';
 $string['errornotzip'] = 'That file could not be opened as a Common Cartridge (zip) package.';
+$string['errorpackagetoolarge'] = 'That package is too large to extract safely (it expands past the allowed size or file count).';
 $string['extraquizzesbuilt'] = 'Also built {$a} runnable quiz(zes) from standalone question banks (in "Additional resources").';
 $string['itemcount'] = 'Content items';
 $string['itemdetailheading'] = 'Item-by-item detail';

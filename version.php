@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026062605;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026062606;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Honour a local <base href> when folding an HTML exercise's assets.
-$plugin->release   = '0.39.11';
+$plugin->maturity  = MATURITY_ALPHA;  // Pre-publish hardening: zip-bomb/download caps, transaction rollback, path checks.
+$plugin->release   = '0.39.12';

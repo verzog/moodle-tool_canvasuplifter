@@ -144,9 +144,14 @@ class url_fetcher {
     /**
      * Download a single URL to a fresh temp file, enforcing size and HTTP status.
      *
-     * Uses Moodle's curl wrapper, which applies the site's
-     * curlsecurityblockedhosts / allowed-ports policy on every redirect hop —
-     * preventing SSRF to internal services or cloud-metadata endpoints.
+     * Uses Moodle's curl wrapper so the site's curlsecurityblockedhosts /
+     * allowed-ports policy is applied on each redirect hop. That policy only
+     * blocks internal services / cloud-metadata endpoints when the admin has
+     * configured a blocklist (it is empty by default), so SSRF protection
+     * depends on that site setting; the URL — and any REST base derived from a
+     * fetched page — is treated as untrusted and only ever reached through this
+     * security-checked wrapper. The transfer is aborted mid-stream once it
+     * exceeds $maxbytes, so an oversize (or endless) body cannot fill the disk.
      *
      * @param string $url Absolute HTTP(S) URL.
      * @param int $maxbytes Maximum accepted size (0 = unlimited).
@@ -170,7 +175,7 @@ class url_fetcher {
 
         $curl = new \curl();
         $curl->setHeader('Accept: application/zip, application/octet-stream, text/html, */*');
-        $result = $curl->download_one($url, null, [
+        $options = [
             'CURLOPT_FILE' => $fh,
             'CURLOPT_FOLLOWLOCATION' => 1,
             'CURLOPT_MAXREDIRS' => 5,
@@ -179,13 +184,30 @@ class url_fetcher {
             'CURLOPT_SSL_VERIFYPEER' => 1,
             'CURLOPT_SSL_VERIFYHOST' => 2,
             'CURLOPT_USERAGENT' => self::FETCH_USER_AGENT,
-        ]);
+        ];
+        if ($maxbytes > 0) {
+            // Abort the transfer as soon as it exceeds the cap (by declared size
+            // or bytes received so far), rather than only checking the size after
+            // the whole body has already been written to disk.
+            $options['CURLOPT_NOPROGRESS'] = 0;
+            $options['CURLOPT_PROGRESSFUNCTION'] = function ($ch, $dltotal, $dlnow) use ($maxbytes) {
+                return ($dltotal > $maxbytes || $dlnow > $maxbytes) ? 1 : 0;
+            };
+        }
+        $result = $curl->download_one($url, null, $options);
         fclose($fh);
 
         $httpcode = (int) ($curl->info['http_code'] ?? 0);
         $this->lastfinalurl = $curl->info['url'] ?? $url;
         $this->lastcontenttype = strtolower((string) ($curl->info['content_type'] ?? ''));
 
+        // CURLE_ABORTED_BY_CALLBACK (42): the progress callback stopped an
+        // oversize transfer. Report it as "too big", not a generic failure.
+        if ((int) ($curl->errno ?? 0) === 42) {
+            $this->lastdetail = 'Download exceeded the ' . $maxbytes . '-byte limit';
+            @unlink($target);
+            throw new \RuntimeException(self::ERROR_TOOBIG);
+        }
         if ($result !== true || !empty($curl->errno)) {
             $this->lastdetail = $curl->error !== '' ? $curl->error : 'download failed';
             @unlink($target);

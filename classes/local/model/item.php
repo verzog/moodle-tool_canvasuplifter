@@ -48,6 +48,17 @@ class item {
     /** Could not be classified. */
     public const KIND_UNKNOWN = 'unknown';
 
+    /**
+     * @var string[] Item kinds course_builder can create in the current phase.
+     *               Defined here on the model so the Moodle-free report layer can
+     *               consult it without depending on the build layer.
+     */
+    public const BUILDS_NOW = [
+        self::KIND_PAGE, self::KIND_URL, self::KIND_FILE, self::KIND_ASSIGNMENT,
+        self::KIND_QUIZ, self::KIND_QUESTIONBANK, self::KIND_DISCUSSION,
+        self::KIND_SUBHEADER, self::KIND_LTI,
+    ];
+
     /** @var string Canvas resource identifier. */
     public string $identifier = '';
 

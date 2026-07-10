@@ -31,12 +31,8 @@ use tool_canvasuplifter\local\model\item;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class course_builder {
-    /** @var string[] Item kinds the builder can create in the current phase. */
-    public const BUILDS_NOW = [
-        item::KIND_PAGE, item::KIND_URL, item::KIND_FILE, item::KIND_ASSIGNMENT,
-        item::KIND_QUIZ, item::KIND_QUESTIONBANK, item::KIND_DISCUSSION,
-        item::KIND_SUBHEADER, item::KIND_LTI,
-    ];
+    /** @var string[] Item kinds the builder can create in the current phase (defined on the model). */
+    public const BUILDS_NOW = item::BUILDS_NOW;
 
     /** @var string[] Kinds that must be created in section 0 (question banks). */
     private const SECTION_ZERO_KINDS = [item::KIND_QUESTIONBANK];
@@ -346,18 +342,25 @@ class course_builder {
         array $builders,
         array &$urlmap
     ): bool {
+        global $DB;
         $builder = $builders[item::KIND_QUIZ] ?? null;
         if ($builder === null) {
             return false;
         }
+        $callerintransaction = $DB->is_transaction_started();
         try {
             $cmid = $builder->build($course, $sectionnum, $modelitem);
         } catch (\Throwable $e) {
-            mtrace('tool_canvasuplifter: ' . sprintf(
-                'failed to build standalone quiz "%s": %s',
-                $modelitem->title,
-                $e->getMessage()
-            ));
+            if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+                mtrace('tool_canvasuplifter: ' . sprintf(
+                    'failed to build standalone quiz "%s": %s',
+                    $modelitem->title,
+                    $e->getMessage()
+                ));
+            }
+            if (!$callerintransaction && $DB->is_transaction_started()) {
+                $DB->force_transaction_rollback();
+            }
             return false;
         }
         if ($cmid === null) {
@@ -506,18 +509,25 @@ class course_builder {
         array &$createdcounts,
         array &$skippedcounts
     ): void {
+        global $DB;
         $builder = $this->group_builder();
         $result = null;
         if ($builder !== null) {
+            $callerintransaction = $DB->is_transaction_started();
             try {
                 $result = $builder->build_group($course, $sectionnum, $groupname, $pages);
             } catch (\Throwable $e) {
-                mtrace('tool_canvasuplifter: ' . sprintf(
-                    'failed to build %s from "%s": %s',
-                    $this->pagegrouping,
-                    $groupname,
-                    $e->getMessage()
-                ));
+                if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+                    mtrace('tool_canvasuplifter: ' . sprintf(
+                        'failed to build %s from "%s": %s',
+                        $this->pagegrouping,
+                        $groupname,
+                        $e->getMessage()
+                    ));
+                }
+                if (!$callerintransaction && $DB->is_transaction_started()) {
+                    $DB->force_transaction_rollback();
+                }
                 $result = null;
             }
         }
@@ -634,6 +644,7 @@ class course_builder {
         array &$skipreasons,
         bool $referenced = true
     ): ?int {
+        global $DB;
         $cmid = null;
         $kind = $modelitem->kind;
         $builder = $builders[$kind] ?? null;
@@ -657,13 +668,25 @@ class course_builder {
             if ($buildsasbank && $modelitem->banktitle !== '') {
                 $modelitem->title = $modelitem->banktitle;
             }
+            // A builder whose add_moduleinfo() throws mid-way can leave the
+            // delegated transaction it opened dangling. Remember whether one was
+            // already open (the caller's) so the catch only rolls back a leak we
+            // caused, mirroring lti_builder's own guard.
+            $callerintransaction = $DB->is_transaction_started();
             try {
                 $cmid = $builder->build($course, $sectionnum, $modelitem);
             } catch (\Throwable $e) {
                 $msg = sprintf('failed to build %s "%s": %s', $modelitem->kind, $modelitem->title, $e->getMessage());
-                mtrace('tool_canvasuplifter: ' . $msg);
+                if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+                    mtrace('tool_canvasuplifter: ' . $msg);
+                }
                 $skipreasons[] = $msg;
                 $cmid = null;
+                // Roll back a transaction the failed builder leaked, so the whole
+                // adhoc task is not aborted and retried into a duplicate course.
+                if (!$callerintransaction && $DB->is_transaction_started()) {
+                    $DB->force_transaction_rollback();
+                }
             } finally {
                 $modelitem->title = $savedtitle;
             }
@@ -1076,7 +1099,7 @@ class course_builder {
      */
     private function unique_shortname(string $fullname): string {
         global $DB;
-        $base = clean_param(substr($fullname, 0, 80), PARAM_TEXT);
+        $base = clean_param(\core_text::substr($fullname, 0, 80), PARAM_TEXT);
         if ($base === '') {
             $base = 'canvas-import';
         }

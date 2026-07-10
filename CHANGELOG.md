@@ -5,6 +5,26 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.39.12] - 2026-06-29
+
+Pre-publish hardening from a full code review:
+
+- Guard package extraction against a decompression bomb (cap total uncompressed
+  size and entry count) and reject Windows drive-letter zip entries.
+- Abort a remote package download mid-transfer once it exceeds the size limit,
+  instead of only checking after the whole body is on disk.
+- Roll back a transaction left open by a failed `add_moduleinfo()` in every
+  builder (not just LTI), so a mid-build failure can't make the adhoc task retry
+  into a duplicate course.
+- Recover a multiple-response quiz question whose correct options are split
+  across sibling QTI response conditions (previously only the last survived).
+- Tighten a package-path containment check in the analyse report to require a
+  directory boundary; restrict the build status page to the job's owner.
+- Correct `<base href>`-independent internal consistency: keep the report layer
+  free of the build layer, honour leading-dot bundle directories, clamp a
+  negative question mark, and count a resource once when disambiguating bank
+  titles. Software-only, no behaviour change for well-formed packages.
+
 ## [0.39.11] - 2026-06-26
 
 - When folding an interactive HTML exercise, honour a local relative document
