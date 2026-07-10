@@ -173,6 +173,7 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
     async function uploadFile(file) {
         let confirmed = 0;      // Bytes the server has confirmed stored.
         let retries = 0;
+        let started = false;    // A chunk for THIS file has been accepted by the server.
         while (confirmed < file.size) {
             let start = confirmed;
             let end = Math.min(start + chunkSize, file.size);
@@ -198,12 +199,13 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
                 if (response !== null) {
                     // Chunk accepted.
                     confirmed = end;
+                    started = true;
                     retries = 0;
                     setProgress(confirmed, file.size);
                     continue;
                 }
                 // A 200 with an unreadable body falls through to a retry.
-            } else if (result.status >= 400 && result.status < 500) {
+            } else if (isTerminal(result.status)) {
                 // Terminal client-side rejection (e.g. 413: chunk too large for a proxy).
                 notifyError(result.status === 413
                     ? {key: 'errorchunktoolarge', component: 'tool_canvasuplifter'}
@@ -211,23 +213,46 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
                 return;
             }
 
-            // Transient failure (network, 5xx, or an unreadable 200): back off,
-            // reconcile the resume position with the server, then retry.
+            // Transient failure (network, 5xx, 408/429, or an unreadable 200):
+            // back off, reconcile the resume position with the server, then retry.
             if (retries >= MAX_RETRIES) {
                 notifyError({key: 'erroruploadfailed', component: 'tool_canvasuplifter'});
                 return;
             }
             retries++;
             await sleep(Math.min(BACKOFF_BASE_MS * Math.pow(2, retries - 1), BACKOFF_CAP_MS));
-            let snap = await queryStatus();
-            if (snap !== null) {
-                confirmed = (snap.state === STATE_COMPLETED || snap.currentpos >= file.size)
-                    ? file.size : snap.currentpos;
-                setProgress(confirmed, file.size);
+            // Only trust the server's position once a chunk for THIS file has
+            // been accepted (so a stale row from a previous completed upload is
+            // never mistaken for this one) and its reported length matches.
+            if (started) {
+                let snap = await queryStatus();
+                if (snap !== null && snap.length === file.size) {
+                    let advanced = snap.currentpos > confirmed;
+                    confirmed = (snap.state === STATE_COMPLETED || snap.currentpos >= file.size)
+                        ? file.size : snap.currentpos;
+                    if (advanced) {
+                        // The failed chunk actually committed — real progress, so
+                        // this attempt does not count against the retry budget.
+                        retries = 0;
+                    }
+                    setProgress(confirmed, file.size);
+                }
             }
         }
         // The server holds the whole file; mark the bar finished.
         setProgress(file.size, file.size);
+    }
+
+    /**
+     * Whether an HTTP status is a terminal client-side rejection. 408 (request
+     * timeout) and 429 (too many requests) are transient and handled by the
+     * retry path; other 4xx responses are validation errors and terminal.
+     *
+     * @param {number} status The HTTP status code.
+     * @return {boolean} True if the upload should abort on this status.
+     */
+    function isTerminal(status) {
+        return status >= 400 && status < 500 && status !== 408 && status !== 429;
     }
 
     /**

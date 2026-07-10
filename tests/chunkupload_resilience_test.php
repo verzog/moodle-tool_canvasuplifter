@@ -156,6 +156,28 @@ final class chunkupload_resilience_test extends \advanced_testcase {
     }
 
     /**
+     * check_bounds rejects a gap, an over-length end and a backwards range from
+     * the stored state alone (so the endpoint can reject before reading a body),
+     * while accepting a valid, a resent and an overlapping range.
+     *
+     * @return void
+     */
+    public function test_check_bounds(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $record = $this->partial(306, '0123456789', 10, 16);
+        // Rejected without needing the request body.
+        $this->assertNotNull(form_element::check_bounds($record, 12, 16));   // Gap.
+        $this->assertNotNull(form_element::check_bounds($record, 10, 20));   // Past length.
+        $this->assertNotNull(form_element::check_bounds($record, 8, 4));     // Backwards.
+        // Accepted: the endpoint may read the body and let apply_proceed reconcile.
+        $this->assertNull(form_element::check_bounds($record, 10, 16));      // Next chunk.
+        $this->assertNull(form_element::check_bounds($record, 4, 10));       // Already stored.
+        $this->assertNull(form_element::check_bounds($record, 6, 16));       // Overlapping.
+    }
+
+    /**
      * A chunk that begins past the confirmed position (a gap) is rejected.
      *
      * @return void

@@ -10,10 +10,10 @@ quickly.
 Make the large-package (chunked) upload survive a flaky connection or a
 timed-out chunk:
 
-- The uploader now retries a chunk through transient network and 5xx failures
-  (exponential backoff, up to five attempts) instead of silently freezing when
-  a request fails — previously a 504 from a reverse proxy left the progress bar
-  stuck with no error, because only HTTP 200 was handled.
+- The uploader now retries a chunk through transient failures — network errors,
+  5xx, and 408/429 — with exponential backoff (up to five attempts) instead of
+  silently freezing when a request fails; previously a 504 from a reverse proxy
+  left the progress bar stuck with no error, because only HTTP 200 was handled.
 - After a failed chunk the browser asks the server how far it actually got (new
   `status` action) and resumes from that position, so a 504 that timed out the
   response but still committed the write no longer dead-ends the upload on a

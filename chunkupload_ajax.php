@@ -128,8 +128,11 @@ switch ($action) {
         if ($end === null) {
             $senderror('Param end is missing');
         }
-        if ($end < $start) {
-            $senderror('Filechunk range is invalid.');
+        // Reject a malformed or replayed range from the token's stored state
+        // alone, before buffering the request body.
+        $bounds = form_element::check_bounds($record, $start, $end);
+        if ($bounds !== null) {
+            $senderror($bounds);
         }
 
         // Read exactly the advertised span. apply_proceed reconciles it against

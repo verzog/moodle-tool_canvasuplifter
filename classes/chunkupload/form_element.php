@@ -350,6 +350,32 @@ class form_element extends \HTML_QuickForm_input implements \templatable {
      * @return string|null An error message, or null if the chunk is acceptable.
      */
     protected static function check_proceed($record, $start, $end, $content) {
+        $error = self::check_bounds($record, $start, $end);
+        if ($error !== null) {
+            return $error;
+        }
+        if (strlen($content) != $end - $start) {
+            return 'Filechunk is not as long as it should be.';
+        }
+        $path = self::get_path_for_id($record->id);
+        if ($path === null || !file_exists($path)) {
+            return 'Begin of file does not exist on this server.';
+        }
+        return null;
+    }
+
+    /**
+     * Validate a "proceed" chunk's byte range against the stored upload — the
+     * checks that need no request body, so the endpoint can reject a malformed
+     * or replayed request from its token's state alone before buffering the
+     * payload.
+     *
+     * @param stdClass $record The chunk tracking row.
+     * @param int $start Offset the client believes the chunk begins at.
+     * @param int $end Offset the chunk ends at.
+     * @return string|null An error message, or null if the range is acceptable.
+     */
+    public static function check_bounds($record, $start, $end) {
         if ($start < 0 || $end < $start) {
             return 'Filechunk range is invalid.';
         }
@@ -358,13 +384,6 @@ class form_element extends \HTML_QuickForm_input implements \templatable {
         }
         if ($end > (int) $record->length) {
             return 'Filechunk is too long and exceeds the length of the whole file.';
-        }
-        if (strlen($content) != $end - $start) {
-            return 'Filechunk is not as long as it should be.';
-        }
-        $path = self::get_path_for_id($record->id);
-        if ($path === null || !file_exists($path)) {
-            return 'Begin of file does not exist on this server.';
         }
         return null;
     }
