@@ -247,6 +247,12 @@ class manifest_parser {
             true
         );
         $isqti = in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true);
+        // First pass: prefer a real <title> (or QTI assessment title) from any
+        // candidate. Only if every candidate's <title> is empty do we consider a
+        // heading, so a page that carries a proper <title> always wins — even when
+        // an auxiliary HTML file with an empty <title> is listed before it. Cache
+        // each HTML payload so the heading pass doesn't re-read the files.
+        $htmlbodies = [];
         foreach ($candidates as $relative) {
             $ishtml = (bool) preg_match('/\.html?$/i', $relative);
             $isxml = $allowxml && (bool) preg_match('/\.xml$/i', $relative);
@@ -258,6 +264,9 @@ class manifest_parser {
                 continue;
             }
             $html = (string) @file_get_contents($absolute);
+            if ($ishtml) {
+                $htmlbodies[] = $html;
+            }
             // QTI assessments name themselves in an <assessment title="..."> attribute.
             if ($isqti && preg_match('/<assessment\b[^>]*\btitle="([^"]*)"/i', $html, $qm)) {
                 $title = trim(html_entity_decode($qm[1], ENT_QUOTES | ENT_HTML5));
@@ -282,10 +291,12 @@ class manifest_parser {
                     return $title;
                 }
             }
-            // Fall back to the first heading when the document's <title> is empty
-            // (common in exported learning-module pages), before giving up on
-            // this candidate. Collapse whitespace and non-breaking spaces.
-            if ($ishtml && preg_match('#<h[1-3][^>]*>(.*?)</h[1-3]>#is', $html, $hm)) {
+        }
+        // Second pass: only after every <title> is exhausted, fall back to the
+        // first heading (common in exported learning-module pages whose <title>
+        // is empty). Collapse whitespace and non-breaking spaces.
+        foreach ($htmlbodies as $html) {
+            if (preg_match('#<h[1-3][^>]*>(.*?)</h[1-3]>#is', $html, $hm)) {
                 $heading = html_entity_decode(strip_tags($hm[1]), ENT_QUOTES | ENT_HTML5);
                 $heading = trim((string) preg_replace('/[\s\x{00a0}]+/u', ' ', $heading));
                 if ($heading !== '') {

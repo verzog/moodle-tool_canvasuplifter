@@ -81,6 +81,66 @@ final class angel_exe_test extends \advanced_testcase {
     }
 
     /**
+     * The _UNREFERENCED_ marker on its own is not an ANGEL signal: a non-ANGEL
+     * cartridge that happens to use that token in a real identifier stays
+     * generic, so the parser's _UNREFERENCED_ cleanup never drops the resource.
+     *
+     * @return void
+     */
+    public function test_unreferenced_marker_alone_is_not_angel(): void {
+        $m = '<manifest xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1"><resources>'
+            . '<resource identifier="RES_UNREFERENCED_HANDOUT" type="webcontent" href="a.html">'
+            . '<file href="a.html"/></resource></resources></manifest>';
+        $this->assertSame(source_detector::GENERIC, source_detector::detect('/does/not/exist', $this->dom($m)));
+    }
+
+    /**
+     * A resource whose primary page has a real <title> keeps that title even
+     * when an auxiliary HTML file (empty <title>, but a heading) is listed
+     * before it — the heading fallback runs only after every <title> is empty.
+     *
+     * @return void
+     */
+    public function test_title_prefers_real_title_over_heading(): void {
+        $this->resetAfterTest(true);
+        $dir = make_request_directory();
+        mkdir($dir . '/main', 0777, true);
+        // Auxiliary file: empty <title>, but a heading that must NOT win.
+        file_put_contents(
+            $dir . '/main/aux.html',
+            '<html><head><title></title></head><body><h1>Auxiliary Heading</h1></body></html>'
+        );
+        // Primary payload (the resource href): a real <title>.
+        file_put_contents(
+            $dir . '/main/index.html',
+            '<html><head><title>Real Page Title</title></head><body><p>Body</p></body></html>'
+        );
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="i_page" identifierref="R1"><title></title></item>'
+            . '</item></organization></organizations><resources>'
+            . '<resource identifier="R1" type="webcontent" href="main/index.html">'
+            . '<file href="main/aux.html"/><file href="main/index.html"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $titles = [];
+        foreach ($course->sections as $section) {
+            foreach ($section->items as $it) {
+                $titles[] = $it->title;
+            }
+        }
+        foreach ($course->orphans as $orphan) {
+            $titles[] = $orphan->title;
+        }
+        $this->assertContains('Real Page Title', $titles);
+        $this->assertNotContains('Auxiliary Heading', $titles);
+    }
+
+    /**
      * A recognised ANGEL package drops its _UNREFERENCED_ artifacts entirely and
      * titles an empty-<title> learning-module page from its first heading; the
      * detected source is recorded on the course model.

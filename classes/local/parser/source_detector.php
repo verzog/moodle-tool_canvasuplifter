@@ -66,10 +66,12 @@ final class source_detector {
                 continue;
             }
             $identifier = $resource->getAttribute('identifier');
-            if (
-                stripos($identifier, '_UNREFERENCED_') !== false
-                || preg_match('/id_(lm|fold|glo|frm|crs)_\d/i', $identifier)
-            ) {
+            // ANGEL is recognised by its <system>ID_LM_/FOLD_/GLO_/FRM_/CRS_<n>
+            // content identifiers only. The _UNREFERENCED_ marker alone is NOT an
+            // ANGEL signal: a non-ANGEL cartridge that happens to use that token in
+            // a real identifier must not be classified as ANGEL, or the parser's
+            // _UNREFERENCED_ cleanup would drop that genuine resource.
+            if (preg_match('/id_(lm|fold|glo|frm|crs)_\d/i', $identifier)) {
                 $angel = true;
             }
             foreach ($resource->attributes as $attr) {
