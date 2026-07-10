@@ -36,9 +36,17 @@ class package {
     public const ERROR_NOT_ZIP = 'errornotzip';
     /** Returned when no manifest can be found inside. */
     public const ERROR_NO_MANIFEST = 'errornomanifest';
+    /** Returned when the archive would expand past the decompression-bomb ceiling. */
+    public const ERROR_TOO_LARGE = 'errorpackagetoolarge';
 
     /** @var string The Common Cartridge manifest file name (lower-cased for matching). */
     private const MANIFEST = 'imsmanifest.xml';
+
+    /** @var int Ceiling on an archive's total uncompressed size (a decompression-bomb guard). */
+    private const MAX_UNCOMPRESSED_BYTES = 5368709120;
+
+    /** @var int Ceiling on the number of entries in an archive (a decompression-bomb guard). */
+    private const MAX_ENTRIES = 100000;
 
     /**
      * Extract a package to a target directory and locate the manifest root.
@@ -87,16 +95,29 @@ class package {
         if ($zip->open($zippath) !== true) {
             throw new \RuntimeException(self::ERROR_NOT_ZIP);
         }
-        // Reject zip-slip entries (absolute paths or ".." segments) before
-        // extracting, so a crafted archive cannot write outside $targetdir.
+        // Reject zip-slip entries (absolute paths — including a Windows drive
+        // letter — or ".." segments) before extracting, so a crafted archive
+        // cannot write outside $targetdir; and cap the total uncompressed size
+        // and entry count so a decompression bomb cannot fill the disk.
+        $totalsize = 0;
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $name = $zip->getNameIndex($i);
-            if ($name === false) {
+            if ($name === false || $name === '') {
                 continue;
             }
-            if ($name[0] === '/' || $name[0] === '\\' || preg_match('#(^|[\\\\/])\.\.([\\\\/]|$)#', $name)) {
+            if (
+                $name[0] === '/' || $name[0] === '\\'
+                || preg_match('#^[a-z]:#i', $name)
+                || preg_match('#(^|[\\\\/])\.\.([\\\\/]|$)#', $name)
+            ) {
                 $zip->close();
                 throw new \RuntimeException(self::ERROR_NOT_ZIP);
+            }
+            $stat = $zip->statIndex($i);
+            $totalsize += (int) ($stat['size'] ?? 0);
+            if ($i + 1 > self::MAX_ENTRIES || $totalsize > self::MAX_UNCOMPRESSED_BYTES) {
+                $zip->close();
+                throw new \RuntimeException(self::ERROR_TOO_LARGE);
             }
         }
         if (!$zip->extractTo($targetdir)) {

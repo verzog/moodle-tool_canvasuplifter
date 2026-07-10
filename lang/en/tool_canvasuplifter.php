@@ -73,6 +73,7 @@ $string['errorjobnotfound'] = 'That build job no longer exists.';
 $string['errornomanifest'] = 'No imsmanifest.xml was found, so this is not a valid Canvas package.';
 $string['errornosource'] = 'Provide a Canvas export file or a download URL.';
 $string['errornotzip'] = 'That file could not be opened as a Common Cartridge (zip) package.';
+$string['errorpackagetoolarge'] = 'That package is too large to extract safely (it expands past the allowed size or file count).';
 $string['extraquizzesbuilt'] = 'Also built {$a} runnable quiz(zes) from standalone question banks (in "Additional resources").';
 $string['itemcount'] = 'Content items';
 $string['itemdetailheading'] = 'Item-by-item detail';
@@ -189,6 +190,9 @@ $string['targetcategory'] = 'Target course category';
 $string['targetcategory_help'] = 'The new course will be created in this category. '
     . 'You need the "create courses" capability in the chosen category.';
 $string['tokenexpired'] = 'The upload token has expired. Try refreshing the page to receive a new one.';
+$string['trustedsourcewarning'] = 'Only import Common Cartridge packages from a source you trust. '
+    . 'Imported page and description HTML is stored and shown as authored (Moodle does not re-clean it), '
+    . 'so a package from an untrusted source could contain active content that runs for anyone viewing the course.';
 $string['unknownheading'] = 'Unclassified resource types (debug)';
 $string['untitledsection'] = 'Untitled section';
 $string['uploaded'] = 'File uploaded';

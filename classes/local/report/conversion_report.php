@@ -16,7 +16,6 @@
 
 namespace tool_canvasuplifter\local\report;
 
-use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\model\qti_question;
@@ -102,7 +101,7 @@ class conversion_report {
      * @return bool
      */
     public static function builds_now(string $kind): bool {
-        return in_array($kind, course_builder::BUILDS_NOW, true);
+        return in_array($kind, item::BUILDS_NOW, true);
     }
 
     /**
@@ -442,7 +441,12 @@ class conversion_report {
                 continue;
             }
             $absolute = realpath($this->packageroot . '/' . ltrim($relative, '/'));
-            if ($absolute !== false && str_starts_with($absolute, $root) && is_readable($absolute)) {
+            if ($absolute === false || !is_readable($absolute)) {
+                continue;
+            }
+            // Require a directory boundary, not a bare string prefix, so a sibling
+            // directory sharing the root's name (e.g. "<root>-x") cannot pass.
+            if ($absolute === $root || str_starts_with($absolute, $root . DIRECTORY_SEPARATOR)) {
                 return $absolute;
             }
         }

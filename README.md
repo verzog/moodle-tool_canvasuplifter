@@ -16,6 +16,16 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 > assignments use the IMS Assignment profile build through the same
 > `mod_assign` path. See the Roadmap and "Path to beta" sections below.
 
+## Security — import only trusted packages
+
+Imported page and description HTML is stored and displayed **as authored** —
+Moodle renders it without re-cleaning — so a Common Cartridge package from an
+untrusted source could carry active content (for example `<script>`) that runs
+for anyone who views the course. **Only import packages you trust.** The
+capability that gates the tool (`tool/canvasuplifter:use`) is restricted to
+managers and declares an XSS risk to reflect this; the upload page shows the
+same warning.
+
 ## Requirements
 
 - Moodle 5.0+ (question banks are `mod_qbank` activity modules from 5.0)

@@ -68,12 +68,14 @@ class assign_builder {
             // directly inside <resource>; parse it without touching disk.
             $settings = assignment_settings::parse($modelitem->inlinexml);
         } else {
-            mtrace(sprintf(
-                'tool_canvasuplifter: assignment "%s" skipped — no assignment_settings.xml,'
-                . ' inline CC 1.3 profile or assignment XML (files=%s)',
-                $modelitem->title,
-                implode(',', $modelitem->files)
-            ));
+            if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
+                mtrace(sprintf(
+                    'tool_canvasuplifter: assignment "%s" skipped — no assignment_settings.xml,'
+                    . ' inline CC 1.3 profile or assignment XML (files=%s)',
+                    $modelitem->title,
+                    implode(',', $modelitem->files)
+                ));
+            }
             return null;
         }
 

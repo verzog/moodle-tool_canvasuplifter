@@ -113,7 +113,7 @@ class qti_parser {
         if ($weight === '') {
             $weight = $this->metadata_field($item, 'points_possible');
         }
-        $question->defaultmark = (float) ($weight ?: 1) ?: 1.0;
+        $question->defaultmark = max(0.0, (float) ($weight ?: 1) ?: 1.0);
 
         $presentation = $this->first_child_element($item, 'presentation');
         $question->questiontext = $presentation !== null ? $this->prompt_text($presentation) : '';
@@ -582,12 +582,21 @@ class qti_parser {
                     $current[] = trim($ve->textContent);
                 }
             }
-            if ($current !== [] && $score >= $best) {
+            if ($current === []) {
+                continue;
+            }
+            // A higher-scoring condition replaces the answer; a condition with
+            // the same top score adds to it, so a multiple-response question
+            // whose correct options are split across sibling respconditions (one
+            // positively-scored varequal each) keeps them all, not just the last.
+            if ($score > $best) {
                 $best = $score;
                 $idents = $current;
+            } else if ($score == $best) {
+                $idents = array_merge($idents, $current);
             }
         }
-        return $idents;
+        return array_values(array_unique($idents));
     }
 
     /**

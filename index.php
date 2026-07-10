@@ -163,6 +163,14 @@ if ($error !== null) {
     echo $OUTPUT->notification($error, \core\output\notification::NOTIFY_ERROR);
 }
 
+// Imported page/description HTML is stored and rendered as-authored (Moodle does
+// not re-clean it), so an untrusted package could carry active content. Warn the
+// admin to only import packages they trust.
+echo $OUTPUT->notification(
+    get_string('trustedsourcewarning', 'tool_canvasuplifter'),
+    \core\output\notification::NOTIFY_WARNING
+);
+
 // Point the admin at the built-in chunked-upload field for large packages.
 echo html_writer::tag('p', get_string('chunkuploadactive', 'tool_canvasuplifter'), ['class' => 'text-muted']);
 $form->display();

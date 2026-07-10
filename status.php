@@ -41,6 +41,11 @@ $job = $jobs->get($jobid);
 if (!$job) {
     throw new \moodle_exception('errorjobnotfound', 'tool_canvasuplifter');
 }
+// Show a job only to the user who queued it; the same not-found error avoids
+// revealing whether another user's job id exists.
+if ((int) $job->userid !== (int) $USER->id) {
+    throw new \moodle_exception('errorjobnotfound', 'tool_canvasuplifter');
+}
 
 // Auto-refresh while the build is in flight.
 if (in_array($job->status, [job_manager::STATUS_QUEUED, job_manager::STATUS_RUNNING], true)) {

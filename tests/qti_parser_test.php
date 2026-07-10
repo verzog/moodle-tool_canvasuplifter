@@ -116,6 +116,40 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A multiple-response question whose correct options are split across sibling
+     * respconditions (one positively-scored varequal each) keeps every correct
+     * option, not just the last condition's.
+     *
+     * @return void
+     */
+    public function test_multiple_response_split_conditions_keeps_all_correct(): void {
+        $pres = '<presentation><material><mattext>Pick two</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Multiple"><render_choice>'
+            . '<response_label ident="A"><material><mattext>Alpha</mattext></material></response_label>'
+            . '<response_label ident="B"><material><mattext>Beta</mattext></material></response_label>'
+            . '<response_label ident="C"><material><mattext>Gamma</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        // A and B are each marked correct by their own sibling respcondition.
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">50</setvar></respcondition>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">B</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">50</setvar></respcondition></resprocessing>';
+
+        $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_response.v0p1', $pres, $resp)));
+
+        $this->assertCount(1, $r['questions']);
+        $correct = [];
+        foreach ($r['questions'][0]->answers as $a) {
+            if ((float) $a['fraction'] > 0) {
+                $correct[] = trim($a['text']);
+            }
+        }
+        sort($correct);
+        $this->assertSame(['Alpha', 'Beta'], $correct);
+    }
+
+    /**
      * A Canvas acknowledgment question (a single correct "YES" option) gains a
      * synthesised "No" distractor so Moodle, which needs two options, can save it.
      *

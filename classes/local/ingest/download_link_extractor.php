@@ -138,10 +138,8 @@ class download_link_extractor {
         }
         // Path-relative: resolve against the base path's directory.
         $basepath = $base['path'] ?? '/';
-        $dir = substr($basepath, 0, strrpos($basepath, '/') + 1);
-        if ($dir === '') {
-            $dir = '/';
-        }
+        $slash = strrpos($basepath, '/');
+        $dir = $slash === false ? '/' : substr($basepath, 0, $slash + 1);
         return $authority . self::collapse_dots($dir . $url);
     }
 

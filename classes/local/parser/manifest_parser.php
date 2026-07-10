@@ -185,10 +185,21 @@ class manifest_parser {
      */
     private function disambiguate_questionbank_titles(course_model $course): void {
         $counts = [];
+        $countedids = [];
         foreach ($course->all_items() as $modelitem) {
             $key = $modelitem->title;
             if ($key === '') {
                 continue;
+            }
+            // Count each resource once even when the organisation tree places it
+            // in more than one section, so a single bank isn't mistaken for two
+            // distinct items that happen to share a title.
+            $id = $modelitem->identifier;
+            if ($id !== '') {
+                if (isset($countedids[$id])) {
+                    continue;
+                }
+                $countedids[$id] = true;
             }
             $counts[$key] = ($counts[$key] ?? 0) + 1;
         }
@@ -1094,7 +1105,11 @@ class manifest_parser {
      * @return item Either the fallback or its preferred variant target.
      */
     private function prefer_variant(item $fallback, array $resources): item {
-        if ($fallback->variantref === '' || !isset($resources[$fallback->variantref])) {
+        if (
+            $fallback->variantref === ''
+            || $fallback->variantref === $fallback->identifier
+            || !isset($resources[$fallback->variantref])
+        ) {
             return $fallback;
         }
         $preferred = $resources[$fallback->variantref];

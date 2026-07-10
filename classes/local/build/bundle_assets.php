@@ -125,10 +125,11 @@ final class bundle_assets {
                 continue;
             }
             $filename = basename($relpath);
-            $filepath = '/' . trim((string) dirname($relpath), '/.');
-            if ($filepath !== '/' && !str_ends_with($filepath, '/')) {
-                $filepath .= '/';
-            }
+            // Trim only slashes (not dots), so a leading-dot directory such as
+            // ".data" keeps its name and matches the URL rewrite_refs() emits;
+            // a top-level file (dirname ".") maps to the filearea root.
+            $dir = dirname($relpath);
+            $filepath = ($dir === '' || $dir === '.') ? '/' : '/' . trim($dir, '/') . '/';
             if ($fs->file_exists($contextid, $component, $filearea, $itemid, $filepath, $filename)) {
                 continue;
             }
