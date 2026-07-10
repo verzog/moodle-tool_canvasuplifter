@@ -16,11 +16,13 @@
 /**
  * Manage the upload of a large package in chunks.
  *
- * Folded in from local_chunkupload (2020 Justus Dieckmann WWU).
+ * Folded in from local_chunkupload (2020 Justus Dieckmann WWU); the upload loop
+ * was reworked to retry a chunk through transient network/5xx failures and to
+ * reconcile the resume position with the server after each failure.
  *
  * @module    tool_canvasuplifter/chunkupload
  * @copyright  2020 Justus Dieckmann WWU
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 import $ from 'jquery';
 import {get_strings as getStrings} from 'core/str';
@@ -28,6 +30,18 @@ import notification from 'core/notification';
 
 /** @var {string} URL of the action-dispatched chunk upload endpoint, relative to wwwroot. */
 const ENDPOINT = "/admin/tool/canvasuplifter/chunkupload_ajax.php?";
+
+/** @var {number} How many times to retry a chunk after a transient failure before giving up. */
+const MAX_RETRIES = 5;
+
+/** @var {number} Base backoff between retries in ms; doubles each attempt up to the cap. */
+const BACKOFF_BASE_MS = 1000;
+
+/** @var {number} Upper bound on a single backoff wait in ms. */
+const BACKOFF_CAP_MS = 16000;
+
+/** @var {number} Server-side "upload completed" state (mirrors state_type.php). */
+const STATE_COMPLETED = 2;
 
 /**
  * Init
@@ -39,22 +53,17 @@ const ENDPOINT = "/admin/tool/canvasuplifter/chunkupload_ajax.php?";
  * @param {string} browsetext Text to display when no file is uploaded.
  */
 export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, browsetext) {
-    let wwwRoot,
-        chunkSize;
+    let wwwRoot = wwwroot;
+    let chunkSize = chunksize;
 
-    let fileinput, filename, progress, progressicon, deleteicon;
-
-    let token;
-
-    fileinput = $('#' + elementid + "_file");
-    token = $('#' + elementid).val();
+    let fileinput = $('#' + elementid + "_file");
+    let token = $('#' + elementid).val();
     let parentelem = fileinput.next();
-    filename = parentelem.find('.chunkupload-filename');
-    progress = parentelem.find('.chunkupload-progress');
-    progressicon = parentelem.find('.chunkupload-icon');
-    deleteicon = parentelem.next();
-    wwwRoot = wwwroot;
-    chunkSize = chunksize;
+    let filename = parentelem.find('.chunkupload-filename');
+    let progress = parentelem.find('.chunkupload-progress');
+    let progressicon = parentelem.find('.chunkupload-icon');
+    let deleteicon = parentelem.next();
+
     fileinput.change(() => {
         reset();
         let file = fileinput.get(0).files[0];
@@ -74,7 +83,7 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
             return;
         }
         filename.text(file.name);
-        startUpload(file);
+        uploadFile(file);
     });
 
     deleteicon.on('click', (event) => {
@@ -92,88 +101,158 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
     });
 
     /**
-     * Start the Upload
-     * @param {File} file The File to upload.
+     * POST one request to the endpoint. Resolves with the HTTP status and
+     * response text once the request completes; a network-level failure
+     * resolves with status 0 (treated as transient) rather than rejecting.
+     *
+     * @param {object} params Query parameters (action, id, ...).
+     * @param {Blob|null} body Request body, or null for a bodyless request.
+     * @param {function|null} onprogress Optional callback given the bytes uploaded so far.
+     * @return {Promise} Resolves with {status, text}.
      */
-    function startUpload(file) {
-        let end = chunkSize < file.size ? chunkSize : file.size;
-        let params = {
-            action: 'start',
-            start: 0,
-            end: end,
-            length: file.size,
-            filename: file.name,
-            id: token
-        };
-        let slice = file.slice(0, end);
-        let xhr = new XMLHttpRequest();
-        xhr.open('post', wwwRoot + ENDPOINT + $.param(params));
-        xhr.upload.onprogress = (e) => {
-            setProgress(e.loaded, file.size);
-        };
-        xhr.onreadystatechange = () => {
-            if (xhr.readyState === 4) {
-                if (xhr.status === 200) {
-                    let response = JSON.parse(xhr.responseText);
-                    if (response.error !== undefined) {
-                        notifyError(response.error);
-                    } else {
-                        if (end < file.size) {
-                            proceedUpload(file, chunkSize);
-                        }
-                    }
-                }
+    function postRequest(params, body, onprogress) {
+        return new Promise((resolve) => {
+            let xhr = new XMLHttpRequest();
+            xhr.open('post', wwwRoot + ENDPOINT + $.param(params));
+            if (onprogress && xhr.upload) {
+                xhr.upload.onprogress = (e) => onprogress(e.loaded);
             }
-        };
-        xhr.onerror = () => {
-            reset();
-            // Network-level failure (proxy/timeout/size limit); strings may be unreachable.
-            notification.alert("Error", "Failure while uploading!", "Ok");
-        };
-        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-        xhr.send(slice);
+            xhr.onreadystatechange = () => {
+                if (xhr.readyState === 4) {
+                    resolve({status: xhr.status, text: xhr.responseText});
+                }
+            };
+            xhr.onerror = () => resolve({status: 0, text: ''});
+            xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+            xhr.send(body);
+        });
     }
 
     /**
-     * Proceed the upload
-     * @param {File} file
-     * @param {int} start from where to proceed the upload.
+     * Ask the server how many bytes of this upload it has actually stored, so a
+     * retry after a lost response resumes from the true position instead of
+     * dead-ending on a chunk-alignment error.
+     *
+     * @return {Promise} Resolves with {state, currentpos, length}, or null if unknown.
      */
-    function proceedUpload(file, start) {
-        let end = start + chunkSize < file.size ? start + chunkSize : file.size;
-        let params = {
-            action: 'proceed',
-            start: start,
-            end: end,
-            id: token
-        };
-        let slice = file.slice(start, end);
-        let xhr = new XMLHttpRequest();
-        xhr.open('post', wwwRoot + ENDPOINT + $.param(params));
-        xhr.upload.onprogress = (e) => {
-            setProgress(e.loaded + start, file.size);
-        };
-        xhr.onreadystatechange = () => {
-            if (xhr.readyState === 4) {
-                if (xhr.status === 200) {
-                    let response = JSON.parse(xhr.responseText);
-                    if (response.error !== undefined) {
-                        notifyError(response.error);
-                    } else {
-                        if (end < file.size) {
-                            proceedUpload(file, end);
-                        }
+    async function queryStatus() {
+        let result = await postRequest({action: 'status', id: token}, null, null);
+        if (result.status !== 200) {
+            return null;
+        }
+        try {
+            let snap = JSON.parse(result.text);
+            if (snap.error !== undefined || snap.currentpos === undefined) {
+                return null;
+            }
+            return snap;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
+     * Resolve after the given number of milliseconds.
+     *
+     * @param {number} ms Milliseconds to wait.
+     * @return {Promise} Resolves once the delay elapses.
+     */
+    function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Upload the whole file chunk by chunk. A chunk is retried through transient
+     * network/5xx failures with exponential backoff, reconciling the resume
+     * position with the server after each failure. A 4xx response or an explicit
+     * server error message is terminal.
+     *
+     * @param {File} file The file to upload.
+     * @return {Promise} Resolves once the upload finishes or fails terminally.
+     */
+    async function uploadFile(file) {
+        let confirmed = 0;      // Bytes the server has confirmed stored.
+        let retries = 0;
+        let started = false;    // A chunk for THIS file has been accepted by the server.
+        while (confirmed < file.size) {
+            let start = confirmed;
+            let end = Math.min(start + chunkSize, file.size);
+            let firstchunk = start === 0;
+            let params = firstchunk
+                ? {action: 'start', start: start, end: end, length: file.size, filename: file.name, id: token}
+                : {action: 'proceed', start: start, end: end, id: token};
+            let slice = file.slice(start, end);
+            let result = await postRequest(params, slice, (loaded) => setProgress(start + loaded, file.size));
+
+            if (result.status === 200) {
+                let response = null;
+                try {
+                    response = JSON.parse(result.text);
+                } catch (e) {
+                    response = null;
+                }
+                if (response !== null && response.error !== undefined) {
+                    // Explicit server-side rejection — terminal.
+                    notifyError(response.error);
+                    return;
+                }
+                if (response !== null) {
+                    // Chunk accepted.
+                    confirmed = end;
+                    started = true;
+                    retries = 0;
+                    setProgress(confirmed, file.size);
+                    continue;
+                }
+                // A 200 with an unreadable body falls through to a retry.
+            } else if (isTerminal(result.status)) {
+                // Terminal client-side rejection (e.g. 413: chunk too large for a proxy).
+                notifyError(result.status === 413
+                    ? {key: 'errorchunktoolarge', component: 'tool_canvasuplifter'}
+                    : {key: 'erroruploadfailed', component: 'tool_canvasuplifter'});
+                return;
+            }
+
+            // Transient failure (network, 5xx, 408/429, or an unreadable 200):
+            // back off, reconcile the resume position with the server, then retry.
+            if (retries >= MAX_RETRIES) {
+                notifyError({key: 'erroruploadfailed', component: 'tool_canvasuplifter'});
+                return;
+            }
+            retries++;
+            await sleep(Math.min(BACKOFF_BASE_MS * Math.pow(2, retries - 1), BACKOFF_CAP_MS));
+            // Only trust the server's position once a chunk for THIS file has
+            // been accepted (so a stale row from a previous completed upload is
+            // never mistaken for this one) and its reported length matches.
+            if (started) {
+                let snap = await queryStatus();
+                if (snap !== null && snap.length === file.size) {
+                    let advanced = snap.currentpos > confirmed;
+                    confirmed = (snap.state === STATE_COMPLETED || snap.currentpos >= file.size)
+                        ? file.size : snap.currentpos;
+                    if (advanced) {
+                        // The failed chunk actually committed — real progress, so
+                        // this attempt does not count against the retry budget.
+                        retries = 0;
                     }
+                    setProgress(confirmed, file.size);
                 }
             }
-        };
-        xhr.onerror = () => {
-            reset();
-            // Doesn't make sense to try to fetch strings when having internet problems.
-            notification.alert("Error", "Failure while uploading!", "Ok");
-        };
-        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-        xhr.send(slice);
+        }
+        // The server holds the whole file; mark the bar finished.
+        setProgress(file.size, file.size);
+    }
+
+    /**
+     * Whether an HTTP status is a terminal client-side rejection. 408 (request
+     * timeout) and 429 (too many requests) are transient and handled by the
+     * retry path; other 4xx responses are validation errors and terminal.
+     *
+     * @param {number} status The HTTP status code.
+     * @return {boolean} True if the upload should abort on this status.
+     */
+    function isTerminal(status) {
+        return status >= 400 && status < 500 && status !== 408 && status !== 429;
     }
 
     /**

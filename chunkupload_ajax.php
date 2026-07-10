@@ -128,31 +128,22 @@ switch ($action) {
         if ($end === null) {
             $senderror('Param end is missing');
         }
-        if ($record->state != state_type::UPLOAD_STARTED) {
-            $senderror("File is in state $record->state, unable to proceed upload!");
-        }
-        if ($record->currentpos != $start) {
-            $senderror('Filechunk does not begin where the last one left off.');
-        }
-        if ($end > $record->length) {
-            $senderror('Filechunk is too long and exceeds the length of the whole file.');
+        // Reject a malformed or replayed range from the token's stored state
+        // alone, before buffering the request body.
+        $bounds = form_element::check_bounds($record, $start, $end);
+        if ($bounds !== null) {
+            $senderror($bounds);
         }
 
-        $path = form_element::get_path_for_id($id);
-        if (!file_exists($path)) {
-            $senderror('Begin of file does not exist on this server.');
-        }
-
+        // Read exactly the advertised span. apply_proceed reconciles it against
+        // the stored position, so a chunk the client retries after a failed
+        // request (a 504 that still committed, or a half-written attempt) is
+        // handled without corrupting the file or dead-ending on alignment.
         $content = file_get_contents('php://input', false, null, 0, $end - $start);
-        if (strlen($content) != $end - $start) {
-            $senderror('Filechunk is not as long as it should be.');
+        $error = form_element::apply_proceed($record, $start, $end, $content);
+        if ($error !== null) {
+            $senderror($error);
         }
-        file_put_contents($path, $content, FILE_APPEND);
-
-        $record->state = $end == $record->length ? state_type::UPLOAD_COMPLETED : state_type::UPLOAD_STARTED;
-        $record->currentpos = $end;
-        $record->lastmodified = time();
-        $DB->update_record('tool_canvasuplifter_chunks', $record);
         break;
 
     case 'delete':
@@ -168,6 +159,12 @@ switch ($action) {
             $DB->update_record('tool_canvasuplifter_chunks', $record);
         }
         break;
+
+    case 'status':
+        // Report how far the server has actually stored this upload, so the
+        // browser can resume from the true position after a failed chunk.
+        $progress = form_element::get_progress($id);
+        die(json_encode((object) ($progress ?? ['error' => get_string('tokenexpired', 'tool_canvasuplifter')])));
 
     default:
         $senderror('Unknown action.');

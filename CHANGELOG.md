@@ -5,6 +5,27 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.39.14] - 2026-07-10
+
+Make the large-package (chunked) upload survive a flaky connection or a
+timed-out chunk:
+
+- The uploader now retries a chunk through transient failures — network errors,
+  5xx, and 408/429 — with exponential backoff (up to five attempts) instead of
+  silently freezing when a request fails; previously a 504 from a reverse proxy
+  left the progress bar stuck with no error, because only HTTP 200 was handled.
+- After a failed chunk the browser asks the server how far it actually got (new
+  `status` action) and resumes from that position, so a 504 that timed out the
+  response but still committed the write no longer dead-ends the upload on a
+  chunk-alignment error.
+- The server now trusts its stored position when a chunk is re-sent: any bytes a
+  half-finished attempt wrote past it are truncated before writing, and a chunk
+  already stored is accepted as a no-op — so a retried chunk can never
+  double-append and corrupt the package.
+- A chunk a proxy rejects as too large (413) now reports a clear message asking
+  an administrator to lower the "Chunk size (MB)" setting, rather than failing
+  silently.
+
 ## [0.39.13] - 2026-07-10
 
 Better handling of ANGEL/eXe-authored Common Cartridge exports:
