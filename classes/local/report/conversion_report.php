@@ -475,22 +475,67 @@ class conversion_report {
 
     /**
      * The package file name that best identifies a resource, for extension and
-     * duplicate checks. Mirrors file_builder::source_path()'s href-first ordering
-     * (href, then the first file, then the title) so the report judges the same
-     * payload Moodle will actually import — an href="ex/index.html" resource whose
-     * first file is a secondary ex/movie.swf asset is judged on the HTML.
+     * duplicate checks. Mirrors file_builder::source_path(): it tries the href
+     * first, then each file in order, and — when the package root is available —
+     * skips candidates that do not resolve to a readable file, so the report
+     * judges the payload Moodle will actually import. A resource whose stale
+     * href="missing.html" falls through to a readable slides.swf is therefore
+     * judged on the Flash file, and one whose readable href="ex/index.html" lists
+     * a secondary ex/movie.swf first is judged on the HTML. Without package
+     * access it falls back to the same ordering on the raw manifest names.
      *
      * @param item $modelitem The resource.
      * @return string A file name, possibly path-qualified; '' when none is known.
      */
     private function file_source_name(item $modelitem): string {
+        $candidates = [];
         if ($modelitem->href !== '') {
-            return $modelitem->href;
+            $candidates[] = $modelitem->href;
         }
-        if (!empty($modelitem->files)) {
-            return (string) $modelitem->files[0];
+        $candidates = array_merge($candidates, $modelitem->files);
+        // With package access, return the first candidate that resolves to a
+        // readable file, exactly as the builder does when it picks the payload.
+        if ($this->packageroot !== null) {
+            foreach ($candidates as $relative) {
+                if ($this->resolve_readable((string) $relative) !== null) {
+                    return (string) $relative;
+                }
+            }
+        }
+        // No package access, or nothing resolved: judge on the first named
+        // candidate (href, then the first file), else the title.
+        foreach ($candidates as $relative) {
+            if ((string) $relative !== '') {
+                return (string) $relative;
+            }
         }
         return $modelitem->title;
+    }
+
+    /**
+     * Resolve a package-relative path to a readable file within the package root,
+     * mirroring the readability check the builder applies before it serves a
+     * candidate. Returns null when there is no package root, the path escapes it,
+     * or the file is missing or unreadable.
+     *
+     * @param string $relative The package-relative candidate path.
+     * @return string|null The absolute path, or null.
+     */
+    private function resolve_readable(string $relative): ?string {
+        if ($this->packageroot === null || $relative === '') {
+            return null;
+        }
+        $root = realpath($this->packageroot);
+        if ($root === false) {
+            return null;
+        }
+        $absolute = realpath($this->packageroot . '/' . ltrim($relative, '/'));
+        if ($absolute === false || !is_file($absolute) || !is_readable($absolute)) {
+            return null;
+        }
+        // Require a directory boundary, not a bare prefix, so a sibling directory
+        // sharing the root's name cannot pass (as resolve_qti() does).
+        return ($absolute === $root || str_starts_with($absolute, $root . DIRECTORY_SEPARATOR)) ? $absolute : null;
     }
 
     /**

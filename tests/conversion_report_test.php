@@ -490,6 +490,54 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * With package access, a resource whose manifest href is unreadable but whose
+     * file list holds a readable Flash payload is judged on the file the builder
+     * would import, so it is flagged obsolete.
+     *
+     * @return void
+     */
+    public function test_report_flags_flash_when_href_unreadable(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/slides.swf', 'flash');
+
+        $course = new course_model();
+        $stale = new item('s1', 'Presentation');
+        $stale->kind = item::KIND_FILE;
+        $stale->href = 'missing.html';
+        $stale->files = ['slides.swf'];
+        $course->orphans[] = $stale;
+
+        $report = (new conversion_report($course, $dir))->build();
+
+        $this->assertContains('warnreportobsolete', $report['warnings']);
+        $this->assertContains('note_file_obsolete', array_column($report['rows'], 'note'));
+    }
+
+    /**
+     * With package access, a readable href (an HTML page) is honoured over a
+     * secondary Flash file, so the resource is not flagged obsolete.
+     *
+     * @return void
+     */
+    public function test_report_honours_readable_href_over_secondary_flash(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/index.html', '<p>hi</p>');
+        file_put_contents($dir . '/movie.swf', 'flash');
+
+        $course = new course_model();
+        $page = new item('p1', 'Interactive exercise');
+        $page->kind = item::KIND_FILE;
+        $page->href = 'index.html';
+        $page->files = ['movie.swf', 'index.html'];
+        $course->orphans[] = $page;
+
+        $report = (new conversion_report($course, $dir))->build();
+
+        $this->assertNotContains('warnreportobsolete', $report['warnings']);
+        $this->assertNotContains('note_file_obsolete', array_column($report['rows'], 'note'));
+    }
+
+    /**
      * A file whose name carries a copy marker of an original also present in the
      * package (for example "name (2)" or "name-1") raises the duplicates warning.
      *
