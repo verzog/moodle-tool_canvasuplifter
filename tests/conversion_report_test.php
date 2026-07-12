@@ -340,6 +340,10 @@ final class conversion_report_test extends \advanced_testcase {
         $this->assertFalse($bylabel['cc.numeric.v0p1']['supported']);
         $this->assertSame('unsupported', $bylabel['cc.numeric.v0p1']['status']);
         $this->assertSame(1, $bylabel['cc.numeric.v0p1']['count']);
+        // The dropped question is attributed to the assessment it came from.
+        $this->assertSame([['name' => 'Quiz', 'count' => 1]], $bylabel['cc.numeric.v0p1']['sources']);
+        // A converting row carries no source attribution.
+        $this->assertSame([], $bylabel['multichoice']['sources']);
     }
 
     /**
@@ -377,6 +381,58 @@ final class conversion_report_test extends \advanced_testcase {
         // The single-option ("only") choice is a recognised type we can't
         // complete, so it is flagged incomplete rather than unsupported.
         $this->assertSame('incomplete', reset($notconverting)['status']);
+        // The skipped question names the assessment it came from.
+        $this->assertSame([['name' => 'Quiz', 'count' => 1]], reset($notconverting)['sources']);
+    }
+
+    /**
+     * When one question type is dropped across several assessments, the matrix
+     * attributes the losses per assessment, most-affected first, so a shortened
+     * quiz is visible rather than hidden behind a bare total.
+     *
+     * @return void
+     */
+    public function test_matrix_attributes_skipped_questions_per_assessment(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        $final = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Final Exam"><section ident="s1">'
+            . $this->profileitem('cc.multiple_choice.v0p1', 'B')
+            . $this->oneoptionitem('cc.multiple_choice.v0p1', 'f1')
+            . $this->oneoptionitem('cc.multiple_choice.v0p1', 'f2')
+            . '</section></assessment></questestinterop>';
+        $practice = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a2" title="Practice"><section ident="s1">'
+            . $this->oneoptionitem('cc.multiple_choice.v0p1', 'p1')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/final.xml', $final);
+        file_put_contents($dir . '/quiz/practice.xml', $practice);
+
+        $course = new course_model();
+        $finalquiz = new item('q1', 'Final Exam');
+        $finalquiz->kind = item::KIND_QUIZ;
+        $finalquiz->files = ['quiz/final.xml'];
+        $practicequiz = new item('q2', 'Practice');
+        $practicequiz->kind = item::KIND_QUIZ;
+        $practicequiz->files = ['quiz/practice.xml'];
+        $section = new section_model('Week 1');
+        $section->add_item($finalquiz);
+        $section->add_item($practicequiz);
+        $course->sections[] = $section;
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        $notconverting = array_filter($matrix['rows'], fn($r) => $r['label'] === 'multichoice' && !$r['supported']);
+        $row = reset($notconverting);
+        $this->assertSame('incomplete', $row['status']);
+        $this->assertSame(3, $row['count']);
+        // Most-affected assessment first, each with its own dropped-question count.
+        $this->assertSame(
+            [['name' => 'Final Exam', 'count' => 2], ['name' => 'Practice', 'count' => 1]],
+            $row['sources']
+        );
     }
 
     /**
@@ -384,10 +440,11 @@ final class conversion_report_test extends \advanced_testcase {
      * needs at least two answers, so it cannot actually be saved.
      *
      * @param string $profile The cc_profile value.
+     * @param string $suffix Distinguishes items sharing a profile (unique idents).
      * @return string
      */
-    private function oneoptionitem(string $profile): string {
-        return '<item ident="i_one_' . md5($profile) . '"><itemmetadata><qtimetadata>'
+    private function oneoptionitem(string $profile, string $suffix = ''): string {
+        return '<item ident="i_one_' . md5($profile . $suffix) . '"><itemmetadata><qtimetadata>'
             . '<qtimetadatafield><fieldlabel>cc_profile</fieldlabel><fieldentry>' . $profile . '</fieldentry>'
             . '</qtimetadatafield></qtimetadata></itemmetadata>'
             . '<presentation><material><mattext>Q?</mattext></material>'

@@ -91,6 +91,7 @@ $string['matrixexplain'] = '{$a->supported} of {$a->total} questions will conver
     . 'question we could not complete) are listed by type; types we cannot map are listed by their '
     . 'Canvas profile. Both are skipped.';
 $string['matrixheading'] = 'Question-type matrix';
+$string['matrixskippedfrom'] = 'from {$a}';
 $string['matrixsupported_incomplete'] = 'Skipped (incomplete)';
 $string['matrixsupported_no'] = 'Skipped';
 $string['matrixsupported_yes'] = 'Yes';

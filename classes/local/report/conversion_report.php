@@ -361,20 +361,37 @@ class conversion_report {
      * will be skipped.
      *
      * @return array Empty, or {total:int, supported:int, rows: array} of rows
-     *               {label:string, count:int, supported:bool, status:string}.
-     *               status is 'yes' (imports), 'incomplete' (a supported type
-     *               missing data Moodle needs, e.g. a single-option choice) or
-     *               'unsupported' (a type we cannot map).
+     *               {label:string, count:int, supported:bool, status:string,
+     *               sources: array}. status is 'yes' (imports), 'incomplete' (a
+     *               supported type missing data Moodle needs, e.g. a single-option
+     *               choice) or 'unsupported' (a type we cannot map). For skipped
+     *               rows (incomplete/unsupported) sources lists the assessments the
+     *               dropped questions came from as {name:string, count:int},
+     *               most-affected first; converting rows carry an empty list.
      */
     public function question_type_matrix(): array {
         if ($this->packageroot === null) {
             return [];
         }
-        $supported = [];     // Importable, keyed by Moodle question type.
-        $incomplete = [];    // Supported type Moodle would reject, keyed by type.
-        $unsupported = [];   // Unrecognised, keyed by Canvas cc_profile.
+        $supported = [];           // Importable, keyed by Moodle question type.
+        $incomplete = [];          // Supported type Moodle would reject, keyed by type.
+        $unsupported = [];         // Unrecognised, keyed by Canvas cc_profile.
+        $incompletesources = [];   // Type -> [assessment name -> count] for dropped questions.
+        $unsupportedsources = [];  // Profile -> [assessment name -> count] for dropped questions.
         $total = 0;
-        foreach ($this->course->all_items() as $modelitem) {
+        // Walk orphans then section items (matching all_items() order) but keep the
+        // referenced flag so each dropped question is attributed to the assessment
+        // name graders will actually see (an orphan quiz builds as a named bank).
+        $entries = [];
+        foreach ($this->course->orphans as $modelitem) {
+            $entries[] = [$modelitem, false];
+        }
+        foreach ($this->course->sections as $sectionmodel) {
+            foreach ($sectionmodel->items as $modelitem) {
+                $entries[] = [$modelitem, true];
+            }
+        }
+        foreach ($entries as [$modelitem, $referenced]) {
             if (!in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
                 continue;
             }
@@ -382,6 +399,7 @@ class conversion_report {
             if ($path === null) {
                 continue;
             }
+            $assessment = $this->display_title($modelitem, $referenced);
             $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
             foreach ($parsed['questions'] as $question) {
                 $total++;
@@ -390,10 +408,12 @@ class conversion_report {
                 } else if ($question->type === qti_question::TYPE_UNSUPPORTED) {
                     $label = $question->profile !== '' ? $question->profile : '(unknown)';
                     $unsupported[$label] = ($unsupported[$label] ?? 0) + 1;
+                    $unsupportedsources[$label][$assessment] = ($unsupportedsources[$label][$assessment] ?? 0) + 1;
                 } else {
                     // A recognised type that Moodle can't actually save (e.g. a
                     // choice question with fewer than two answers).
                     $incomplete[$question->type] = ($incomplete[$question->type] ?? 0) + 1;
+                    $incompletesources[$question->type][$assessment] = ($incompletesources[$question->type][$assessment] ?? 0) + 1;
                 }
             }
         }
@@ -406,16 +426,34 @@ class conversion_report {
         $rows = [];
         $supportedtotal = 0;
         foreach ($supported as $type => $count) {
-            $rows[] = ['label' => $type, 'count' => $count, 'supported' => true, 'status' => 'yes'];
+            $rows[] = ['label' => $type, 'count' => $count, 'supported' => true, 'status' => 'yes', 'sources' => []];
             $supportedtotal += $count;
         }
         foreach ($incomplete as $type => $count) {
-            $rows[] = ['label' => $type, 'count' => $count, 'supported' => false, 'status' => 'incomplete'];
+            $rows[] = ['label' => $type, 'count' => $count, 'supported' => false, 'status' => 'incomplete',
+                'sources' => $this->format_sources($incompletesources[$type] ?? [])];
         }
         foreach ($unsupported as $profile => $count) {
-            $rows[] = ['label' => $profile, 'count' => $count, 'supported' => false, 'status' => 'unsupported'];
+            $rows[] = ['label' => $profile, 'count' => $count, 'supported' => false, 'status' => 'unsupported',
+                'sources' => $this->format_sources($unsupportedsources[$profile] ?? [])];
         }
         return ['total' => $total, 'supported' => $supportedtotal, 'rows' => $rows];
+    }
+
+    /**
+     * Order an assessment-name => count map into a source list for a skipped
+     * question-type row, most-affected assessment first.
+     *
+     * @param array $counts Map of assessment display name to dropped-question count.
+     * @return array List of {name: string, count: int}, count-descending.
+     */
+    private function format_sources(array $counts): array {
+        arsort($counts);
+        $sources = [];
+        foreach ($counts as $name => $count) {
+            $sources[] = ['name' => (string) $name, 'count' => (int) $count];
+        }
+        return $sources;
     }
 
     /**
