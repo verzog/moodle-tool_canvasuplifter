@@ -579,6 +579,26 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * A four-digit year suffix marks a distinct edition, not a copy, so a
+     * "name-2024" file alongside "name" must not raise the duplicates warning.
+     *
+     * @return void
+     */
+    public function test_report_does_not_flag_year_suffixed_editions(): void {
+        $course = new course_model();
+        foreach (['docs/syllabus.pdf', 'docs/syllabus-2024.pdf'] as $i => $path) {
+            $file = new item('y' . $i, basename($path));
+            $file->kind = item::KIND_FILE;
+            $file->files = [$path];
+            $course->orphans[] = $file;
+        }
+
+        $report = (new conversion_report($course))->build();
+
+        $this->assertNotContains('warnreportduplicates', $report['warnings']);
+    }
+
+    /**
      * A single-option choice item: a recognised multichoice type, but Moodle
      * needs at least two answers, so it cannot actually be saved.
      *
