@@ -46,6 +46,9 @@ class conversion_report {
     /** Cannot be mapped yet. */
     public const CONFIDENCE_NONE = 'none';
 
+    /** File extensions for content modern browsers can no longer play (dead Flash). */
+    private const OBSOLETE_EXTENSIONS = ['swf', 'fla'];
+
     /** @var course_model The parsed course. */
     protected course_model $course;
 
@@ -133,6 +136,11 @@ class conversion_report {
         // book/lesson rather than its own mod_page.
         if ($grouped && $modelitem->kind === item::KIND_PAGE) {
             return $this->grouped_page_plan();
+        }
+        // A Flash resource imports fine but no modern browser will play it, so
+        // report it honestly rather than as a clean file conversion.
+        if ($this->is_obsolete_file($modelitem)) {
+            return ['target' => 'mod_resource', 'confidence' => self::CONFIDENCE_PARTIAL, 'note' => 'note_file_obsolete'];
         }
         return $this->plan_for($modelitem->kind);
     }
@@ -233,7 +241,10 @@ class conversion_report {
      */
     protected function accumulate(array &$grouped, item $modelitem, bool $referenced, bool $isgrouped = false): void {
         $plan = $this->effective_plan($modelitem, $referenced, $isgrouped);
-        $key = $modelitem->kind . '|' . $plan['target'];
+        // Include the note so items of one kind and target that convert with
+        // different caveats (e.g. a normal file vs an obsolete Flash file, both
+        // mod_resource) are reported as separate rows rather than merged.
+        $key = $modelitem->kind . '|' . $plan['target'] . '|' . $plan['note'];
         if (!isset($grouped[$key])) {
             $grouped[$key] = [
                 'kind' => $modelitem->kind,
@@ -334,6 +345,12 @@ class conversion_report {
         }
         if (($counts[item::KIND_QUIZ] ?? 0) > 0 || ($counts[item::KIND_QUESTIONBANK] ?? 0) > 0) {
             $warnings[] = 'warnreportquiz';
+        }
+        if ($this->has_obsolete_files()) {
+            $warnings[] = 'warnreportobsolete';
+        }
+        if ($this->duplicate_file_count() > 0) {
+            $warnings[] = 'warnreportduplicates';
         }
 
         return [
@@ -454,6 +471,153 @@ class conversion_report {
             $sources[] = ['name' => (string) $name, 'count' => (int) $count];
         }
         return $sources;
+    }
+
+    /**
+     * The package file name that best identifies a resource, for extension and
+     * duplicate checks. Mirrors file_builder::source_path(): it tries the href
+     * first, then each file in order, and — when the package root is available —
+     * skips candidates that do not resolve to a readable file, so the report
+     * judges the payload Moodle will actually import. A resource whose stale
+     * href="missing.html" falls through to a readable slides.swf is therefore
+     * judged on the Flash file, and one whose readable href="ex/index.html" lists
+     * a secondary ex/movie.swf first is judged on the HTML. Without package
+     * access it falls back to the same ordering on the raw manifest names.
+     *
+     * @param item $modelitem The resource.
+     * @return string A file name, possibly path-qualified; '' when none is known.
+     */
+    private function file_source_name(item $modelitem): string {
+        $candidates = [];
+        if ($modelitem->href !== '') {
+            $candidates[] = $modelitem->href;
+        }
+        $candidates = array_merge($candidates, $modelitem->files);
+        // With package access, return the first candidate that resolves to a
+        // readable file, exactly as the builder does when it picks the payload.
+        if ($this->packageroot !== null) {
+            foreach ($candidates as $relative) {
+                if ($this->resolve_readable((string) $relative) !== null) {
+                    return (string) $relative;
+                }
+            }
+        }
+        // No package access, or nothing resolved: judge on the first named
+        // candidate (href, then the first file), else the title.
+        foreach ($candidates as $relative) {
+            if ((string) $relative !== '') {
+                return (string) $relative;
+            }
+        }
+        return $modelitem->title;
+    }
+
+    /**
+     * Resolve a package-relative path to a readable file within the package root,
+     * mirroring the readability check the builder applies before it serves a
+     * candidate. Returns null when there is no package root, the path escapes it,
+     * or the file is missing or unreadable.
+     *
+     * @param string $relative The package-relative candidate path.
+     * @return string|null The absolute path, or null.
+     */
+    private function resolve_readable(string $relative): ?string {
+        if ($this->packageroot === null || $relative === '') {
+            return null;
+        }
+        $root = realpath($this->packageroot);
+        if ($root === false) {
+            return null;
+        }
+        $absolute = realpath($this->packageroot . '/' . ltrim($relative, '/'));
+        if ($absolute === false || !is_file($absolute) || !is_readable($absolute)) {
+            return null;
+        }
+        // Require a directory boundary, not a bare prefix, so a sibling directory
+        // sharing the root's name cannot pass (as resolve_qti() does).
+        return ($absolute === $root || str_starts_with($absolute, $root . DIRECTORY_SEPARATOR)) ? $absolute : null;
+    }
+
+    /**
+     * Whether a file resource is an obsolete format (dead Flash) that imports as a
+     * file but will not play in a modern browser.
+     *
+     * @param item $modelitem The resource.
+     * @return bool
+     */
+    private function is_obsolete_file(item $modelitem): bool {
+        if ($modelitem->kind !== item::KIND_FILE) {
+            return false;
+        }
+        $ext = strtolower(pathinfo($this->file_source_name($modelitem), PATHINFO_EXTENSION));
+        return in_array($ext, self::OBSOLETE_EXTENSIONS, true);
+    }
+
+    /**
+     * Whether the package carries any obsolete-format (Flash) file resource.
+     *
+     * @return bool
+     */
+    private function has_obsolete_files(): bool {
+        foreach ($this->course->all_items() as $modelitem) {
+            if ($this->is_obsolete_file($modelitem)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Count file resources that look like duplicate copies of another file.
+     *
+     * A file is counted only when stripping a trailing " (n)" or "-n" copy marker
+     * from its name yields a different name that another imported file already
+     * uses, so a genuine copy (an original plus its "(2)"/"-1" sibling) is flagged
+     * while distinct files that merely share a numeric suffix (Lesson1 vs Lesson2)
+     * are not.
+     *
+     * @return int Number of resources that duplicate an earlier file.
+     */
+    private function duplicate_file_count(): int {
+        $names = [];
+        foreach ($this->course->all_items() as $modelitem) {
+            if ($modelitem->kind !== item::KIND_FILE) {
+                continue;
+            }
+            $base = strtolower(basename($this->file_source_name($modelitem)));
+            if ($base !== '') {
+                $names[$base] = true;
+            }
+        }
+        $count = 0;
+        foreach ($this->course->all_items() as $modelitem) {
+            if ($modelitem->kind !== item::KIND_FILE) {
+                continue;
+            }
+            $base = strtolower(basename($this->file_source_name($modelitem)));
+            $stripped = $this->strip_copy_marker($base);
+            if ($stripped !== $base && isset($names[$stripped])) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    /**
+     * Remove a trailing " (n)" or "-n" copy marker (before the extension) from a
+     * file name, so "syllabus (2).pdf" and "syllabus-1.pdf" both reduce to
+     * "syllabus.pdf".
+     *
+     * @param string $name A lower-case base file name.
+     * @return string The name with any copy marker removed.
+     */
+    private function strip_copy_marker(string $name): string {
+        $ext = pathinfo($name, PATHINFO_EXTENSION);
+        $stem = pathinfo($name, PATHINFO_FILENAME);
+        $stem = preg_replace('/\s*\(\d+\)$/', '', $stem);
+        $stem = preg_replace('/-\d+$/', '', $stem);
+        $stem = rtrim($stem);
+        return $ext !== '' ? $stem . '.' . $ext : $stem;
     }
 
     /**

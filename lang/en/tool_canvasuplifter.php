@@ -99,6 +99,8 @@ $string['maxsize'] = 'Maximum file size: {$a}';
 $string['note_assignment'] = 'Name, instructions, due dates and Canvas rubrics (including per-rating long descriptions) convert. CC 1.3 IMS assignment-profile packages from non-Canvas exporters are also recognised. Outcome links do not carry across.';
 $string['note_discussion'] = 'Discussion topics become forums with the prompt as the opening post; Canvas does not export the replies, so existing threads do not carry across.';
 $string['note_file'] = 'Files convert directly to file resources.';
+$string['note_file_obsolete'] = 'Imported as a file, but this is a Flash (.swf) resource that modern '
+    . 'browsers no longer play, so it will not function.';
 $string['note_lti'] = 'Imported as a hidden placeholder; the admin must reconfigure the consumer key and shared secret (or pick a preconfigured tool) and unhide the activity before students use it.';
 $string['note_page'] = 'Pages convert, including embedded images and internal links to other '
     . 'pages, files and URLs. Links to content types that are not built yet are left unchanged.';
@@ -215,6 +217,10 @@ $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';
 $string['warnquizplaceholders'] = '{$a} quiz(zes) were imported as hidden placeholders because Canvas '
     . 'did not export their questions (e.g. New Quizzes backed by an item bank). Their settings carried '
     . 'over; add questions and unhide them.';
+$string['warnreportduplicates'] = 'Some resources look like duplicate copies of other files in the package '
+    . '(for example "name (2)" or "name-1"); all are imported, so review the resource list for repeats.';
 $string['warnreportlti'] = 'External (LTI) tools need their keys reconfigured by hand after import.';
+$string['warnreportobsolete'] = 'Some resources are Flash (.swf) or other obsolete formats that modern browsers '
+    . 'no longer play; they are imported but will not function.';
 $string['warnreportquiz'] = 'Quiz questions depend on type support; check the question-type matrix.';
 $string['warnreportunclassified'] = 'Some resources could not be classified and will be skipped.';

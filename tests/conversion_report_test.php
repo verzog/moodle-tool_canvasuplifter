@@ -436,6 +436,149 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * A Flash (.swf) resource is reported as a distinct row with an honest note
+     * and lowered confidence, and raises the obsolete-format warning, rather than
+     * being counted as a clean file conversion.
+     *
+     * @return void
+     */
+    public function test_report_flags_obsolete_flash_resources(): void {
+        $course = new course_model();
+        $flash = new item('f1', 'slide1.swf');
+        $flash->kind = item::KIND_FILE;
+        $flash->files = ['presentation/slide1.swf'];
+        $pdf = new item('f2', 'notes.pdf');
+        $pdf->kind = item::KIND_FILE;
+        $pdf->files = ['docs/notes.pdf'];
+        $course->orphans[] = $flash;
+        $course->orphans[] = $pdf;
+
+        $report = (new conversion_report($course))->build();
+
+        $this->assertContains('warnreportobsolete', $report['warnings']);
+        $notes = array_column($report['rows'], 'note');
+        $this->assertContains('note_file_obsolete', $notes);
+        $this->assertContains('note_file', $notes);
+        $obsolete = array_values(array_filter($report['rows'], fn($r) => $r['note'] === 'note_file_obsolete'));
+        $this->assertCount(1, $obsolete);
+        $this->assertSame(1, $obsolete[0]['count']);
+        $this->assertSame('mod_resource', $obsolete[0]['target']);
+        $this->assertSame(conversion_report::CONFIDENCE_PARTIAL, $obsolete[0]['confidence']);
+    }
+
+    /**
+     * A resource that builds from its href (an HTML page) but lists a secondary
+     * Flash asset first must be judged on the href Moodle imports, so it is not
+     * misreported as an obsolete Flash resource.
+     *
+     * @return void
+     */
+    public function test_report_judges_file_on_href_not_secondary_asset(): void {
+        $course = new course_model();
+        $page = new item('h1', 'Interactive exercise');
+        $page->kind = item::KIND_FILE;
+        $page->href = 'ex/index.html';
+        $page->files = ['ex/movie.swf', 'ex/index.html'];
+        $course->orphans[] = $page;
+
+        $report = (new conversion_report($course))->build();
+
+        $this->assertNotContains('warnreportobsolete', $report['warnings']);
+        $notes = array_column($report['rows'], 'note');
+        $this->assertContains('note_file', $notes);
+        $this->assertNotContains('note_file_obsolete', $notes);
+    }
+
+    /**
+     * With package access, a resource whose manifest href is unreadable but whose
+     * file list holds a readable Flash payload is judged on the file the builder
+     * would import, so it is flagged obsolete.
+     *
+     * @return void
+     */
+    public function test_report_flags_flash_when_href_unreadable(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/slides.swf', 'flash');
+
+        $course = new course_model();
+        $stale = new item('s1', 'Presentation');
+        $stale->kind = item::KIND_FILE;
+        $stale->href = 'missing.html';
+        $stale->files = ['slides.swf'];
+        $course->orphans[] = $stale;
+
+        $report = (new conversion_report($course, $dir))->build();
+
+        $this->assertContains('warnreportobsolete', $report['warnings']);
+        $this->assertContains('note_file_obsolete', array_column($report['rows'], 'note'));
+    }
+
+    /**
+     * With package access, a readable href (an HTML page) is honoured over a
+     * secondary Flash file, so the resource is not flagged obsolete.
+     *
+     * @return void
+     */
+    public function test_report_honours_readable_href_over_secondary_flash(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/index.html', '<p>hi</p>');
+        file_put_contents($dir . '/movie.swf', 'flash');
+
+        $course = new course_model();
+        $page = new item('p1', 'Interactive exercise');
+        $page->kind = item::KIND_FILE;
+        $page->href = 'index.html';
+        $page->files = ['movie.swf', 'index.html'];
+        $course->orphans[] = $page;
+
+        $report = (new conversion_report($course, $dir))->build();
+
+        $this->assertNotContains('warnreportobsolete', $report['warnings']);
+        $this->assertNotContains('note_file_obsolete', array_column($report['rows'], 'note'));
+    }
+
+    /**
+     * A file whose name carries a copy marker of an original also present in the
+     * package (for example "name (2)" or "name-1") raises the duplicates warning.
+     *
+     * @return void
+     */
+    public function test_report_flags_duplicate_copies(): void {
+        $course = new course_model();
+        $paths = ['docs/syllabus.pdf', 'docs/syllabus (2).pdf', 'wk/worksheet.docx', 'wk/worksheet-1.docx'];
+        foreach ($paths as $i => $path) {
+            $file = new item('d' . $i, basename($path));
+            $file->kind = item::KIND_FILE;
+            $file->files = [$path];
+            $course->orphans[] = $file;
+        }
+
+        $report = (new conversion_report($course))->build();
+
+        $this->assertContains('warnreportduplicates', $report['warnings']);
+    }
+
+    /**
+     * Distinct files that merely share a trailing digit (Lesson1 vs Lesson2, with
+     * no bare original) must not be mistaken for duplicate copies.
+     *
+     * @return void
+     */
+    public function test_report_does_not_flag_distinct_numbered_files(): void {
+        $course = new course_model();
+        foreach (['lesson1.pdf', 'lesson2.pdf'] as $i => $name) {
+            $file = new item('n' . $i, $name);
+            $file->kind = item::KIND_FILE;
+            $file->files = ['x/' . $name];
+            $course->orphans[] = $file;
+        }
+
+        $report = (new conversion_report($course))->build();
+
+        $this->assertNotContains('warnreportduplicates', $report['warnings']);
+    }
+
+    /**
      * A single-option choice item: a recognised multichoice type, but Moodle
      * needs at least two answers, so it cannot actually be saved.
      *
