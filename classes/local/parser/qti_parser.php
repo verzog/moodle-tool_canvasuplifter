@@ -131,7 +131,16 @@ class qti_parser {
                 $this->recover_acknowledgment($question);
                 break;
             case qti_question::TYPE_SHORTANSWER:
-                $this->fill_text_answers($item, $question);
+                $this->fill_text_answers($item, $presentation, $question);
+                if ($canvastype === 'fill_in_multiple_blanks_question') {
+                    // Drop Canvas's bracketed blank marker ([blank1_1]) from the
+                    // prompt so the short-answer text reads cleanly.
+                    $question->questiontext = trim((string) preg_replace(
+                        '/\[[a-z0-9_]+\]/',
+                        '',
+                        $question->questiontext
+                    ));
+                }
                 break;
             case qti_question::TYPE_MATCHING:
                 $this->fill_matching($item, $presentation, $question);
@@ -197,13 +206,20 @@ class qti_parser {
                 // every blank offers the same choice set, because Moodle match has
                 // a single global answer pool; with per-blank choices one blank's
                 // options would wrongly be offered for another, so leave it
-                // unsupported. A single blank is one dropdown and falls through to
-                // the cardinality fallback (multiple choice); a free-text blank has
-                // no response_lid and falls through to unsupported.
-                if ($presentation !== null && $presentation->getElementsByTagNameNS('*', 'response_lid')->length >= 2) {
+                // unsupported. A single fill-in-blank is a short answer (type the
+                // accepted word — its render_choice lists every acceptable answer);
+                // a single dropdown is a pick-from-list multiple choice and falls
+                // through to the cardinality fallback. A free-text blank has no
+                // response_lid and falls through to unsupported.
+                $lidcount = $presentation !== null
+                    ? $presentation->getElementsByTagNameNS('*', 'response_lid')->length : 0;
+                if ($lidcount >= 2) {
                     return $this->blanks_share_choices($presentation) && $this->blanks_have_stems($presentation)
                         ? qti_question::TYPE_MATCHING
                         : qti_question::TYPE_UNSUPPORTED;
+                }
+                if ($lidcount === 1 && $canvastype === 'fill_in_multiple_blanks_question') {
+                    return qti_question::TYPE_SHORTANSWER;
                 }
                 break;
         }
@@ -360,10 +376,38 @@ class qti_parser {
      * Populate accepted answers for fill-in-blank / pattern-match questions.
      *
      * @param DOMElement $item The item element.
+     * @param DOMElement|null $presentation The presentation element.
      * @param qti_question $question The question being built (modified in place).
      * @return void
      */
-    protected function fill_text_answers(DOMElement $item, qti_question $question): void {
+    protected function fill_text_answers(DOMElement $item, ?DOMElement $presentation, qti_question $question): void {
+        // Canvas fill-in-the-blank (single blank) lists every accepted answer as a
+        // render_choice label; the resprocessing references them by ident, not
+        // text, so read the label text directly and accept them all. Scoped to
+        // render_choice: Common Cartridge cc.fib uses render_fib (an empty
+        // response_label placeholder) and Canvas short_answer has no choices, so
+        // both fall through to the resprocessing text below.
+        $choicelabels = [];
+        if ($presentation !== null) {
+            foreach ($presentation->getElementsByTagNameNS('*', 'render_choice') as $choice) {
+                foreach ($choice->getElementsByTagNameNS('*', 'response_label') as $label) {
+                    if ($label instanceof DOMElement) {
+                        $choicelabels[] = $label;
+                    }
+                }
+            }
+        }
+        if (!empty($choicelabels)) {
+            $seen = [];
+            foreach ($choicelabels as $label) {
+                $text = trim($this->material_text($label));
+                if ($text !== '' && !isset($seen[$text])) {
+                    $seen[$text] = true;
+                    $question->answers[] = ['text' => $text, 'fraction' => 100.0, 'feedback' => ''];
+                }
+            }
+            return;
+        }
         $resprocessing = $this->first_child_element($item, 'resprocessing');
         if ($resprocessing === null) {
             return;

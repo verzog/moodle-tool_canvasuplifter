@@ -114,6 +114,12 @@ $string['note_quiz'] = 'Becomes a Moodle quiz; the Canvas time limit, attempts, 
 $string['note_subheader'] = 'Canvas module subheaders become Moodle labels with the heading as the body.';
 $string['note_unknown'] = 'Resource type not recognised; these are skipped.';
 $string['note_url'] = 'External links convert directly.';
+$string['notecanvasboilerplate'] = 'Dropped {$a} Canvas platform item(s) with no Moodle equivalent (help-guide '
+    . 'links to Canvas\'s documentation, and leftover ANGEL migration objects).';
+$string['notegradeletters'] = 'Imported {$a} letter-grade boundaries from the Canvas grading scheme as this '
+    . 'course\'s grade letters.';
+$string['noterubricsunlinked'] = 'Found {$a} rubric(s) in the package not linked to any activity, so they could '
+    . 'not be imported; recreate them on the relevant activities if needed.';
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';
 $string['openbuiltcourse'] = 'Open the built course';
 $string['orphansexplain'] = 'These resources are in the package but are not linked from any module. '

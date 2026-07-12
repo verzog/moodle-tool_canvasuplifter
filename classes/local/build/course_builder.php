@@ -147,6 +147,8 @@ class course_builder {
         // up front because Moodle creates a default grade item for every assign
         // on add_moduleinfo() and we re-parent those once we know the cmid.
         $this->gradecategoryids = $this->create_grade_categories($course, $coursemodel);
+        // Install the Canvas letter-grade scheme, if the course carries one.
+        $gradelettercount = $this->create_grade_letters($course, $coursemodel);
         // Hold the rubric library so attach_rubric() can look up by Canvas id
         // when each assignment is built.
         $this->rubrics = $coursemodel->rubrics;
@@ -306,6 +308,29 @@ class course_builder {
                 'tool_canvasuplifter',
                 $quizbuilder->placeholdercount
             );
+        }
+        if ($gradelettercount > 0) {
+            $warnings[] = get_string('notegradeletters', 'tool_canvasuplifter', $gradelettercount);
+        }
+        if ($coursemodel->canvasboilerplatedropped > 0) {
+            $warnings[] = get_string(
+                'notecanvasboilerplate',
+                'tool_canvasuplifter',
+                $coursemodel->canvasboilerplatedropped
+            );
+        }
+        // Rubrics the export never linked to an activity can't be attached (a
+        // Moodle rubric lives on an activity's grading area), so flag them rather
+        // than lose them silently.
+        $linkedrubrics = [];
+        foreach ($coursemodel->all_items() as $it) {
+            if ($it->rubricref !== '') {
+                $linkedrubrics[$it->rubricref] = true;
+            }
+        }
+        $unlinkedrubrics = count(array_diff_key($coursemodel->rubrics, $linkedrubrics));
+        if ($unlinkedrubrics > 0) {
+            $warnings[] = get_string('noterubricsunlinked', 'tool_canvasuplifter', $unlinkedrubrics);
         }
 
         return [
@@ -1183,6 +1208,40 @@ class course_builder {
             $map[$spec['identifier']] = (int) $cat->id;
         }
         return $map;
+    }
+
+    /**
+     * Install the course's Canvas letter-grade scheme as Moodle grade letters on
+     * the course context. A course uses either the site-default letters (no
+     * rows) or a full custom set (rows present), so any existing set is replaced
+     * wholesale and the per-context cache is cleared. Does nothing when the
+     * course carries no scheme.
+     *
+     * @param stdClass $course The created course.
+     * @param course_model $coursemodel Parsed package.
+     * @return int The number of grade letters installed.
+     */
+    private function create_grade_letters(\stdClass $course, course_model $coursemodel): int {
+        global $CFG, $DB;
+        if (empty($coursemodel->gradeletters)) {
+            return 0;
+        }
+        $context = \context_course::instance((int) $course->id);
+        $DB->delete_records('grade_letters', ['contextid' => $context->id]);
+        foreach ($coursemodel->gradeletters as $letter) {
+            $DB->insert_record('grade_letters', (object) [
+                'contextid' => $context->id,
+                'lowerboundary' => $letter['lowerboundary'],
+                'letter' => $letter['letter'],
+            ]);
+        }
+        \cache::make('core', 'grade_letters')->delete($context->id);
+        // Canvas shows letter grades when a standard is enabled, so point the
+        // course grade display at letters — otherwise a site defaulting to points
+        // or percentages would never surface the scheme we just imported.
+        require_once($CFG->libdir . '/gradelib.php');
+        grade_set_setting((int) $course->id, 'displaytype', (string) GRADE_DISPLAY_TYPE_LETTER);
+        return count($coursemodel->gradeletters);
     }
 
     /**

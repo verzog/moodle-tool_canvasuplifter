@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026071200;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026071202;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Report honesty: attribute skipped questions, flag obsolete Flash and duplicate files.
-$plugin->release   = '0.39.15';
+$plugin->maturity  = MATURITY_ALPHA;  // Fill-in-blank to short answer; drop Canvas boilerplate; flag unlinked rubrics.
+$plugin->release   = '0.39.17';
