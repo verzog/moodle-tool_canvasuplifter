@@ -87,6 +87,43 @@ final class grade_letters_test extends \advanced_testcase {
     }
 
     /**
+     * grading_standard_enabled is an XML boolean, so the numeric "1"
+     * serialisation counts as enabled too.
+     *
+     * @return void
+     */
+    public function test_accepts_numeric_boolean(): void {
+        $settings = '<?xml version="1.0"?>'
+            . '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0"><title>T</title>'
+            . '<grading_standard_enabled>1</grading_standard_enabled>'
+            . '<grading_standard_identifier_ref>gs1</grading_standard_identifier_ref></course>';
+        $course = (new manifest_parser($this->package($settings, self::STANDARDS)))->parse();
+
+        $this->assertCount(5, $course->gradeletters);
+        $this->assertSame('A', $course->gradeletters[0]['letter']);
+    }
+
+    /**
+     * With no identifier ref and several standards present, decline rather than
+     * guess which scheme applies (installing the wrong letters).
+     *
+     * @return void
+     */
+    public function test_declines_multiple_standards_without_ref(): void {
+        $settings = '<?xml version="1.0"?>'
+            . '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0"><title>T</title>'
+            . '<grading_standard_enabled>true</grading_standard_enabled></course>';
+        $two = '<?xml version="1.0"?>'
+            . '<gradingStandards xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<gradingStandard identifier="gs1"><title>One</title><data>[["A",0.9],["F",0.0]]</data></gradingStandard>'
+            . '<gradingStandard identifier="gs2"><title>Two</title><data>[["P",0.5],["F",0.0]]</data></gradingStandard>'
+            . '</gradingStandards>';
+        $course = (new manifest_parser($this->package($settings, $two)))->parse();
+
+        $this->assertSame([], $course->gradeletters);
+    }
+
+    /**
      * A course whose grading standard is switched off imports no letters, so
      * Moodle's site-default grade letters keep applying.
      *
@@ -131,5 +168,11 @@ final class grade_letters_test extends \advanced_testcase {
             $letters
         ));
         $this->assertSame([['A', 89.5], ['B', 79.5], ['F', 0.0]], $pairs);
+
+        // The course grade display is switched to letters so the scheme shows.
+        $this->assertEquals(
+            GRADE_DISPLAY_TYPE_LETTER,
+            (int) grade_get_setting($report['courseid'], 'displaytype', '')
+        );
     }
 }

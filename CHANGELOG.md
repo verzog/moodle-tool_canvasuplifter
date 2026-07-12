@@ -5,14 +5,33 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.39.17] - 2026-07-12
+
+- Convert a single-blank Canvas fill-in-the-blank question
+  (`fill_in_multiple_blanks_question`) to a Moodle **short answer** — accepting
+  every answer the blank lists — instead of a degenerate one-option multiple
+  choice that discarded the other acceptable answers. A single inline *dropdown*
+  still converts to multiple choice.
+- Drop Canvas platform boilerplate a Moodle course has no use for: help-guide
+  links to Canvas's own documentation (`guides.instructure.com`), and — when the
+  course was migrated from ANGEL — ANGEL's leftover objects (`AngelManifest.xml`,
+  `AngelObj[…].xml`) that just duplicate the Canvas-native content. Gated on the
+  Canvas source and matched precisely, so real content and other files are
+  untouched; the build report notes how many were dropped.
+- Flag Canvas rubrics the export never linked to an activity: their definitions
+  import to the rubric library, but Canvas omits the associations, so they can't
+  be attached automatically. The build report now lists how many, rather than
+  losing them silently.
+
 ## [0.39.16] - 2026-07-12
 
 - Import a Canvas course's letter-grade scheme (`grading_standards.xml`) as
   Moodle course grade letters, when the course has a grading standard enabled.
   Canvas stores each scheme as boundary fractions (e.g. A ≥ 0.895); these become
-  Moodle grade letters (A ≥ 89.5%, …) on the course context, and the build report
-  notes how many boundaries were imported. Courses on Canvas's default scheme are
-  left on Moodle's default grade letters.
+  Moodle grade letters (A ≥ 89.5%, …) on the course context, the course grade
+  display is switched to letters so the scheme actually shows, and the build
+  report notes how many boundaries were imported. Courses on Canvas's default
+  scheme are left on Moodle's default grade letters.
 
 ## [0.39.15] - 2026-07-12
 

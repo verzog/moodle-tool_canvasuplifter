@@ -312,6 +312,26 @@ class course_builder {
         if ($gradelettercount > 0) {
             $warnings[] = get_string('notegradeletters', 'tool_canvasuplifter', $gradelettercount);
         }
+        if ($coursemodel->canvasboilerplatedropped > 0) {
+            $warnings[] = get_string(
+                'notecanvasboilerplate',
+                'tool_canvasuplifter',
+                $coursemodel->canvasboilerplatedropped
+            );
+        }
+        // Rubrics the export never linked to an activity can't be attached (a
+        // Moodle rubric lives on an activity's grading area), so flag them rather
+        // than lose them silently.
+        $linkedrubrics = [];
+        foreach ($coursemodel->all_items() as $it) {
+            if ($it->rubricref !== '') {
+                $linkedrubrics[$it->rubricref] = true;
+            }
+        }
+        $unlinkedrubrics = count(array_diff_key($coursemodel->rubrics, $linkedrubrics));
+        if ($unlinkedrubrics > 0) {
+            $warnings[] = get_string('noterubricsunlinked', 'tool_canvasuplifter', $unlinkedrubrics);
+        }
 
         return [
             'courseid' => (int) $course->id,
@@ -1202,7 +1222,7 @@ class course_builder {
      * @return int The number of grade letters installed.
      */
     private function create_grade_letters(\stdClass $course, course_model $coursemodel): int {
-        global $DB;
+        global $CFG, $DB;
         if (empty($coursemodel->gradeletters)) {
             return 0;
         }
@@ -1216,6 +1236,11 @@ class course_builder {
             ]);
         }
         \cache::make('core', 'grade_letters')->delete($context->id);
+        // Canvas shows letter grades when a standard is enabled, so point the
+        // course grade display at letters — otherwise a site defaulting to points
+        // or percentages would never surface the scheme we just imported.
+        require_once($CFG->libdir . '/gradelib.php');
+        grade_set_setting((int) $course->id, 'displaytype', (string) GRADE_DISPLAY_TYPE_LETTER);
         return count($coursemodel->gradeletters);
     }
 

@@ -64,6 +64,9 @@ class course_model {
      */
     public array $gradeletters = [];
 
+    /** @var int Count of Canvas platform-boilerplate resources dropped during parsing. */
+    public int $canvasboilerplatedropped = 0;
+
     /**
      * @var array Canvas rubric library, keyed by Canvas identifier. Each value
      * is a hash with keys: title (string), free_form_comments (bool),

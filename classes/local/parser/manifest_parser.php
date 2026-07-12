@@ -39,6 +39,9 @@ class manifest_parser {
     /** @var string Detected source system (a source_detector constant), '' before parse(). */
     protected string $source = '';
 
+    /** @var int Count of Canvas platform-boilerplate resources dropped in read_resources(). */
+    protected int $canvasboilerplatedropped = 0;
+
     /**
      * @var array Identifiers of resources consumed as an empty structural
      *            container at some organisation occurrence (so they title a
@@ -95,6 +98,7 @@ class manifest_parser {
 
         // Build a lookup of every resource by identifier.
         $resources = $this->read_resources($dom);
+        $course->canvasboilerplatedropped = $this->canvasboilerplatedropped;
 
         // Canvas exports announcements as imsdt discussion topics but marks them
         // in the topicMeta companion XML with <type>announcement</type>. Flag
@@ -395,8 +399,16 @@ class manifest_parser {
             // _UNREFERENCED_ marker in the identifier. Once such a package is
             // recognised, drop those rather than importing dozens of junk files.
             $isunreferenced = $this->is_unreferenced_artifact($identifier);
+            // A Canvas course carries platform boilerplate a Moodle course has no
+            // use for: help-guide links to Canvas's own docs, and — when the
+            // course was migrated from ANGEL — ANGEL's leftover objects that just
+            // duplicate the Canvas-native content. Drop those.
+            $iscanvasboilerplate = $this->is_canvas_boilerplate($type, $href, $modelitem->files);
+            if ($iscanvasboilerplate) {
+                $this->canvasboilerplatedropped++;
+            }
             if (
-                $ismodulenode || $islogartifact || $isunreferenced
+                $ismodulenode || $islogartifact || $isunreferenced || $iscanvasboilerplate
                 || in_array($materialtype, self::D2L_METADATA_MATERIAL_TYPES, true)
             ) {
                 $modelitem->kind = item::KIND_UNKNOWN;
@@ -491,6 +503,78 @@ class manifest_parser {
     private function is_unreferenced_artifact(string $identifier): bool {
         return in_array($this->source, [source_detector::ANGEL, source_detector::EXE], true)
             && stripos($identifier, '_UNREFERENCED_') !== false;
+    }
+
+    /**
+     * Whether a Canvas resource is platform boilerplate a Moodle course has no
+     * use for, gated on the package being a Canvas export so nothing similar is
+     * dropped from another source. Two precise, unambiguous cases:
+     *
+     * - An imswl web-link whose target host is Canvas's own documentation site
+     *   (guides.instructure.com / community.canvaslms.com) — help docs, never
+     *   course content. Real content links (to files or other sites) are left.
+     * - ANGEL's own objects (AngelManifest.xml / AngelObj[...].xml) that an
+     *   ANGEL-to-Canvas migration dumps into web_resources; they duplicate the
+     *   Canvas-native content, so drop them by their exact filenames. Other
+     *   web_resources files (banners, documents, images) are untouched.
+     *
+     * @param string $type The resource type attribute.
+     * @param string $href The resource href, if any.
+     * @param array $files The resource's file paths.
+     * @return bool
+     */
+    private function is_canvas_boilerplate(string $type, string $href, array $files): bool {
+        if ($this->source !== source_detector::CANVAS) {
+            return false;
+        }
+        $paths = $files;
+        if ($href !== '') {
+            $paths[] = $href;
+        }
+        foreach ($paths as $path) {
+            $base = basename((string) $path);
+            if (preg_match('/^AngelManifest\.xml$/i', $base) || preg_match('/^AngelObj\[.*\]\.xml$/i', $base)) {
+                return true;
+            }
+        }
+        if (preg_match('#imswl_xmlv1p\d#', $type)) {
+            $url = $this->weblink_target($href, $files);
+            if (preg_match('#^https?://(guides\.instructure\.com|community\.canvaslms\.com)/#i', $url)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Read the target URL from an imswl web-link resource's XML file, which
+     * stores it as <url href="..."/>. Returns '' when no file resolves or no URL
+     * is present. Kept Moodle-free (plain file read + regex) so the parser layer
+     * stays free of the build layer's weblink reader.
+     *
+     * @param string $href The resource href, if any.
+     * @param array $files The resource's file paths.
+     * @return string The target URL, or '' if none.
+     */
+    private function weblink_target(string $href, array $files): string {
+        $paths = $files;
+        if ($href !== '') {
+            $paths[] = $href;
+        }
+        foreach ($paths as $path) {
+            if (!preg_match('/\.xml$/i', (string) $path)) {
+                continue;
+            }
+            $absolute = $this->resolve_within((string) $path);
+            if ($absolute === null) {
+                continue;
+            }
+            $xml = (string) @file_get_contents($absolute);
+            if (preg_match('/<url\b[^>]*\bhref="([^"]*)"/i', $xml, $m)) {
+                return html_entity_decode(trim($m[1]), ENT_QUOTES | ENT_HTML5);
+            }
+        }
+        return '';
     }
 
     /**
@@ -1363,18 +1447,28 @@ class manifest_parser {
         if ($settings === false || $standards === false) {
             return [];
         }
-        // Only import when Canvas has a grading standard enabled.
-        if (strtolower(trim((string) ($settings->grading_standard_enabled ?? ''))) !== 'true') {
+        // Only import when Canvas has a grading standard enabled. The flag is an
+        // XML boolean, so accept both the "true" and numeric "1" serialisations.
+        $enabled = strtolower(trim((string) ($settings->grading_standard_enabled ?? '')));
+        if (!in_array($enabled, ['true', '1'], true)) {
             return [];
         }
         $ref = trim((string) ($settings->grading_standard_identifier_ref ?? ''));
 
-        // Find the referenced standard (or the only one when no ref is given).
+        // Install the standard the course references. With no ref, only fall back
+        // to a lone standard: when several are present, guessing which one applies
+        // could install the wrong letters, so decline rather than pick the first.
         $chosen = null;
-        foreach ($standards->gradingStandard as $standard) {
-            if ($ref === '' || (string) ($standard['identifier'] ?? '') === $ref) {
-                $chosen = $standard;
-                break;
+        if ($ref === '') {
+            if (count($standards->gradingStandard) === 1) {
+                $chosen = $standards->gradingStandard[0];
+            }
+        } else {
+            foreach ($standards->gradingStandard as $standard) {
+                if ((string) ($standard['identifier'] ?? '') === $ref) {
+                    $chosen = $standard;
+                    break;
+                }
             }
         }
         if ($chosen === null) {

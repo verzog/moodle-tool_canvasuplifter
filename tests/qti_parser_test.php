@@ -833,7 +833,14 @@ final class qti_parser_test extends \basic_testcase {
 
             $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
 
-            $this->assertSame(qti_question::TYPE_MULTICHOICE, $q->type, "$type with one blank should be multichoice");
+            if ($type === 'fill_in_multiple_blanks_question') {
+                // A single fill-in-the-blank is a short answer: the student types
+                // the word, and every listed answer is accepted.
+                $this->assertSame(qti_question::TYPE_SHORTANSWER, $q->type, "$type with one blank should be shortanswer");
+            } else {
+                // A single dropdown is a pick-from-list multiple choice.
+                $this->assertSame(qti_question::TYPE_MULTICHOICE, $q->type, "$type with one blank should be multichoice");
+            }
             $this->assertCount(2, $q->answers);
             $this->assertTrue($q->is_importable(), "$type with one blank should import");
         }

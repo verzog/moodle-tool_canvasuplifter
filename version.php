@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026071201;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026071202;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Import the Canvas letter-grade scheme as Moodle course grade letters.
-$plugin->release   = '0.39.16';
+$plugin->maturity  = MATURITY_ALPHA;  // Fill-in-blank to short answer; drop Canvas boilerplate; flag unlinked rubrics.
+$plugin->release   = '0.39.17';
