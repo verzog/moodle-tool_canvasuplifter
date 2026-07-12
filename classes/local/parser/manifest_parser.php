@@ -527,13 +527,22 @@ class manifest_parser {
         if ($this->source !== source_detector::CANVAS) {
             return false;
         }
-        $paths = $files;
-        if ($href !== '') {
-            $paths[] = $href;
-        }
-        foreach ($paths as $path) {
-            $base = basename((string) $path);
-            if (preg_match('/^AngelManifest\.xml$/i', $base) || preg_match('/^AngelObj\[.*\]\.xml$/i', $base)) {
+        $paths = array_values(array_filter(
+            array_merge($files, $href !== '' ? [$href] : []),
+            fn($p) => (string) $p !== ''
+        ));
+        // Only drop a resource whose *entire* payload is ANGEL objects. A real
+        // page/file that merely lists an AngelObj/AngelManifest support file
+        // alongside its content must be kept, not suppressed whole.
+        if (!empty($paths)) {
+            $allangel = true;
+            foreach ($paths as $path) {
+                if (!$this->is_angel_object(basename((string) $path))) {
+                    $allangel = false;
+                    break;
+                }
+            }
+            if ($allangel) {
                 return true;
             }
         }
@@ -575,6 +584,18 @@ class manifest_parser {
             }
         }
         return '';
+    }
+
+    /**
+     * Whether a filename is one of ANGEL's own migration objects
+     * (AngelManifest.xml or AngelObj[...].xml).
+     *
+     * @param string $basename The file's basename.
+     * @return bool
+     */
+    private function is_angel_object(string $basename): bool {
+        return (bool) preg_match('/^AngelManifest\.xml$/i', $basename)
+            || (bool) preg_match('/^AngelObj\[.*\]\.xml$/i', $basename);
     }
 
     /**

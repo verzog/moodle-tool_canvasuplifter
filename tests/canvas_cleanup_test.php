@@ -96,6 +96,36 @@ final class canvas_cleanup_test extends \advanced_testcase {
     }
 
     /**
+     * A real resource that merely lists an ANGEL support file alongside its own
+     * content is kept — only a resource whose entire payload is ANGEL objects is
+     * dropped.
+     *
+     * @return void
+     */
+    public function test_mixed_resource_with_angel_support_file_is_kept(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings', 0777, true);
+        file_put_contents($dir . '/course_settings/canvas_export.txt', 'Canvas');
+        file_put_contents($dir . '/page.html', '<html><head><title>Real Page</title></head><body>x</body></html>');
+        file_put_contents($dir . '/AngelObj[Assessment].xml', '<x/>');
+
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="i_p" identifierref="r_page"><title>Real Page</title></item>'
+            . '</item></organization></organizations><resources>'
+            . '<resource identifier="r_page" type="webcontent" href="page.html">'
+            . '<file href="page.html"/><file href="AngelObj[Assessment].xml"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame(0, $course->canvasboilerplatedropped);
+        $this->assertContains('Real Page', $this->built_titles($course));
+    }
+
+    /**
      * The drop is gated on the Canvas source: an identical guides link in a
      * package with no Canvas fingerprint is kept (nothing marks it as Canvas).
      *
