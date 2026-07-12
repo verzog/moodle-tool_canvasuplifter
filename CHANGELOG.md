@@ -5,6 +5,32 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.39.15] - 2026-07-12
+
+Conversion-report honesty improvements, drawn from real Canvas packages that
+carry legacy content. All report-layer only (Moodle-free): every resource is
+still imported and nothing is dropped.
+
+- Attribute skipped quiz questions to the assessment they came from, so a quiz
+  that silently lost questions is distinguishable from a throwaway practice
+  quiz. Each skipped question-type row now lists its source assessments
+  (most-affected first) in the "Converts" cell, with the (user-supplied) names
+  escaped.
+- Flag obsolete Flash (`.swf`) resources: they import as a file but no modern
+  browser plays them, so they now convert with a distinct note and lowered
+  confidence (their own content-type row) and raise a warning, instead of
+  sitting among the "Maps cleanly" files.
+- Flag likely duplicate files — an original plus a `" (n)"`/`"-n"` copy — with a
+  warning, but only when the bare original is also present, so distinct files
+  that merely share a numeric suffix (Lesson1 vs Lesson2) are not flagged. The
+  copy marker is limited to one–three digits so a year edition
+  (`syllabus-2024.pdf` beside `syllabus.pdf`) is treated as a separate file.
+- Judge the payload Moodle actually imports when identifying a file resource:
+  mirror the builder's href-first ordering and its readable-file fallback (skip
+  an unreadable `href` and use the first file that resolves), so the obsolete
+  and duplicate checks classify the real payload rather than a stale or
+  secondary reference.
+
 ## [0.39.14] - 2026-07-10
 
 Make the large-package (chunked) upload survive a flaky connection or a
