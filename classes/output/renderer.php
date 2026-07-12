@@ -141,10 +141,20 @@ class renderer extends plugin_renderer_base {
                 ? get_string($typekey, 'tool_canvasuplifter')
                 : $mrow['label'];
             $status = $mrow['status'] ?? ($mrow['supported'] ? 'yes' : 'unsupported');
+            $converts = get_string($statuskeys[$status] ?? 'matrixsupported_no', 'tool_canvasuplifter');
+            // For skipped rows, name the assessments the dropped questions came
+            // from so a shortened quiz can't slip through unnoticed.
+            if (!empty($mrow['sources'])) {
+                $names = array_map(
+                    fn($source) => s($source['name']) . ' (' . (int) $source['count'] . ')',
+                    $mrow['sources']
+                );
+                $converts .= ' &mdash; ' . get_string('matrixskippedfrom', 'tool_canvasuplifter', implode(', ', $names));
+            }
             $table->data[] = [
                 s($typelabel),
                 (int) $mrow['count'],
-                get_string($statuskeys[$status] ?? 'matrixsupported_no', 'tool_canvasuplifter'),
+                $converts,
             ];
         }
         return $out . html_writer::table($table);
