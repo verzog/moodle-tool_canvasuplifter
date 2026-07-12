@@ -436,6 +436,78 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * A Flash (.swf) resource is reported as a distinct row with an honest note
+     * and lowered confidence, and raises the obsolete-format warning, rather than
+     * being counted as a clean file conversion.
+     *
+     * @return void
+     */
+    public function test_report_flags_obsolete_flash_resources(): void {
+        $course = new course_model();
+        $flash = new item('f1', 'slide1.swf');
+        $flash->kind = item::KIND_FILE;
+        $flash->files = ['presentation/slide1.swf'];
+        $pdf = new item('f2', 'notes.pdf');
+        $pdf->kind = item::KIND_FILE;
+        $pdf->files = ['docs/notes.pdf'];
+        $course->orphans[] = $flash;
+        $course->orphans[] = $pdf;
+
+        $report = (new conversion_report($course))->build();
+
+        $this->assertContains('warnreportobsolete', $report['warnings']);
+        $notes = array_column($report['rows'], 'note');
+        $this->assertContains('note_file_obsolete', $notes);
+        $this->assertContains('note_file', $notes);
+        $obsolete = array_values(array_filter($report['rows'], fn($r) => $r['note'] === 'note_file_obsolete'));
+        $this->assertCount(1, $obsolete);
+        $this->assertSame(1, $obsolete[0]['count']);
+        $this->assertSame('mod_resource', $obsolete[0]['target']);
+        $this->assertSame(conversion_report::CONFIDENCE_PARTIAL, $obsolete[0]['confidence']);
+    }
+
+    /**
+     * A file whose name carries a copy marker of an original also present in the
+     * package (for example "name (2)" or "name-1") raises the duplicates warning.
+     *
+     * @return void
+     */
+    public function test_report_flags_duplicate_copies(): void {
+        $course = new course_model();
+        $paths = ['docs/syllabus.pdf', 'docs/syllabus (2).pdf', 'wk/worksheet.docx', 'wk/worksheet-1.docx'];
+        foreach ($paths as $i => $path) {
+            $file = new item('d' . $i, basename($path));
+            $file->kind = item::KIND_FILE;
+            $file->files = [$path];
+            $course->orphans[] = $file;
+        }
+
+        $report = (new conversion_report($course))->build();
+
+        $this->assertContains('warnreportduplicates', $report['warnings']);
+    }
+
+    /**
+     * Distinct files that merely share a trailing digit (Lesson1 vs Lesson2, with
+     * no bare original) must not be mistaken for duplicate copies.
+     *
+     * @return void
+     */
+    public function test_report_does_not_flag_distinct_numbered_files(): void {
+        $course = new course_model();
+        foreach (['lesson1.pdf', 'lesson2.pdf'] as $i => $name) {
+            $file = new item('n' . $i, $name);
+            $file->kind = item::KIND_FILE;
+            $file->files = ['x/' . $name];
+            $course->orphans[] = $file;
+        }
+
+        $report = (new conversion_report($course))->build();
+
+        $this->assertNotContains('warnreportduplicates', $report['warnings']);
+    }
+
+    /**
      * A single-option choice item: a recognised multichoice type, but Moodle
      * needs at least two answers, so it cannot actually be saved.
      *
