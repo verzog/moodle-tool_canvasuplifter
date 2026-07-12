@@ -47,10 +47,13 @@ class conversion_report {
     public const CONFIDENCE_NONE = 'none';
 
     /** File extensions for content modern browsers can no longer play (dead Flash). */
-    private const OBSOLETE_EXTENSIONS = ['swf', 'fla'];
+    private const OBSOLETE_EXTENSIONS = ['swf'];
 
     /** @var course_model The parsed course. */
     protected course_model $course;
+
+    /** @var array<int, string> Memoised file_source_name() result per item object. */
+    private array $sourcenamecache = [];
 
     /** @var string|null Extracted package root, for reading QTI files; null if unavailable. */
     protected ?string $packageroot;
@@ -488,13 +491,35 @@ class conversion_report {
      * @return string A file name, possibly path-qualified; '' when none is known.
      */
     private function file_source_name(item $modelitem): string {
+        // The same item is examined across several passes (accumulate, the
+        // detail views, the obsolete/duplicate scans); resolving it — which
+        // stats the filesystem when a package root is set — once per object
+        // keeps a large package to a single pass of syscalls.
+        $cachekey = spl_object_id($modelitem);
+        if (isset($this->sourcenamecache[$cachekey])) {
+            return $this->sourcenamecache[$cachekey];
+        }
         $candidates = [];
         if ($modelitem->href !== '') {
             $candidates[] = $modelitem->href;
         }
         $candidates = array_merge($candidates, $modelitem->files);
-        // With package access, return the first candidate that resolves to a
-        // readable file, exactly as the builder does when it picks the payload.
+        $name = $this->pick_source_name($candidates, $modelitem->title);
+        $this->sourcenamecache[$cachekey] = $name;
+        return $name;
+    }
+
+    /**
+     * Choose the payload name from a resource's ordered candidate paths, mirroring
+     * file_builder::source_path(): with package access, the first candidate that
+     * resolves to a readable file; otherwise the first named candidate, else the
+     * fallback title.
+     *
+     * @param array $candidates Ordered candidate paths (href first, then files).
+     * @param string $fallback The title to use when no candidate is usable.
+     * @return string
+     */
+    private function pick_source_name(array $candidates, string $fallback): string {
         if ($this->packageroot !== null) {
             foreach ($candidates as $relative) {
                 if ($this->resolve_readable((string) $relative) !== null) {
@@ -502,26 +527,24 @@ class conversion_report {
                 }
             }
         }
-        // No package access, or nothing resolved: judge on the first named
-        // candidate (href, then the first file), else the title.
         foreach ($candidates as $relative) {
             if ((string) $relative !== '') {
                 return (string) $relative;
             }
         }
-        return $modelitem->title;
+        return $fallback;
     }
 
     /**
-     * Resolve a package-relative path to a readable file within the package root,
-     * mirroring the readability check the builder applies before it serves a
-     * candidate. Returns null when there is no package root, the path escapes it,
-     * or the file is missing or unreadable.
+     * Resolve a package-relative path to a readable path safely within the package
+     * root. Returns null when there is no package root, the path escapes it, or the
+     * target is missing or unreadable. Shared by resolve_readable() and
+     * resolve_qti() so the boundary check lives in one place.
      *
      * @param string $relative The package-relative candidate path.
      * @return string|null The absolute path, or null.
      */
-    private function resolve_readable(string $relative): ?string {
+    private function resolve_within(string $relative): ?string {
         if ($this->packageroot === null || $relative === '') {
             return null;
         }
@@ -530,12 +553,25 @@ class conversion_report {
             return null;
         }
         $absolute = realpath($this->packageroot . '/' . ltrim($relative, '/'));
-        if ($absolute === false || !is_file($absolute) || !is_readable($absolute)) {
+        if ($absolute === false || !is_readable($absolute)) {
             return null;
         }
-        // Require a directory boundary, not a bare prefix, so a sibling directory
-        // sharing the root's name cannot pass (as resolve_qti() does).
+        // Require a directory boundary, not a bare string prefix, so a sibling
+        // directory sharing the root's name (e.g. "<root>-x") cannot pass.
         return ($absolute === $root || str_starts_with($absolute, $root . DIRECTORY_SEPARATOR)) ? $absolute : null;
+    }
+
+    /**
+     * Resolve a package-relative path to a readable file (not a directory) within
+     * the package root, mirroring the readability check the builder applies before
+     * it serves a candidate.
+     *
+     * @param string $relative The package-relative candidate path.
+     * @return string|null The absolute path, or null.
+     */
+    private function resolve_readable(string $relative): ?string {
+        $absolute = $this->resolve_within($relative);
+        return ($absolute !== null && is_file($absolute)) ? $absolute : null;
     }
 
     /**
@@ -570,11 +606,14 @@ class conversion_report {
     /**
      * Count file resources that look like duplicate copies of another file.
      *
-     * A file is counted only when stripping a trailing " (n)" or "-n" copy marker
-     * from its name yields a different name that another imported file already
-     * uses, so a genuine copy (an original plus its "(2)"/"-1" sibling) is flagged
-     * while distinct files that merely share a numeric suffix (Lesson1 vs Lesson2)
-     * are not.
+     * A file is counted only when stripping a trailing " (n)" or short "-n" copy
+     * marker from its name yields a different name that another imported file
+     * already uses, so a genuine copy (an original plus its "(2)"/"-1" sibling) is
+     * flagged. This is a heuristic, kept conservative: files that share no bare
+     * original (Lesson1 vs Lesson2, with no Lesson) are not flagged, and a
+     * four-digit year suffix (syllabus-2024 vs syllabus) is treated as a distinct
+     * edition rather than a copy. A same-name file that carries no copy marker at
+     * all is likewise not counted.
      *
      * @return int Number of resources that duplicate an earlier file.
      */
@@ -604,9 +643,11 @@ class conversion_report {
     }
 
     /**
-     * Remove a trailing " (n)" or "-n" copy marker (before the extension) from a
-     * file name, so "syllabus (2).pdf" and "syllabus-1.pdf" both reduce to
-     * "syllabus.pdf".
+     * Remove a trailing " (n)" or short "-n" copy marker (before the extension)
+     * from a file name, so "syllabus (2).pdf" and "syllabus-1.pdf" both reduce to
+     * "syllabus.pdf". The "-n" form is limited to one to three digits so a
+     * four-digit year suffix ("syllabus-2024.pdf") is left intact and treated as a
+     * distinct edition rather than a copy.
      *
      * @param string $name A lower-case base file name.
      * @return string The name with any copy marker removed.
@@ -615,7 +656,7 @@ class conversion_report {
         $ext = pathinfo($name, PATHINFO_EXTENSION);
         $stem = pathinfo($name, PATHINFO_FILENAME);
         $stem = preg_replace('/\s*\(\d+\)$/', '', $stem);
-        $stem = preg_replace('/-\d+$/', '', $stem);
+        $stem = preg_replace('/-\d{1,3}$/', '', $stem);
         $stem = rtrim($stem);
         return $ext !== '' ? $stem . '.' . $ext : $stem;
     }
@@ -628,13 +669,6 @@ class conversion_report {
      * @return string|null Absolute path, or null.
      */
     protected function resolve_qti(item $modelitem): ?string {
-        if ($this->packageroot === null) {
-            return null;
-        }
-        $root = realpath($this->packageroot);
-        if ($root === false) {
-            return null;
-        }
         $candidates = $modelitem->files;
         if ($modelitem->href !== '') {
             $candidates[] = $modelitem->href;
@@ -643,13 +677,8 @@ class conversion_report {
             if (!preg_match('/\.xml$/i', $relative)) {
                 continue;
             }
-            $absolute = realpath($this->packageroot . '/' . ltrim($relative, '/'));
-            if ($absolute === false || !is_readable($absolute)) {
-                continue;
-            }
-            // Require a directory boundary, not a bare string prefix, so a sibling
-            // directory sharing the root's name (e.g. "<root>-x") cannot pass.
-            if ($absolute === $root || str_starts_with($absolute, $root . DIRECTORY_SEPARATOR)) {
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute !== null) {
                 return $absolute;
             }
         }
