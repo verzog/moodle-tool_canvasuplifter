@@ -90,6 +90,7 @@ class manifest_parser {
         $course->fullname = $this->read_course_title($dom);
         $course->weightingscheme = $this->read_weighting_scheme();
         $course->gradecategories = $this->read_grade_categories();
+        $course->gradeletters = $this->read_grade_letters();
         $course->rubrics = $this->read_rubrics();
 
         // Build a lookup of every resource by identifier.
@@ -1334,6 +1335,70 @@ class manifest_parser {
             return '';
         }
         return strtolower(trim((string) $xml->group_weighting_scheme));
+    }
+
+    /**
+     * Read Canvas's letter-grade scheme (grading_standards.xml) into a list of
+     * grade letters, but only when course_settings.xml switches a grading
+     * standard on. Canvas stores each scheme's boundaries as a JSON array of
+     * [letter, fraction] pairs (e.g. [["A",0.895],["B",0.795]]); each becomes a
+     * Moodle grade letter with the fraction expressed as a percentage lower
+     * boundary. Returns the letters highest-boundary first, or [] when the
+     * course uses the default scheme or the files are missing/unparseable.
+     * Moodle-free so it stays testable from XML strings.
+     *
+     * @return array<int, array{letter: string, lowerboundary: float}>
+     */
+    protected function read_grade_letters(): array {
+        $settingspath = $this->basedir . '/course_settings/course_settings.xml';
+        $standardspath = $this->basedir . '/course_settings/grading_standards.xml';
+        if (!is_readable($settingspath) || !is_readable($standardspath)) {
+            return [];
+        }
+        $previous = libxml_use_internal_errors(true);
+        $settings = simplexml_load_file($settingspath, 'SimpleXMLElement', LIBXML_NONET);
+        $standards = simplexml_load_file($standardspath, 'SimpleXMLElement', LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if ($settings === false || $standards === false) {
+            return [];
+        }
+        // Only import when Canvas has a grading standard enabled.
+        if (strtolower(trim((string) ($settings->grading_standard_enabled ?? ''))) !== 'true') {
+            return [];
+        }
+        $ref = trim((string) ($settings->grading_standard_identifier_ref ?? ''));
+
+        // Find the referenced standard (or the only one when no ref is given).
+        $chosen = null;
+        foreach ($standards->gradingStandard as $standard) {
+            if ($ref === '' || (string) ($standard['identifier'] ?? '') === $ref) {
+                $chosen = $standard;
+                break;
+            }
+        }
+        if ($chosen === null) {
+            return [];
+        }
+        $data = json_decode(trim((string) $chosen->data), true);
+        if (!is_array($data)) {
+            return [];
+        }
+        $letters = [];
+        foreach ($data as $pair) {
+            if (!is_array($pair) || count($pair) < 2) {
+                continue;
+            }
+            $letter = trim((string) $pair[0]);
+            $fraction = (float) $pair[1];
+            if ($letter === '' || $fraction < 0 || $fraction > 1) {
+                continue;
+            }
+            $letters[] = ['letter' => $letter, 'lowerboundary' => round($fraction * 100, 5)];
+        }
+        // Highest boundary first, matching Moodle's grade-letter table order.
+        usort($letters, fn($a, $b) => $b['lowerboundary'] <=> $a['lowerboundary']);
+        return $letters;
     }
 
     /**

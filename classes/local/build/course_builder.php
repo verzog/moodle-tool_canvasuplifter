@@ -147,6 +147,8 @@ class course_builder {
         // up front because Moodle creates a default grade item for every assign
         // on add_moduleinfo() and we re-parent those once we know the cmid.
         $this->gradecategoryids = $this->create_grade_categories($course, $coursemodel);
+        // Install the Canvas letter-grade scheme, if the course carries one.
+        $gradelettercount = $this->create_grade_letters($course, $coursemodel);
         // Hold the rubric library so attach_rubric() can look up by Canvas id
         // when each assignment is built.
         $this->rubrics = $coursemodel->rubrics;
@@ -306,6 +308,9 @@ class course_builder {
                 'tool_canvasuplifter',
                 $quizbuilder->placeholdercount
             );
+        }
+        if ($gradelettercount > 0) {
+            $warnings[] = get_string('notegradeletters', 'tool_canvasuplifter', $gradelettercount);
         }
 
         return [
@@ -1183,6 +1188,35 @@ class course_builder {
             $map[$spec['identifier']] = (int) $cat->id;
         }
         return $map;
+    }
+
+    /**
+     * Install the course's Canvas letter-grade scheme as Moodle grade letters on
+     * the course context. A course uses either the site-default letters (no
+     * rows) or a full custom set (rows present), so any existing set is replaced
+     * wholesale and the per-context cache is cleared. Does nothing when the
+     * course carries no scheme.
+     *
+     * @param stdClass $course The created course.
+     * @param course_model $coursemodel Parsed package.
+     * @return int The number of grade letters installed.
+     */
+    private function create_grade_letters(\stdClass $course, course_model $coursemodel): int {
+        global $DB;
+        if (empty($coursemodel->gradeletters)) {
+            return 0;
+        }
+        $context = \context_course::instance((int) $course->id);
+        $DB->delete_records('grade_letters', ['contextid' => $context->id]);
+        foreach ($coursemodel->gradeletters as $letter) {
+            $DB->insert_record('grade_letters', (object) [
+                'contextid' => $context->id,
+                'lowerboundary' => $letter['lowerboundary'],
+                'letter' => $letter['letter'],
+            ]);
+        }
+        \cache::make('core', 'grade_letters')->delete($context->id);
+        return count($coursemodel->gradeletters);
     }
 
     /**

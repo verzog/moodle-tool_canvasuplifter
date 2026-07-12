@@ -57,6 +57,14 @@ class course_model {
     public string $weightingscheme = '';
 
     /**
+     * @var array<int, array{letter: string, lowerboundary: float}>
+     * Canvas letter-grade scheme (grading_standards.xml), highest boundary
+     * first, as percentages. Populated only when the course enables a grading
+     * standard; empty otherwise. Each entry becomes one Moodle grade letter.
+     */
+    public array $gradeletters = [];
+
+    /**
      * @var array Canvas rubric library, keyed by Canvas identifier. Each value
      * is a hash with keys: title (string), free_form_comments (bool),
      * hide_score_total (bool), criteria (array of ['id','description','points',
