@@ -467,6 +467,29 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * A resource that builds from its href (an HTML page) but lists a secondary
+     * Flash asset first must be judged on the href Moodle imports, so it is not
+     * misreported as an obsolete Flash resource.
+     *
+     * @return void
+     */
+    public function test_report_judges_file_on_href_not_secondary_asset(): void {
+        $course = new course_model();
+        $page = new item('h1', 'Interactive exercise');
+        $page->kind = item::KIND_FILE;
+        $page->href = 'ex/index.html';
+        $page->files = ['ex/movie.swf', 'ex/index.html'];
+        $course->orphans[] = $page;
+
+        $report = (new conversion_report($course))->build();
+
+        $this->assertNotContains('warnreportobsolete', $report['warnings']);
+        $notes = array_column($report['rows'], 'note');
+        $this->assertContains('note_file', $notes);
+        $this->assertNotContains('note_file_obsolete', $notes);
+    }
+
+    /**
      * A file whose name carries a copy marker of an original also present in the
      * package (for example "name (2)" or "name-1") raises the duplicates warning.
      *

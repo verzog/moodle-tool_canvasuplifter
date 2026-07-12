@@ -474,18 +474,21 @@ class conversion_report {
     }
 
     /**
-     * The package file name that best identifies a resource (first file, else the
-     * href, else the title), for extension and duplicate checks.
+     * The package file name that best identifies a resource, for extension and
+     * duplicate checks. Mirrors file_builder::source_path()'s href-first ordering
+     * (href, then the first file, then the title) so the report judges the same
+     * payload Moodle will actually import — an href="ex/index.html" resource whose
+     * first file is a secondary ex/movie.swf asset is judged on the HTML.
      *
      * @param item $modelitem The resource.
      * @return string A file name, possibly path-qualified; '' when none is known.
      */
     private function file_source_name(item $modelitem): string {
-        if (!empty($modelitem->files)) {
-            return (string) $modelitem->files[0];
-        }
         if ($modelitem->href !== '') {
             return $modelitem->href;
+        }
+        if (!empty($modelitem->files)) {
+            return (string) $modelitem->files[0];
         }
         return $modelitem->title;
     }
