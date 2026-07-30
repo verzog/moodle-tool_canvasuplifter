@@ -117,8 +117,8 @@ class qti_question {
         if ($this->type === self::TYPE_SHORTANSWER) {
             return $nonempty >= 1;
         }
-        // Multichoice, multianswer and true/false all import as Moodle
-        // multichoice, which requires at least two answers.
+        // Multichoice and multianswer import as Moodle multichoice, and
+        // true/false as Moodle truefalse; all three need at least two answers.
         return $nonempty >= 2;
     }
 }

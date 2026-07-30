@@ -99,6 +99,79 @@ final class question_xml_writer_test extends \advanced_testcase {
     }
 
     /**
+     * A true/false question renders as a native Moodle <question type="truefalse">
+     * with exactly two answers whose text is 'true'/'false', the correct side
+     * carrying fraction 100 — not as a multiple-choice question. The correct side
+     * follows the source label, whichever option is right, and no multichoice
+     * scaffolding leaks in.
+     *
+     * @return void
+     */
+    public function test_writes_truefalse(): void {
+        // Source marks "False" as the correct answer.
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_TRUEFALSE;
+        $q->name = 'TF';
+        $q->questiontext = '<p>The sky is green.</p>';
+        $q->answers = [
+            ['text' => 'True', 'fraction' => 0.0, 'feedback' => ''],
+            ['text' => 'False', 'fraction' => 100.0, 'feedback' => 'Correct'],
+        ];
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], '$course$/Imported/Bank');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml), 'output should be well-formed XML');
+
+        $types = [];
+        foreach ($dom->getElementsByTagName('question') as $node) {
+            $types[] = $node->getAttribute('type');
+        }
+        $this->assertSame(['category', 'truefalse'], $types);
+
+        // Exactly two answers, texts 'true'/'false', with False scored correct.
+        $answers = [];
+        foreach ($dom->getElementsByTagName('answer') as $node) {
+            $answers[$node->getElementsByTagName('text')->item(0)->textContent] = $node->getAttribute('fraction');
+        }
+        $this->assertSame(['true' => '0', 'false' => '100'], $answers);
+
+        // None of the multichoice-only scaffolding is emitted.
+        $this->assertStringNotContainsString('<single>', $xml);
+        $this->assertStringNotContainsString('<answernumbering>', $xml);
+        $this->assertStringNotContainsString('<usecase>', $xml);
+    }
+
+    /**
+     * When the source options carry no 'true'/'false' labels, the writer falls
+     * back to position (first option is the true side) and still scores the
+     * correct one.
+     *
+     * @return void
+     */
+    public function test_truefalse_positional_fallback(): void {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_TRUEFALSE;
+        $q->name = 'TF2';
+        $q->questiontext = '<p>Water is wet.</p>';
+        // Unlabelled options; the first (true) side is correct.
+        $q->answers = [
+            ['text' => '', 'fraction' => 100.0, 'feedback' => ''],
+            ['text' => '', 'fraction' => 0.0, 'feedback' => ''],
+        ];
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+        $answers = [];
+        foreach ($dom->getElementsByTagName('answer') as $node) {
+            $answers[$node->getElementsByTagName('text')->item(0)->textContent] = $node->getAttribute('fraction');
+        }
+        $this->assertSame(['true' => '100', 'false' => '0'], $answers);
+    }
+
+    /**
      * The writer emits a well-formed Moodle XML document with a category and
      * the supported question types.
      *
