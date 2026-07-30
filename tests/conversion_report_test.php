@@ -242,6 +242,33 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * A native Canvas assessment supplied as a .xml.qti dump also builds, so its
+     * eligibility for the nudge must be recognised — matching the builders, which
+     * accept .xml.qti as well as .xml.
+     *
+     * @return void
+     */
+    public function test_orphan_quiz_nudge_recognises_xmlqti(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Homework"><section ident="s1">'
+            . $this->profileitem('cc.multiple_choice.v0p1', 'B')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/a1.xml.qti', $qti);
+
+        $course = new course_model();
+        $orphan = new item('q_native', 'Homework');
+        $orphan->kind = item::KIND_QUIZ;
+        $orphan->files = ['quiz/a1.xml.qti'];
+        $course->orphans[] = $orphan;
+
+        $report = (new conversion_report($course, $dir))->build();
+        $this->assertContains('warnreportquizfrombank', $report['warnings']);
+    }
+
+    /**
      * Build a course of one section holding the given ordered item kinds, so the
      * page-grouping reflection can be probed.
      *

@@ -739,7 +739,10 @@ class conversion_report {
             $candidates[] = $modelitem->href;
         }
         foreach ($candidates as $relative) {
-            if (!preg_match('/\.xml$/i', $relative)) {
+            // Match the builders' locate_qti(): a Canvas assessment can be a plain
+            // .xml or a native .xml.qti dump, and both build, so both make the
+            // quiz-from-bank nudge (and the question-type matrix) applicable.
+            if (!preg_match('/\.xml(\.qti)?$/i', $relative)) {
                 continue;
             }
             $absolute = $this->resolve_within((string) $relative);
