@@ -48,6 +48,13 @@ class url_fetcher {
     /** @var int Bytes of an HTML response to scan for a download link. */
     private const HTML_SCAN_BYTES = 1048576;
 
+    /**
+     * @var int Finite download ceiling used when the site sets no file-size limit.
+     * 2 GB - 1: the largest value that stays an int (not a float) on 32-bit PHP,
+     * so it never trips download_to()'s int $maxbytes parameter.
+     */
+    private const DEFAULT_DOWNLOAD_MAXBYTES = 2147483647;
+
     /** @var int Cap on bitstream pages followed per bundle, guarding against runaway pagination. */
     private const DSPACE_MAX_PAGES = 20;
 
@@ -73,7 +80,9 @@ class url_fetcher {
      * Download $url to a new temporary file and return its path.
      *
      * If the URL resolves to an HTML page rather than a package, its download
-     * link is extracted and followed once. Respects the site's max upload size.
+     * link is extracted and followed once. Respects the site's configured
+     * file-size limit ($CFG->maxbytes), falling back to a finite ceiling when the
+     * site imposes none.
      *
      * @param string $url Absolute HTTP(S) URL.
      * @return string Absolute path to the downloaded file.
@@ -84,7 +93,16 @@ class url_fetcher {
         require_once($CFG->libdir . '/filelib.php');
 
         $this->lastdetail = null;
-        $maxbytes = (int) get_max_upload_file_size($CFG->maxbytes);
+        // The downloaded package only has to fit the site's file limit and disk.
+        // PHP's upload_max_filesize / post_max_size govern browser uploads, not
+        // this server-side fetch, so cap by $CFG->maxbytes directly rather than
+        // get_max_upload_file_size(), which would wrongly clamp the fetch to those
+        // unrelated upload-form ini limits. When the site leaves maxbytes at 0
+        // ("server limit"), fall back to a finite ceiling so a hostile or
+        // misconfigured endpoint can't stream for the whole timeout and fill the
+        // disk.
+        $sitemax = (int) ($CFG->maxbytes ?? 0);
+        $maxbytes = $sitemax > 0 ? $sitemax : self::DEFAULT_DOWNLOAD_MAXBYTES;
 
         $target = $this->download_to($url, $maxbytes);
         if ($this->looks_like_zip($target)) {
