@@ -73,7 +73,8 @@ class url_fetcher {
      * Download $url to a new temporary file and return its path.
      *
      * If the URL resolves to an HTML page rather than a package, its download
-     * link is extracted and followed once. Respects the site's max upload size.
+     * link is extracted and followed once. Respects the site's configured
+     * file-size limit ($CFG->maxbytes).
      *
      * @param string $url Absolute HTTP(S) URL.
      * @return string Absolute path to the downloaded file.
@@ -84,7 +85,12 @@ class url_fetcher {
         require_once($CFG->libdir . '/filelib.php');
 
         $this->lastdetail = null;
-        $maxbytes = (int) get_max_upload_file_size($CFG->maxbytes);
+        // The downloaded package only has to fit the site's file limit and disk.
+        // PHP's upload_max_filesize / post_max_size govern browser uploads, not
+        // this server-side fetch, so cap by $CFG->maxbytes directly (0 = no
+        // Moodle-imposed cap). get_max_upload_file_size() would wrongly clamp the
+        // fetch to those unrelated upload-form ini limits.
+        $maxbytes = (int) ($CFG->maxbytes ?? 0);
 
         $target = $this->download_to($url, $maxbytes);
         if ($this->looks_like_zip($target)) {
