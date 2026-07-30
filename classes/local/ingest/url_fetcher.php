@@ -145,13 +145,14 @@ class url_fetcher {
      * Download a single URL to a fresh temp file, enforcing size and HTTP status.
      *
      * Uses Moodle's curl wrapper so the site's curlsecurityblockedhosts /
-     * allowed-ports policy is applied on each redirect hop. That policy only
-     * blocks internal services / cloud-metadata endpoints when the admin has
-     * configured a blocklist (it is empty by default), so SSRF protection
-     * depends on that site setting; the URL — and any REST base derived from a
-     * fetched page — is treated as untrusted and only ever reached through this
-     * security-checked wrapper. The transfer is aborted mid-stream once it
-     * exceeds $maxbytes, so an oversize (or endless) body cannot fill the disk.
+     * curlsecurityallowedport policy is applied on each redirect hop. On the
+     * supported Moodle versions (5.0+) that policy ships secure by default,
+     * blocking loopback, private ranges, localhost and the cloud-metadata
+     * endpoint and restricting ports to 80/443, so the URL — and any REST base
+     * derived from a fetched page — is treated as untrusted and only ever
+     * reached through this security-checked wrapper. The transfer is aborted
+     * mid-stream once it exceeds $maxbytes, so an oversize (or endless) body
+     * cannot fill the disk.
      *
      * @param string $url Absolute HTTP(S) URL.
      * @param int $maxbytes Maximum accepted size (0 = unlimited).

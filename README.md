@@ -26,28 +26,26 @@ capability that gates the tool (`tool/canvasuplifter:use`) is restricted to
 managers and declares an XSS risk to reflect this; the upload page shows the
 same warning.
 
-### Server-side URL fetch (SSRF) — configure the site blocklist
+### Server-side URL fetch (SSRF)
 
 When you import from a *Download URL* rather than an upload, the site fetches
 that URL server-side (following up to five redirects), and for some repository
 landing pages it derives further API URLs from the fetched HTML. All of these
-requests go through Moodle's `\curl` wrapper, so they honour the site's
-**cURL security settings** — but those settings are empty by default, which
-means an admin-supplied URL could otherwise be pointed at internal services or a
-cloud metadata endpoint (`169.254.169.254`).
+requests go through Moodle's `\curl` wrapper, so they are subject to the site's
+**cURL security settings** at *Site administration > Security > HTTP security*.
 
-Because the feature is manager-only the exposure is limited, but for
-defence-in-depth configure the blocklist at *Site administration > Security >
-HTTP security*:
+On the Moodle versions this plugin supports (5.0+), those settings are **secure
+by default**: `curlsecurityblockedhosts` ships blocking loopback and private
+ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`),
+`localhost`, the cloud-metadata address (`169.254.169.254`) and IPv6 loopback
+(`::1`), while `curlsecurityallowedport` ships restricted to ports 80 and 443.
+So a *Download URL* cannot reach internal services out of the box.
 
-- **`curlsecurityblockedhosts`** — block loopback, link-local and internal
-  ranges you don't want reachable (for example `127.0.0.0/8`, `169.254.0.0/16`,
-  `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`).
-- **`curlsecurityallowedport`** — restrict to `443` (and `80` if you fetch over
-  HTTP).
-
-The plugin relies on this standard Moodle mechanism rather than maintaining its
-own blocklist, so SSRF protection is a site-configuration responsibility.
+For defence-in-depth, keep those defaults in place (don't clear the blocklist),
+and extend them if your network needs it — for example add IPv6 link-local and
+unique-local ranges (`fe80::/10`, `fc00::/7`) on IPv6-connected hosts. The
+plugin relies on this standard Moodle mechanism rather than maintaining its own
+blocklist, so SSRF protection stays a site-configuration responsibility.
 Uploading the `.imscc` file directly avoids the server-side fetch entirely.
 
 ## Requirements
