@@ -297,7 +297,10 @@ class manifest_parser {
         $rewriter = new link_rewriter();
         $embedded = [];
         foreach ($resources as $resourceitem) {
-            if ($resourceitem->kind !== item::KIND_PAGE) {
+            // A page prefer_variant() suppressed (its <variant> selected an
+            // assignment instead) is never rendered, so it embeds nothing — don't
+            // let its tokens suppress a real standalone file.
+            if ($resourceitem->kind !== item::KIND_PAGE || $resourceitem->suppressed) {
                 continue;
             }
             $html = $this->rendered_page_html($resourceitem);
