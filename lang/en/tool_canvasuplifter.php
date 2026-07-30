@@ -37,8 +37,8 @@ $string['buildstatusheading'] = 'Build status';
 $string['builtcoursesummary'] = 'Built {$a->created} of {$a->itemcount} content items across '
     . '{$a->sectioncount} sections ({$a->skipped} skipped).';
 $string['canvasuplifter:use'] = 'Upload a Canvas package and view the conversion report';
-$string['chosenbuildoptions'] = 'Using the options you chose above — combine consecutive pages: '
-    . '{$a->grouping}; also build a runnable quiz from each standalone bank: {$a->quiz}.';
+$string['chosenbuildoptions'] = 'Page grouping (fixed when the package was analysed) — combine consecutive '
+    . 'pages: {$a->grouping}.';
 $string['chunkuploadactive'] = 'For a very large package, use the optional "Large package (chunked upload)" '
     . 'field below — it uploads in chunks and isn\'t limited by this server\'s PHP upload size.';
 $string['cleanup_task'] = 'Clean up stale chunked uploads';
@@ -229,4 +229,5 @@ $string['warnreportlti'] = 'External (LTI) tools need their keys reconfigured by
 $string['warnreportobsolete'] = 'Some resources are Flash (.swf) or other obsolete formats that modern browsers '
     . 'no longer play; they are imported but will not function.';
 $string['warnreportquiz'] = 'Quiz questions depend on type support; check the question-type matrix.';
+$string['warnreportquizfrombank'] = 'Some assessments are not linked anywhere in the course, so they import as reusable question banks only. To also create a runnable quiz from each, tick "Also build a runnable quiz from each standalone question bank" before building.';
 $string['warnreportunclassified'] = 'Some resources could not be classified and will be skipped.';

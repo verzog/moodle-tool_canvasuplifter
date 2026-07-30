@@ -312,14 +312,33 @@ class renderer extends plugin_renderer_base {
         );
         $form .= html_writer::end_div();
         $form .= html_writer::end_div();
-        // Carry the options chosen on the upload form (the report already
-        // reflects them) rather than presenting the controls again.
-        $form .= html_writer::empty_tag('input', [
-            'type' => 'hidden',
-            'name' => 'quizfrombank',
-            'value' => $quizfrombank ? '1' : '0',
-        ]);
+        // Page grouping shapes the report itself (it folds page runs into a
+        // book/lesson), so it is fixed at analysis time and carried forward
+        // silently rather than re-offered here.
         $form .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'pagegrouping', 'value' => $pagegrouping]);
+        // The quiz-from-bank option only adds runnable quizzes and does not change
+        // the report, so expose it as a live checkbox: a user acting on the
+        // report's nudge can enable it here without re-analysing the package. A
+        // preceding hidden 0 makes an unchecked box submit a definite "off".
+        $form .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'quizfrombank', 'value' => '0']);
+        $checkboxattrs = [
+            'type' => 'checkbox',
+            'name' => 'quizfrombank',
+            'value' => '1',
+            'id' => 'reportquizfrombank',
+            'class' => 'form-check-input',
+        ];
+        if ($quizfrombank) {
+            $checkboxattrs['checked'] = 'checked';
+        }
+        $form .= html_writer::start_div('form-check mb-2');
+        $form .= html_writer::empty_tag('input', $checkboxattrs);
+        $form .= html_writer::tag(
+            'label',
+            get_string('quizfrombank', 'tool_canvasuplifter'),
+            ['for' => 'reportquizfrombank', 'class' => 'form-check-label']
+        );
+        $form .= html_writer::end_div();
         $groupinglabels = [
             '' => get_string('pagegrouping_none', 'tool_canvasuplifter'),
             'book' => get_string('pagegrouping_book', 'tool_canvasuplifter'),
@@ -327,7 +346,6 @@ class renderer extends plugin_renderer_base {
         ];
         $form .= html_writer::tag('p', get_string('chosenbuildoptions', 'tool_canvasuplifter', [
             'grouping' => $groupinglabels[$pagegrouping] ?? $groupinglabels[''],
-            'quiz' => $quizfrombank ? get_string('yes') : get_string('no'),
         ]), ['class' => 'text-muted']);
         $form .= html_writer::div(
             html_writer::empty_tag('input', [

@@ -171,6 +171,104 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * When an unreferenced quiz with importable questions would import as a bank
+     * only, the report nudges the user toward the quiz-from-bank toggle — but only
+     * while that toggle is off.
+     *
+     * @return void
+     */
+    public function test_orphan_quiz_nudges_toward_quizfrombank(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Homework"><section ident="s1">'
+            . $this->profileitem('cc.multiple_choice.v0p1', 'B')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/good.xml', $qti);
+
+        $course = new course_model();
+        $orphan = new item('q_orphan', 'Homework');
+        $orphan->kind = item::KIND_QUIZ;
+        $orphan->files = ['quiz/good.xml'];
+        $course->orphans[] = $orphan;
+
+        // Toggle off (default): the nudge is present.
+        $off = (new conversion_report($course, $dir))->build();
+        $this->assertContains('warnreportquizfrombank', $off['warnings']);
+
+        // Toggle on: the standalone quiz will be built, so no nudge.
+        $on = (new conversion_report($course, $dir, '', true))->build();
+        $this->assertNotContains('warnreportquizfrombank', $on['warnings']);
+
+        // A course whose only quiz is referenced already builds a runnable quiz,
+        // so there is nothing to nudge about even with the toggle off.
+        $linkedcourse = new course_model();
+        $section = new section_model('Week 1');
+        $linked = new item('q_ref', 'Chapter Quiz');
+        $linked->kind = item::KIND_QUIZ;
+        $linked->files = ['quiz/good.xml'];
+        $section->add_item($linked);
+        $linkedcourse->add_section($section);
+        $linkedonly = (new conversion_report($linkedcourse, $dir))->build();
+        $this->assertNotContains('warnreportquizfrombank', $linkedonly['warnings']);
+    }
+
+    /**
+     * An orphan quiz with no importable questions (an empty shell, or only
+     * unsupported types) builds neither a bank nor a quiz, so the nudge must not
+     * fire for it — enabling the toggle would deliver nothing.
+     *
+     * @return void
+     */
+    public function test_no_nudge_for_orphan_quiz_without_importable_questions(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Empty"><section ident="s1">'
+            . $this->unsupporteditem('cc.numeric.v0p1')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/shell.xml', $qti);
+
+        $course = new course_model();
+        $orphan = new item('q_shell', 'Empty');
+        $orphan->kind = item::KIND_QUIZ;
+        $orphan->files = ['quiz/shell.xml'];
+        $course->orphans[] = $orphan;
+
+        $report = (new conversion_report($course, $dir))->build();
+        $this->assertNotContains('warnreportquizfrombank', $report['warnings']);
+    }
+
+    /**
+     * A native Canvas assessment supplied as a .xml.qti dump also builds, so its
+     * eligibility for the nudge must be recognised — matching the builders, which
+     * accept .xml.qti as well as .xml.
+     *
+     * @return void
+     */
+    public function test_orphan_quiz_nudge_recognises_xmlqti(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Homework"><section ident="s1">'
+            . $this->profileitem('cc.multiple_choice.v0p1', 'B')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/a1.xml.qti', $qti);
+
+        $course = new course_model();
+        $orphan = new item('q_native', 'Homework');
+        $orphan->kind = item::KIND_QUIZ;
+        $orphan->files = ['quiz/a1.xml.qti'];
+        $course->orphans[] = $orphan;
+
+        $report = (new conversion_report($course, $dir))->build();
+        $this->assertContains('warnreportquizfrombank', $report['warnings']);
+    }
+
+    /**
      * Build a course of one section holding the given ordered item kinds, so the
      * page-grouping reflection can be probed.
      *

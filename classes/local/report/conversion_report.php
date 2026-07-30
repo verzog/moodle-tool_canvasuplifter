@@ -61,17 +61,27 @@ class conversion_report {
     /** @var string Page-grouping choice to reflect: '' (off), 'book' or 'lesson'. */
     protected string $pagegrouping;
 
+    /** @var bool Whether the run will also build a runnable quiz from each standalone bank. */
+    protected bool $quizfrombank;
+
     /**
      * Constructor.
      *
      * @param course_model $course The parsed course model.
      * @param string|null $packageroot Extracted package root, enabling the question-type matrix.
      * @param string $pagegrouping Page-grouping choice to reflect: '' (off), 'book' or 'lesson'.
+     * @param bool $quizfrombank Whether standalone assessments will also build a runnable quiz.
      */
-    public function __construct(course_model $course, ?string $packageroot = null, string $pagegrouping = '') {
+    public function __construct(
+        course_model $course,
+        ?string $packageroot = null,
+        string $pagegrouping = '',
+        bool $quizfrombank = false
+    ) {
         $this->course = $course;
         $this->packageroot = $packageroot !== null ? rtrim($packageroot, '/') : null;
         $this->pagegrouping = in_array($pagegrouping, ['book', 'lesson'], true) ? $pagegrouping : '';
+        $this->quizfrombank = $quizfrombank;
     }
 
     /**
@@ -262,6 +272,56 @@ class conversion_report {
     }
 
     /**
+     * Count unreferenced quizzes the quiz-from-bank toggle could actually build a
+     * runnable quiz from — orphan KIND_QUIZ items with at least one importable
+     * question. This is what the nudge is keyed on.
+     *
+     * An orphan quiz with no importable questions (an empty Canvas QTI shell, or a
+     * file of only unsupported types) builds nothing: questionbank_builder returns
+     * null, and course_builder only runs the standalone-quiz build when the bank
+     * built, so enabling the toggle would create neither a bank nor a quiz.
+     * Nudging for it would promise something the toggle can't deliver.
+     * KIND_QUESTIONBANK orphans are excluded too — they are inherently banks and
+     * the toggle never turns them into quizzes. Determining importability needs
+     * package access to read the QTI; without it the count is zero (no
+     * over-promising).
+     *
+     * @return int Number of unreferenced, buildable quiz items.
+     */
+    protected function orphan_quiz_count(): int {
+        $count = 0;
+        foreach ($this->course->orphans as $modelitem) {
+            if ($modelitem->kind === item::KIND_QUIZ && $this->quiz_has_importable_questions($modelitem)) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    /**
+     * Whether an assessment has at least one question Moodle can import, so it
+     * would build a question bank (and, with the quiz-from-bank toggle, a runnable
+     * quiz). Mirrors the questionbank_builder/quiz_builder eligibility gate.
+     * Requires package access to read the QTI; returns false without it.
+     *
+     * @param item $modelitem The assessment item.
+     * @return bool
+     */
+    protected function quiz_has_importable_questions(item $modelitem): bool {
+        $path = $this->resolve_qti($modelitem);
+        if ($path === null) {
+            return false;
+        }
+        $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
+        foreach ($parsed['questions'] as $question) {
+            if ($question->is_importable()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Count how many items there are of each kind.
      *
      * @return array<string, int> Keyed by item kind.
@@ -348,6 +408,11 @@ class conversion_report {
         }
         if (($counts[item::KIND_QUIZ] ?? 0) > 0 || ($counts[item::KIND_QUESTIONBANK] ?? 0) > 0) {
             $warnings[] = 'warnreportquiz';
+        }
+        // Unreferenced quizzes build as question banks only; when the runnable-quiz
+        // toggle is off, nudge the user toward it so the downgrade isn't a surprise.
+        if (!$this->quizfrombank && $this->orphan_quiz_count() > 0) {
+            $warnings[] = 'warnreportquizfrombank';
         }
         if ($this->has_obsolete_files()) {
             $warnings[] = 'warnreportobsolete';
@@ -674,7 +739,10 @@ class conversion_report {
             $candidates[] = $modelitem->href;
         }
         foreach ($candidates as $relative) {
-            if (!preg_match('/\.xml$/i', $relative)) {
+            // Match the builders' locate_qti(): a Canvas assessment can be a plain
+            // .xml or a native .xml.qti dump, and both build, so both make the
+            // quiz-from-bank nudge (and the question-type matrix) applicable.
+            if (!preg_match('/\.xml(\.qti)?$/i', $relative)) {
                 continue;
             }
             $absolute = $this->resolve_within((string) $relative);
