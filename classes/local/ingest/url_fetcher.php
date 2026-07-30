@@ -48,8 +48,12 @@ class url_fetcher {
     /** @var int Bytes of an HTML response to scan for a download link. */
     private const HTML_SCAN_BYTES = 1048576;
 
-    /** @var int Finite download ceiling used when the site sets no file-size limit (2 GB). */
-    private const DEFAULT_DOWNLOAD_MAXBYTES = 2147483648;
+    /**
+     * @var int Finite download ceiling used when the site sets no file-size limit.
+     * 2 GB - 1: the largest value that stays an int (not a float) on 32-bit PHP,
+     * so it never trips download_to()'s int $maxbytes parameter.
+     */
+    private const DEFAULT_DOWNLOAD_MAXBYTES = 2147483647;
 
     /** @var int Cap on bitstream pages followed per bundle, guarding against runaway pagination. */
     private const DSPACE_MAX_PAGES = 20;
