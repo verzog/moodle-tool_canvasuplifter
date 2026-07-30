@@ -18,6 +18,8 @@ namespace tool_canvasuplifter\local\parser;
 
 use DOMDocument;
 use DOMElement;
+use tool_canvasuplifter\local\build\ilias_cleaner;
+use tool_canvasuplifter\local\build\link_rewriter;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\section_model;
 use tool_canvasuplifter\local\model\item;
@@ -144,6 +146,13 @@ class manifest_parser {
                 $placed[$placeditem->identifier] = true;
             }
         }
+
+        // Files that are only embedded inside another resource's page HTML (Canvas
+        // page images/media referenced via $IMS-CC-FILEBASE$) are inlined into the
+        // page at build time, so an unplaced one must not also import as a
+        // standalone resource. Only unplaced files are suppressed, so an explicitly
+        // placed activity is never dropped.
+        $this->suppress_embedded_page_assets($resources, $placed);
         // An asset folded into an HTML bundle is now hidden — but only when it
         // is an orphan. One the course also places as its own activity built
         // normally above and must survive, so suppress only the unplaced ones
@@ -230,6 +239,130 @@ class manifest_parser {
             }
             $modelitem->banktitle = $modelitem->title . ' (question bank)';
         }
+    }
+
+    /**
+     * Suppress unplaced file resources whose only role is being embedded inside
+     * another resource's page HTML.
+     *
+     * Canvas stores page images and media as their own webcontent resources
+     * (commonly under web_resources/) and references them from page bodies with a
+     * $IMS-CC-FILEBASE$ token, which the page builder inlines into the page. Left
+     * as orphans they would also import as standalone mod_resource activities,
+     * duplicating the bytes and cluttering "Additional resources". Reuse the
+     * builder's own embedder ({@see link_rewriter}) to compute exactly which
+     * package files each page embeds, then suppress only an unplaced KIND_FILE
+     * resource whose file is one of them — matched on the canonical absolute path,
+     * so case and dot segments resolve the way the builder resolves them and a
+     * genuinely standalone (or explicitly placed) file is never dropped.
+     *
+     * @param array $resources The resources keyed by identifier.
+     * @param array $placed Identifiers already placed as their own activity.
+     * @return void
+     */
+    protected function suppress_embedded_page_assets(array $resources, array $placed): void {
+        $embedded = $this->collect_embedded_files($resources);
+        if (empty($embedded)) {
+            return;
+        }
+        foreach ($resources as $identifier => $resourceitem) {
+            if ($resourceitem->kind !== item::KIND_FILE || !empty($placed[$identifier])) {
+                continue;
+            }
+            // Compare the single file file_builder would build this resource from;
+            // suppressing on an auxiliary <file> would drop an activity whose real
+            // payload (e.g. a PDF href) is not the embedded asset at all.
+            $built = $this->built_file_payload($resourceitem);
+            if ($built !== null && isset($embedded[$built])) {
+                $resourceitem->suppressed = true;
+            }
+        }
+    }
+
+    /**
+     * Absolute package paths of the files each page embeds via $IMS-CC-FILEBASE$
+     * tokens, taken from the builder's own {@see link_rewriter} so the set matches
+     * exactly what is inlined into the built page (URL-encoded tokens, tokens in
+     * any attribute, the bare-path/web_resources resolution order, and safe dot
+     * segments all included).
+     *
+     * Only KIND_PAGE resources are scanned: the page/book/lesson builders run
+     * file_embedder, whereas file_builder (which builds a KIND_FILE HTML resource)
+     * never embeds, so treating its tokens as embedded would drop a real file.
+     *
+     * @param array $resources The resources keyed by identifier.
+     * @return array Set keyed by absolute package path, each value true.
+     */
+    protected function collect_embedded_files(array $resources): array {
+        $rewriter = new link_rewriter();
+        $embedded = [];
+        foreach ($resources as $resourceitem) {
+            // A page prefer_variant() suppressed (its <variant> selected an
+            // assignment instead) is never rendered, so it embeds nothing — don't
+            // let its tokens suppress a real standalone file.
+            if ($resourceitem->kind !== item::KIND_PAGE || $resourceitem->suppressed) {
+                continue;
+            }
+            $html = $this->rendered_page_html($resourceitem);
+            if ($html === null) {
+                continue;
+            }
+            foreach ($rewriter->rewrite_files($html, $this->basedir)['files'] as $file) {
+                $embedded[$file['package']] = true;
+            }
+        }
+        return $embedded;
+    }
+
+    /**
+     * The cleaned HTML a page builder actually renders and embeds from: the first
+     * readable candidate in page_payload order (files before href), run through
+     * {@see ilias_cleaner} exactly as the page/book/lesson builders do before
+     * calling file_embedder, so tokens in stripped viewer chrome aren't counted.
+     *
+     * @param item $resourceitem The resource.
+     * @return string|null The cleaned HTML, or null if no candidate is readable.
+     */
+    protected function rendered_page_html(item $resourceitem): ?string {
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        foreach ($candidates as $relative) {
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute === null) {
+                continue;
+            }
+            $html = @file_get_contents($absolute);
+            if ($html !== false) {
+                return ilias_cleaner::clean((string) $html);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The single package file a file_builder would build this resource from —
+     * href first, then <file> entries (mirroring file_builder::source_path) — so
+     * suppression matches only the resource whose built copy an embedded asset
+     * actually duplicates.
+     *
+     * @param item $resourceitem The resource.
+     * @return string|null Absolute path within the package, or null.
+     */
+    protected function built_file_payload(item $resourceitem): ?string {
+        $candidates = [];
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        $candidates = array_merge($candidates, $resourceitem->files);
+        foreach ($candidates as $relative) {
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute !== null && is_file($absolute)) {
+                return $absolute;
+            }
+        }
+        return null;
     }
 
     /**
