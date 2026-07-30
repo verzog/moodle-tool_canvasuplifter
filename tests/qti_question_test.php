@@ -59,6 +59,42 @@ final class qti_question_test extends \basic_testcase {
     }
 
     /**
+     * A true/false pair is importable when it has two options and a resolvable
+     * correct side (one scoring above zero) — including an unlabelled pair, whose
+     * side the writer derives by position. A pair the parser could not score (both
+     * fractions zero, e.g. a negated condition) is not importable, so the answer
+     * key is never guessed.
+     *
+     * @return void
+     */
+    public function test_truefalse_needs_resolvable_answer(): void {
+        $tf = function (array $answers): qti_question {
+            $q = new qti_question();
+            $q->type = qti_question::TYPE_TRUEFALSE;
+            $q->answers = $answers;
+            return $q;
+        };
+
+        // Labelled pair with a clear correct side.
+        $this->assertTrue($tf([
+            ['text' => 'True', 'fraction' => 0.0, 'feedback' => ''],
+            ['text' => 'False', 'fraction' => 100.0, 'feedback' => ''],
+        ])->is_importable());
+        // Unlabelled pair, but still scored — the writer maps sides by position.
+        $this->assertTrue($tf([
+            ['text' => '', 'fraction' => 100.0, 'feedback' => ''],
+            ['text' => '', 'fraction' => 0.0, 'feedback' => ''],
+        ])->is_importable());
+        // Unresolved scoring (both zero): not importable, so the key isn't guessed.
+        $this->assertFalse($tf([
+            ['text' => 'True', 'fraction' => 0.0, 'feedback' => ''],
+            ['text' => 'False', 'fraction' => 0.0, 'feedback' => ''],
+        ])->is_importable());
+        // A single option is too thin.
+        $this->assertFalse($tf([['text' => 'True', 'fraction' => 100.0, 'feedback' => '']])->is_importable());
+    }
+
+    /**
      * Matching needs at least two complete stem/answer pairs and at least two
      * distinct answers; thinner sets (one pair, or two pairs sharing a single
      * answer) are not importable, and answer-only distractors don't count as pairs.

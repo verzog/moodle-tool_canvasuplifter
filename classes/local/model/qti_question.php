@@ -117,8 +117,23 @@ class qti_question {
         if ($this->type === self::TYPE_SHORTANSWER) {
             return $nonempty >= 1;
         }
-        // Multichoice and multianswer import as Moodle multichoice, and
-        // true/false as Moodle truefalse; all three need at least two answers.
+        if ($this->type === self::TYPE_TRUEFALSE) {
+            // Imported as Moodle truefalse, whose writer synthesises the
+            // true/false labels — so option display text is not required, but the
+            // correct side must be resolvable. Require two options with at least
+            // one scoring above zero; a pair the parser could not score (e.g. a
+            // negated <not><varequal> condition, which correct_idents() skips)
+            // stays unimportable rather than guessing the key.
+            $positives = 0;
+            foreach ($this->answers as $answer) {
+                if (((float) ($answer['fraction'] ?? 0)) > 0) {
+                    $positives++;
+                }
+            }
+            return count($this->answers) >= 2 && $positives >= 1;
+        }
+        // Multichoice and multianswer import as Moodle multichoice; both need at
+        // least two answers.
         return $nonempty >= 2;
     }
 }
