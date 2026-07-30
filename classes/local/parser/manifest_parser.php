@@ -18,6 +18,7 @@ namespace tool_canvasuplifter\local\parser;
 
 use DOMDocument;
 use DOMElement;
+use tool_canvasuplifter\local\build\link_rewriter;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\section_model;
 use tool_canvasuplifter\local\model\item;
@@ -137,11 +138,6 @@ class manifest_parser {
             $this->build_sections($dom, $resources, $course);
         }
 
-        // Files that are only embedded inside another resource's HTML body (Canvas
-        // page images/media referenced via $IMS-CC-FILEBASE$) are inlined into that
-        // page at build time, so don't also import them as standalone resources.
-        $this->suppress_embedded_page_assets($resources);
-
         // Any resource never referenced by the organisation tree becomes an orphan.
         $placed = [];
         foreach ($course->sections as $section) {
@@ -149,6 +145,13 @@ class manifest_parser {
                 $placed[$placeditem->identifier] = true;
             }
         }
+
+        // Files that are only embedded inside another resource's page HTML (Canvas
+        // page images/media referenced via $IMS-CC-FILEBASE$) are inlined into the
+        // page at build time, so an unplaced one must not also import as a
+        // standalone resource. Only unplaced files are suppressed, so an explicitly
+        // placed activity is never dropped.
+        $this->suppress_embedded_page_assets($resources, $placed);
         // An asset folded into an HTML bundle is now hidden — but only when it
         // is an orphan. One the course also places as its own activity built
         // normally above and must survive, so suppress only the unplaced ones
@@ -238,111 +241,118 @@ class manifest_parser {
     }
 
     /**
-     * Suppress files that are only embedded inside another resource's HTML body.
+     * Suppress unplaced file resources whose only role is being embedded inside
+     * another resource's page HTML.
      *
      * Canvas stores page images and media as their own webcontent resources
      * (commonly under web_resources/) and references them from page bodies with a
-     * $IMS-CC-FILEBASE$ token. Those files are inlined into the page at build
-     * time, so importing each one again as a standalone mod_resource would both
-     * duplicate the bytes and clutter the "Additional resources" section. Mark any
-     * file resource whose href is referenced this way as suppressed so the orphan
-     * pass skips it. Only unplaced files reach that pass, so a file also placed as
-     * its own activity in the organisation tree is untouched.
+     * $IMS-CC-FILEBASE$ token, which the page builder inlines into the page. Left
+     * as orphans they would also import as standalone mod_resource activities,
+     * duplicating the bytes and cluttering "Additional resources". Reuse the
+     * builder's own embedder ({@see link_rewriter}) to compute exactly which
+     * package files each page embeds, then suppress only an unplaced KIND_FILE
+     * resource whose file is one of them — matched on the canonical absolute path,
+     * so case and dot segments resolve the way the builder resolves them and a
+     * genuinely standalone (or explicitly placed) file is never dropped.
      *
      * @param array $resources The resources keyed by identifier.
+     * @param array $placed Identifiers already placed as their own activity.
      * @return void
      */
-    protected function suppress_embedded_page_assets(array $resources): void {
-        $referenced = [];
-        foreach ($resources as $resourceitem) {
-            foreach ($this->embedded_asset_refs($resourceitem) as $ref) {
-                $referenced[$ref] = true;
-            }
-        }
-        if (empty($referenced)) {
+    protected function suppress_embedded_page_assets(array $resources, array $placed): void {
+        $embedded = $this->collect_embedded_files($resources);
+        if (empty($embedded)) {
             return;
         }
-        foreach ($resources as $resourceitem) {
-            if ($resourceitem->kind !== item::KIND_FILE || $resourceitem->href === '') {
+        foreach ($resources as $identifier => $resourceitem) {
+            if ($resourceitem->kind !== item::KIND_FILE || !empty($placed[$identifier])) {
                 continue;
             }
-            $href = strtolower(ltrim((string) rawurldecode($resourceitem->href), '/'));
-            if (isset($referenced[$href])) {
-                $resourceitem->suppressed = true;
+            foreach ($this->resource_absolute_paths($resourceitem) as $absolute) {
+                if (isset($embedded[$absolute])) {
+                    $resourceitem->suppressed = true;
+                    break;
+                }
             }
         }
     }
 
     /**
-     * Collect the package-root-relative asset paths a resource's HTML body embeds
-     * via a $IMS-CC-FILEBASE$ token or a web_resources/ reference.
+     * Absolute package paths of the files each page embeds via $IMS-CC-FILEBASE$
+     * tokens, taken from the builder's own {@see link_rewriter} so the set matches
+     * exactly what is inlined into the built page (URL-encoded tokens, tokens in
+     * any attribute, the bare-path/web_resources resolution order, and safe dot
+     * segments all included).
      *
-     * Only these two rooted forms are matched (not HTML-relative paths, which
-     * fold_html_asset_bundles already handles), so a genuinely standalone file is
-     * never suppressed by mistake.
-     *
-     * @param item $resourceitem The resource whose HTML to scan.
-     * @return array Lowercased candidate hrefs.
+     * @param array $resources The resources keyed by identifier.
+     * @return array Set keyed by absolute package path, each value true.
      */
-    protected function embedded_asset_refs(item $resourceitem): array {
-        $candidates = $resourceitem->files;
+    protected function collect_embedded_files(array $resources): array {
+        $rewriter = new link_rewriter();
+        $embedded = [];
+        foreach ($resources as $resourceitem) {
+            $html = $this->primary_html_payload($resourceitem);
+            if ($html === null) {
+                continue;
+            }
+            foreach ($rewriter->rewrite_files($html, $this->basedir)['files'] as $file) {
+                $embedded[$file['package']] = true;
+            }
+        }
+        return $embedded;
+    }
+
+    /**
+     * Read the resource's primary HTML payload — the first readable .htm(l)
+     * candidate, mirroring the page builder's payload selection — so an asset
+     * referenced only by an auxiliary HTML file is not treated as embedded.
+     *
+     * @param item $resourceitem The resource.
+     * @return string|null The HTML contents, or null if none is readable.
+     */
+    protected function primary_html_payload(item $resourceitem): ?string {
+        $candidates = [];
         if ($resourceitem->href !== '') {
             $candidates[] = $resourceitem->href;
         }
-        $out = [];
+        foreach ($resourceitem->files as $file) {
+            $candidates[] = $file;
+        }
         foreach ($candidates as $relative) {
             if (!preg_match('/\.html?$/i', (string) $relative)) {
                 continue;
             }
-            $absolute = $this->resolve_within($relative);
+            $absolute = $this->resolve_within((string) $relative);
             if ($absolute === null) {
                 continue;
             }
-            $html = (string) @file_get_contents($absolute);
-            if ($html === '' || !preg_match_all('/(?:src|href)\s*=\s*("|\')(.*?)\1/is', $html, $matches)) {
-                continue;
-            }
-            foreach ($matches[2] as $ref) {
-                foreach ($this->rooted_asset_paths($ref) as $path) {
-                    $out[$path] = true;
-                }
+            $html = @file_get_contents($absolute);
+            if ($html !== false) {
+                return (string) $html;
             }
         }
-        return array_keys($out);
+        return null;
     }
 
     /**
-     * Normalise an HTML asset reference to the package-root-relative path(s) it
-     * targets, but only for $IMS-CC-FILEBASE$ tokens and web_resources/ paths.
+     * Canonical absolute package paths backing a resource — its href and every
+     * <file> it declares — so a resource that declares its payload only through
+     * <file> elements (no resource href) still matches.
      *
-     * @param string $ref The raw src/href value.
-     * @return array Lowercased candidate hrefs, or [] when not a rooted asset.
+     * @param item $resourceitem The resource.
+     * @return array Absolute paths within the package.
      */
-    protected function rooted_asset_paths(string $ref): array {
-        $ref = html_entity_decode($ref, ENT_QUOTES | ENT_HTML5);
-        $hastoken = (bool) preg_match('/^\s*\$IMS-CC-FILEBASE\$/i', $ref);
-        if ($hastoken) {
-            $ref = (string) preg_replace('/^\s*\$IMS-CC-FILEBASE\$\/?/i', '', $ref);
+    protected function resource_absolute_paths(item $resourceitem): array {
+        $paths = [];
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
         }
-        // Skip external, absolute, anchor-only or inline-data references.
-        if ($ref === '' || preg_match('#^(https?:|mailto:|tel:|data:|//|\#)#i', $ref)) {
-            return [];
-        }
-        $ref = ltrim((string) rawurldecode($ref), '/');
-        $ref = (string) preg_replace(['#^\./#', '/[?\#].*$/'], '', $ref);
-        if ($ref === '' || str_contains($ref, '..')) {
-            return [];
-        }
-        $iswebresources = (bool) preg_match('#^web_resources/#i', $ref);
-        if (!$hastoken && !$iswebresources) {
-            // A plain relative path resolves against the HTML's own folder;
-            // fold_html_asset_bundles handles those, so only rooted refs here.
-            return [];
-        }
-        $paths = [strtolower($ref)];
-        // A filebase token can resolve either at the root or under web_resources/.
-        if ($hastoken && !$iswebresources) {
-            $paths[] = strtolower('web_resources/' . $ref);
+        foreach ($candidates as $relative) {
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute !== null) {
+                $paths[] = $absolute;
+            }
         }
         return $paths;
     }

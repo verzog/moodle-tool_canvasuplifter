@@ -142,20 +142,26 @@ XML;
         $dir = make_request_directory();
         mkdir($dir . '/wiki_content');
         mkdir($dir . '/web_resources/Uploaded Media', 0777, true);
-        // A page that embeds a web_resources image via the filebase token.
+        // A page that embeds two web_resources images via the filebase token: one
+        // is only embedded (tile), the other is also placed in the course menu.
         file_put_contents(
             $dir . '/wiki_content/home.html',
             '<html><head><title>Home</title></head><body>'
-            . '<img src="$IMS-CC-FILEBASE$/Uploaded%20Media/tile.png"></body></html>'
+            . '<img src="$IMS-CC-FILEBASE$/Uploaded%20Media/tile.png">'
+            . '<img src="$IMS-CC-FILEBASE$/Uploaded%20Media/placed.png"></body></html>'
         );
         file_put_contents($dir . '/web_resources/Uploaded Media/tile.png', 'PNG');
+        file_put_contents($dir . '/web_resources/Uploaded Media/placed.png', 'PNG2');
         file_put_contents($dir . '/handout.pdf', 'PDF');
         $manifest = <<<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
   <organizations>
     <organization identifier="org1">
-      <item identifier="root"><item identifier="i_home" identifierref="r_home"><title>Home</title></item></item>
+      <item identifier="root">
+        <item identifier="i_home" identifierref="r_home"><title>Home</title></item>
+        <item identifier="i_placed" identifierref="r_placed"><title>Placed image</title></item>
+      </item>
     </organization>
   </organizations>
   <resources>
@@ -164,6 +170,9 @@ XML;
     </resource>
     <resource identifier="r_tile" type="webcontent" href="web_resources/Uploaded Media/tile.png">
       <file href="web_resources/Uploaded Media/tile.png"/>
+    </resource>
+    <resource identifier="r_placed" type="webcontent" href="web_resources/Uploaded Media/placed.png">
+      <file href="web_resources/Uploaded Media/placed.png"/>
     </resource>
     <resource identifier="r_handout" type="webcontent" href="handout.pdf">
       <file href="handout.pdf"/>
@@ -175,11 +184,21 @@ XML;
 
         $course = (new manifest_parser($dir))->parse();
 
-        // The page-embedded tile is suppressed; only the truly unreferenced
-        // handout remains an orphan.
+        // The embedded-only tile is suppressed; the truly unreferenced handout
+        // still becomes an orphan.
         $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
         $this->assertContains('handout.pdf', $orphanhrefs);
         $this->assertNotContains('web_resources/Uploaded Media/tile.png', $orphanhrefs);
+
+        // The image that is also placed in the course menu survives as its own
+        // activity — being embedded in a page must not drop a placed resource.
+        $placedhrefs = [];
+        foreach ($course->sections as $section) {
+            foreach ($section->items as $sectionitem) {
+                $placedhrefs[] = $sectionitem->href;
+            }
+        }
+        $this->assertContains('web_resources/Uploaded Media/placed.png', $placedhrefs);
     }
 
     /**
