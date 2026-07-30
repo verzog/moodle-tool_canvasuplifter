@@ -137,6 +137,11 @@ class manifest_parser {
             $this->build_sections($dom, $resources, $course);
         }
 
+        // Files that are only embedded inside another resource's HTML body (Canvas
+        // page images/media referenced via $IMS-CC-FILEBASE$) are inlined into that
+        // page at build time, so don't also import them as standalone resources.
+        $this->suppress_embedded_page_assets($resources);
+
         // Any resource never referenced by the organisation tree becomes an orphan.
         $placed = [];
         foreach ($course->sections as $section) {
@@ -230,6 +235,116 @@ class manifest_parser {
             }
             $modelitem->banktitle = $modelitem->title . ' (question bank)';
         }
+    }
+
+    /**
+     * Suppress files that are only embedded inside another resource's HTML body.
+     *
+     * Canvas stores page images and media as their own webcontent resources
+     * (commonly under web_resources/) and references them from page bodies with a
+     * $IMS-CC-FILEBASE$ token. Those files are inlined into the page at build
+     * time, so importing each one again as a standalone mod_resource would both
+     * duplicate the bytes and clutter the "Additional resources" section. Mark any
+     * file resource whose href is referenced this way as suppressed so the orphan
+     * pass skips it. Only unplaced files reach that pass, so a file also placed as
+     * its own activity in the organisation tree is untouched.
+     *
+     * @param array $resources The resources keyed by identifier.
+     * @return void
+     */
+    protected function suppress_embedded_page_assets(array $resources): void {
+        $referenced = [];
+        foreach ($resources as $resourceitem) {
+            foreach ($this->embedded_asset_refs($resourceitem) as $ref) {
+                $referenced[$ref] = true;
+            }
+        }
+        if (empty($referenced)) {
+            return;
+        }
+        foreach ($resources as $resourceitem) {
+            if ($resourceitem->kind !== item::KIND_FILE || $resourceitem->href === '') {
+                continue;
+            }
+            $href = strtolower(ltrim((string) rawurldecode($resourceitem->href), '/'));
+            if (isset($referenced[$href])) {
+                $resourceitem->suppressed = true;
+            }
+        }
+    }
+
+    /**
+     * Collect the package-root-relative asset paths a resource's HTML body embeds
+     * via a $IMS-CC-FILEBASE$ token or a web_resources/ reference.
+     *
+     * Only these two rooted forms are matched (not HTML-relative paths, which
+     * fold_html_asset_bundles already handles), so a genuinely standalone file is
+     * never suppressed by mistake.
+     *
+     * @param item $resourceitem The resource whose HTML to scan.
+     * @return array Lowercased candidate hrefs.
+     */
+    protected function embedded_asset_refs(item $resourceitem): array {
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        $out = [];
+        foreach ($candidates as $relative) {
+            if (!preg_match('/\.html?$/i', (string) $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within($relative);
+            if ($absolute === null) {
+                continue;
+            }
+            $html = (string) @file_get_contents($absolute);
+            if ($html === '' || !preg_match_all('/(?:src|href)\s*=\s*("|\')(.*?)\1/is', $html, $matches)) {
+                continue;
+            }
+            foreach ($matches[2] as $ref) {
+                foreach ($this->rooted_asset_paths($ref) as $path) {
+                    $out[$path] = true;
+                }
+            }
+        }
+        return array_keys($out);
+    }
+
+    /**
+     * Normalise an HTML asset reference to the package-root-relative path(s) it
+     * targets, but only for $IMS-CC-FILEBASE$ tokens and web_resources/ paths.
+     *
+     * @param string $ref The raw src/href value.
+     * @return array Lowercased candidate hrefs, or [] when not a rooted asset.
+     */
+    protected function rooted_asset_paths(string $ref): array {
+        $ref = html_entity_decode($ref, ENT_QUOTES | ENT_HTML5);
+        $hastoken = (bool) preg_match('/^\s*\$IMS-CC-FILEBASE\$/i', $ref);
+        if ($hastoken) {
+            $ref = (string) preg_replace('/^\s*\$IMS-CC-FILEBASE\$\/?/i', '', $ref);
+        }
+        // Skip external, absolute, anchor-only or inline-data references.
+        if ($ref === '' || preg_match('#^(https?:|mailto:|tel:|data:|//|\#)#i', $ref)) {
+            return [];
+        }
+        $ref = ltrim((string) rawurldecode($ref), '/');
+        $ref = (string) preg_replace(['#^\./#', '/[?\#].*$/'], '', $ref);
+        if ($ref === '' || str_contains($ref, '..')) {
+            return [];
+        }
+        $iswebresources = (bool) preg_match('#^web_resources/#i', $ref);
+        if (!$hastoken && !$iswebresources) {
+            // A plain relative path resolves against the HTML's own folder;
+            // fold_html_asset_bundles handles those, so only rooted refs here.
+            return [];
+        }
+        $paths = [strtolower($ref)];
+        // A filebase token can resolve either at the root or under web_resources/.
+        if ($hastoken && !$iswebresources) {
+            $paths[] = strtolower('web_resources/' . $ref);
+        }
+        return $paths;
     }
 
     /**
