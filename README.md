@@ -26,6 +26,30 @@ capability that gates the tool (`tool/canvasuplifter:use`) is restricted to
 managers and declares an XSS risk to reflect this; the upload page shows the
 same warning.
 
+### Server-side URL fetch (SSRF) — configure the site blocklist
+
+When you import from a *Download URL* rather than an upload, the site fetches
+that URL server-side (following up to five redirects), and for some repository
+landing pages it derives further API URLs from the fetched HTML. All of these
+requests go through Moodle's `\curl` wrapper, so they honour the site's
+**cURL security settings** — but those settings are empty by default, which
+means an admin-supplied URL could otherwise be pointed at internal services or a
+cloud metadata endpoint (`169.254.169.254`).
+
+Because the feature is manager-only the exposure is limited, but for
+defence-in-depth configure the blocklist at *Site administration > Security >
+HTTP security*:
+
+- **`curlsecurityblockedhosts`** — block loopback, link-local and internal
+  ranges you don't want reachable (for example `127.0.0.0/8`, `169.254.0.0/16`,
+  `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`).
+- **`curlsecurityallowedport`** — restrict to `443` (and `80` if you fetch over
+  HTTP).
+
+The plugin relies on this standard Moodle mechanism rather than maintaining its
+own blocklist, so SSRF protection is a site-configuration responsibility.
+Uploading the `.imscc` file directly avoids the server-side fetch entirely.
+
 ## Requirements
 
 - Moodle 5.0+ (question banks are `mod_qbank` activity modules from 5.0)
