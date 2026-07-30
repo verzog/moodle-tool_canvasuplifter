@@ -61,17 +61,27 @@ class conversion_report {
     /** @var string Page-grouping choice to reflect: '' (off), 'book' or 'lesson'. */
     protected string $pagegrouping;
 
+    /** @var bool Whether the run will also build a runnable quiz from each standalone bank. */
+    protected bool $quizfrombank;
+
     /**
      * Constructor.
      *
      * @param course_model $course The parsed course model.
      * @param string|null $packageroot Extracted package root, enabling the question-type matrix.
      * @param string $pagegrouping Page-grouping choice to reflect: '' (off), 'book' or 'lesson'.
+     * @param bool $quizfrombank Whether standalone assessments will also build a runnable quiz.
      */
-    public function __construct(course_model $course, ?string $packageroot = null, string $pagegrouping = '') {
+    public function __construct(
+        course_model $course,
+        ?string $packageroot = null,
+        string $pagegrouping = '',
+        bool $quizfrombank = false
+    ) {
         $this->course = $course;
         $this->packageroot = $packageroot !== null ? rtrim($packageroot, '/') : null;
         $this->pagegrouping = in_array($pagegrouping, ['book', 'lesson'], true) ? $pagegrouping : '';
+        $this->quizfrombank = $quizfrombank;
     }
 
     /**
@@ -262,6 +272,24 @@ class conversion_report {
     }
 
     /**
+     * Count unreferenced quizzes — orphan KIND_QUIZ items that build as a
+     * question bank rather than a runnable quiz (unless the quiz-from-bank toggle
+     * is on). This is what the quiz-from-bank nudge is keyed on; KIND_QUESTIONBANK
+     * orphans are inherently banks and the toggle never turns them into quizzes.
+     *
+     * @return int Number of unreferenced quiz items.
+     */
+    protected function orphan_quiz_count(): int {
+        $count = 0;
+        foreach ($this->course->orphans as $modelitem) {
+            if ($modelitem->kind === item::KIND_QUIZ) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    /**
      * Count how many items there are of each kind.
      *
      * @return array<string, int> Keyed by item kind.
@@ -348,6 +376,11 @@ class conversion_report {
         }
         if (($counts[item::KIND_QUIZ] ?? 0) > 0 || ($counts[item::KIND_QUESTIONBANK] ?? 0) > 0) {
             $warnings[] = 'warnreportquiz';
+        }
+        // Unreferenced quizzes build as question banks only; when the runnable-quiz
+        // toggle is off, nudge the user toward it so the downgrade isn't a surprise.
+        if (!$this->quizfrombank && $this->orphan_quiz_count() > 0) {
+            $warnings[] = 'warnreportquizfrombank';
         }
         if ($this->has_obsolete_files()) {
             $warnings[] = 'warnreportobsolete';

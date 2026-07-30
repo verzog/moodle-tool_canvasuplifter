@@ -75,7 +75,7 @@ class analyse_package_task extends package_job_task {
 
             $jobs->set_progress($jobid, 70, get_string('progressparse', 'tool_canvasuplifter'));
             $course = (new manifest_parser($root))->parse();
-            $report = (new conversion_report($course, $root, $pagegrouping))->build();
+            $report = (new conversion_report($course, $root, $pagegrouping, (bool) $quizfrombank))->build();
 
             // Carry the chosen build options so the status page's build form
             // reuses them rather than asking again.

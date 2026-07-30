@@ -229,4 +229,5 @@ $string['warnreportlti'] = 'External (LTI) tools need their keys reconfigured by
 $string['warnreportobsolete'] = 'Some resources are Flash (.swf) or other obsolete formats that modern browsers '
     . 'no longer play; they are imported but will not function.';
 $string['warnreportquiz'] = 'Quiz questions depend on type support; check the question-type matrix.';
+$string['warnreportquizfrombank'] = 'Some assessments are not linked anywhere in the course, so they import as reusable question banks only. To also create a runnable quiz from each, tick "Also build a runnable quiz from each standalone question bank" before building.';
 $string['warnreportunclassified'] = 'Some resources could not be classified and will be skipped.';

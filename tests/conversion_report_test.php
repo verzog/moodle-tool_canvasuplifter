@@ -171,6 +171,39 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * When an unreferenced quiz would import as a bank only, the report nudges the
+     * user toward the quiz-from-bank toggle — but only while that toggle is off,
+     * and only when there is actually an orphan quiz to build a quiz from.
+     *
+     * @return void
+     */
+    public function test_orphan_quiz_nudges_toward_quizfrombank(): void {
+        $course = new course_model();
+        $orphan = new item('q_orphan', 'Homework');
+        $orphan->kind = item::KIND_QUIZ;
+        $course->orphans[] = $orphan;
+
+        // Toggle off (default): the nudge is present.
+        $off = (new conversion_report($course))->build();
+        $this->assertContains('warnreportquizfrombank', $off['warnings']);
+
+        // Toggle on: the standalone quiz will be built, so no nudge.
+        $on = (new conversion_report($course, null, '', true))->build();
+        $this->assertNotContains('warnreportquizfrombank', $on['warnings']);
+
+        // A course whose only quiz is referenced already builds a runnable quiz,
+        // so there is nothing to nudge about even with the toggle off.
+        $linkedcourse = new course_model();
+        $section = new section_model('Week 1');
+        $linked = new item('q_ref', 'Chapter Quiz');
+        $linked->kind = item::KIND_QUIZ;
+        $section->add_item($linked);
+        $linkedcourse->add_section($section);
+        $linkedonly = (new conversion_report($linkedcourse))->build();
+        $this->assertNotContains('warnreportquizfrombank', $linkedonly['warnings']);
+    }
+
+    /**
      * Build a course of one section holding the given ordered item kinds, so the
      * page-grouping reflection can be probed.
      *
