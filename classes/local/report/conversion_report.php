@@ -272,21 +272,53 @@ class conversion_report {
     }
 
     /**
-     * Count unreferenced quizzes — orphan KIND_QUIZ items that build as a
-     * question bank rather than a runnable quiz (unless the quiz-from-bank toggle
-     * is on). This is what the quiz-from-bank nudge is keyed on; KIND_QUESTIONBANK
-     * orphans are inherently banks and the toggle never turns them into quizzes.
+     * Count unreferenced quizzes the quiz-from-bank toggle could actually build a
+     * runnable quiz from — orphan KIND_QUIZ items with at least one importable
+     * question. This is what the nudge is keyed on.
      *
-     * @return int Number of unreferenced quiz items.
+     * An orphan quiz with no importable questions (an empty Canvas QTI shell, or a
+     * file of only unsupported types) builds nothing: questionbank_builder returns
+     * null, and course_builder only runs the standalone-quiz build when the bank
+     * built, so enabling the toggle would create neither a bank nor a quiz.
+     * Nudging for it would promise something the toggle can't deliver.
+     * KIND_QUESTIONBANK orphans are excluded too — they are inherently banks and
+     * the toggle never turns them into quizzes. Determining importability needs
+     * package access to read the QTI; without it the count is zero (no
+     * over-promising).
+     *
+     * @return int Number of unreferenced, buildable quiz items.
      */
     protected function orphan_quiz_count(): int {
         $count = 0;
         foreach ($this->course->orphans as $modelitem) {
-            if ($modelitem->kind === item::KIND_QUIZ) {
+            if ($modelitem->kind === item::KIND_QUIZ && $this->quiz_has_importable_questions($modelitem)) {
                 $count++;
             }
         }
         return $count;
+    }
+
+    /**
+     * Whether an assessment has at least one question Moodle can import, so it
+     * would build a question bank (and, with the quiz-from-bank toggle, a runnable
+     * quiz). Mirrors the questionbank_builder/quiz_builder eligibility gate.
+     * Requires package access to read the QTI; returns false without it.
+     *
+     * @param item $modelitem The assessment item.
+     * @return bool
+     */
+    protected function quiz_has_importable_questions(item $modelitem): bool {
+        $path = $this->resolve_qti($modelitem);
+        if ($path === null) {
+            return false;
+        }
+        $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
+        foreach ($parsed['questions'] as $question) {
+            if ($question->is_importable()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
