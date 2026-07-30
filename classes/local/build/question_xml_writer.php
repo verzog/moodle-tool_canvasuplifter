@@ -79,7 +79,8 @@ class question_xml_writer {
         }
         $mtype = $q->type === qti_question::TYPE_SHORTANSWER ? 'shortanswer'
             : ($q->type === qti_question::TYPE_ESSAY ? 'essay'
-            : ($q->type === qti_question::TYPE_MATCHING ? 'matching' : 'multichoice'));
+            : ($q->type === qti_question::TYPE_MATCHING ? 'matching'
+            : ($q->type === qti_question::TYPE_TRUEFALSE ? 'truefalse' : 'multichoice')));
 
         $body = "  <question type=\"$mtype\">\n";
         $body .= "    <name><text>" . htmlspecialchars($this->plain($q->name), ENT_XML1) . "</text></name>\n";
@@ -98,6 +99,9 @@ class question_xml_writer {
                 break;
             case 'matching':
                 $body .= $this->matching_xml($q, $imagedir);
+                break;
+            case 'truefalse':
+                $body .= $this->truefalse_xml($q, $imagedir);
                 break;
             default:
                 $body .= "    <single>" . ($q->type === qti_question::TYPE_MULTIANSWER ? 'false' : 'true') . "</single>\n";
@@ -159,6 +163,66 @@ class question_xml_writer {
             $out .= "    </subquestion>\n";
         }
         return $out;
+    }
+
+    /**
+     * Render the true/false answer pair.
+     *
+     * Moodle's truefalse type needs exactly two answers whose text is 'true' and
+     * 'false', with fraction 100 on the correct one. Common Cartridge lists the
+     * options as labelled choices (usually "True"/"False", the true one first), so
+     * match each source answer to a side by its label and fall back to position
+     * for any option the label does not resolve.
+     *
+     * @param qti_question $q The question.
+     * @param string|null $imagedir Image resolution folder, or null.
+     * @return string
+     */
+    protected function truefalse_xml(qti_question $q, ?string $imagedir): string {
+        $answers = array_values($q->answers);
+        $trueidx = null;
+        $falseidx = null;
+        foreach ($answers as $i => $answer) {
+            $label = strtolower(trim($this->plain((string) ($answer['text'] ?? ''))));
+            if ($label === 'true' && $trueidx === null) {
+                $trueidx = $i;
+            } else if ($label === 'false' && $falseidx === null) {
+                $falseidx = $i;
+            }
+        }
+        foreach ($answers as $i => $answer) {
+            if ($i === $trueidx || $i === $falseidx) {
+                continue;
+            }
+            if ($trueidx === null) {
+                $trueidx = $i;
+            } else if ($falseidx === null) {
+                $falseidx = $i;
+            }
+        }
+        $true = $trueidx !== null ? $answers[$trueidx] : ['fraction' => 100, 'feedback' => ''];
+        $false = $falseidx !== null ? $answers[$falseidx] : ['fraction' => 0, 'feedback' => ''];
+        // Exactly one option scores; when the source marks neither (a degenerate
+        // item) default to true rather than leaving both at zero.
+        $truecorrect = ((float) ($true['fraction'] ?? 0)) > 0
+            || ((float) ($false['fraction'] ?? 0)) <= 0;
+        return $this->truefalse_answer('true', $truecorrect, (string) ($true['feedback'] ?? ''), $imagedir)
+            . $this->truefalse_answer('false', !$truecorrect, (string) ($false['feedback'] ?? ''), $imagedir);
+    }
+
+    /**
+     * Render one true/false <answer> element.
+     *
+     * @param string $label The answer text, 'true' or 'false'.
+     * @param bool $correct Whether this side is the correct answer.
+     * @param string $feedback The per-option feedback HTML.
+     * @param string|null $imagedir Image resolution folder, or null.
+     * @return string
+     */
+    protected function truefalse_answer(string $label, bool $correct, string $feedback, ?string $imagedir): string {
+        return "    <answer fraction=\"" . ($correct ? '100' : '0') . "\" format=\"moodle_auto_format\">\n"
+            . "      <text>$label</text>\n"
+            . "      " . $this->htmlblock('feedback', $feedback, $imagedir) . "\n    </answer>\n";
     }
 
     /**
