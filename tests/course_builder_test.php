@@ -18,6 +18,8 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\parser\manifest_parser;
+use tool_canvasuplifter\local\parser\source_detector;
+use tool_canvasuplifter\local\model\course_model;
 
 /**
  * Tests for the course builder.
@@ -1022,5 +1024,43 @@ XML;
         $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/', 'igencp.css'));
         $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/', 'jquery.js'));
         $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/assets/', 'head_back.gif'));
+    }
+
+    /**
+     * A title-less package is named after its detected source LMS, except a
+     * generic (unrecognised) package, which uses the neutral default rather than
+     * the "Common Cartridge" source label.
+     *
+     * @param string $source The detected source constant.
+     * @param string $expected The expected course full name.
+     * @return void
+     * @dataProvider default_course_name_provider
+     */
+    public function test_titleless_course_named_after_source(string $source, string $expected): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $coursemodel = new course_model();
+        $coursemodel->source = $source;
+        $category = $this->getDataGenerator()->create_category();
+
+        $report = (new course_builder($category->id, make_request_directory()))->build($coursemodel);
+
+        $this->assertSame($expected, $DB->get_field('course', 'fullname', ['id' => $report['courseid']]));
+    }
+
+    /**
+     * Data provider for {@see test_titleless_course_named_after_source}.
+     *
+     * @return array
+     */
+    public static function default_course_name_provider(): array {
+        return [
+            'd2l' => [source_detector::D2L, 'Imported D2L Brightspace course'],
+            'canvas' => [source_detector::CANVAS, 'Imported Canvas course'],
+            'generic' => [source_detector::GENERIC, 'Imported course'],
+            'unknown' => ['', 'Imported course'],
+        ];
     }
 }
