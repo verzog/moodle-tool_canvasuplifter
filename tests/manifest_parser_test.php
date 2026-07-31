@@ -172,6 +172,38 @@ XML;
     }
 
     /**
+     * A resource whose href is an absolute URL — notably a native D2L
+     * "contentlink" exported as webcontent with an http href — is an external
+     * link, so it maps to mod_url with the href as the target, not a file the
+     * builder would fail to read.
+     *
+     * @return void
+     */
+    public function test_external_url_href_maps_to_url(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_link" type="webcontent" href="https://www.softchalkcloud.com/lesson/serve/abc/html"/>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame(item::KIND_URL, $course->orphans[0]->kind);
+        $this->assertSame('https://www.softchalkcloud.com/lesson/serve/abc/html', $course->orphans[0]->url);
+    }
+
+    /**
      * A file embedded inside a page body via a $IMS-CC-FILEBASE$ token (Canvas
      * stores these under web_resources/) is inlined into the page at build time,
      * so it must not also surface as a standalone orphan resource — while a file

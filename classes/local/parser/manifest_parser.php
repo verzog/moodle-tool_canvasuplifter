@@ -508,6 +508,13 @@ class manifest_parser {
             $modelitem->variantref = $this->read_variant_ref($resource);
 
             $modelitem->kind = $this->classify($type, $href, $modelitem->files);
+            // An external-link resource (a native D2L "contentlink", or any
+            // resource whose href is an absolute URL) carries its target directly
+            // in the href rather than in a weblink XML file; record it so
+            // url_builder uses it as-is.
+            if ($modelitem->kind === item::KIND_URL && preg_match('#^https?://#i', $href)) {
+                $modelitem->url = $href;
+            }
             $materialtype = $this->read_d2l_material_type($resource);
             // Suppress only known structural placeholders here: D2L's empty
             // contentmodule <resource>s (which exist only to title a module) and
@@ -974,6 +981,14 @@ class manifest_parser {
      * @return string One of the item::KIND_* constants.
      */
     protected function classify(string $type, string $href, array $files): string {
+        // A resource whose href is itself an absolute URL is an external link,
+        // not a local payload — notably a native D2L "contentlink" (exported as
+        // webcontent with an http href). Map it to mod_url; file_builder could
+        // never read a remote href anyway. IMS web-link/discussion/QTI resources
+        // point their href at a local .xml, so this never shadows them.
+        if (preg_match('#^https?://#i', $href)) {
+            return item::KIND_URL;
+        }
         // Web link -> URL.
         if (preg_match('#imswl_xmlv1p\d#', $type)) {
             return item::KIND_URL;
