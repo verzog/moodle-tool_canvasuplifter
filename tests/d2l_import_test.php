@@ -126,6 +126,11 @@ XML;
         $names = $DB->get_fieldset_select('course_sections', 'name', 'course = ? AND name IS NOT NULL', [$courseid]);
         $this->assertContains('Course Information', $names);
         $this->assertContains('1. Properties of Soils', $names);
+
+        // A native D2L manifest carries no course title, so the fallback name is
+        // sourced from the detected LMS — not mislabelled as Canvas.
+        $fullname = $DB->get_field('course', 'fullname', ['id' => $courseid]);
+        $this->assertSame('Imported D2L Brightspace course', $fullname);
     }
 
     /**

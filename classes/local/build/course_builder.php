@@ -19,6 +19,7 @@ namespace tool_canvasuplifter\local\build;
 use tool_canvasuplifter\local\job_manager;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
+use tool_canvasuplifter\local\parser\source_detector;
 
 /**
  * Course builder: creates a Moodle course, its sections, and the activity types
@@ -121,7 +122,7 @@ class course_builder {
 
         $fullname = $coursemodel->fullname !== ''
             ? $coursemodel->fullname
-            : get_string('defaultcoursename', 'tool_canvasuplifter');
+            : $this->default_course_name($coursemodel->source);
         $shortname = $this->unique_shortname($fullname);
 
         $courserecord = (object) [
@@ -1114,6 +1115,33 @@ class course_builder {
                 }
             }
         }
+    }
+
+    /**
+     * The fallback course name when the package carries no course title. Names it
+     * after the detected source LMS (e.g. "Imported D2L Brightspace course") so a
+     * title-less export — native D2L manifests carry no course title at all — is
+     * not mislabelled as Canvas. Falls back to a neutral "Imported course" when
+     * the source is unknown, generic (no recognised LMS fingerprint) or has no
+     * display label.
+     *
+     * @param string $source The detected source (a source_detector constant).
+     * @return string
+     */
+    private function default_course_name(string $source): string {
+        $labelkey = 'source_' . $source;
+        if (
+            $source !== ''
+            && $source !== source_detector::GENERIC
+            && get_string_manager()->string_exists($labelkey, 'tool_canvasuplifter')
+        ) {
+            return get_string(
+                'defaultcoursenamesource',
+                'tool_canvasuplifter',
+                get_string($labelkey, 'tool_canvasuplifter')
+            );
+        }
+        return get_string('defaultcoursename', 'tool_canvasuplifter');
     }
 
     /**
