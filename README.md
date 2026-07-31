@@ -214,6 +214,14 @@ shapes against `main`:
 - [ ] A **multi-module Canvas course with cross-references** between pages
       (`$WIKI_REFERENCE$`, `$CANVAS_OBJECT_REFERENCE$`) — exercises the
       post-build link rewriter across pages, forums and assignment intros.
+      Partial: **ANE 260** (Canvas, 18 sections, 165 items — 73 files, 30
+      discussions, 22 Classic quizzes, 17 assignments, 4 URLs) analysed
+      cleanly with 0 items skipped and **578/578 questions converting**
+      across all 22 assessments — a good multi-module and Classic-Quizzes-at-
+      scale data point. This does not yet close the box: it was an analysis,
+      not a completed build, and cross-references live in page HTML that the
+      manifest doesn't expose, so a full build of a cross-linked course is
+      still needed to exercise the link rewriter itself.
 - [ ] An **embedded-media-heavy course** — videos, audio, images both in
       page bodies and in QTI question stems — exercises `file_embedder`
       and the question-asset import path end-to-end.
