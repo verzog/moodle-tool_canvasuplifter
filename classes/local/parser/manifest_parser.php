@@ -86,6 +86,13 @@ class manifest_parser {
             throw new \RuntimeException('errorbadmanifestxml');
         }
 
+        // Windows-authored packages (notably native D2L exports) write backslash
+        // path separators in hrefs. Normalise them across the whole manifest DOM
+        // up front so every consumer — source detection, classification, the
+        // exporter-specific cleanup helpers and the model — sees forward-slash
+        // paths that resolve against the zip.
+        $this->normalize_dom_separators($dom);
+
         $this->containerconsumed = [];
         // Recognise the source LMS up front: the report names it, and it gates
         // exporter-specific cleanup (e.g. dropping ANGEL/eXe _UNREFERENCED_ junk).
@@ -488,7 +495,8 @@ class manifest_parser {
             $modelitem->href = $href;
             $modelitem->intendeduse = strtolower($resource->getAttribute('intendeduse'));
 
-            // Collect every <file href="..."> child.
+            // Collect every <file href="..."> child. (Backslash separators were
+            // normalised across the DOM up front, so these are already clean.)
             $files = $resource->getElementsByTagNameNS('*', 'file');
             foreach ($files as $file) {
                 if ($file instanceof DOMElement && $file->getAttribute('href') !== '') {
@@ -508,6 +516,13 @@ class manifest_parser {
             $modelitem->variantref = $this->read_variant_ref($resource);
 
             $modelitem->kind = $this->classify($type, $href, $modelitem->files);
+            // An external-link resource (a native D2L "contentlink", or any
+            // resource whose href is an absolute URL) carries its target directly
+            // in the href rather than in a weblink XML file; record it so
+            // url_builder uses it as-is.
+            if ($modelitem->kind === item::KIND_URL && preg_match('#^https?://#i', $href)) {
+                $modelitem->url = $href;
+            }
             $materialtype = $this->read_d2l_material_type($resource);
             // Suppress only known structural placeholders here: D2L's empty
             // contentmodule <resource>s (which exist only to title a module) and
@@ -791,6 +806,45 @@ class manifest_parser {
     }
 
     /**
+     * Normalise backslash path separators to forward slashes on every href
+     * attribute across the manifest DOM, in place. Packages authored on Windows
+     * (notably native D2L exports) write backslash separators — e.g.
+     * "Module 2\Notes.pdf" — which never resolve against the forward-slash paths
+     * inside the zip. Doing this once on the DOM means every consumer (source
+     * detection, classification, cleanup helpers, the model) sees clean paths.
+     *
+     * @param DOMDocument $dom The loaded manifest document (modified in place).
+     * @return void
+     */
+    private function normalize_dom_separators(DOMDocument $dom): void {
+        foreach ($dom->getElementsByTagName('*') as $element) {
+            if (!$element instanceof DOMElement || !$element->hasAttribute('href')) {
+                continue;
+            }
+            $href = $element->getAttribute('href');
+            $normalized = self::normalize_separators($href);
+            if ($normalized !== $href) {
+                $element->setAttribute('href', $normalized);
+            }
+        }
+    }
+
+    /**
+     * Normalise path separators in a single href to forward slashes. Leaves
+     * genuine URLs untouched (backslashes are not valid in a URL, so a scheme'd
+     * href is passed through unchanged).
+     *
+     * @param string $href The raw href from the manifest.
+     * @return string The href with backslashes converted to forward slashes.
+     */
+    private static function normalize_separators(string $href): string {
+        if (preg_match('~^[a-z][a-z0-9+.\-]*://~i', $href)) {
+            return $href;
+        }
+        return str_replace('\\', '/', $href);
+    }
+
+    /**
      * Look for an inline CC 1.3 IMS Assignment profile descriptor inside a
      * <resource>. The CC spec allows the <assignment> element to be embedded
      * directly under <resource> instead of referenced via <file>; return the
@@ -957,6 +1011,14 @@ class manifest_parser {
      * @return string One of the item::KIND_* constants.
      */
     protected function classify(string $type, string $href, array $files): string {
+        // A resource whose href is itself an absolute URL is an external link,
+        // not a local payload — notably a native D2L "contentlink" (exported as
+        // webcontent with an http href). Map it to mod_url; file_builder could
+        // never read a remote href anyway. IMS web-link/discussion/QTI resources
+        // point their href at a local .xml, so this never shadows them.
+        if (preg_match('#^https?://#i', $href)) {
+            return item::KIND_URL;
+        }
         // Web link -> URL.
         if (preg_match('#imswl_xmlv1p\d#', $type)) {
             return item::KIND_URL;

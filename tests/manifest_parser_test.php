@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\parser\manifest_parser;
+use tool_canvasuplifter\local\parser\source_detector;
 use tool_canvasuplifter\local\model\item;
 
 /**
@@ -128,6 +129,145 @@ XML;
 
         $this->assertCount(1, $course->orphans);
         $this->assertSame('Course Syllabus', $course->orphans[0]->title);
+    }
+
+    /**
+     * A Windows-authored package (notably a native D2L export) writes backslash
+     * path separators in hrefs; the parser must normalise them to forward slashes
+     * so the payload resolves against the forward-slash paths inside the zip
+     * instead of being skipped as unreadable.
+     *
+     * @return void
+     */
+    public function test_backslash_hrefs_are_normalised(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/Module 2');
+        file_put_contents($dir . '/Module 2/Notes.pdf', '%PDF-1.4 test');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_pdf" type="webcontent" href="Module 2\Notes.pdf">
+      <file href="Module 2\Notes.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $orphan = $course->orphans[0];
+        // Backslashes are converted to forward slashes on both href and files.
+        $this->assertSame('Module 2/Notes.pdf', $orphan->href);
+        $this->assertSame(['Module 2/Notes.pdf'], $orphan->files);
+        // The normalised path resolves to the real file, so it is a file resource
+        // (an unreadable payload would be dropped instead).
+        $this->assertSame(item::KIND_FILE, $orphan->kind);
+    }
+
+    /**
+     * A resource whose href is an absolute URL — notably a native D2L
+     * "contentlink" exported as webcontent with an http href — is an external
+     * link, so it maps to mod_url with the href as the target, not a file the
+     * builder would fail to read.
+     *
+     * @return void
+     */
+    public function test_external_url_href_maps_to_url(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_link" type="webcontent" href="https://www.softchalkcloud.com/lesson/serve/abc/html"/>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame(item::KIND_URL, $course->orphans[0]->kind);
+        $this->assertSame('https://www.softchalkcloud.com/lesson/serve/abc/html', $course->orphans[0]->url);
+    }
+
+    /**
+     * Separator normalisation happens on the whole DOM before classification, so
+     * a backslash href is classified on its normalised form — a wiki_content page
+     * stays a page (not a file), which a raw backslash href would have misclassed.
+     *
+     * @return void
+     */
+    public function test_backslash_href_classifies_on_normalised_path(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/syllabus.html', '<html><body>hi</body></html>');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_pg" type="webcontent" href="wiki_content\syllabus.html">
+      <file href="wiki_content\syllabus.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame(item::KIND_PAGE, $course->orphans[0]->kind);
+    }
+
+    /**
+     * Source detection runs on the same DOM after normalisation, so a Windows
+     * exporter's backslash fingerprint (e.g. eXe's js\yahoo\...) is recognised
+     * rather than being read as a generic package.
+     *
+     * @return void
+     */
+    public function test_backslash_fingerprint_is_detected_as_source(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_js" type="webcontent" href="index.html">
+      <file href="index.html"/>
+      <file href="js\yahoo\yahoo.js"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame(source_detector::EXE, $course->source);
     }
 
     /**
