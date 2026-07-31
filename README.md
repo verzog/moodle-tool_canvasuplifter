@@ -239,6 +239,15 @@ shapes against `main`:
       we don't break or points at the outcomes pipeline as the next
       phase.
 
+Additional coverage (analysed, doesn't close a box above): **ITSE 1411
+"Beginning Web Programming"** (Canvas, CC 1.1) exercises the CC
+`imsqti_xmlv1p2/imscc_xmlv1p1/**question-bank**` resource type — distinct from
+the `assessment` type — alongside a Classic `assessment`, all questions
+(multiple-choice + true/false) of supported types. Confirms the
+`questionbank_builder` path handles a first-class CC question bank, not only
+orphaned assessments. (Its `Orientation_Learning_Outcomes.html` is a content
+page, not a CC outcome object, so it does not count toward the outcomes box.)
+
 Each successful build narrows the shape space; if all five land cleanly
 (or only surface small fixes), flip `version.php` to `MATURITY_BETA` and
 submit.
