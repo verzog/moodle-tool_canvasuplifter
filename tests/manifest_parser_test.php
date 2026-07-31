@@ -131,6 +131,47 @@ XML;
     }
 
     /**
+     * A Windows-authored package (notably a native D2L export) writes backslash
+     * path separators in hrefs; the parser must normalise them to forward slashes
+     * so the payload resolves against the forward-slash paths inside the zip
+     * instead of being skipped as unreadable.
+     *
+     * @return void
+     */
+    public function test_backslash_hrefs_are_normalised(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/Module 2');
+        file_put_contents($dir . '/Module 2/Notes.pdf', '%PDF-1.4 test');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_pdf" type="webcontent" href="Module 2\Notes.pdf">
+      <file href="Module 2\Notes.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $orphan = $course->orphans[0];
+        // Backslashes are converted to forward slashes on both href and files.
+        $this->assertSame('Module 2/Notes.pdf', $orphan->href);
+        $this->assertSame(['Module 2/Notes.pdf'], $orphan->files);
+        // The normalised path resolves to the real file, so it is a file resource
+        // (an unreadable payload would be dropped instead).
+        $this->assertSame(item::KIND_FILE, $orphan->kind);
+    }
+
+    /**
      * A file embedded inside a page body via a $IMS-CC-FILEBASE$ token (Canvas
      * stores these under web_resources/) is inlined into the page at build time,
      * so it must not also surface as a standalone orphan resource — while a file

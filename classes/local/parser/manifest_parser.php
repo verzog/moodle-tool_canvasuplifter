@@ -485,14 +485,14 @@ class manifest_parser {
 
             $modelitem = new item($identifier);
             $modelitem->resourcetype = $type;
-            $modelitem->href = $href;
+            $modelitem->href = self::normalize_separators($href);
             $modelitem->intendeduse = strtolower($resource->getAttribute('intendeduse'));
 
             // Collect every <file href="..."> child.
             $files = $resource->getElementsByTagNameNS('*', 'file');
             foreach ($files as $file) {
                 if ($file instanceof DOMElement && $file->getAttribute('href') !== '') {
-                    $modelitem->files[] = $file->getAttribute('href');
+                    $modelitem->files[] = self::normalize_separators($file->getAttribute('href'));
                 }
             }
 
@@ -788,6 +788,23 @@ class manifest_parser {
             }
         }
         return strtolower(trim($value));
+    }
+
+    /**
+     * Normalise path separators in a manifest href to forward slashes. Packages
+     * authored on Windows (notably native D2L exports) write backslash separators
+     * — e.g. "Module 2\Notes.pdf" — which never resolve against the forward-slash
+     * paths inside the zip. Leaves genuine URLs untouched (backslashes are not
+     * valid in a URL, so a scheme'd href is passed through unchanged).
+     *
+     * @param string $href The raw href from the manifest.
+     * @return string The href with backslashes converted to forward slashes.
+     */
+    private static function normalize_separators(string $href): string {
+        if (preg_match('~^[a-z][a-z0-9+.\-]*://~i', $href)) {
+            return $href;
+        }
+        return str_replace('\\', '/', $href);
     }
 
     /**
