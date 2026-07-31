@@ -250,6 +250,19 @@ and question import for this package. (Its `Orientation_Learning_Outcomes.html`
 is a content page, not a CC outcome object, so it does not count toward the
 outcomes box.)
 
+Additional coverage (built, doesn't close a box above): **"Introduction to
+Swiss Programming"** (Canvas, CC 1.1) — a **SoftChalk / CHAMP** OER course, a
+new source shape. Built cleanly end-to-end: 297 activities created, 0 skipped
+(272 files, 14 URLs, 10 pages, 1 forum). It has no quizzes and no outcomes, so
+it does not touch those boxes. Its SoftChalk lessons import as external `mod_url`
+links (the lesson bodies are hosted on softchalkcloud.com) and their local HTML
+becomes file resources. One page's inline image did not resolve — but that is a
+missing source asset (a stale `$IMS-CC-FILEBASE$` reference to the `MAC240`
+master course this content was copied from; the file isn't in the export), not a
+rewriter fault: `link_rewriter` matched the token and correctly left it untouched
+when `resolve_filebase()` found nothing. See issue #111 for the follow-up on
+friendlier handling of unresolvable filebase references.
+
 Each successful build narrows the shape space; if all five land cleanly
 (or only surface small fixes), flip `version.php` to `MATURITY_BETA` and
 submit.
