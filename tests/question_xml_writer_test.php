@@ -76,6 +76,8 @@ final class question_xml_writer_test extends \advanced_testcase {
         $q->type = qti_question::TYPE_DESCRIPTION;
         $q->name = 'Read this';
         $q->questiontext = '<p>Some stimulus text</p>';
+        // The parser defaults an unscored item to 1.0; the writer must zero it.
+        $q->defaultmark = 1.0;
 
         $xml = (new question_xml_writer())->to_moodle_xml([$q], '$course$/Imported/Bank');
 
@@ -90,6 +92,10 @@ final class question_xml_writer_test extends \advanced_testcase {
         // A description has no answers or single flag.
         $this->assertSame(0, $dom->getElementsByTagName('answer')->length);
         $this->assertStringNotContainsString('<single>', $xml);
+        // It carries no mark — the parser's default 1.0 must not inflate the quiz
+        // maximum grade, since a description cannot be answered.
+        $grades = $dom->getElementsByTagName('defaultgrade');
+        $this->assertSame('0.0000000', $grades->item(0)->textContent);
     }
 
     /**
