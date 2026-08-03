@@ -54,6 +54,9 @@ class outcome_builder {
     /** @var array|null Course outcome shortnames already taken (keyed for O(1) lookup); null until loaded. */
     private ?array $takenshortnames = null;
 
+    /** @var array Next suffix to try per base shortname, so duplicates don't re-probe from 1. */
+    private array $nextsuffix = [];
+
     /**
      * Constructor.
      *
@@ -198,13 +201,18 @@ class outcome_builder {
             }
         }
         $base = shorten_text(trim($fullname) !== '' ? trim($fullname) : 'outcome', 240);
-        $shortname = $base;
-        $suffix = 1;
+        // Resume from the last suffix used for this base rather than restarting at
+        // 1, so importing n same-named outcomes stays linear overall instead of
+        // re-probing every earlier suffix on each one. The while loop still runs
+        // to skip any collision with a preloaded (existing) shortname.
+        $suffix = $this->nextsuffix[$base] ?? 1;
+        $shortname = $suffix === 1 ? $base : $base . ' (' . $suffix . ')';
         while (isset($this->takenshortnames[$shortname])) {
             $suffix++;
             $shortname = $base . ' (' . $suffix . ')';
         }
         $this->takenshortnames[$shortname] = true;
+        $this->nextsuffix[$base] = $suffix + 1;
         return $shortname;
     }
 }

@@ -413,4 +413,36 @@ final class outcome_builder_test extends \advanced_testcase {
         );
         $this->assertCount(2, array_unique($shortnames));
     }
+
+    /**
+     * Many same-named outcomes each still get a distinct shortname when suffixing
+     * resumes from the last one used (the per-base suffix cache), rather than
+     * re-probing from the base each time.
+     *
+     * @return void
+     */
+    public function test_many_same_named_outcomes_get_unique_shortnames(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $one = '<learningOutcome identifier="%s"><title>Dup</title><description></description>'
+            . '<ratings><rating><description>Yes</description><points>1</points></rating>'
+            . '<rating><description>No</description><points>0</points></rating></ratings></learningOutcome>';
+        $body = '';
+        for ($i = 1; $i <= 6; $i++) {
+            $body .= sprintf($one, 'o' . $i);
+        }
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<learningOutcomeGroup identifier="g1"><title>G</title><learningOutcomes>'
+            . $body
+            . '</learningOutcomes></learningOutcomeGroup></learningOutcomes>';
+
+        $created = (new outcome_builder($this->package($xml)))->build($course);
+
+        $this->assertSame(6, $created);
+        $shortnames = $DB->get_fieldset_select('grade_outcomes', 'shortname', 'courseid = ?', [$course->id]);
+        $this->assertCount(6, array_unique($shortnames));
+    }
 }
