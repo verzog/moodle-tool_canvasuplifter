@@ -16,8 +16,8 @@
 
 namespace tool_canvasuplifter;
 
+use tool_canvasuplifter\launcher;
 use tool_canvasuplifter\local\job_manager;
-use tool_canvasuplifter\local\launcher;
 use tool_canvasuplifter\task\analyse_package_task;
 use tool_canvasuplifter\task\build_course_task;
 
@@ -29,7 +29,7 @@ use tool_canvasuplifter\task\build_course_task;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\launcher
+ * @covers     \tool_canvasuplifter\launcher
  */
 final class launcher_test extends \advanced_testcase {
     /**
@@ -142,5 +142,48 @@ final class launcher_test extends \advanced_testcase {
 
         $this->assertSame(job_manager::KIND_ANALYSE, (new job_manager())->get($jobid)->kind);
         $this->single_queued_task(analyse_package_task::class);
+    }
+
+    /**
+     * queue_job rejects a call with neither a file id nor a URL, before any job
+     * row or task is created.
+     *
+     * @return void
+     */
+    public function test_queue_job_requires_a_source(): void {
+        global $USER, $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $this->expectException(\InvalidArgumentException::class);
+        try {
+            launcher::queue_job((int) $USER->id, (int) $category->id, job_manager::KIND_ANALYSE, null, null);
+        } finally {
+            // No job row and no adhoc task should have been left behind.
+            $this->assertSame(0, $DB->count_records(job_manager::TABLE));
+            $this->assertCount(0, \core\task\manager::get_adhoc_tasks(analyse_package_task::class));
+        }
+    }
+
+    /**
+     * queue_job rejects a call giving both a file id and a URL.
+     *
+     * @return void
+     */
+    public function test_queue_job_rejects_two_sources(): void {
+        global $USER;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $this->expectException(\InvalidArgumentException::class);
+        launcher::queue_job(
+            (int) $USER->id,
+            (int) $category->id,
+            job_manager::KIND_BUILD,
+            123,
+            'https://example.com/x.imscc'
+        );
     }
 }

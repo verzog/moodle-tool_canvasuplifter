@@ -14,8 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
-namespace tool_canvasuplifter\local;
+namespace tool_canvasuplifter;
 
+use tool_canvasuplifter\local\job_manager;
 use tool_canvasuplifter\task\analyse_package_task;
 use tool_canvasuplifter\task\build_course_task;
 
@@ -34,9 +35,15 @@ use tool_canvasuplifter\task\build_course_task;
  *
  * Callers are responsible for their own capability checks first - neither this
  * class nor the adhoc tasks re-check capabilities (the tasks run under cron as
- * the job's user). The upload page enforces tool/canvasuplifter:use plus
- * moodle/course:create on the target category; external drivers must do the
- * same before calling.
+ * the job's user). Every caller must enforce tool/canvasuplifter:use at the
+ * system context; a caller requesting a *build* (job_manager::KIND_BUILD) must
+ * additionally enforce moodle/course:create on the target category context, as
+ * the upload page does. An *analyse* run creates no course, so it needs only
+ * the tool/canvasuplifter:use check - do not gate analysis on course:create.
+ *
+ * This class sits in the plugin's public namespace (not local\) precisely
+ * because it is an integration surface other components may depend on; the
+ * job-status contract they poll afterwards is job_manager.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -63,6 +70,7 @@ class launcher {
      * @param bool $quizfrombank Also build a runnable quiz from each standalone bank.
      * @param string $pagegrouping '' | 'book' | 'lesson' (anything else = combine off).
      * @return int The new job id.
+     * @throws \InvalidArgumentException When not exactly one package source is given.
      */
     public static function queue_job(
         int $userid,
@@ -73,10 +81,22 @@ class launcher {
         bool $quizfrombank = false,
         string $pagegrouping = ''
     ): int {
+        // Exactly one source must be supplied. With neither, the task would
+        // resolve file id 0 and fail asynchronously with a confusing error;
+        // with both, the stored file would win while build fallback naming
+        // preferred the unrelated URL. Reject both cases up front so an invalid
+        // call fails immediately instead of leaving a misleading job record.
+        $url = ($packageurl !== null && trim($packageurl) !== '') ? $packageurl : null;
+        if (($fileid === null) === ($url === null)) {
+            throw new \InvalidArgumentException(
+                'launcher: pass exactly one of $fileid or $packageurl'
+            );
+        }
+
         $kind = self::normalise_kind($kind);
 
         $jobs = new job_manager();
-        $jobid = $jobs->create($userid, $categoryid, $kind, $fileid, $packageurl);
+        $jobid = $jobs->create($userid, $categoryid, $kind, $fileid, $url);
 
         $task = $kind === job_manager::KIND_BUILD ? new build_course_task() : new analyse_package_task();
         $task->set_custom_data([

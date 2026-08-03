@@ -31,8 +31,8 @@ require(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
 
 use tool_canvasuplifter\form\upload_form;
+use tool_canvasuplifter\launcher;
 use tool_canvasuplifter\local\job_manager;
-use tool_canvasuplifter\local\launcher;
 
 admin_externalpage_setup('tool_canvasuplifter');
 require_capability('tool/canvasuplifter:use', context_system::instance());

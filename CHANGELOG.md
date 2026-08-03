@@ -7,16 +7,20 @@ quickly.
 
 ## [0.40.0] - 2026-08-03
 
-- Add a public `\tool_canvasuplifter\local\launcher` facade that queues an
-  analyse or build run from a package held as a stored file id, an on-disk file
-  path, or a remote URL, returning the job id to poll. This is the supported
-  entry point for programmatic and bulk callers (for example `tool_automate`'s
-  bulk Canvas import), so they need not reach into `job_manager`, the file-area
-  layout or the adhoc task classes. The main upload page now drives its own
-  queueing through the same facade, so there is a single create-and-queue path.
-  Callers remain responsible for their own capability checks
-  (`tool/canvasuplifter:use` plus `moodle/course:create` on the target category),
-  exactly as the upload page enforces them.
+- Add a public `\tool_canvasuplifter\launcher` facade that queues an analyse or
+  build run from a package held as a stored file id, an on-disk file path, or a
+  remote URL, returning the job id to poll. This is the supported entry point
+  for programmatic and bulk callers (for example `tool_automate`'s bulk Canvas
+  import), so they need not reach into `job_manager`, the file-area layout or
+  the adhoc task classes. It lives in the plugin's public namespace (not
+  `local\`) so it can be relied on as an integration surface. The main upload
+  page now drives its own queueing through the same facade, so there is a single
+  create-and-queue path. `queue_job()` requires exactly one package source (a
+  file id or a URL) and throws otherwise, so an invalid call fails immediately
+  rather than leaving a job that can only fail later. Callers remain responsible
+  for their own capability checks: `tool/canvasuplifter:use` for any run, plus
+  `moodle/course:create` on the target category for a build (an analyse run
+  needs no course:create).
 
 ## [0.39.17] - 2026-07-12
 
