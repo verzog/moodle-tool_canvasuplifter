@@ -249,18 +249,22 @@ class launcher {
     }
 
     /**
-     * Delete an import job and free its stored package, to reclaim space.
+     * Delete a finished import job and free its stored package, to reclaim space.
      *
-     * Removes the stored .imscc package (the space-consuming part) and the job
-     * row. A course a build job already created is left in place - this frees
-     * cached package storage, it does not undo an import. When $userid is given,
-     * the job must belong to that user or nothing is deleted.
+     * Removes the job row and, when no other job still references it, the stored
+     * .imscc package (the space-consuming part). A course a build already created
+     * is left in place - this frees cached package storage, it does not undo an
+     * import. Only a finished (done/failed) job is deleted, so this never races a
+     * queued or running task; when $userid is given, the job must belong to that
+     * user.
      *
      * @param int $jobid Job id.
      * @param int|null $userid Require the job to belong to this user, or null to skip the check.
-     * @return bool True if a job was deleted; false if it did not exist or is not the user's.
+     * @return bool True if a job was deleted; false if it is missing, not the
+     *              user's, or not yet finished.
      */
     public static function delete_job(int $jobid, ?int $userid = null): bool {
+        global $DB;
         $jobs = new job_manager();
         $job = $jobs->get($jobid);
         if (!$job) {
@@ -269,10 +273,29 @@ class launcher {
         if ($userid !== null && (int) $job->userid !== $userid) {
             return false;
         }
+        // Only a finished job is safe to delete. A queued or running job's adhoc
+        // task would otherwise run - or finish - against a now-missing row: a
+        // running URL job could store an orphaned package after the row is gone,
+        // and a queued job's task would fail loading the deleted row.
+        if ($job->status !== job_manager::STATUS_DONE && $job->status !== job_manager::STATUS_FAILED) {
+            return false;
+        }
+        // Free the stored package only when no other job still references it. The
+        // "Build this course" flow builds from the analyse job's stored file, so
+        // the analyse and build jobs share a fileid; deleting one must not pull
+        // the package out from under the other.
         if (!empty($job->fileid)) {
-            $file = get_file_storage()->get_file_by_id((int) $job->fileid);
-            if ($file) {
-                $file->delete();
+            $fileid = (int) $job->fileid;
+            $shared = $DB->record_exists_select(
+                job_manager::TABLE,
+                'fileid = :fileid AND id <> :id',
+                ['fileid' => $fileid, 'id' => $jobid]
+            );
+            if (!$shared) {
+                $file = get_file_storage()->get_file_by_id($fileid);
+                if ($file) {
+                    $file->delete();
+                }
             }
         }
         $jobs->delete($jobid);

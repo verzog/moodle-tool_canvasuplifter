@@ -173,8 +173,8 @@ final class launcher_test extends \advanced_testcase {
     }
 
     /**
-     * delete_job removes the job row and frees its stored package, and refuses
-     * to delete another user's job.
+     * delete_job removes a finished job and frees its stored package, refuses a
+     * job that is not yet finished, and refuses another user's job.
      *
      * @return void
      */
@@ -183,24 +183,62 @@ final class launcher_test extends \advanced_testcase {
         $this->resetAfterTest(true);
         $this->setAdminUser();
         $category = $this->getDataGenerator()->create_category();
+        $jobs = new job_manager();
 
         $path = make_request_directory() . '/c.imscc';
         file_put_contents($path, 'data');
         $jobid = launcher::queue_from_path((int) $USER->id, (int) $category->id, job_manager::KIND_ANALYSE, $path);
-        $fileid = (int) (new job_manager())->get($jobid)->fileid;
+        $fileid = (int) $jobs->get($jobid)->fileid;
         $this->assertNotFalse(get_file_storage()->get_file_by_id($fileid));
 
-        // Another user cannot delete it - job and file survive.
+        // A still-queued job is not deletable (its task may still run).
+        $this->assertFalse(launcher::delete_job($jobid, (int) $USER->id));
+        $this->assertNotFalse($jobs->get($jobid));
+
+        // Once finished it is deletable - but not by another user.
+        $jobs->mark_analysed($jobid, ['itemcount' => 1]);
         $this->assertFalse(launcher::delete_job($jobid, (int) $USER->id + 9999));
-        $this->assertNotFalse((new job_manager())->get($jobid));
+        $this->assertNotFalse($jobs->get($jobid));
 
         // The owner deletes it: row and stored package are both gone.
         $this->assertTrue(launcher::delete_job($jobid, (int) $USER->id));
-        $this->assertFalse((new job_manager())->get($jobid));
+        $this->assertFalse($jobs->get($jobid));
         $this->assertFalse(get_file_storage()->get_file_by_id($fileid));
 
         // Deleting a missing job is a no-op false.
         $this->assertFalse(launcher::delete_job($jobid, (int) $USER->id));
+    }
+
+    /**
+     * A package shared by another job (the analyse-then-build flow reuses the
+     * same stored file) is only freed once the last referencing job is deleted.
+     *
+     * @return void
+     */
+    public function test_delete_job_keeps_a_package_another_job_shares(): void {
+        global $USER;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        $jobs = new job_manager();
+
+        $path = make_request_directory() . '/shared.imscc';
+        file_put_contents($path, 'data');
+        $fileid = launcher::store_package((int) $USER->id, $path);
+
+        // An analyse job and a build job that share the one stored package.
+        $analyse = $jobs->create((int) $USER->id, (int) $category->id, job_manager::KIND_ANALYSE, $fileid);
+        $build = $jobs->create((int) $USER->id, (int) $category->id, job_manager::KIND_BUILD, $fileid);
+        $jobs->mark_analysed($analyse, []);
+        $jobs->mark_done($build, 0, []);
+
+        // Deleting the analyse job leaves the package - the build job still needs it.
+        $this->assertTrue(launcher::delete_job($analyse, (int) $USER->id));
+        $this->assertNotFalse(get_file_storage()->get_file_by_id($fileid));
+
+        // Deleting the last referencing job frees the package.
+        $this->assertTrue(launcher::delete_job($build, (int) $USER->id));
+        $this->assertFalse(get_file_storage()->get_file_by_id($fileid));
     }
 
     /**
