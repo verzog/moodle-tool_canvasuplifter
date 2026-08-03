@@ -308,12 +308,16 @@ class conversion_report {
      * @return bool
      */
     protected function quiz_has_importable_questions(item $modelitem): bool {
-        foreach ($this->assessment_questions($modelitem) as $question) {
-            if ($question->is_importable()) {
-                return true;
-            }
+        // Judge the Common Cartridge file only, with no native-dump fallback:
+        // an unreferenced quiz builds through questionbank_builder, which reads
+        // just the CC file. A native-only New Quiz shell therefore builds no bank
+        // (and so no quiz-from-bank), so it must not trigger the nudge.
+        $path = $this->resolve_qti($modelitem);
+        if ($path === null) {
+            return false;
         }
-        return false;
+        $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
+        return $this->any_importable($parsed['questions']);
     }
 
     /**
@@ -738,16 +742,34 @@ class conversion_report {
             return [];
         }
         $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
-        if (empty($parsed['questions'])) {
+        // Mirror quiz_builder: fall back to the native dump when the CC file has
+        // no *importable* questions (not merely no questions) — a shell may carry
+        // unconvertible items while the real, importable ones live in the dump.
+        if (!$this->any_importable($parsed['questions'])) {
             $native = $this->resolve_native_qti($modelitem, $path);
             if ($native !== null) {
                 $nativeparsed = (new qti_parser())->parse((string) @file_get_contents($native));
-                if (!empty($nativeparsed['questions'])) {
+                if ($this->any_importable($nativeparsed['questions'])) {
                     return $nativeparsed['questions'];
                 }
             }
         }
         return $parsed['questions'];
+    }
+
+    /**
+     * Whether any of the given questions is importable.
+     *
+     * @param array $questions Parsed qti_question objects.
+     * @return bool
+     */
+    private function any_importable(array $questions): bool {
+        foreach ($questions as $question) {
+            if ($question->is_importable()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
