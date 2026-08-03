@@ -40,9 +40,11 @@ class outcome {
     public array $ratings = [];
 
     /**
-     * The rating labels as Moodle scale items, reversed to Moodle's
-     * lowest-to-highest order (Canvas lists them highest-first). A usable Moodle
-     * scale needs at least two of these.
+     * The rating labels as Moodle scale items, ordered low-to-high by their
+     * mastery points (Moodle scale items run lowest first). Canvas usually lists
+     * ratings highest-first, but not always, so the numeric points — which the
+     * parser preserves — decide the order rather than the XML sequence. A usable
+     * Moodle scale needs at least two of these.
      *
      * Two passes handle the fact that Moodle scale items are comma-delimited with
      * no escaping. First, genuinely identical labels are collapsed
@@ -57,9 +59,13 @@ class outcome {
      * @return array The distinct scale-item labels, low to high.
      */
     public function scale_labels(): array {
+        $ratings = $this->ratings;
+        // Sort ascending by points (stable, so equal-points ratings keep their
+        // document order); Moodle scale items run lowest value first.
+        usort($ratings, fn($a, $b) => ((float) ($a['points'] ?? 0)) <=> ((float) ($b['points'] ?? 0)));
         $originals = [];
         $seenoriginal = [];
-        foreach (array_reverse($this->ratings) as $rating) {
+        foreach ($ratings as $rating) {
             $label = trim((string) ($rating['description'] ?? ''));
             if ($label === '') {
                 continue;

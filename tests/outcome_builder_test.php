@@ -254,6 +254,39 @@ final class outcome_builder_test extends \advanced_testcase {
     }
 
     /**
+     * The scale is ordered by each rating's mastery points, not by the XML
+     * document order — so a file listing ratings ascending (or scrambled) still
+     * produces a low-to-high Moodle scale with the top level highest.
+     *
+     * @return void
+     */
+    public function test_scale_ordered_by_points_not_document_order(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        // Ratings deliberately out of order: points 1, 2, 0.
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<learningOutcomeGroup identifier="g1"><title>G</title><learningOutcomes>'
+            . '<learningOutcome identifier="o1"><title>Order</title><description></description>'
+            . '<ratings>'
+            . '<rating><description>Middle</description><points>1</points></rating>'
+            . '<rating><description>Top</description><points>2</points></rating>'
+            . '<rating><description>Bottom</description><points>0</points></rating>'
+            . '</ratings></learningOutcome>'
+            . '</learningOutcomes></learningOutcomeGroup></learningOutcomes>';
+
+        $created = (new outcome_builder($this->package($xml)))->build($course);
+
+        $this->assertSame(1, $created);
+        $outcome = $DB->get_record('grade_outcomes', ['courseid' => $course->id], '*', MUST_EXIST);
+        $scale = $DB->get_record('scale', ['id' => $outcome->scaleid], '*', MUST_EXIST);
+        // Lowest points first, highest last — regardless of the XML sequence.
+        $this->assertSame('Bottom,Middle,Top', $scale->scale);
+    }
+
+    /**
      * A learning_outcomes.xml that is present but unreadable as XML sets the
      * malformed flag (so the build can warn) rather than being treated as a
      * package with no outcomes.
