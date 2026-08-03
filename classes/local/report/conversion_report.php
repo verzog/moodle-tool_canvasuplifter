@@ -308,12 +308,7 @@ class conversion_report {
      * @return bool
      */
     protected function quiz_has_importable_questions(item $modelitem): bool {
-        $path = $this->resolve_qti($modelitem);
-        if ($path === null) {
-            return false;
-        }
-        $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
-        foreach ($parsed['questions'] as $question) {
+        foreach ($this->assessment_questions($modelitem) as $question) {
             if ($question->is_importable()) {
                 return true;
             }
@@ -480,13 +475,12 @@ class conversion_report {
             if (!in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
                 continue;
             }
-            $path = $this->resolve_qti($modelitem);
-            if ($path === null) {
+            $questions = $this->assessment_questions($modelitem);
+            if (empty($questions)) {
                 continue;
             }
             $assessment = $this->display_title($modelitem, $referenced);
-            $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
-            foreach ($parsed['questions'] as $question) {
+            foreach ($questions as $question) {
                 $total++;
                 if ($question->is_importable()) {
                     $supported[$question->type] = ($supported[$question->type] ?? 0) + 1;
@@ -724,6 +718,68 @@ class conversion_report {
         $stem = preg_replace('/-\d{1,3}$/', '', $stem);
         $stem = rtrim($stem);
         return $ext !== '' ? $stem . '.' . $ext : $stem;
+    }
+
+    /**
+     * The questions an assessment would actually build, mirroring the builders:
+     * read the Common Cartridge QTI file, and when that is an empty shell (Canvas
+     * exports New Quizzes — and some Classic quizzes — with the questions only in
+     * its native dump) fall back to non_cc_assessments/<id>.xml.qti. Without this
+     * the report reads the shell, finds nothing, and shows an empty question-type
+     * matrix for New Quizzes even though the builder imports (and drops) real
+     * questions from the native dump.
+     *
+     * @param item $modelitem The quiz/question-bank item.
+     * @return array The parsed qti_question objects (empty when none resolve).
+     */
+    protected function assessment_questions(item $modelitem): array {
+        $path = $this->resolve_qti($modelitem);
+        if ($path === null) {
+            return [];
+        }
+        $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
+        if (empty($parsed['questions'])) {
+            $native = $this->resolve_native_qti($modelitem, $path);
+            if ($native !== null) {
+                $nativeparsed = (new qti_parser())->parse((string) @file_get_contents($native));
+                if (!empty($nativeparsed['questions'])) {
+                    return $nativeparsed['questions'];
+                }
+            }
+        }
+        return $parsed['questions'];
+    }
+
+    /**
+     * Find the native Canvas question dump for an assessment whose Common
+     * Cartridge QTI is an empty shell, mirroring quiz_builder::locate_native_qti:
+     * an explicit non_cc_assessments/<id>.xml.qti on the item's file list, else
+     * the file keyed by the resolved QTI folder id at the package root. Never
+     * returns the shell we already parsed.
+     *
+     * @param item $modelitem The quiz item.
+     * @param string $qtipath Absolute path of the resolved CC QTI file.
+     * @return string|null Absolute path within the package, or null.
+     */
+    protected function resolve_native_qti(item $modelitem, string $qtipath): ?string {
+        $already = realpath($qtipath);
+        foreach ($modelitem->files as $relative) {
+            if (!preg_match('~(^|/)non_cc_assessments/[^/]+\.xml\.qti$~i', (string) $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute !== null && realpath($absolute) !== $already) {
+                return $absolute;
+            }
+        }
+        $id = basename(dirname($qtipath));
+        if ($id !== '' && $id !== '.' && $id !== '/') {
+            $absolute = $this->resolve_within('non_cc_assessments/' . $id . '.xml.qti');
+            if ($absolute !== null && realpath($absolute) !== $already) {
+                return $absolute;
+            }
+        }
+        return null;
     }
 
     /**

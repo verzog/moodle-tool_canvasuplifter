@@ -445,6 +445,46 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * When the Common Cartridge assessment is an empty shell (Canvas exports New
+     * Quizzes with the questions only in the native dump), the matrix falls back
+     * to non_cc_assessments/<id>.xml.qti — as the builder does — so New Quizzes
+     * questions are counted instead of showing an empty matrix.
+     *
+     * @return void
+     */
+    public function test_matrix_falls_back_to_native_dump_for_new_quizzes(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        mkdir($dir . '/non_cc_assessments');
+        // The CC file is a valid but question-less shell.
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="New quiz engine"><section ident="s1"></section>'
+            . '</assessment></questestinterop>';
+        file_put_contents($dir . '/a1/assessment_qti.xml', $shell);
+        // The real questions live in the native dump.
+        $native = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="New quiz engine"><section ident="s1">'
+            . $this->profileitem('cc.multiple_choice.v0p1', 'B')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/a1.xml.qti', $native);
+
+        $course = new course_model();
+        $quiz = new item('q1', 'New quiz engine');
+        $quiz->kind = item::KIND_QUIZ;
+        $quiz->files = ['a1/assessment_qti.xml', 'non_cc_assessments/a1.xml.qti'];
+        $course->orphans[] = $quiz;
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        // Without the native-dump fallback this would be an empty matrix.
+        $this->assertSame(1, $matrix['total']);
+        $this->assertSame(1, $matrix['supported']);
+        $this->assertSame('multichoice', $matrix['rows'][0]['label']);
+    }
+
+    /**
      * A recognised question type Moodle would reject (a single-option choice) is
      * counted as not converting, so the "will convert" total stays honest.
      *
