@@ -220,6 +220,8 @@ $string['syllabuspage'] = 'Syllabus';
 $string['targetcategory'] = 'Target course category';
 $string['targetcategory_help'] = 'The new course will be created in this category. '
     . 'You need the "create courses" capability in the chosen category.';
+$string['taskanalyse'] = 'Analyse Canvas package';
+$string['taskbuild'] = 'Build course from Canvas package';
 $string['tokenexpired'] = 'The upload token has expired. Try refreshing the page to receive a new one.';
 $string['trustedsourcewarning'] = 'Only import Common Cartridge packages from a source you trust. '
     . 'Imported page and description HTML is stored and shown as authored (Moodle does not re-clean it), '

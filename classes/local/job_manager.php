@@ -102,6 +102,40 @@ class job_manager {
     }
 
     /**
+     * List job rows, newest first, optionally filtered.
+     *
+     * Intended for a caller that wants to show a user their import history - for
+     * example tool_automate's "Staged Canvas imports" list, which lists a user's
+     * analyse jobs so they can review each report and build it. Any combination
+     * of the filters may be given; a null filter is not applied.
+     *
+     * @param int|null $userid Only this user's jobs, or null for all.
+     * @param string|null $kind One of the KIND_* constants, or null for all.
+     * @param string|null $status One of the STATUS_* constants, or null for all.
+     * @param int $limit Maximum rows to return; 0 for no limit.
+     * @return array Job records keyed by id, ordered by timecreated descending.
+     */
+    public function list_jobs(
+        ?int $userid = null,
+        ?string $kind = null,
+        ?string $status = null,
+        int $limit = 0
+    ): array {
+        global $DB;
+        $conditions = [];
+        if ($userid !== null) {
+            $conditions['userid'] = $userid;
+        }
+        if ($kind !== null) {
+            $conditions['kind'] = $kind;
+        }
+        if ($status !== null) {
+            $conditions['status'] = $status;
+        }
+        return $DB->get_records(self::TABLE, $conditions, 'timecreated DESC', '*', 0, $limit);
+    }
+
+    /**
      * Move the job to the running state.
      *
      * @param int $jobid
