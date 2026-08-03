@@ -32,8 +32,7 @@ require_once($CFG->libdir . '/adminlib.php');
 
 use tool_canvasuplifter\form\upload_form;
 use tool_canvasuplifter\local\job_manager;
-use tool_canvasuplifter\task\analyse_package_task;
-use tool_canvasuplifter\task\build_course_task;
+use tool_canvasuplifter\local\launcher;
 
 admin_externalpage_setup('tool_canvasuplifter');
 require_capability('tool/canvasuplifter:use', context_system::instance());
@@ -95,18 +94,16 @@ if ($data = $form->get_data()) {
             $temppackage = null;
         }
 
-        $jobs = new job_manager();
         $kind = $buildrequested ? job_manager::KIND_BUILD : job_manager::KIND_ANALYSE;
-        $jobid = $jobs->create((int) $USER->id, $categoryid, $kind, $storedfileid, $packageurl !== '' ? $packageurl : null);
-
-        $task = $buildrequested ? new build_course_task() : new analyse_package_task();
-        $task->set_custom_data([
-            'jobid' => $jobid,
-            'quizfrombank' => $quizfrombank,
-            // Anything other than 'book'/'lesson' is ignored by course_builder.
-            'pagegrouping' => $pagegrouping,
-        ]);
-        \core\task\manager::queue_adhoc_task($task);
+        $jobid = launcher::queue_job(
+            (int) $USER->id,
+            $categoryid,
+            $kind,
+            $storedfileid,
+            $packageurl !== '' ? $packageurl : null,
+            (bool) $quizfrombank,
+            $pagegrouping
+        );
 
         redirect(new moodle_url('/admin/tool/canvasuplifter/status.php', ['jobid' => $jobid]));
     } catch (\RuntimeException $e) {
@@ -144,16 +141,15 @@ if ($buildfromreport > 0) {
     }
     $quizfrombank = optional_param('quizfrombank', 0, PARAM_INT);
     $pagegrouping = optional_param('pagegrouping', '', PARAM_ALPHA);
-    $jobs = new job_manager();
-    $jobid = $jobs->create((int) $USER->id, $categoryid, job_manager::KIND_BUILD, $buildfromreport);
-    $task = new build_course_task();
-    $task->set_custom_data([
-        'jobid' => $jobid,
-        'quizfrombank' => $quizfrombank ? 1 : 0,
-        // Anything other than 'book'/'lesson' is ignored by course_builder.
-        'pagegrouping' => $pagegrouping,
-    ]);
-    \core\task\manager::queue_adhoc_task($task);
+    $jobid = launcher::queue_job(
+        (int) $USER->id,
+        $categoryid,
+        job_manager::KIND_BUILD,
+        $buildfromreport,
+        null,
+        (bool) $quizfrombank,
+        $pagegrouping
+    );
     redirect(new moodle_url('/admin/tool/canvasuplifter/status.php', ['jobid' => $jobid]));
 }
 

@@ -5,6 +5,19 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.40.0] - 2026-08-03
+
+- Add a public `\tool_canvasuplifter\local\launcher` facade that queues an
+  analyse or build run from a package held as a stored file id, an on-disk file
+  path, or a remote URL, returning the job id to poll. This is the supported
+  entry point for programmatic and bulk callers (for example `tool_automate`'s
+  bulk Canvas import), so they need not reach into `job_manager`, the file-area
+  layout or the adhoc task classes. The main upload page now drives its own
+  queueing through the same facade, so there is a single create-and-queue path.
+  Callers remain responsible for their own capability checks
+  (`tool/canvasuplifter:use` plus `moodle/course:create` on the target category),
+  exactly as the upload page enforces them.
+
 ## [0.39.17] - 2026-07-12
 
 - Convert a single-blank Canvas fill-in-the-blank question

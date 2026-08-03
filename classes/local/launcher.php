@@ -1,0 +1,192 @@
+<?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
+namespace tool_canvasuplifter\local;
+
+use tool_canvasuplifter\task\analyse_package_task;
+use tool_canvasuplifter\task\build_course_task;
+
+/**
+ * Stable entry point for queuing an analyse or build run.
+ *
+ * The main upload page (index.php) has always driven the pipeline by creating a
+ * job row (job_manager::create) and queuing the matching adhoc task with
+ * {jobid, quizfrombank, pagegrouping} in its custom data. This class captures
+ * that contract in one place so:
+ *
+ *  - index.php does not repeat the create-and-queue dance in three spots, and
+ *  - other plugins (e.g. tool_automate's bulk Canvas import) can kick off a run
+ *    for a package they hold as a URL or an on-disk file, without reaching into
+ *    job_manager, the file storage layout or the task classes directly.
+ *
+ * Callers are responsible for their own capability checks first - neither this
+ * class nor the adhoc tasks re-check capabilities (the tasks run under cron as
+ * the job's user). The upload page enforces tool/canvasuplifter:use plus
+ * moodle/course:create on the target category; external drivers must do the
+ * same before calling.
+ *
+ * @package    tool_canvasuplifter
+ * @copyright  2026 SCCA
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+class launcher {
+    /** File area holding stored packages, keyed by user id. */
+    public const PACKAGE_FILEAREA = 'packages';
+
+    /**
+     * Queue a run from a package that is already a stored file id or a remote URL.
+     *
+     * This is the lowest-level entry point and mirrors index.php exactly: it
+     * creates the job row and queues the adhoc task, returning the new job id so
+     * the caller can poll job_manager::get() for status/progress/courseid.
+     *
+     * Exactly one of $fileid or $packageurl is given; the other is null.
+     *
+     * @param int $userid User the run executes as (cron sets up $USER to this).
+     * @param int $categoryid Target course category for a build.
+     * @param string $kind One of job_manager::KIND_ANALYSE or KIND_BUILD.
+     * @param int|null $fileid stored_file id of an uploaded package, or null.
+     * @param string|null $packageurl Remote package URL to fetch in the task, or null.
+     * @param bool $quizfrombank Also build a runnable quiz from each standalone bank.
+     * @param string $pagegrouping '' | 'book' | 'lesson' (anything else = combine off).
+     * @return int The new job id.
+     */
+    public static function queue_job(
+        int $userid,
+        int $categoryid,
+        string $kind,
+        ?int $fileid = null,
+        ?string $packageurl = null,
+        bool $quizfrombank = false,
+        string $pagegrouping = ''
+    ): int {
+        $kind = self::normalise_kind($kind);
+
+        $jobs = new job_manager();
+        $jobid = $jobs->create($userid, $categoryid, $kind, $fileid, $packageurl);
+
+        $task = $kind === job_manager::KIND_BUILD ? new build_course_task() : new analyse_package_task();
+        $task->set_custom_data([
+            'jobid' => $jobid,
+            'quizfrombank' => $quizfrombank ? 1 : 0,
+            // Anything other than 'book'/'lesson' is ignored by course_builder.
+            'pagegrouping' => $pagegrouping,
+        ]);
+        \core\task\manager::queue_adhoc_task($task);
+
+        return $jobid;
+    }
+
+    /**
+     * Queue a run for a package identified by a remote URL.
+     *
+     * The download is deferred to the adhoc task, so a large or slow fetch never
+     * blocks the caller, and it goes through Moodle's SSRF-aware \curl wrapper
+     * (subject to the site's HTTP security settings) inside the task.
+     *
+     * @param int $userid User the run executes as.
+     * @param int $categoryid Target course category for a build.
+     * @param string $kind One of job_manager::KIND_ANALYSE or KIND_BUILD.
+     * @param string $url Remote package URL.
+     * @param bool $quizfrombank Also build a runnable quiz from each standalone bank.
+     * @param string $pagegrouping '' | 'book' | 'lesson'.
+     * @return int The new job id.
+     */
+    public static function queue_from_url(
+        int $userid,
+        int $categoryid,
+        string $kind,
+        string $url,
+        bool $quizfrombank = false,
+        string $pagegrouping = ''
+    ): int {
+        return self::queue_job($userid, $categoryid, $kind, null, $url, $quizfrombank, $pagegrouping);
+    }
+
+    /**
+     * Queue a run for a package that exists as a file on the server's disk.
+     *
+     * The file is copied into this plugin's 'packages' file area (owned by
+     * $userid) so the adhoc task can read it after the request ends, then a job
+     * is queued against that stored file. The caller's on-disk file is left
+     * untouched - it is the caller's to keep or remove.
+     *
+     * @param int $userid User the run executes as (and owner of the stored copy).
+     * @param int $categoryid Target course category for a build.
+     * @param string $kind One of job_manager::KIND_ANALYSE or KIND_BUILD.
+     * @param string $path Absolute path to a readable .imscc/.zip package file.
+     * @param string $filename Name to store the package under; defaults to the
+     *                         source basename, so a title-less package can be
+     *                         named after its file.
+     * @param bool $quizfrombank Also build a runnable quiz from each standalone bank.
+     * @param string $pagegrouping '' | 'book' | 'lesson'.
+     * @return int The new job id.
+     */
+    public static function queue_from_path(
+        int $userid,
+        int $categoryid,
+        string $kind,
+        string $path,
+        string $filename = '',
+        bool $quizfrombank = false,
+        string $pagegrouping = ''
+    ): int {
+        $fileid = self::store_package($userid, $path, $filename);
+        return self::queue_job($userid, $categoryid, $kind, $fileid, null, $quizfrombank, $pagegrouping);
+    }
+
+    /**
+     * Copy an on-disk package into the plugin's 'packages' file area.
+     *
+     * @param int $userid Owner of the stored file (itemid).
+     * @param string $path Absolute path to the source file.
+     * @param string $filename Stored filename; defaults to basename($path).
+     * @return int stored_file id.
+     */
+    public static function store_package(int $userid, string $path, string $filename = ''): int {
+        $name = clean_param($filename !== '' ? $filename : basename($path), PARAM_FILE);
+        if ($name === '') {
+            $name = 'package.imscc';
+        }
+        $fs = get_file_storage();
+        $filerecord = (object) [
+            'contextid' => \context_system::instance()->id,
+            'component' => 'tool_canvasuplifter',
+            'filearea' => self::PACKAGE_FILEAREA,
+            'itemid' => $userid,
+            // A unique filepath lets distinct packages keep their original names
+            // without colliding in the file area.
+            'filepath' => '/' . uniqid() . '/',
+            'filename' => $name,
+            'userid' => $userid,
+        ];
+        return (int) $fs->create_file_from_pathname($filerecord, $path)->get_id();
+    }
+
+    /**
+     * Coerce an incoming kind to a known value, defaulting to analyse.
+     *
+     * Keeping this lenient (rather than throwing) means a caller can pass a
+     * user-chosen string and always get a safe, read-only run when it is not a
+     * recognised build request.
+     *
+     * @param string $kind Candidate kind.
+     * @return string job_manager::KIND_BUILD or KIND_ANALYSE.
+     */
+    private static function normalise_kind(string $kind): string {
+        return $kind === job_manager::KIND_BUILD ? job_manager::KIND_BUILD : job_manager::KIND_ANALYSE;
+    }
+}
