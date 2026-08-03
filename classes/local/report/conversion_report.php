@@ -479,7 +479,11 @@ class conversion_report {
             if (!in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
                 continue;
             }
-            $questions = $this->assessment_questions($modelitem);
+            // Only a referenced quiz builds through quiz_builder (with its native
+            // fallback); orphan quizzes and question banks use questionbank_builder,
+            // which reads only the CC file.
+            $usenative = $referenced && $modelitem->kind === item::KIND_QUIZ;
+            $questions = $this->assessment_questions($modelitem, $usenative);
             if (empty($questions)) {
                 continue;
             }
@@ -733,10 +737,17 @@ class conversion_report {
      * matrix for New Quizzes even though the builder imports (and drops) real
      * questions from the native dump.
      *
+     * The native-dump fallback only applies to items the builder would route
+     * through quiz_builder — a referenced quiz. Orphan quizzes and question banks
+     * go through questionbank_builder, which reads only its selected CC file, so
+     * counting native questions there would report as convertible what the build
+     * actually drops.
+     *
      * @param item $modelitem The quiz/question-bank item.
+     * @param bool $nativefallback Whether to fall back to the native dump.
      * @return array The parsed qti_question objects (empty when none resolve).
      */
-    protected function assessment_questions(item $modelitem): array {
+    protected function assessment_questions(item $modelitem, bool $nativefallback): array {
         $path = $this->resolve_qti($modelitem);
         if ($path === null) {
             return [];
@@ -745,7 +756,7 @@ class conversion_report {
         // Mirror quiz_builder: fall back to the native dump when the CC file has
         // no *importable* questions (not merely no questions) — a shell may carry
         // unconvertible items while the real, importable ones live in the dump.
-        if (!$this->any_importable($parsed['questions'])) {
+        if ($nativefallback && !$this->any_importable($parsed['questions'])) {
             $native = $this->resolve_native_qti($modelitem, $path);
             if ($native !== null) {
                 $nativeparsed = (new qti_parser())->parse((string) @file_get_contents($native));

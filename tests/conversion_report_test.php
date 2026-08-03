@@ -470,11 +470,15 @@ final class conversion_report_test extends \advanced_testcase {
             . '</section></assessment></questestinterop>';
         file_put_contents($dir . '/non_cc_assessments/a1.xml.qti', $native);
 
+        // A referenced quiz: only these build through quiz_builder's native
+        // fallback (orphan quizzes/banks use questionbank_builder, no fallback).
         $course = new course_model();
+        $section = new section_model('Week 1');
         $quiz = new item('q1', 'New quiz engine');
         $quiz->kind = item::KIND_QUIZ;
         $quiz->files = ['a1/assessment_qti.xml', 'non_cc_assessments/a1.xml.qti'];
-        $course->orphans[] = $quiz;
+        $section->add_item($quiz);
+        $course->add_section($section);
 
         $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
 
@@ -482,6 +486,16 @@ final class conversion_report_test extends \advanced_testcase {
         $this->assertSame(1, $matrix['total']);
         $this->assertSame(1, $matrix['supported']);
         $this->assertSame('multichoice', $matrix['rows'][0]['label']);
+
+        // The same shell as an unreferenced orphan builds through
+        // questionbank_builder (no native fallback), so the matrix must not count
+        // its native questions as convertible.
+        $orphancourse = new course_model();
+        $orphan = new item('q2', 'New quiz engine');
+        $orphan->kind = item::KIND_QUIZ;
+        $orphan->files = ['a1/assessment_qti.xml', 'non_cc_assessments/a1.xml.qti'];
+        $orphancourse->orphans[] = $orphan;
+        $this->assertSame([], (new conversion_report($orphancourse, $dir))->build()['questionmatrix']);
     }
 
     /**
