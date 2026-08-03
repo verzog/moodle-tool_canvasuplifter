@@ -5,6 +5,39 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.41.0] - 2026-08-03
+
+- Import Canvas learning outcomes (`course_settings/learning_outcomes.xml`) as
+  Moodle course grade outcomes, each backed by a scale built from its mastery
+  ratings. Ratings are ordered low-to-high by their points; labels are made
+  scale-safe (commas normalised, duplicates collapsed, post-normalisation
+  collisions disambiguated) and an outcome whose ratings can't form a scale of
+  at least two distinct labels is skipped and reported rather than failing the
+  build. Untitled outcomes import under a fallback name; file references
+  (`$IMS-CC-FILEBASE$`) and internal-link tokens
+  (`$WIKI_REFERENCE$`/`$CANVAS_OBJECT_REFERENCE$`) in outcome descriptions are
+  resolved like page content. The analyse report previews the outcome counts
+  (importable / skipped) and flags a malformed outcomes file. Outcomes are
+  course-scoped, non-destructive, and stay hidden until the site's "Enable
+  outcomes" advanced setting is on.
+
+## [0.40.0] - 2026-08-03
+
+- Add a public `\tool_canvasuplifter\launcher` facade that queues an analyse or
+  build run from a package held as a stored file id, an on-disk file path, or a
+  remote URL, returning the job id to poll. This is the supported entry point
+  for programmatic and bulk callers (for example `tool_automate`'s bulk Canvas
+  import), so they need not reach into `job_manager`, the file-area layout or
+  the adhoc task classes. It lives in the plugin's public namespace (not
+  `local\`) so it can be relied on as an integration surface. The main upload
+  page now drives its own queueing through the same facade, so there is a single
+  create-and-queue path. `queue_job()` requires exactly one package source (a
+  file id or a URL) and throws otherwise, so an invalid call fails immediately
+  rather than leaving a job that can only fail later. Callers remain responsible
+  for their own capability checks: `tool/canvasuplifter:use` for any run, plus
+  `moodle/course:create` on the target category for a build (an analyse run
+  needs no course:create).
+
 ## [0.39.17] - 2026-07-12
 
 - Convert a single-blank Canvas fill-in-the-blank question
