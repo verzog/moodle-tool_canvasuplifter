@@ -48,6 +48,12 @@ class outcome_builder {
     /** @var int[] Ids of the grade_outcomes created, for the post-build link pass. */
     public array $createdids = [];
 
+    /** @var bool Whether the outcomes file was present but unreadable as XML. */
+    public bool $malformedfile = false;
+
+    /** @var array|null Course outcome shortnames already taken (keyed for O(1) lookup); null until loaded. */
+    private ?array $takenshortnames = null;
+
     /**
      * Constructor.
      *
@@ -72,7 +78,9 @@ class outcome_builder {
         if (!is_readable($path)) {
             return 0;
         }
-        $outcomes = (new outcomes_parser())->parse((string) @file_get_contents($path));
+        $parser = new outcomes_parser();
+        $outcomes = $parser->parse((string) @file_get_contents($path));
+        $this->malformedfile = $parser->malformed;
         $created = 0;
         foreach ($outcomes as $model) {
             if ($this->create_outcome($course, $model)) {
@@ -172,7 +180,9 @@ class outcome_builder {
     /**
      * A course-unique outcome shortname derived from the outcome name, suffixed
      * with a counter on collision so a package with same-named outcomes still
-     * imports them all.
+     * imports them all. The course's existing shortnames are read once and the
+     * taken set is kept in memory, so importing many same-named outcomes stays
+     * linear rather than issuing a record_exists() query per candidate.
      *
      * @param stdClass $course Course record.
      * @param string $fullname The outcome name.
@@ -180,13 +190,21 @@ class outcome_builder {
      */
     private function unique_shortname(stdClass $course, string $fullname): string {
         global $DB;
+        if ($this->takenshortnames === null) {
+            $this->takenshortnames = [];
+            $existing = $DB->get_fieldset_select('grade_outcomes', 'shortname', 'courseid = ?', [(int) $course->id]);
+            foreach ($existing as $name) {
+                $this->takenshortnames[$name] = true;
+            }
+        }
         $base = shorten_text(trim($fullname) !== '' ? trim($fullname) : 'outcome', 240);
         $shortname = $base;
         $suffix = 1;
-        while ($DB->record_exists('grade_outcomes', ['courseid' => (int) $course->id, 'shortname' => $shortname])) {
+        while (isset($this->takenshortnames[$shortname])) {
             $suffix++;
             $shortname = $base . ' (' . $suffix . ')';
         }
+        $this->takenshortnames[$shortname] = true;
         return $shortname;
     }
 }

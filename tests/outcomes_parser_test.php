@@ -151,7 +151,15 @@ final class outcomes_parser_test extends \basic_testcase {
     public function test_empty_and_malformed_return_no_outcomes(): void {
         $parser = new outcomes_parser();
         $this->assertSame([], $parser->parse(''));
+        // Empty input isn't a parse failure.
+        $this->assertFalse($parser->malformed);
         $this->assertSame([], $parser->parse('   '));
+        $this->assertFalse($parser->malformed);
+        // Non-empty but unparseable input is flagged as malformed.
         $this->assertSame([], $parser->parse('<learningOutcomes><broken'));
+        $this->assertTrue($parser->malformed);
+        // The flag resets on the next (clean) parse.
+        $this->assertSame([], $parser->parse(''));
+        $this->assertFalse($parser->malformed);
     }
 }

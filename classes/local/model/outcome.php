@@ -40,31 +40,49 @@ class outcome {
     public array $ratings = [];
 
     /**
-     * The rating labels as Moodle scale items: reversed to Moodle's
-     * lowest-to-highest order, commas swapped for a fullwidth comma (Moodle scale
-     * items are comma-delimited with no escaping, and a fullwidth comma can't
-     * collide with the ASCII delimiter or another label's punctuation), blanks
-     * dropped, and deduplicated case-insensitively (Moodle can't tell identical
-     * scale items apart). A usable Moodle scale needs at least two of these.
+     * The rating labels as Moodle scale items, reversed to Moodle's
+     * lowest-to-highest order (Canvas lists them highest-first). A usable Moodle
+     * scale needs at least two of these.
+     *
+     * Two passes handle the fact that Moodle scale items are comma-delimited with
+     * no escaping. First, genuinely identical labels are collapsed
+     * case-insensitively (Moodle can't tell identical items apart). Then commas
+     * are swapped for a fullwidth comma so a label stays a single item; because a
+     * label could itself already contain a fullwidth comma, any label that
+     * collides with one already emitted is suffixed so every distinct mastery
+     * level still survives as its own item.
      *
      * Moodle-free so both the builder and the analyse report can share it.
      *
      * @return array The distinct scale-item labels, low to high.
      */
     public function scale_labels(): array {
-        $items = [];
-        $seen = [];
+        $originals = [];
+        $seenoriginal = [];
         foreach (array_reverse($this->ratings) as $rating) {
-            $label = trim(str_replace(',', "\u{FF0C}", (string) ($rating['description'] ?? '')));
+            $label = trim((string) ($rating['description'] ?? ''));
             if ($label === '') {
                 continue;
             }
             $key = mb_strtolower($label, 'UTF-8');
-            if (isset($seen[$key])) {
+            if (isset($seenoriginal[$key])) {
                 continue;
             }
-            $seen[$key] = true;
-            $items[] = $label;
+            $seenoriginal[$key] = true;
+            $originals[] = $label;
+        }
+        $items = [];
+        $used = [];
+        foreach ($originals as $label) {
+            $item = str_replace(',', "\u{FF0C}", $label);
+            $candidate = $item;
+            $suffix = 1;
+            while (isset($used[mb_strtolower($candidate, 'UTF-8')])) {
+                $suffix++;
+                $candidate = $item . ' (' . $suffix . ')';
+            }
+            $used[mb_strtolower($candidate, 'UTF-8')] = true;
+            $items[] = $candidate;
         }
         return $items;
     }

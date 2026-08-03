@@ -324,6 +324,9 @@ class course_builder {
         if ($outcomebuilder->skippedcount > 0) {
             $warnings[] = get_string('warnoutcomesskipped', 'tool_canvasuplifter', $outcomebuilder->skippedcount);
         }
+        if ($outcomebuilder->malformedfile) {
+            $warnings[] = get_string('warnoutcomesmalformed', 'tool_canvasuplifter');
+        }
         if ($coursemodel->canvasboilerplatedropped > 0) {
             $warnings[] = get_string(
                 'notecanvasboilerplate',

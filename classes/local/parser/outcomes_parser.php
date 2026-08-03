@@ -33,12 +33,21 @@ use tool_canvasuplifter\local\model\outcome;
  */
 class outcomes_parser {
     /**
+     * @var bool Whether the last parse() was handed non-empty content it could
+     *           not load as XML (truncated or malformed) — distinct from a file
+     *           that is simply empty or has no outcomes, so a caller can warn
+     *           rather than treat the outcomes as silently absent.
+     */
+    public bool $malformed = false;
+
+    /**
      * Parse a learning_outcomes.xml document into outcome models.
      *
      * @param string $xml The learning_outcomes.xml contents.
      * @return array List of {@see outcome}, in document order.
      */
     public function parse(string $xml): array {
+        $this->malformed = false;
         $outcomes = [];
         if (trim($xml) === '') {
             return $outcomes;
@@ -49,6 +58,8 @@ class outcomes_parser {
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
         if (!$loaded) {
+            // Non-empty input that won't parse: flag it so the loss is surfaced.
+            $this->malformed = true;
             return $outcomes;
         }
         foreach ($dom->getElementsByTagNameNS('*', 'learningOutcome') as $node) {

@@ -221,6 +221,60 @@ final class outcome_builder_test extends \advanced_testcase {
     }
 
     /**
+     * A label that already contains a fullwidth comma stays distinct from one
+     * whose ASCII comma is normalised to a fullwidth comma: the collider is
+     * suffixed so both mastery levels survive as separate scale items.
+     *
+     * @return void
+     */
+    public function test_fullwidth_comma_collision_is_disambiguated(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<learningOutcomeGroup identifier="g1"><title>G</title><learningOutcomes>'
+            . '<learningOutcome identifier="o1"><title>Collide</title><description></description>'
+            . '<ratings>'
+            . '<rating><description>Meets, with support</description><points>1</points></rating>'
+            . "<rating><description>Meets\u{FF0C} with support</description><points>0</points></rating>"
+            . '</ratings></learningOutcome>'
+            . '</learningOutcomes></learningOutcomeGroup></learningOutcomes>';
+
+        $created = (new outcome_builder($this->package($xml)))->build($course);
+
+        $this->assertSame(1, $created);
+        $outcome = $DB->get_record('grade_outcomes', ['courseid' => $course->id], '*', MUST_EXIST);
+        $scale = $DB->get_record('scale', ['id' => $outcome->scaleid], '*', MUST_EXIST);
+        // Both labels survived as two distinct scale items rather than collapsing.
+        $items = explode(',', $scale->scale);
+        $this->assertCount(2, $items);
+        $this->assertNotSame($items[0], $items[1]);
+    }
+
+    /**
+     * A learning_outcomes.xml that is present but unreadable as XML sets the
+     * malformed flag (so the build can warn) rather than being treated as a
+     * package with no outcomes.
+     *
+     * @return void
+     */
+    public function test_malformed_file_sets_flag_and_creates_nothing(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+
+        $builder = new outcome_builder($this->package('<learningOutcomes><broken'));
+        $created = $builder->build($course);
+
+        $this->assertSame(0, $created);
+        $this->assertTrue($builder->malformedfile);
+        $this->assertSame(0, $DB->count_records('grade_outcomes', ['courseid' => $course->id]));
+    }
+
+    /**
      * An outcome Canvas exported without a title is still imported under a
      * fallback name (with its ratings) rather than being dropped silently.
      *

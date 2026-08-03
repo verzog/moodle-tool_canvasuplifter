@@ -455,7 +455,13 @@ class conversion_report {
         if (!is_readable($path)) {
             return [];
         }
-        $outcomes = (new outcomes_parser())->parse((string) @file_get_contents($path));
+        $parser = new outcomes_parser();
+        $outcomes = $parser->parse((string) @file_get_contents($path));
+        if ($parser->malformed) {
+            // File present but unreadable as XML: flag the total loss rather than
+            // report it as a package with no outcomes.
+            return ['total' => 0, 'importable' => 0, 'skipped' => 0, 'malformed' => true];
+        }
         if (empty($outcomes)) {
             return [];
         }
@@ -467,7 +473,7 @@ class conversion_report {
             }
         }
         $total = count($outcomes);
-        return ['total' => $total, 'importable' => $importable, 'skipped' => $total - $importable];
+        return ['total' => $total, 'importable' => $importable, 'skipped' => $total - $importable, 'malformed' => false];
     }
 
     /**

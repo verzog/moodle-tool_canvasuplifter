@@ -131,6 +131,8 @@ $string['orphansexplain'] = 'These resources are in the package but are not link
     . 'surfaced at the top of the course — so nothing is lost.';
 $string['orphansheading'] = 'Unreferenced resources';
 $string['outcomesheading'] = 'Learning outcomes';
+$string['outcomesmalformed'] = 'The learning_outcomes.xml file is present but could not be read (it appears truncated '
+    . 'or malformed), so no outcomes can be imported from it. Re-export the package if the outcomes matter.';
 $string['outcomessummary'] = '{$a->total} Canvas learning outcome(s) found; {$a->importable} will import as course '
     . 'grade outcomes and {$a->skipped} will be skipped (their ratings do not form a usable scale). Imported '
     . 'outcomes stay hidden until the site\'s "Enable outcomes" advanced setting is turned on.';
@@ -229,6 +231,8 @@ $string['uploadnotfinished'] = 'Upload did not finish!';
 $string['warningsheading'] = 'Notes and warnings';
 $string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';
+$string['warnoutcomesmalformed'] = 'The package\'s learning_outcomes.xml could not be read (it appears truncated or '
+    . 'malformed), so no learning outcomes were imported from it. Re-export the package if the outcomes matter.';
 $string['warnoutcomesskipped'] = 'Skipped {$a} Canvas learning outcome(s) whose mastery ratings did not form a '
     . 'usable scale (Moodle scales need at least two distinct rating labels); recreate those outcomes by hand '
     . 'if needed.';

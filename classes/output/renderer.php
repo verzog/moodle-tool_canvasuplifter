@@ -172,6 +172,9 @@ class renderer extends plugin_renderer_base {
             return '';
         }
         $out = $this->output->heading(get_string('outcomesheading', 'tool_canvasuplifter'), 4);
+        if (!empty($outcomes['malformed'])) {
+            return $out . html_writer::tag('p', get_string('outcomesmalformed', 'tool_canvasuplifter'));
+        }
         $out .= html_writer::tag('p', get_string('outcomessummary', 'tool_canvasuplifter', [
             'total' => (int) ($outcomes['total'] ?? 0),
             'importable' => (int) ($outcomes['importable'] ?? 0),

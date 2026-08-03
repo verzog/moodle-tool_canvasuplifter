@@ -667,6 +667,22 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * A malformed learning_outcomes.xml is flagged in the summary (not reported
+     * as an outcome-free package) so the preview can warn about the loss.
+     *
+     * @return void
+     */
+    public function test_outcomes_summary_flags_malformed_file(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        file_put_contents($dir . '/course_settings/learning_outcomes.xml', '<learningOutcomes><broken');
+
+        $report = (new conversion_report(new course_model(), $dir))->build();
+
+        $this->assertTrue($report['outcomes']['malformed']);
+    }
+
+    /**
      * A recognised question type Moodle would reject (a single-option choice) is
      * counted as not converting, so the "will convert" total stays honest.
      *
