@@ -119,6 +119,9 @@ $string['notecanvasboilerplate'] = 'Dropped {$a} Canvas platform item(s) with no
     . 'links to Canvas\'s documentation, and leftover ANGEL migration objects).';
 $string['notegradeletters'] = 'Imported {$a} letter-grade boundaries from the Canvas grading scheme as this '
     . 'course\'s grade letters.';
+$string['noteoutcomesimported'] = 'Imported {$a} Canvas learning outcome(s) as course grade outcomes, each with a '
+    . 'scale built from its mastery ratings. Outcomes stay hidden until the site\'s "Enable outcomes" advanced '
+    . 'setting is turned on.';
 $string['noterubricsunlinked'] = 'Found {$a} rubric(s) in the package not linked to any activity, so they could '
     . 'not be imported; recreate them on the relevant activities if needed.';
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';
