@@ -195,7 +195,19 @@ class launcher {
         string $pagegrouping = ''
     ): int {
         $fileid = self::store_package($userid, $path, $filename);
-        return self::queue_job($userid, $categoryid, $kind, $fileid, null, $quizfrombank, $pagegrouping);
+        try {
+            return self::queue_job($userid, $categoryid, $kind, $fileid, null, $quizfrombank, $pagegrouping);
+        } catch (\Throwable $e) {
+            // queue_job validates (user, category, ...) and can reject the call
+            // after the package is already stored. Delete the just-stored copy so
+            // a rejected call never leaves an orphaned file in the packages area
+            // with no job to process it, then re-raise the original error.
+            $stored = get_file_storage()->get_file_by_id($fileid);
+            if ($stored) {
+                $stored->delete();
+            }
+            throw $e;
+        }
     }
 
     /**

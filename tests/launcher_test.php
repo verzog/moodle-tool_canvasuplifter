@@ -290,6 +290,33 @@ final class launcher_test extends \advanced_testcase {
     }
 
     /**
+     * When queue_from_path is rejected (here, an unknown user) after the package
+     * is already stored, the stored copy is cleaned up so no orphaned file is
+     * left in the packages area.
+     *
+     * @return void
+     */
+    public function test_queue_from_path_cleans_up_on_rejection(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $category = $this->getDataGenerator()->create_category();
+        $nouser = (int) $DB->get_field_sql('SELECT MAX(id) FROM {user}') + 1000;
+
+        $path = make_request_directory() . '/History 101.imscc';
+        file_put_contents($path, 'PK-not-a-real-zip-but-fine-for-storage');
+        $before = $DB->count_records('files', ['component' => 'tool_canvasuplifter', 'filearea' => 'packages']);
+
+        try {
+            launcher::queue_from_path($nouser, (int) $category->id, job_manager::KIND_ANALYSE, $path);
+            $this->fail('Expected an unknown user to be rejected');
+        } catch (\InvalidArgumentException $e) {
+            $after = $DB->count_records('files', ['component' => 'tool_canvasuplifter', 'filearea' => 'packages']);
+            $this->assertSame($before, $after);
+            $this->assertSame(0, $DB->count_records(job_manager::TABLE));
+        }
+    }
+
+    /**
      * queue_job rejects a call giving both a file id and a URL.
      *
      * @return void
