@@ -245,6 +245,31 @@ final class launcher_test extends \advanced_testcase {
     }
 
     /**
+     * A hostless or otherwise malformed URL is rejected, even when it starts
+     * with http(s):// - the scheme prefix alone is not a fetchable URL.
+     *
+     * @return void
+     */
+    public function test_queue_job_rejects_malformed_urls(): void {
+        global $USER, $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $bad = ['https://', 'http:// bad-host/course.imscc', 'example.com/course.imscc'];
+        foreach ($bad as $url) {
+            try {
+                launcher::queue_from_url((int) $USER->id, (int) $category->id, job_manager::KIND_ANALYSE, $url);
+                $this->fail('Expected malformed URL to be rejected: ' . $url);
+            } catch (\InvalidArgumentException $e) {
+                $this->assertStringContainsString('http(s) URL', $e->getMessage());
+            }
+        }
+        // None of the rejected calls should have created a job.
+        $this->assertSame(0, $DB->count_records(job_manager::TABLE));
+    }
+
+    /**
      * queue_job rejects a call giving both a file id and a URL.
      *
      * @return void
