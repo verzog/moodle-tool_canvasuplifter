@@ -225,6 +225,30 @@ class launcher {
     }
 
     /**
+     * List import jobs, newest first (optionally filtered).
+     *
+     * The public entry point for an import-history view - for example
+     * tool_automate's "Staged Canvas imports" list, which lists a user's analyse
+     * jobs so they can review each report and build it. Exposed here on the
+     * public facade so external callers do not have to reach into the internal
+     * local\job_manager; the returned rows are that plugin's job records.
+     *
+     * @param int|null $userid Only this user's jobs, or null for all.
+     * @param string|null $kind One of job_manager::KIND_*, or null for all.
+     * @param string|null $status One of job_manager::STATUS_*, or null for all.
+     * @param int $limit Maximum rows (0 = no limit).
+     * @return array Job records keyed by id, newest first.
+     */
+    public static function list_jobs(
+        ?int $userid = null,
+        ?string $kind = null,
+        ?string $status = null,
+        int $limit = 0
+    ): array {
+        return (new job_manager())->list_jobs($userid, $kind, $status, $limit);
+    }
+
+    /**
      * Copy an on-disk package into the plugin's 'packages' file area.
      *
      * @param int $userid Owner of the stored file (itemid).

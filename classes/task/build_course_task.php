@@ -33,6 +33,15 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  */
 class build_course_task extends package_job_task {
     /**
+     * Human-readable name shown in Server > Tasks > Task logs.
+     *
+     * @return string
+     */
+    public function get_name(): string {
+        return get_string('taskbuild', 'tool_canvasuplifter');
+    }
+
+    /**
      * Run the build.
      */
     public function execute(): void {

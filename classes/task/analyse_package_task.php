@@ -35,6 +35,15 @@ use tool_canvasuplifter\local\report\conversion_report;
  */
 class analyse_package_task extends package_job_task {
     /**
+     * Human-readable name shown in Server > Tasks > Task logs.
+     *
+     * @return string
+     */
+    public function get_name(): string {
+        return get_string('taskanalyse', 'tool_canvasuplifter');
+    }
+
+    /**
      * Run the analysis.
      *
      * @return void

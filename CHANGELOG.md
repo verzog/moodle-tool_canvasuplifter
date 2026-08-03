@@ -5,6 +5,20 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.42.0] - 2026-08-03
+
+- Add a job-listing API so a caller can list a user's import jobs (newest first,
+  filterable by kind/status) — the supported way for an import history view such
+  as `tool_automate`'s "Staged Canvas imports" list to find the analyse jobs a
+  user has staged for a later build. It is exposed on the public
+  `\tool_canvasuplifter\launcher` facade (`launcher::list_jobs()`), backed by
+  `job_manager::list_jobs()`, so external callers stay off the internal `local\`
+  namespace. Ordered by `timecreated`, then `id`, so jobs created in the same
+  second (common in a bulk import) stay deterministically newest-first.
+- Give the analyse and build adhoc tasks human-readable names in *Server > Tasks
+  > Task logs* ("Analyse Canvas package" / "Build course from Canvas package")
+  instead of showing their class names.
+
 ## [0.41.0] - 2026-08-03
 
 - Import Canvas learning outcomes (`course_settings/learning_outcomes.xml`) as
