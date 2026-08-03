@@ -156,6 +156,68 @@ Background on how Canvas ships quizzes — and why some arrive without questions
   GUI import. This doesn't affect importing *into Moodle*, but matters if you ever
   round-trip content back to Canvas.
 
+## Bulk migrations (driving Canvas Uplifter from Automate)
+
+For sites moving **many** courses off Canvas at once, the sibling
+[`tool_automate`](https://github.com/verzog/moodle-tool_automate) ("Automate")
+plugin can drive Canvas Uplifter in bulk. Canvas Uplifter still works entirely
+on its own — this is an optional integration that Automate switches on only when
+this plugin is installed.
+
+From *Automate > Bulk Canvas import* (or its `cli/import_canvas.php`), an admin
+feeds in packages from either or both of:
+
+- a **pasted list of Canvas backup download URLs**, one per line — each fetched
+  in the background through the same SSRF-aware `\curl` layer described above; and
+- a **server directory of `.imscc`/`.zip` packages** (a staging area).
+
+Each package becomes one background Canvas Uplifter job, throttled by this
+plugin's own task concurrency, so a directory or URL list of hundreds of courses
+cannot block the request or starve cron. Each job is either **built now** (a new
+course per package) or **analysed for later** (a conversion report an admin
+reviews before building the course from Canvas Uplifter's status page).
+
+Packages staged with *Analyse for later* are listed under *Automate > Staged
+Canvas imports*, which shows how much space the stored packages occupy and lets
+an admin **selectively delete** finished imports to reclaim it — deleting frees
+the stored `.imscc` package but keeps any course a build already created.
+
+A printable, step-by-step walkthrough of this whole flow — enabling the
+feature, preparing packages, running a bulk import, and reviewing/building the
+staged jobs — is in
+[`docs/bulk-canvas-migration-howto.pdf`](docs/bulk-canvas-migration-howto.pdf).
+
+### Integration API — `\tool_canvasuplifter\launcher`
+
+That whole flow rides on a small **public facade**,
+`\tool_canvasuplifter\launcher`, which is the supported entry point for other
+code to drive the pipeline without reaching into the plugin's `local\` classes.
+The upload page (`index.php`) uses it too, so callers get exactly the same
+create-a-job-and-queue-a-task contract. Callers are responsible for their own
+capability checks first — every caller must enforce `tool/canvasuplifter:use`,
+and a *build* additionally needs `moodle/course:create` on the target category.
+
+| Method | Purpose |
+|---|---|
+| `queue_from_url($userid, $categoryid, $kind, $url, $quizfrombank = false, $pagegrouping = '')` | Queue an analyse/build for a remote package URL (fetched in the task). |
+| `queue_from_path($userid, $categoryid, $kind, $path, $filename = '', …)` | Store an on-disk package into this plugin's file area, then queue a job for it. |
+| `queue_job($userid, $categoryid, $kind, $fileid = null, $packageurl = null, …)` | Lowest-level queue; pass exactly one of a stored `$fileid` or a `$packageurl`. |
+| `list_jobs($userid = null, $kind = null, $status = null, $limit = 0)` | List import jobs, newest first, filterable by user/kind/status — powers an import-history view. |
+| `delete_job($jobid, $userid = null)` | Delete a **finished** job and free its stored package when no other job shares it (a built course is left in place); refuses another user's job. |
+| `package_storage_used($userid = null)` | Total bytes of the stored `.imscc` packages, for a storage counter (per-user when `$userid` is given). |
+| `store_package($userid, $path, $filename = '')` | Copy an on-disk package into the plugin's `packages` file area, returning the stored file id. |
+| `is_fetchable_url($url)` | Whether a string is an absolute `http(s)` URL with a host (the same check the queue methods apply). |
+
+`$kind` is `job_manager::KIND_ANALYSE` (`'analyse'`) or `KIND_BUILD` (`'build'`).
+Each call returns a **job id**; poll `\tool_canvasuplifter\local\job_manager::get()`
+for that job's status (`queued` / `running` / `done` / `failed`), progress and, for
+a completed build, the created `courseid`. `delete_job()` and `queue_job()`
+serialise on a per-package lock, so a build queued from an analyse job's stored
+package can never race that package's deletion. Because the facade lives in the
+plugin's public namespace, a caller should guard it with `class_exists()` /
+`method_exists()` (as Automate does) rather than a hard plugin dependency, so the
+caller keeps working when Canvas Uplifter is absent or older.
+
 ## How it's built
 
 A pipeline kept in separate, testable pieces:
