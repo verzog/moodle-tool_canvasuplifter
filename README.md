@@ -171,16 +171,23 @@ feeds in packages from either or both of:
   in the background through the same SSRF-aware `\curl` layer described above; and
 - a **server directory of `.imscc`/`.zip` packages** (a staging area).
 
-Each package becomes one background Canvas Uplifter job, throttled by this
-plugin's own task concurrency, so a directory or URL list of hundreds of courses
-cannot block the request or starve cron. Each job is either **built now** (a new
-course per package) or **analysed for later** (a conversion report an admin
-reviews before building the course from Canvas Uplifter's status page).
+Each package becomes one background Canvas Uplifter adhoc task, so nothing is
+converted inside the web request — a directory or URL list of hundreds of
+courses is queued instantly and then worked through by cron rather than timing
+out the page. The tasks run under Moodle's ordinary site-wide adhoc-task
+scheduling; the plugin does **not** add its own concurrency cap, so how many run
+at once is governed by your `Site administration > Server > Tasks` worker
+configuration. Each job is either **built now** (a new course per package) or
+**analysed for later** (a conversion report an admin reviews before building the
+course from Canvas Uplifter's status page).
 
 Packages staged with *Analyse for later* are listed under *Automate > Staged
 Canvas imports*, which shows how much space the stored packages occupy and lets
-an admin **selectively delete** finished imports to reclaim it — deleting frees
-the stored `.imscc` package but keeps any course a build already created.
+an admin **selectively delete** finished imports to reclaim it. Deleting a
+finished job frees its stored `.imscc` package **once no other job still
+references it** — an analyse job and any build made from it share one stored
+package, so the space is reclaimed only when the last job pointing at it is
+deleted — while any course a build already created is left in place.
 
 A printable, step-by-step walkthrough of this whole flow — enabling the
 feature, preparing packages, running a bulk import, and reviewing/building the
@@ -203,17 +210,21 @@ and a *build* additionally needs `moodle/course:create` on the target category.
 | `queue_from_path($userid, $categoryid, $kind, $path, $filename = '', …)` | Store an on-disk package into this plugin's file area, then queue a job for it. |
 | `queue_job($userid, $categoryid, $kind, $fileid = null, $packageurl = null, …)` | Lowest-level queue; pass exactly one of a stored `$fileid` or a `$packageurl`. |
 | `list_jobs($userid = null, $kind = null, $status = null, $limit = 0)` | List import jobs, newest first, filterable by user/kind/status — powers an import-history view. |
-| `delete_job($jobid, $userid = null)` | Delete a **finished** job and free its stored package when no other job shares it (a built course is left in place); refuses another user's job. |
+| `delete_job($jobid, $userid = null)` | Delete a **finished** job and free its stored package when no other job shares it (a built course is left in place). **Pass the authenticated `$userid`** to enforce ownership — with the one-argument form the ownership check is skipped, so an integration exposing deletion by job id must supply it. |
 | `package_storage_used($userid = null)` | Total bytes of the stored `.imscc` packages, for a storage counter (per-user when `$userid` is given). |
 | `store_package($userid, $path, $filename = '')` | Copy an on-disk package into the plugin's `packages` file area, returning the stored file id. |
 | `is_fetchable_url($url)` | Whether a string is an absolute `http(s)` URL with a host (the same check the queue methods apply). |
 
 `$kind` is `job_manager::KIND_ANALYSE` (`'analyse'`) or `KIND_BUILD` (`'build'`).
-Each call returns a **job id**; poll `\tool_canvasuplifter\local\job_manager::get()`
+The three **queue** methods (`queue_from_url`, `queue_from_path`, `queue_job`)
+each return a new **job id**; poll `\tool_canvasuplifter\local\job_manager::get()`
 for that job's status (`queued` / `running` / `done` / `failed`), progress and, for
-a completed build, the created `courseid`. `delete_job()` and `queue_job()`
-serialise on a per-package lock, so a build queued from an analyse job's stored
-package can never race that package's deletion. Because the facade lives in the
+a completed build, the created `courseid`. The other methods return their own
+types, as the table shows (`list_jobs` an array of job records, `delete_job` and
+`is_fetchable_url` a bool, `package_storage_used` a byte count, `store_package` a
+stored-file id) — don't pass those to `job_manager::get()`. `delete_job()` and
+`queue_job()` serialise on a per-package lock, so a build queued from an analyse
+job's stored package can never race that package's deletion. Because the facade lives in the
 plugin's public namespace, a caller should guard it with `class_exists()` /
 `method_exists()` (as Automate does) rather than a hard plugin dependency, so the
 caller keeps working when Canvas Uplifter is absent or older.
