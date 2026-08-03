@@ -66,6 +66,39 @@ final class question_xml_writer_test extends \advanced_testcase {
     }
 
     /**
+     * A text-only stimulus item (Canvas New Quizzes text_only_question) renders
+     * as a Moodle <question type="description"> — its question text, no answers.
+     *
+     * @return void
+     */
+    public function test_writes_description(): void {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_DESCRIPTION;
+        $q->name = 'Read this';
+        $q->questiontext = '<p>Some stimulus text</p>';
+        // The parser defaults an unscored item to 1.0; the writer must zero it.
+        $q->defaultmark = 1.0;
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], '$course$/Imported/Bank');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml), 'output should be well-formed XML');
+        $types = [];
+        foreach ($dom->getElementsByTagName('question') as $node) {
+            $types[] = $node->getAttribute('type');
+        }
+        $this->assertSame(['category', 'description'], $types);
+        $this->assertStringContainsString('Some stimulus text', $xml);
+        // A description has no answers or single flag.
+        $this->assertSame(0, $dom->getElementsByTagName('answer')->length);
+        $this->assertStringNotContainsString('<single>', $xml);
+        // It carries no mark — the parser's default 1.0 must not inflate the quiz
+        // maximum grade, since a description cannot be answered.
+        $grades = $dom->getElementsByTagName('defaultgrade');
+        $this->assertSame('0.0000000', $grades->item(0)->textContent);
+    }
+
+    /**
      * Matching questions render as a Moodle <question type="matching"> with one
      * <subquestion> per pair (the distractor carried as an answer-only row), the
      * shuffle flag and the combined feedback — and the document stays well-formed.
