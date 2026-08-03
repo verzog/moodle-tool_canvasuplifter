@@ -207,9 +207,10 @@ and a *build* additionally needs `moodle/course:create` on the target category.
 | Method | Purpose |
 |---|---|
 | `queue_from_url($userid, $categoryid, $kind, $url, $quizfrombank = false, $pagegrouping = '')` | Queue an analyse/build for a remote package URL (fetched in the task). |
-| `queue_from_path($userid, $categoryid, $kind, $path, $filename = '', …)` | Store an on-disk package into this plugin's file area, then queue a job for it. |
+| `queue_from_path($userid, $categoryid, $kind, $path, $filename = '', …)` | Store an on-disk package into this plugin's file area, then queue a job for it. **Copies the file synchronously** (see below). |
 | `queue_job($userid, $categoryid, $kind, $fileid = null, $packageurl = null, …)` | Lowest-level queue; pass exactly one of a stored `$fileid` or a `$packageurl`. |
 | `list_jobs($userid = null, $kind = null, $status = null, $limit = 0)` | List import jobs, newest first, filterable by user/kind/status — powers an import-history view. |
+| `get_job($jobid)` | Fetch one job's current record (status/progress/`courseid`) for polling, or `null` if it no longer exists. |
 | `delete_job($jobid, $userid = null)` | Delete a **finished** job and free its stored package when no other job shares it (a built course is left in place). **Pass the authenticated `$userid`** to enforce ownership — with the one-argument form the ownership check is skipped, so an integration exposing deletion by job id must supply it. |
 | `package_storage_used($userid = null)` | Total bytes of the stored `.imscc` packages, for a storage counter (per-user when `$userid` is given). |
 | `store_package($userid, $path, $filename = '')` | Copy an on-disk package into the plugin's `packages` file area, returning the stored file id. |
@@ -217,12 +218,19 @@ and a *build* additionally needs `moodle/course:create` on the target category.
 
 `$kind` is `job_manager::KIND_ANALYSE` (`'analyse'`) or `KIND_BUILD` (`'build'`).
 The three **queue** methods (`queue_from_url`, `queue_from_path`, `queue_job`)
-each return a new **job id**; poll `\tool_canvasuplifter\local\job_manager::get()`
+each return a new **job id**; poll `\tool_canvasuplifter\launcher::get_job($jobid)`
 for that job's status (`queued` / `running` / `done` / `failed`), progress and, for
 a completed build, the created `courseid`. The other methods return their own
 types, as the table shows (`list_jobs` an array of job records, `delete_job` and
 `is_fetchable_url` a bool, `package_storage_used` a byte count, `store_package` a
-stored-file id) — don't pass those to `job_manager::get()`. `delete_job()` and
+stored-file id) — those are not job ids, so don't feed them back to `get_job()`.
+
+`queue_from_path()` (and `store_package()`) copy the package into Moodle file
+storage **synchronously**, in the calling request — the deferred-to-cron part is
+the *conversion*, not the staging. A caller importing many local packages at once
+should therefore call them from its own background task rather than looping in a
+web request; that is exactly what Automate's bulk import does, which is why its
+page returns immediately even for a large directory. `delete_job()` and
 `queue_job()` serialise on a per-package lock, so a build queued from an analyse
 job's stored package can never race that package's deletion. Because the facade lives in the
 plugin's public namespace, a caller should guard it with `class_exists()` /

@@ -266,6 +266,23 @@ class launcher {
     }
 
     /**
+     * Fetch one import job's current record, for status polling.
+     *
+     * The public counterpart to the job id the queue_* methods return: a caller
+     * polls this for the job's status (queued/running/done/failed), progress and,
+     * for a completed build, the created courseid - without having to reach into
+     * the internal local\job_manager. Returns null when the job does not exist
+     * (for example after delete_job()).
+     *
+     * @param int $jobid Job id, as returned by a queue_* method.
+     * @return \stdClass|null The job record, or null if there is no such job.
+     */
+    public static function get_job(int $jobid): ?\stdClass {
+        $job = (new job_manager())->get($jobid);
+        return $job ?: null;
+    }
+
+    /**
      * Delete a finished import job and free its stored package, to reclaim space.
      *
      * Removes the job row and, when no other job still references it, the stored

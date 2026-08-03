@@ -173,6 +173,35 @@ final class launcher_test extends \advanced_testcase {
     }
 
     /**
+     * get_job returns a queued job's record for status polling, and null once
+     * the job no longer exists.
+     *
+     * @return void
+     */
+    public function test_get_job_returns_the_record_then_null(): void {
+        global $USER;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $jobid = launcher::queue_from_url(
+            (int) $USER->id,
+            (int) $category->id,
+            job_manager::KIND_ANALYSE,
+            'https://example.com/c.imscc'
+        );
+
+        $job = launcher::get_job($jobid);
+        $this->assertNotNull($job);
+        $this->assertSame($jobid, (int) $job->id);
+        $this->assertSame(job_manager::KIND_ANALYSE, $job->kind);
+        $this->assertSame(job_manager::STATUS_QUEUED, $job->status);
+
+        // A non-existent job id yields null, not false.
+        $this->assertNull(launcher::get_job($jobid + 9999));
+    }
+
+    /**
      * delete_job removes a finished job and frees its stored package, refuses a
      * job that is not yet finished, and refuses another user's job.
      *

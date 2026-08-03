@@ -5,6 +5,17 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.44.0] - 2026-08-03
+
+- Add `launcher::get_job()` to the public facade, so a caller can poll an import
+  job's status/progress/`courseid` through the facade instead of reaching into
+  `local\job_manager` (whose `get()` is a non-static instance method). Completes
+  the queue/list/get/delete/storage surface a bulk driver such as `tool_automate`
+  needs.
+- Document the bulk-migration integration and the full `launcher` facade in the
+  README, and add `docs/bulk-canvas-migration-howto.pdf`, a step-by-step
+  administrator guide for large-scale Canvas migrations.
+
 ## [0.43.0] - 2026-08-03
 
 - Add `launcher::delete_job()` and `launcher::package_storage_used()` to the
