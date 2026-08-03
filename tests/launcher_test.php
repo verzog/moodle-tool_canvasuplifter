@@ -61,7 +61,7 @@ final class launcher_test extends \advanced_testcase {
             (int) $USER->id,
             (int) $category->id,
             job_manager::KIND_BUILD,
-            'https://example.com/course.imscc',
+            '  https://example.com/course.imscc  ',
             true,
             'book'
         );
@@ -69,6 +69,7 @@ final class launcher_test extends \advanced_testcase {
         $job = (new job_manager())->get($jobid);
         $this->assertSame(job_manager::KIND_BUILD, $job->kind);
         $this->assertSame(job_manager::STATUS_QUEUED, $job->status);
+        // The stored URL is trimmed, so curl never sees stray whitespace.
         $this->assertSame('https://example.com/course.imscc', $job->packageurl);
         $this->assertNull($job->fileid);
         $this->assertEquals($category->id, $job->categoryid);
@@ -164,6 +165,42 @@ final class launcher_test extends \advanced_testcase {
             $this->assertSame(0, $DB->count_records(job_manager::TABLE));
             $this->assertCount(0, \core\task\manager::get_adhoc_tasks(analyse_package_task::class));
         }
+    }
+
+    /**
+     * A non-positive file id (the conventional 0 sentinel) is not a package
+     * source, so a call giving only that and no URL is rejected.
+     *
+     * @return void
+     */
+    public function test_queue_job_rejects_zero_fileid(): void {
+        global $USER, $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $this->expectException(\InvalidArgumentException::class);
+        try {
+            launcher::queue_job((int) $USER->id, (int) $category->id, job_manager::KIND_BUILD, 0, null);
+        } finally {
+            $this->assertSame(0, $DB->count_records(job_manager::TABLE));
+        }
+    }
+
+    /**
+     * A URL that is only whitespace is not a source, and is rejected rather than
+     * stored and handed to curl to fail later.
+     *
+     * @return void
+     */
+    public function test_queue_job_rejects_blank_url(): void {
+        global $USER;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $this->expectException(\InvalidArgumentException::class);
+        launcher::queue_from_url((int) $USER->id, (int) $category->id, job_manager::KIND_ANALYSE, "   ");
     }
 
     /**

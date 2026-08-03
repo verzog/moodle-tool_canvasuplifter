@@ -81,15 +81,22 @@ class launcher {
         bool $quizfrombank = false,
         string $pagegrouping = ''
     ): int {
+        // Normalise the two possible sources to "present or not". A file id is
+        // only real when positive - the conventional optional-id sentinel 0 (or
+        // a negative id) is not a package. A URL is only real when non-empty
+        // once trimmed, and the trimmed form is what gets stored and later handed
+        // to curl, so leading/trailing whitespace can't slip through.
+        $fileid = ($fileid !== null && $fileid > 0) ? $fileid : null;
+        $url = ($packageurl !== null && trim($packageurl) !== '') ? trim($packageurl) : null;
+
         // Exactly one source must be supplied. With neither, the task would
-        // resolve file id 0 and fail asynchronously with a confusing error;
+        // resolve a missing file and fail asynchronously with a confusing error;
         // with both, the stored file would win while build fallback naming
         // preferred the unrelated URL. Reject both cases up front so an invalid
         // call fails immediately instead of leaving a misleading job record.
-        $url = ($packageurl !== null && trim($packageurl) !== '') ? $packageurl : null;
         if (($fileid === null) === ($url === null)) {
             throw new \InvalidArgumentException(
-                'launcher: pass exactly one of $fileid or $packageurl'
+                'launcher: pass exactly one of $fileid (positive) or $packageurl (non-empty)'
             );
         }
 
