@@ -140,7 +140,24 @@ class launcher {
         $kind = self::normalise_kind($kind);
 
         $jobs = new job_manager();
-        $jobid = $jobs->create($userid, $categoryid, $kind, $fileid, $url);
+        if ($fileid !== null) {
+            // Insert the job row under the same per-file lock delete_job() takes,
+            // re-checking the package still exists first: a concurrent delete_job()
+            // could have freed it since the validation above, and the lock keeps it
+            // from being freed between this check and the insert - so the new job
+            // can never reference a package that has just been deleted.
+            $fid = $fileid;
+            $jobid = self::with_package_lock($fid, function () use ($jobs, $userid, $categoryid, $kind, $fid) {
+                if (!get_file_storage()->get_file_by_id($fid)) {
+                    throw new \InvalidArgumentException(
+                        'launcher: $fileid must be an existing tool_canvasuplifter package file owned by the user'
+                    );
+                }
+                return $jobs->create($userid, $categoryid, $kind, $fid, null);
+            });
+        } else {
+            $jobid = $jobs->create($userid, $categoryid, $kind, null, $url);
+        }
 
         $task = $kind === job_manager::KIND_BUILD ? new build_course_task() : new analyse_package_task();
         $task->set_custom_data([
@@ -246,6 +263,120 @@ class launcher {
         int $limit = 0
     ): array {
         return (new job_manager())->list_jobs($userid, $kind, $status, $limit);
+    }
+
+    /**
+     * Delete a finished import job and free its stored package, to reclaim space.
+     *
+     * Removes the job row and, when no other job still references it, the stored
+     * .imscc package (the space-consuming part). A course a build already created
+     * is left in place - this frees cached package storage, it does not undo an
+     * import. Only a finished (done/failed) job is deleted, so this never races a
+     * queued or running task; when $userid is given, the job must belong to that
+     * user.
+     *
+     * @param int $jobid Job id.
+     * @param int|null $userid Require the job to belong to this user, or null to skip the check.
+     * @return bool True if a job was deleted; false if it is missing, not the
+     *              user's, or not yet finished.
+     */
+    public static function delete_job(int $jobid, ?int $userid = null): bool {
+        global $DB;
+        $jobs = new job_manager();
+        $job = $jobs->get($jobid);
+        if (!$job) {
+            return false;
+        }
+        if ($userid !== null && (int) $job->userid !== $userid) {
+            return false;
+        }
+        // Only a finished job is safe to delete. A queued or running job's adhoc
+        // task would otherwise run - or finish - against a now-missing row: a
+        // running URL job could store an orphaned package after the row is gone,
+        // and a queued job's task would fail loading the deleted row.
+        if ($job->status !== job_manager::STATUS_DONE && $job->status !== job_manager::STATUS_FAILED) {
+            return false;
+        }
+        // Free the stored package only when no other job still references it. The
+        // "Build this course" flow builds from the analyse job's stored file, so
+        // the analyse and build jobs share a fileid; deleting one must not pull
+        // the package out from under the other. The reference check, the file
+        // delete and this job's row delete all run under a per-file lock (which
+        // queue_job() also takes) so they are atomic against a build being queued
+        // for the same package or a parallel delete of a sharing job - otherwise
+        // a job could be left with a dead fileid, or the package orphaned.
+        if (!empty($job->fileid)) {
+            $fileid = (int) $job->fileid;
+            self::with_package_lock($fileid, function () use ($DB, $jobs, $fileid, $jobid) {
+                $shared = $DB->record_exists_select(
+                    job_manager::TABLE,
+                    'fileid = :fileid AND id <> :id',
+                    ['fileid' => $fileid, 'id' => $jobid]
+                );
+                if (!$shared) {
+                    $file = get_file_storage()->get_file_by_id($fileid);
+                    if ($file) {
+                        $file->delete();
+                    }
+                }
+                // Delete the row inside the lock, before releasing it, so a
+                // concurrent delete of a sharing job sees this row already gone
+                // and correctly frees the now-unreferenced package.
+                $jobs->delete($jobid);
+            });
+        } else {
+            $jobs->delete($jobid);
+        }
+        return true;
+    }
+
+    /**
+     * Run a callback while holding an exclusive lock for one stored package.
+     *
+     * Serialises delete_job()'s reference-count-check-and-free against
+     * queue_job()'s validate-file-then-insert-job for the same stored file,
+     * closing the window where a build queued from an analyse job's package could
+     * race that package's deletion (leaving a job with a dead fileid, or orphaning
+     * the package when two sharing jobs are deleted at once). The lock is keyed on
+     * the file id, so unrelated packages never contend.
+     *
+     * @param int $fileid Stored package file id to lock on.
+     * @param callable $fn Work to run under the lock; its return value is returned.
+     * @return mixed Whatever $fn returns.
+     * @throws \moodle_exception When the lock cannot be acquired in time.
+     */
+    protected static function with_package_lock(int $fileid, callable $fn) {
+        $factory = \core\lock\lock_config::get_lock_factory('tool_canvasuplifter_packages');
+        $lock = $factory->get_lock('package_' . $fileid, 10);
+        if (!$lock) {
+            throw new \moodle_exception('locktimeout', 'core');
+        }
+        try {
+            return $fn();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Total size, in bytes, of the stored .imscc packages this plugin holds.
+     *
+     * Sums the package file area so a UI can show how much space staged imports
+     * are using. Directory placeholder rows are excluded; when $userid is given,
+     * only that user's packages are counted.
+     *
+     * @param int|null $userid Only this user's packages, or null for all.
+     * @return int Total bytes.
+     */
+    public static function package_storage_used(?int $userid = null): int {
+        global $DB;
+        $where = "component = :component AND filearea = :filearea AND filename <> '.'";
+        $params = ['component' => 'tool_canvasuplifter', 'filearea' => self::PACKAGE_FILEAREA];
+        if ($userid !== null) {
+            $where .= ' AND itemid = :itemid';
+            $params['itemid'] = $userid;
+        }
+        return (int) $DB->get_field_sql("SELECT COALESCE(SUM(filesize), 0) FROM {files} WHERE {$where}", $params);
     }
 
     /**
