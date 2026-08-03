@@ -28,5 +28,5 @@ $plugin->component = 'tool_canvasuplifter';
 $plugin->version   = 2026080302;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // job_manager::list_jobs() helper; friendly adhoc task names in the logs.
+$plugin->maturity  = MATURITY_ALPHA;  // Add a job listing helper and friendly adhoc task names in the logs.
 $plugin->release   = '0.42.0';
