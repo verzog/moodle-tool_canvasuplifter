@@ -304,13 +304,17 @@ final class launcher_test extends \advanced_testcase {
 
         $path = make_request_directory() . '/History 101.imscc';
         file_put_contents($path, 'PK-not-a-real-zip-but-fine-for-storage');
-        $before = $DB->count_records('files', ['component' => 'tool_canvasuplifter', 'filearea' => 'packages']);
+        // Count real package files only: the file API also stores directory
+        // placeholder rows (filename '.') that delete() leaves behind.
+        $select = "component = :c AND filearea = :a AND filename <> '.'";
+        $params = ['c' => 'tool_canvasuplifter', 'a' => launcher::PACKAGE_FILEAREA];
+        $before = $DB->count_records_select('files', $select, $params);
 
         try {
             launcher::queue_from_path($nouser, (int) $category->id, job_manager::KIND_ANALYSE, $path);
             $this->fail('Expected an unknown user to be rejected');
         } catch (\InvalidArgumentException $e) {
-            $after = $DB->count_records('files', ['component' => 'tool_canvasuplifter', 'filearea' => 'packages']);
+            $after = $DB->count_records_select('files', $select, $params);
             $this->assertSame($before, $after);
             $this->assertSame(0, $DB->count_records(job_manager::TABLE));
         }
