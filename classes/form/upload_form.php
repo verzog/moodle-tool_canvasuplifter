@@ -276,7 +276,9 @@ class upload_form extends moodleform {
             $errors['packagefile'] = get_string('errornosource', 'tool_canvasuplifter');
         } else if ($sources > 1) {
             $errors['packageurl'] = get_string('errorbothsources', 'tool_canvasuplifter');
-        } else if ($hasurl && !preg_match('#^https?://#i', $data['packageurl'])) {
+        } else if ($hasurl && !\tool_canvasuplifter\launcher::is_fetchable_url(trim((string) $data['packageurl']))) {
+            // Validate the same way the launcher does, so a URL that passes the
+            // form never trips the launcher's guard (which throws) downstream.
             $errors['packageurl'] = get_string('errorbadurl', 'tool_canvasuplifter');
         }
         return $errors;

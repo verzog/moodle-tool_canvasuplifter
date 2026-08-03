@@ -112,6 +112,11 @@ if ($data = $form->get_data()) {
         $error = get_string_manager()->string_exists($key, 'tool_canvasuplifter')
             ? get_string($key, 'tool_canvasuplifter')
             : $e->getMessage();
+    } catch (\InvalidArgumentException $e) {
+        // A malformed URL or other bad source slipped past form validation and
+        // the launcher rejected it. Show a friendly error rather than letting
+        // the exception surface as an uncaught-exception page.
+        $error = get_string('errorbadurl', 'tool_canvasuplifter');
     } finally {
         // On success redirect() has already exited; this only runs if queuing
         // failed after a file was resolved.

@@ -116,6 +116,13 @@ class launcher {
             throw new \InvalidArgumentException('launcher: no stored file with id ' . $fileid);
         }
 
+        // The run executes as this user (the tasks load it with MUST_EXIST). An
+        // unknown id would otherwise leave a job stuck "running" when that lookup
+        // throws outside the task's failure handling; reject it up front.
+        if (!\core_user::get_user($userid)) {
+            throw new \InvalidArgumentException('launcher: unknown user id ' . $userid);
+        }
+
         $kind = self::normalise_kind($kind);
 
         $jobs = new job_manager();
@@ -234,20 +241,26 @@ class launcher {
     }
 
     /**
-     * Is this a syntactically valid, absolute http(s) URL with a host?
+     * Is this a structurally valid, absolute http(s) URL with a host?
      *
      * A prefix check alone would pass hostless or malformed values (e.g.
-     * "https://" or "http:// bad-host"); this parses the URL and requires an
-     * http/https scheme and a non-empty host, matching what url_fetcher's curl
-     * call needs to succeed.
+     * "https://" or "http:// bad-host"); this requires the value to pass PHP's
+     * URL filter and to parse to an http/https scheme with a non-empty host.
+     * This is a structural gate only: whether the host actually resolves and is
+     * reachable is left to url_fetcher and the site's cURL security layer at
+     * fetch time (and such a failure is reported on the job, not silent). It is
+     * public so the upload form can validate the URL field the same way.
      *
      * @param string $url Candidate URL (already trimmed).
      * @return bool
      */
-    private static function is_fetchable_url(string $url): bool {
+    public static function is_fetchable_url(string $url): bool {
         // A space (or other whitespace) inside the value is never valid in a URL
         // and parse_url tolerates some of it, so reject it outright first.
         if (preg_match('/\s/', $url)) {
+            return false;
+        }
+        if (filter_var($url, FILTER_VALIDATE_URL) === false) {
             return false;
         }
         $parts = parse_url($url);

@@ -270,6 +270,26 @@ final class launcher_test extends \advanced_testcase {
     }
 
     /**
+     * A run for an unknown user id is rejected up front, rather than queueing a
+     * job that the task later cannot set up a user for (leaving it stuck).
+     *
+     * @return void
+     */
+    public function test_queue_job_rejects_unknown_user(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $category = $this->getDataGenerator()->create_category();
+        $nouser = (int) $DB->get_field_sql('SELECT MAX(id) FROM {user}') + 1000;
+
+        $this->expectException(\InvalidArgumentException::class);
+        try {
+            launcher::queue_from_url($nouser, (int) $category->id, job_manager::KIND_ANALYSE, 'https://e.edu/c.imscc');
+        } finally {
+            $this->assertSame(0, $DB->count_records(job_manager::TABLE));
+        }
+    }
+
+    /**
      * queue_job rejects a call giving both a file id and a URL.
      *
      * @return void
