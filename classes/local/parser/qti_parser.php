@@ -196,6 +196,10 @@ class qti_parser {
                 return qti_question::TYPE_SHORTANSWER;
             case 'essay_question':
                 return qti_question::TYPE_ESSAY;
+            case 'text_only_question':
+                // A New Quizzes "text (no question)" stimulus item — no response,
+                // just content — maps to a Moodle description.
+                return qti_question::TYPE_DESCRIPTION;
             case 'matching_question':
                 return qti_question::TYPE_MATCHING;
             case 'multiple_dropdowns_question':

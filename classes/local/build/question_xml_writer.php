@@ -80,13 +80,17 @@ class question_xml_writer {
         $mtype = $q->type === qti_question::TYPE_SHORTANSWER ? 'shortanswer'
             : ($q->type === qti_question::TYPE_ESSAY ? 'essay'
             : ($q->type === qti_question::TYPE_MATCHING ? 'matching'
-            : ($q->type === qti_question::TYPE_TRUEFALSE ? 'truefalse' : 'multichoice')));
+            : ($q->type === qti_question::TYPE_DESCRIPTION ? 'description'
+            : ($q->type === qti_question::TYPE_TRUEFALSE ? 'truefalse' : 'multichoice'))));
 
         $body = "  <question type=\"$mtype\">\n";
         $body .= "    <name><text>" . htmlspecialchars($this->plain($q->name), ENT_XML1) . "</text></name>\n";
         $body .= "    " . $this->htmlblock('questiontext', $q->questiontext, $imagedir) . "\n";
         $body .= "    " . $this->htmlblock('generalfeedback', $q->generalfeedback, $imagedir) . "\n";
-        $body .= "    <defaultgrade>" . number_format(max(0.0, $q->defaultmark), 7, '.', '') . "</defaultgrade>\n";
+        // A description cannot be answered, so it must carry no mark — otherwise
+        // the parser's default 1.0 would inflate the quiz's maximum grade.
+        $grade = $mtype === 'description' ? 0.0 : max(0.0, $q->defaultmark);
+        $body .= "    <defaultgrade>" . number_format($grade, 7, '.', '') . "</defaultgrade>\n";
         $body .= "    <penalty>0.3333333</penalty>\n    <hidden>0</hidden>\n";
 
         switch ($mtype) {
@@ -96,6 +100,10 @@ class question_xml_writer {
                 break;
             case 'essay':
                 $body .= $this->essay_xml();
+                break;
+            case 'description':
+                // A description displays only its question text — no answers, no
+                // grading — so the common name/questiontext body is complete.
                 break;
             case 'matching':
                 $body .= $this->matching_xml($q, $imagedir);

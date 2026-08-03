@@ -39,6 +39,8 @@ class qti_question {
     public const TYPE_ESSAY = 'essay';
     /** Matching (Canvas matching_question) -> Moodle match. */
     public const TYPE_MATCHING = 'matching';
+    /** Text-only stimulus item (Canvas text_only_question) -> Moodle description. */
+    public const TYPE_DESCRIPTION = 'description';
     /** Recognised QTI item we can't yet convert. */
     public const TYPE_UNSUPPORTED = 'unsupported';
 
@@ -87,6 +89,11 @@ class qti_question {
             return false;
         }
         if ($this->type === self::TYPE_ESSAY) {
+            return true;
+        }
+        if ($this->type === self::TYPE_DESCRIPTION) {
+            // A description carries only text (no answers to validate), so it is
+            // always importable.
             return true;
         }
         if ($this->type === self::TYPE_MATCHING) {

@@ -575,6 +575,27 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A New Quizzes text_only_question (a stimulus item with no response) parses
+     * as a description: importable, carrying its text, with no answers.
+     *
+     * @return void
+     */
+    public function test_native_text_only_becomes_description(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">&lt;p&gt;Read this passage&lt;/p&gt;</mattext>'
+            . '</material></presentation>';
+        $item = '<item ident="t1" title="Intro"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>text_only_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_DESCRIPTION, $q->type);
+        $this->assertTrue($q->is_importable());
+        $this->assertCount(0, $q->answers);
+        $this->assertStringContainsString('Read this passage', $q->questiontext);
+    }
+
+    /**
      * A Canvas matching_question parses into one stem/answer subquestion per
      * response_lid (stem from the row's own material, answer from the
      * resprocessing-scored choice), and any choice never used as a correct match
