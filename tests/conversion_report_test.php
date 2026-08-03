@@ -499,6 +499,47 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * A referenced New Quiz whose native dump holds only unsupported questions
+     * still surfaces them in the matrix (as unsupported rows) — these are the
+     * quizzes most at risk of silent question loss, so the report must not fall
+     * through to the empty CC shell and show nothing.
+     *
+     * @return void
+     */
+    public function test_matrix_shows_unsupported_only_native_dump(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        mkdir($dir . '/non_cc_assessments');
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="New quiz engine"><section ident="s1"></section>'
+            . '</assessment></questestinterop>';
+        file_put_contents($dir . '/a1/assessment_qti.xml', $shell);
+        // The native dump holds one unsupported (unconvertible) question.
+        $native = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="New quiz engine"><section ident="s1">'
+            . $this->unsupporteditem('cc.numeric.v0p1')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/a1.xml.qti', $native);
+
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $quiz = new item('q1', 'New quiz engine');
+        $quiz->kind = item::KIND_QUIZ;
+        $quiz->files = ['a1/assessment_qti.xml', 'non_cc_assessments/a1.xml.qti'];
+        $section->add_item($quiz);
+        $course->add_section($section);
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        // The unsupported native question is surfaced, not hidden behind the shell.
+        $this->assertSame(1, $matrix['total']);
+        $this->assertSame(0, $matrix['supported']);
+        $this->assertSame('unsupported', $matrix['rows'][0]['status']);
+    }
+
+    /**
      * A recognised question type Moodle would reject (a single-option choice) is
      * counted as not converting, so the "will convert" total stays honest.
      *
