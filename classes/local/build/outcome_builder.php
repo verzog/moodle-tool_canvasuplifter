@@ -42,6 +42,9 @@ class outcome_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var int Outcomes dropped because their ratings can't form a usable scale. */
+    public int $skippedcount = 0;
+
     /**
      * Constructor.
      *
@@ -71,6 +74,10 @@ class outcome_builder {
         foreach ($outcomes as $model) {
             if ($this->create_outcome($course, $model)) {
                 $created++;
+            } else {
+                // A named outcome whose ratings can't form a usable scale is
+                // dropped; count it so the build report can flag the loss.
+                $this->skippedcount++;
             }
         }
         return $created;
@@ -97,7 +104,22 @@ class outcome_builder {
         $outcome->scaleid = $scaleid;
         $outcome->description = $model->description;
         $outcome->descriptionformat = FORMAT_HTML;
-        return (bool) $outcome->insert('tool_canvasuplifter');
+        $id = $outcome->insert('tool_canvasuplifter');
+        if (!$id) {
+            return false;
+        }
+        // The description may embed package files via $IMS-CC-FILEBASE$ tokens.
+        // grade_outcome::get_description() serves them from the system context's
+        // grade/outcome file area keyed by the outcome id, so import them there
+        // and rewrite the tokens to @@PLUGINFILE@@ now that the id exists.
+        $systemcontext = \context_system::instance();
+        $rewritten = (new file_embedder($this->packageroot))
+            ->embed($systemcontext->id, 'grade', 'outcome', $model->description, (int) $id);
+        if ($rewritten !== $model->description) {
+            $outcome->description = $rewritten;
+            $outcome->update('tool_canvasuplifter');
+        }
+        return true;
     }
 
     /**
@@ -113,11 +135,24 @@ class outcome_builder {
     private function create_scale(stdClass $course, outcome $model): ?int {
         global $USER;
         $items = [];
+        $seen = [];
         foreach (array_reverse($model->ratings) as $rating) {
-            $label = trim((string) $rating['description']);
-            if ($label !== '') {
-                $items[] = $label;
+            // Moodle scale items are comma-delimited with no escaping, so a comma
+            // in a rating label would split it into two items; swap commas for
+            // semicolons to keep each label a single scale item.
+            $label = trim(str_replace(',', ';', (string) $rating['description']));
+            if ($label === '') {
+                continue;
             }
+            // Deduplicate labels (case-insensitively): Moodle can't distinguish
+            // identical scale items, and duplicates would otherwise let a scale
+            // with only one distinct label pass the two-item check below.
+            $key = \core_text::strtolower($label);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $items[] = $label;
         }
         if (count($items) < 2) {
             return null;

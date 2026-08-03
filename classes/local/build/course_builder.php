@@ -152,7 +152,8 @@ class course_builder {
         $gradelettercount = $this->create_grade_letters($course, $coursemodel);
         // Import Canvas learning outcomes as course grade outcomes. Non-destructive
         // and hidden until the site's "Enable outcomes" advanced setting is on.
-        $outcomecount = (new outcome_builder($this->packageroot))->build($course);
+        $outcomebuilder = new outcome_builder($this->packageroot);
+        $outcomecount = $outcomebuilder->build($course);
         // Hold the rubric library so attach_rubric() can look up by Canvas id
         // when each assignment is built.
         $this->rubrics = $coursemodel->rubrics;
@@ -318,6 +319,9 @@ class course_builder {
         }
         if ($outcomecount > 0) {
             $warnings[] = get_string('noteoutcomesimported', 'tool_canvasuplifter', $outcomecount);
+        }
+        if ($outcomebuilder->skippedcount > 0) {
+            $warnings[] = get_string('warnoutcomesskipped', 'tool_canvasuplifter', $outcomebuilder->skippedcount);
         }
         if ($coursemodel->canvasboilerplatedropped > 0) {
             $warnings[] = get_string(

@@ -224,6 +224,9 @@ $string['uploadnotfinished'] = 'Upload did not finish!';
 $string['warningsheading'] = 'Notes and warnings';
 $string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';
+$string['warnoutcomesskipped'] = 'Skipped {$a} Canvas learning outcome(s) whose mastery ratings did not form a '
+    . 'usable scale (Moodle scales need at least two distinct rating labels); recreate those outcomes by hand '
+    . 'if needed.';
 $string['warnquizplaceholders'] = '{$a} quiz(zes) were imported as hidden placeholders because Canvas '
     . 'did not export their questions (e.g. New Quizzes backed by an item bank). Their settings carried '
     . 'over; add questions and unhide them.';

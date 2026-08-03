@@ -118,10 +118,121 @@ final class outcome_builder_test extends \advanced_testcase {
             . '<ratings><rating><description>Only one</description><points>1</points></rating></ratings>'
             . '</learningOutcome></learningOutcomes></learningOutcomeGroup></learningOutcomes>';
 
-        $created = (new outcome_builder($this->package($xml)))->build($course);
+        $builder = new outcome_builder($this->package($xml));
+        $created = $builder->build($course);
 
         $this->assertSame(0, $created);
+        // The dropped outcome is counted so the build report can flag the loss.
+        $this->assertSame(1, $builder->skippedcount);
         $this->assertSame(0, $DB->count_records('grade_outcomes', ['courseid' => $course->id]));
+    }
+
+    /**
+     * A rating label whose ratings collapse to a single distinct value (after
+     * deduplication) can't form a scale, so the outcome is skipped rather than
+     * producing a scale with indistinguishable levels.
+     *
+     * @return void
+     */
+    public function test_duplicate_rating_labels_are_deduplicated(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<learningOutcomeGroup identifier="g1"><title>G</title><learningOutcomes>'
+            . '<learningOutcome identifier="o1"><title>Same labels</title><description></description>'
+            . '<ratings>'
+            . '<rating><description>Met</description><points>1</points></rating>'
+            . '<rating><description>met</description><points>0</points></rating>'
+            . '</ratings></learningOutcome>'
+            . '</learningOutcomes></learningOutcomeGroup></learningOutcomes>';
+
+        $builder = new outcome_builder($this->package($xml));
+        $created = $builder->build($course);
+
+        $this->assertSame(0, $created);
+        $this->assertSame(1, $builder->skippedcount);
+    }
+
+    /**
+     * A comma inside a rating label is normalised so Moodle (whose scale items are
+     * comma-delimited) keeps it as a single scale item rather than splitting it.
+     *
+     * @return void
+     */
+    public function test_comma_in_rating_label_is_not_split(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<learningOutcomeGroup identifier="g1"><title>G</title><learningOutcomes>'
+            . '<learningOutcome identifier="o1"><title>Commas</title><description></description>'
+            . '<ratings>'
+            . '<rating><description>Meets expectations, with support</description><points>1</points></rating>'
+            . '<rating><description>Not yet</description><points>0</points></rating>'
+            . '</ratings></learningOutcome>'
+            . '</learningOutcomes></learningOutcomeGroup></learningOutcomes>';
+
+        $created = (new outcome_builder($this->package($xml)))->build($course);
+
+        $this->assertSame(1, $created);
+        $outcome = $DB->get_record('grade_outcomes', ['courseid' => $course->id], '*', MUST_EXIST);
+        $scale = $DB->get_record('scale', ['id' => $outcome->scaleid], '*', MUST_EXIST);
+        // Two items, and the comma'd label stayed whole (comma swapped for ";").
+        $items = explode(',', $scale->scale);
+        $this->assertCount(2, $items);
+        $this->assertContains('Meets expectations; with support', $items);
+    }
+
+    /**
+     * A file referenced from an outcome description via a Canvas
+     * $IMS-CC-FILEBASE$ token is imported into the system-context grade/outcome
+     * file area and the token rewritten to @@PLUGINFILE@@ so it resolves.
+     *
+     * @return void
+     */
+    public function test_description_file_is_embedded(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings', 0777, true);
+        mkdir($dir . '/web_resources', 0777, true);
+        file_put_contents($dir . '/web_resources/logo.png', 'PNGDATA');
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<learningOutcomeGroup identifier="g1"><title>G</title><learningOutcomes>'
+            . '<learningOutcome identifier="o1"><title>With image</title>'
+            . '<description>&lt;p&gt;&lt;img src="$IMS-CC-FILEBASE$/web_resources/logo.png"&gt;&lt;/p&gt;</description>'
+            . '<ratings>'
+            . '<rating><description>Yes</description><points>1</points></rating>'
+            . '<rating><description>No</description><points>0</points></rating>'
+            . '</ratings></learningOutcome>'
+            . '</learningOutcomes></learningOutcomeGroup></learningOutcomes>';
+        file_put_contents($dir . '/course_settings/learning_outcomes.xml', $xml);
+
+        $created = (new outcome_builder($dir))->build($course);
+
+        $this->assertSame(1, $created);
+        $outcome = $DB->get_record('grade_outcomes', ['courseid' => $course->id], '*', MUST_EXIST);
+        // The token is gone, replaced by a pluginfile reference.
+        $this->assertStringNotContainsString('$IMS-CC-FILEBASE$', $outcome->description);
+        $this->assertStringContainsString('@@PLUGINFILE@@', $outcome->description);
+        // The asset landed in the system-context grade/outcome area for this id.
+        $systemcontext = \context_system::instance();
+        $this->assertTrue(get_file_storage()->file_exists(
+            $systemcontext->id,
+            'grade',
+            'outcome',
+            (int) $outcome->id,
+            '/web_resources/',
+            'logo.png'
+        ));
     }
 
     /**
