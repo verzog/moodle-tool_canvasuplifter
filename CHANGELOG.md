@@ -5,6 +5,22 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.41.0] - 2026-08-03
+
+- Import Canvas learning outcomes (`course_settings/learning_outcomes.xml`) as
+  Moodle course grade outcomes, each backed by a scale built from its mastery
+  ratings. Ratings are ordered low-to-high by their points; labels are made
+  scale-safe (commas normalised, duplicates collapsed, post-normalisation
+  collisions disambiguated) and an outcome whose ratings can't form a scale of
+  at least two distinct labels is skipped and reported rather than failing the
+  build. Untitled outcomes import under a fallback name; file references
+  (`$IMS-CC-FILEBASE$`) and internal-link tokens
+  (`$WIKI_REFERENCE$`/`$CANVAS_OBJECT_REFERENCE$`) in outcome descriptions are
+  resolved like page content. The analyse report previews the outcome counts
+  (importable / skipped) and flags a malformed outcomes file. Outcomes are
+  course-scoped, non-destructive, and stay hidden until the site's "Enable
+  outcomes" advanced setting is on.
+
 ## [0.40.0] - 2026-08-03
 
 - Add a public `\tool_canvasuplifter\launcher` facade that queues an analyse or

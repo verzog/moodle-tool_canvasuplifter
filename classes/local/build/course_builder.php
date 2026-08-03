@@ -150,6 +150,10 @@ class course_builder {
         $this->gradecategoryids = $this->create_grade_categories($course, $coursemodel);
         // Install the Canvas letter-grade scheme, if the course carries one.
         $gradelettercount = $this->create_grade_letters($course, $coursemodel);
+        // Import Canvas learning outcomes as course grade outcomes. Non-destructive
+        // and hidden until the site's "Enable outcomes" advanced setting is on.
+        $outcomebuilder = new outcome_builder($this->packageroot);
+        $outcomecount = $outcomebuilder->build($course);
         // Hold the rubric library so attach_rubric() can look up by Canvas id
         // when each assignment is built.
         $this->rubrics = $coursemodel->rubrics;
@@ -280,6 +284,7 @@ class course_builder {
         $this->rewrite_assign_links((int) $course->id, $urlmap);
         $this->rewrite_quiz_links((int) $course->id, $urlmap);
         $this->rewrite_question_links($this->imported_question_ids($builders), $urlmap);
+        $this->rewrite_outcome_links($outcomebuilder->createdids, $urlmap);
 
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
@@ -312,6 +317,15 @@ class course_builder {
         }
         if ($gradelettercount > 0) {
             $warnings[] = get_string('notegradeletters', 'tool_canvasuplifter', $gradelettercount);
+        }
+        if ($outcomecount > 0) {
+            $warnings[] = get_string('noteoutcomesimported', 'tool_canvasuplifter', $outcomecount);
+        }
+        if ($outcomebuilder->skippedcount > 0) {
+            $warnings[] = get_string('warnoutcomesskipped', 'tool_canvasuplifter', $outcomebuilder->skippedcount);
+        }
+        if ($outcomebuilder->malformedfile) {
+            $warnings[] = get_string('warnoutcomesmalformed', 'tool_canvasuplifter');
         }
         if ($coursemodel->canvasboilerplatedropped > 0) {
             $warnings[] = get_string(
@@ -917,6 +931,34 @@ class course_builder {
             $newcontent = $rewriter->rewrite_internal_links((string) $page->content, $urlmap);
             if ($newcontent !== $page->content) {
                 $DB->set_field('page', 'content', $newcontent, ['id' => $page->id]);
+            }
+        }
+    }
+
+    /**
+     * Rewrite internal Canvas links in imported outcome descriptions once every
+     * link target exists. Outcomes are created up front (before the URL map is
+     * complete), so any $WIKI_REFERENCE$/$CANVAS_OBJECT_REFERENCE$ tokens in their
+     * descriptions are resolved here in the same second pass as pages.
+     *
+     * @param array $outcomeids Ids of the grade_outcomes to process.
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_outcome_links(array $outcomeids, array $urlmap): void {
+        global $DB;
+        if (empty($outcomeids) || empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        foreach ($outcomeids as $id) {
+            $record = $DB->get_record('grade_outcomes', ['id' => (int) $id], 'id, description');
+            if (!$record) {
+                continue;
+            }
+            $newdesc = $rewriter->rewrite_internal_links((string) $record->description, $urlmap);
+            if ($newdesc !== $record->description) {
+                $DB->set_field('grade_outcomes', 'description', $newdesc, ['id' => $record->id]);
             }
         }
     }

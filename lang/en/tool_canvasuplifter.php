@@ -119,6 +119,9 @@ $string['notecanvasboilerplate'] = 'Dropped {$a} Canvas platform item(s) with no
     . 'links to Canvas\'s documentation, and leftover ANGEL migration objects).';
 $string['notegradeletters'] = 'Imported {$a} letter-grade boundaries from the Canvas grading scheme as this '
     . 'course\'s grade letters.';
+$string['noteoutcomesimported'] = 'Imported {$a} Canvas learning outcome(s) as course grade outcomes, each with a '
+    . 'scale built from its mastery ratings. Outcomes stay hidden until the site\'s "Enable outcomes" advanced '
+    . 'setting is turned on.';
 $string['noterubricsunlinked'] = 'Found {$a} rubric(s) in the package not linked to any activity, so they could '
     . 'not be imported; recreate them on the relevant activities if needed.';
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';
@@ -127,6 +130,13 @@ $string['orphansexplain'] = 'These resources are in the package but are not link
     . 'Each is still imported — most into an "Additional resources" section, with the syllabus '
     . 'surfaced at the top of the course — so nothing is lost.';
 $string['orphansheading'] = 'Unreferenced resources';
+$string['outcomesheading'] = 'Learning outcomes';
+$string['outcomesmalformed'] = 'The learning_outcomes.xml file is present but could not be read (it appears truncated '
+    . 'or malformed), so no outcomes can be imported from it. Re-export the package if the outcomes matter.';
+$string['outcomessummary'] = '{$a->total} Canvas learning outcome(s) found; {$a->importable} will import as course '
+    . 'grade outcomes and {$a->skipped} will be skipped (their ratings do not form a usable scale). Imported '
+    . 'outcomes stay hidden until the site\'s "Enable outcomes" advanced setting is turned on.';
+$string['outcomeuntitled'] = 'Untitled outcome';
 $string['packagefile'] = 'Canvas export (.imscc)';
 $string['packagefile_help'] = 'Upload a course exported from Canvas as a Common Cartridge file. '
     . 'Analyse-only inspects the file; Build course creates a new Moodle course.';
@@ -221,6 +231,11 @@ $string['uploadnotfinished'] = 'Upload did not finish!';
 $string['warningsheading'] = 'Notes and warnings';
 $string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';
+$string['warnoutcomesmalformed'] = 'The package\'s learning_outcomes.xml could not be read (it appears truncated or '
+    . 'malformed), so no learning outcomes were imported from it. Re-export the package if the outcomes matter.';
+$string['warnoutcomesskipped'] = 'Skipped {$a} Canvas learning outcome(s) whose mastery ratings did not form a '
+    . 'usable scale (Moodle scales need at least two distinct rating labels); recreate those outcomes by hand '
+    . 'if needed.';
 $string['warnquizplaceholders'] = '{$a} quiz(zes) were imported as hidden placeholders because Canvas '
     . 'did not export their questions (e.g. New Quizzes backed by an item bank). Their settings carried '
     . 'over; add questions and unhide them.';
