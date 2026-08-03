@@ -109,19 +109,22 @@ class launcher {
             throw new \InvalidArgumentException('launcher: $packageurl must be an absolute http(s) URL with a host');
         }
 
-        // A stored-file source must actually exist AND belong to this plugin's
-        // package storage. A stale/mistyped id would otherwise queue a job that
-        // fails later when the file cannot be loaded; a file from another
-        // component would analyse fine but then be refused by the "Build this
-        // course" handler (which requires a tool_canvasuplifter-owned file), so
-        // a successful analyse could never be built. Reject both here. Callers
-        // with an on-disk package should use queue_from_path(), which stores it
-        // into this area first.
+        // A stored-file source must actually exist, belong to this plugin's
+        // package storage, AND be owned by the run's user. A stale/mistyped id
+        // would otherwise queue a job that fails later when the file cannot be
+        // loaded; a file from another component or another user would analyse
+        // fine but then be refused by the "Build this course" handler (which
+        // requires a tool_canvasuplifter file owned by the job user), so a
+        // successful analyse could never be built. Reject all three here.
+        // Callers with an on-disk package should use queue_from_path(), which
+        // stores it into this user's package area first.
         if ($fileid !== null) {
             $storedfile = get_file_storage()->get_file_by_id($fileid);
-            if (!$storedfile || $storedfile->get_component() !== 'tool_canvasuplifter') {
+            if (!$storedfile
+                    || $storedfile->get_component() !== 'tool_canvasuplifter'
+                    || (int) $storedfile->get_userid() !== $userid) {
                 throw new \InvalidArgumentException(
-                    'launcher: $fileid must be an existing tool_canvasuplifter package file'
+                    'launcher: $fileid must be an existing tool_canvasuplifter package file owned by the user'
                 );
             }
         }

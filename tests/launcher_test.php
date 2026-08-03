@@ -259,6 +259,43 @@ final class launcher_test extends \advanced_testcase {
     }
 
     /**
+     * A tool_canvasuplifter package file owned by a different user is rejected:
+     * it would analyse fine but the build-from-report handler only accepts a
+     * file owned by the job user, so a successful analyse could never be built.
+     *
+     * @return void
+     */
+    public function test_queue_job_rejects_file_owned_by_another_user(): void {
+        global $USER, $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+        $other = $this->getDataGenerator()->create_user();
+
+        $file = get_file_storage()->create_file_from_string([
+            'contextid' => \context_system::instance()->id,
+            'component' => 'tool_canvasuplifter',
+            'filearea' => launcher::PACKAGE_FILEAREA,
+            'itemid' => (int) $other->id,
+            'filepath' => '/',
+            'filename' => 'course.imscc',
+            'userid' => (int) $other->id,
+        ], 'data');
+
+        $this->expectException(\InvalidArgumentException::class);
+        try {
+            launcher::queue_job(
+                (int) $USER->id,
+                (int) $category->id,
+                job_manager::KIND_ANALYSE,
+                (int) $file->get_id()
+            );
+        } finally {
+            $this->assertSame(0, $DB->count_records(job_manager::TABLE));
+        }
+    }
+
+    /**
      * A non-http(s) URL (ftp, a filesystem path) is rejected, since url_fetcher
      * only accepts absolute http(s) URLs.
      *
