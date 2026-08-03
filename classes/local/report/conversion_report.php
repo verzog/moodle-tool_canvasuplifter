@@ -771,8 +771,12 @@ class conversion_report {
                 // native (all-unsupported) questions instead of an empty matrix —
                 // these New Quizzes are the ones most at risk of silent loss. If
                 // the CC file has its own unsupported questions, the builder keeps
-                // them, so leave them in place to match.
-                if (empty($parsed['questions']) && !empty($nativeparsed['questions'])) {
+                // them, so leave them in place to match. Require hasassessment, as
+                // quiz_builder::$isshell does: a malformed or QTI 2.x/3.x CC file
+                // also parses to zero questions, but the builder skips it as an
+                // unreadable assessment rather than falling through to the dump.
+                $isshell = empty($parsed['questions']) && !empty($parsed['hasassessment']);
+                if ($isshell && !empty($nativeparsed['questions'])) {
                     return $nativeparsed['questions'];
                 }
             }

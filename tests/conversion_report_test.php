@@ -581,6 +581,49 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * A CC file that is not a readable QTI 1.2 assessment (malformed, or QTI
+     * 2.x/3.x) also parses to zero questions, but quiz_builder skips it as an
+     * unreadable assessment rather than falling through to the native dump. The
+     * matrix must not surface the native rows for such a file — otherwise it
+     * misreports what the converter will process.
+     *
+     * @return void
+     */
+    public function test_matrix_ignores_native_dump_when_cc_not_an_assessment(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        mkdir($dir . '/non_cc_assessments');
+        // Not a QTI 1.2 assessment: no <assessment>/<section>, so hasassessment
+        // is false and the parse yields zero questions — an unreadable file, not
+        // an empty shell.
+        $notanassessment = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<assessmentTest xmlns="http://www.imsglobal.org/xsd/imsqti_v2p1"'
+            . ' identifier="a1" title="New quiz engine"></assessmentTest>';
+        file_put_contents($dir . '/a1/assessment_qti.xml', $notanassessment);
+        // The native dump holds one unsupported (unconvertible) question.
+        $native = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="New quiz engine"><section ident="s1">'
+            . $this->unsupporteditem('cc.numeric.v0p1')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/a1.xml.qti', $native);
+
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $quiz = new item('q1', 'New quiz engine');
+        $quiz->kind = item::KIND_QUIZ;
+        $quiz->files = ['a1/assessment_qti.xml', 'non_cc_assessments/a1.xml.qti'];
+        $section->add_item($quiz);
+        $course->add_section($section);
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        // Nothing surfaced: the CC file isn't an assessment the builder can read,
+        // so the matrix is empty rather than showing the native (unreadable) rows.
+        $this->assertSame([], $matrix);
+    }
+
+    /**
      * A recognised question type Moodle would reject (a single-option choice) is
      * counted as not converting, so the "will convert" total stays honest.
      *
