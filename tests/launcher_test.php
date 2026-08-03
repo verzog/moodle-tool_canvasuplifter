@@ -173,6 +173,58 @@ final class launcher_test extends \advanced_testcase {
     }
 
     /**
+     * delete_job removes the job row and frees its stored package, and refuses
+     * to delete another user's job.
+     *
+     * @return void
+     */
+    public function test_delete_job_removes_job_and_package(): void {
+        global $USER;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $path = make_request_directory() . '/c.imscc';
+        file_put_contents($path, 'data');
+        $jobid = launcher::queue_from_path((int) $USER->id, (int) $category->id, job_manager::KIND_ANALYSE, $path);
+        $fileid = (int) (new job_manager())->get($jobid)->fileid;
+        $this->assertNotFalse(get_file_storage()->get_file_by_id($fileid));
+
+        // Another user cannot delete it - job and file survive.
+        $this->assertFalse(launcher::delete_job($jobid, (int) $USER->id + 9999));
+        $this->assertNotFalse((new job_manager())->get($jobid));
+
+        // The owner deletes it: row and stored package are both gone.
+        $this->assertTrue(launcher::delete_job($jobid, (int) $USER->id));
+        $this->assertFalse((new job_manager())->get($jobid));
+        $this->assertFalse(get_file_storage()->get_file_by_id($fileid));
+
+        // Deleting a missing job is a no-op false.
+        $this->assertFalse(launcher::delete_job($jobid, (int) $USER->id));
+    }
+
+    /**
+     * package_storage_used sums the bytes of a user's stored packages.
+     *
+     * @return void
+     */
+    public function test_package_storage_used_sums_user_packages(): void {
+        global $USER;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $before = launcher::package_storage_used((int) $USER->id);
+        $p1 = make_request_directory() . '/a.imscc';
+        file_put_contents($p1, str_repeat('x', 100));
+        $p2 = make_request_directory() . '/b.imscc';
+        file_put_contents($p2, str_repeat('y', 250));
+        launcher::store_package((int) $USER->id, $p1);
+        launcher::store_package((int) $USER->id, $p2);
+
+        $this->assertSame($before + 350, launcher::package_storage_used((int) $USER->id));
+    }
+
+    /**
      * queue_job rejects a call with neither a file id nor a URL, before any job
      * row or task is created.
      *

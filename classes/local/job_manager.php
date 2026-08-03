@@ -210,6 +210,18 @@ class job_manager {
     }
 
     /**
+     * Delete a job row. The caller is responsible for any stored package file
+     * the job referenced (see launcher::delete_job()).
+     *
+     * @param int $jobid Job id.
+     * @return void
+     */
+    public function delete(int $jobid): void {
+        global $DB;
+        $DB->delete_records(self::TABLE, ['id' => $jobid]);
+    }
+
+    /**
      * Persist a partial update to a job row and bump timemodified.
      *
      * @param int $jobid Job id.

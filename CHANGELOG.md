@@ -5,6 +5,14 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.43.0] - 2026-08-03
+
+- Add `launcher::delete_job()` and `launcher::package_storage_used()` to the
+  public facade, so an import-history view can let a user reclaim space:
+  `delete_job()` removes a job and frees its stored `.imscc` package (leaving any
+  course a build already created in place, and refusing to delete another user's
+  job), and `package_storage_used()` totals the bytes the stored packages use.
+
 ## [0.42.0] - 2026-08-03
 
 - Add a job-listing API so a caller can list a user's import jobs (newest first,

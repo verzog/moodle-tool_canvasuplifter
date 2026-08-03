@@ -249,6 +249,58 @@ class launcher {
     }
 
     /**
+     * Delete an import job and free its stored package, to reclaim space.
+     *
+     * Removes the stored .imscc package (the space-consuming part) and the job
+     * row. A course a build job already created is left in place - this frees
+     * cached package storage, it does not undo an import. When $userid is given,
+     * the job must belong to that user or nothing is deleted.
+     *
+     * @param int $jobid Job id.
+     * @param int|null $userid Require the job to belong to this user, or null to skip the check.
+     * @return bool True if a job was deleted; false if it did not exist or is not the user's.
+     */
+    public static function delete_job(int $jobid, ?int $userid = null): bool {
+        $jobs = new job_manager();
+        $job = $jobs->get($jobid);
+        if (!$job) {
+            return false;
+        }
+        if ($userid !== null && (int) $job->userid !== $userid) {
+            return false;
+        }
+        if (!empty($job->fileid)) {
+            $file = get_file_storage()->get_file_by_id((int) $job->fileid);
+            if ($file) {
+                $file->delete();
+            }
+        }
+        $jobs->delete($jobid);
+        return true;
+    }
+
+    /**
+     * Total size, in bytes, of the stored .imscc packages this plugin holds.
+     *
+     * Sums the package file area so a UI can show how much space staged imports
+     * are using. Directory placeholder rows are excluded; when $userid is given,
+     * only that user's packages are counted.
+     *
+     * @param int|null $userid Only this user's packages, or null for all.
+     * @return int Total bytes.
+     */
+    public static function package_storage_used(?int $userid = null): int {
+        global $DB;
+        $where = "component = :component AND filearea = :filearea AND filename <> '.'";
+        $params = ['component' => 'tool_canvasuplifter', 'filearea' => self::PACKAGE_FILEAREA];
+        if ($userid !== null) {
+            $where .= ' AND itemid = :itemid';
+            $params['itemid'] = $userid;
+        }
+        return (int) $DB->get_field_sql("SELECT COALESCE(SUM(filesize), 0) FROM {files} WHERE {$where}", $params);
+    }
+
+    /**
      * Copy an on-disk package into the plugin's 'packages' file area.
      *
      * @param int $userid Owner of the stored file (itemid).
