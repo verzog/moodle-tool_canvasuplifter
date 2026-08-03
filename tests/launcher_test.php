@@ -204,6 +204,47 @@ final class launcher_test extends \advanced_testcase {
     }
 
     /**
+     * A positive but non-existent file id is rejected up front, rather than
+     * queueing a job that fails later when the file cannot be loaded.
+     *
+     * @return void
+     */
+    public function test_queue_job_rejects_missing_fileid(): void {
+        global $USER, $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $this->expectException(\InvalidArgumentException::class);
+        try {
+            launcher::queue_job((int) $USER->id, (int) $category->id, job_manager::KIND_BUILD, 999999, null);
+        } finally {
+            $this->assertSame(0, $DB->count_records(job_manager::TABLE));
+        }
+    }
+
+    /**
+     * A non-http(s) URL (ftp, a filesystem path) is rejected, since url_fetcher
+     * only accepts absolute http(s) URLs.
+     *
+     * @return void
+     */
+    public function test_queue_job_rejects_non_http_url(): void {
+        global $USER;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $this->expectException(\InvalidArgumentException::class);
+        launcher::queue_from_url(
+            (int) $USER->id,
+            (int) $category->id,
+            job_manager::KIND_ANALYSE,
+            'ftp://example.com/course.imscc'
+        );
+    }
+
+    /**
      * queue_job rejects a call giving both a file id and a URL.
      *
      * @return void

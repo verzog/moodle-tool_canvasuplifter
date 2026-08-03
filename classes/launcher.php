@@ -100,6 +100,21 @@ class launcher {
             );
         }
 
+        // A URL source must be an absolute http(s) URL: url_fetcher (and the
+        // site's cURL security layer) only accept those, so reject anything else
+        // - an ftp:// URL, a filesystem path - here rather than queueing a job
+        // that can only fail once the task tries to fetch it.
+        if ($url !== null && !preg_match('#^https?://#i', $url)) {
+            throw new \InvalidArgumentException('launcher: $packageurl must be an absolute http(s) URL');
+        }
+
+        // A stored-file source must actually exist. A stale or mistyped (but
+        // positive) id would otherwise queue a job that only fails later when
+        // the task cannot load the file; fail here instead.
+        if ($fileid !== null && !get_file_storage()->get_file_by_id($fileid)) {
+            throw new \InvalidArgumentException('launcher: no stored file with id ' . $fileid);
+        }
+
         $kind = self::normalise_kind($kind);
 
         $jobs = new job_manager();
