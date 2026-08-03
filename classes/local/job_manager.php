@@ -113,7 +113,7 @@ class job_manager {
      * @param string|null $kind One of the KIND_* constants, or null for all.
      * @param string|null $status One of the STATUS_* constants, or null for all.
      * @param int $limit Maximum rows to return; 0 for no limit.
-     * @return array Job records keyed by id, ordered by timecreated descending.
+     * @return array Job records keyed by id, newest first.
      */
     public function list_jobs(
         ?int $userid = null,
@@ -132,7 +132,10 @@ class job_manager {
         if ($status !== null) {
             $conditions['status'] = $status;
         }
-        return $DB->get_records(self::TABLE, $conditions, 'timecreated DESC', '*', 0, $limit);
+        // Tie-break on id so jobs sharing a timecreated second (common in a bulk
+        // import) still order deterministically newest-first, rather than in a
+        // database-dependent order.
+        return $DB->get_records(self::TABLE, $conditions, 'timecreated DESC, id DESC', '*', 0, $limit);
     }
 
     /**
