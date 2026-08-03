@@ -120,9 +120,10 @@ class launcher {
         // stores it into this user's package area first.
         if ($fileid !== null) {
             $storedfile = get_file_storage()->get_file_by_id($fileid);
-            if (!$storedfile
-                    || $storedfile->get_component() !== 'tool_canvasuplifter'
-                    || (int) $storedfile->get_userid() !== $userid) {
+            $badfile = !$storedfile
+                || $storedfile->get_component() !== 'tool_canvasuplifter'
+                || (int) $storedfile->get_userid() !== $userid;
+            if ($badfile) {
                 throw new \InvalidArgumentException(
                     'launcher: $fileid must be an existing tool_canvasuplifter package file owned by the user'
                 );
