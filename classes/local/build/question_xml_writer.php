@@ -80,7 +80,8 @@ class question_xml_writer {
         $mtype = $q->type === qti_question::TYPE_SHORTANSWER ? 'shortanswer'
             : ($q->type === qti_question::TYPE_ESSAY ? 'essay'
             : ($q->type === qti_question::TYPE_MATCHING ? 'matching'
-            : ($q->type === qti_question::TYPE_TRUEFALSE ? 'truefalse' : 'multichoice')));
+            : ($q->type === qti_question::TYPE_DESCRIPTION ? 'description'
+            : ($q->type === qti_question::TYPE_TRUEFALSE ? 'truefalse' : 'multichoice'))));
 
         $body = "  <question type=\"$mtype\">\n";
         $body .= "    <name><text>" . htmlspecialchars($this->plain($q->name), ENT_XML1) . "</text></name>\n";
@@ -96,6 +97,10 @@ class question_xml_writer {
                 break;
             case 'essay':
                 $body .= $this->essay_xml();
+                break;
+            case 'description':
+                // A description displays only its question text — no answers, no
+                // grading — so the common name/questiontext body is complete.
                 break;
             case 'matching':
                 $body .= $this->matching_xml($q, $imagedir);

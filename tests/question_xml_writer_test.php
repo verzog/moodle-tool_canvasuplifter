@@ -66,6 +66,33 @@ final class question_xml_writer_test extends \advanced_testcase {
     }
 
     /**
+     * A text-only stimulus item (Canvas New Quizzes text_only_question) renders
+     * as a Moodle <question type="description"> — its question text, no answers.
+     *
+     * @return void
+     */
+    public function test_writes_description(): void {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_DESCRIPTION;
+        $q->name = 'Read this';
+        $q->questiontext = '<p>Some stimulus text</p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], '$course$/Imported/Bank');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml), 'output should be well-formed XML');
+        $types = [];
+        foreach ($dom->getElementsByTagName('question') as $node) {
+            $types[] = $node->getAttribute('type');
+        }
+        $this->assertSame(['category', 'description'], $types);
+        $this->assertStringContainsString('Some stimulus text', $xml);
+        // A description has no answers or single flag.
+        $this->assertSame(0, $dom->getElementsByTagName('answer')->length);
+        $this->assertStringNotContainsString('<single>', $xml);
+    }
+
+    /**
      * Matching questions render as a Moodle <question type="matching"> with one
      * <subquestion> per pair (the distractor carried as an answer-only row), the
      * shuffle flag and the combined feedback — and the document stays well-formed.
