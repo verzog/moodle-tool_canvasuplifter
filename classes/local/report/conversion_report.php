@@ -760,12 +760,19 @@ class conversion_report {
             $native = $this->resolve_native_qti($modelitem, $path);
             if ($native !== null) {
                 $nativeparsed = (new qti_parser())->parse((string) @file_get_contents($native));
-                // Return the native questions whenever the dump has any — even if
-                // none are importable. The builder imports from this dump (dropping
-                // the unsupported ones), so the matrix must show those unsupported
-                // rows rather than an empty matrix; those are the quizzes most at
-                // risk of silent question loss.
-                if (!empty($nativeparsed['questions'])) {
+                // Match quiz_builder, which switches to the native dump only when
+                // it has importable questions, so the matrix reflects what the
+                // converter evaluates.
+                if ($this->any_importable($nativeparsed['questions'])) {
+                    return $nativeparsed['questions'];
+                }
+                // Neither side is importable. When the CC parse is a genuinely
+                // empty shell the builder would evaluate nothing, so surface the
+                // native (all-unsupported) questions instead of an empty matrix —
+                // these New Quizzes are the ones most at risk of silent loss. If
+                // the CC file has its own unsupported questions, the builder keeps
+                // them, so leave them in place to match.
+                if (empty($parsed['questions']) && !empty($nativeparsed['questions'])) {
                     return $nativeparsed['questions'];
                 }
             }

@@ -540,6 +540,47 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * When the CC file has its own unsupported questions and the native dump is
+     * also unimportable, quiz_builder keeps the CC parse — so the matrix must
+     * report the CC questions, not switch to the native dump.
+     *
+     * @return void
+     */
+    public function test_matrix_keeps_cc_questions_when_native_not_importable(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        mkdir($dir . '/non_cc_assessments');
+        // CC file carries its own unsupported question (a distinct profile).
+        $cc = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="New quiz engine"><section ident="s1">'
+            . $this->unsupporteditem('cc.numeric.v0p1')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/a1/assessment_qti.xml', $cc);
+        // Native dump is also all-unsupported, with a different profile.
+        $native = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="New quiz engine"><section ident="s1">'
+            . $this->unsupporteditem('cc.other.v0p1')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/a1.xml.qti', $native);
+
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $quiz = new item('q1', 'New quiz engine');
+        $quiz->kind = item::KIND_QUIZ;
+        $quiz->files = ['a1/assessment_qti.xml', 'non_cc_assessments/a1.xml.qti'];
+        $section->add_item($quiz);
+        $course->add_section($section);
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        // The CC question is reported (matching the builder), not the native one.
+        $this->assertSame(1, $matrix['total']);
+        $this->assertSame('cc.numeric.v0p1', $matrix['rows'][0]['label']);
+    }
+
+    /**
      * A recognised question type Moodle would reject (a single-option choice) is
      * counted as not converting, so the "will convert" total stays honest.
      *
