@@ -180,6 +180,42 @@ XML;
     }
 
     /**
+     * An outcome description carrying a Canvas internal-link token is rewritten
+     * to the real activity URL in the same second pass as pages, even though the
+     * outcome is created before the URL map is complete.
+     *
+     * @return void
+     */
+    public function test_build_rewrites_outcome_description_links(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_linked_fixture();
+        mkdir($root . '/course_settings');
+        $outcomes = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<learningOutcomeGroup identifier="g1"><title>G</title><learningOutcomes>'
+            . '<learningOutcome identifier="o1"><title>Linked</title>'
+            . '<description>&lt;p&gt;&lt;a href="$WIKI_REFERENCE$/pages/syllabus"&gt;See syllabus&lt;/a&gt;&lt;/p&gt;</description>'
+            . '<ratings>'
+            . '<rating><description>Yes</description><points>1</points></rating>'
+            . '<rating><description>No</description><points>0</points></rating>'
+            . '</ratings></learningOutcome>'
+            . '</learningOutcomes></learningOutcomeGroup></learningOutcomes>';
+        file_put_contents($root . '/course_settings/learning_outcomes.xml', $outcomes);
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $outcome = $DB->get_record('grade_outcomes', ['courseid' => $report['courseid']], '*', MUST_EXIST);
+        // The token was resolved to the syllabus page's activity URL.
+        $this->assertStringNotContainsString('WIKI_REFERENCE', $outcome->description);
+        $this->assertStringContainsString('/mod/page/view.php?id=', $outcome->description);
+    }
+
+    /**
      * Write a package with one assignment and one unreferenced (orphan) file.
      *
      * @return string Path to the package root.

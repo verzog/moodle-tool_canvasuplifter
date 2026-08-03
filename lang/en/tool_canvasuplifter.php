@@ -130,6 +130,11 @@ $string['orphansexplain'] = 'These resources are in the package but are not link
     . 'Each is still imported — most into an "Additional resources" section, with the syllabus '
     . 'surfaced at the top of the course — so nothing is lost.';
 $string['orphansheading'] = 'Unreferenced resources';
+$string['outcomesheading'] = 'Learning outcomes';
+$string['outcomessummary'] = '{$a->total} Canvas learning outcome(s) found; {$a->importable} will import as course '
+    . 'grade outcomes and {$a->skipped} will be skipped (their ratings do not form a usable scale). Imported '
+    . 'outcomes stay hidden until the site\'s "Enable outcomes" advanced setting is turned on.';
+$string['outcomeuntitled'] = 'Untitled outcome';
 $string['packagefile'] = 'Canvas export (.imscc)';
 $string['packagefile_help'] = 'Upload a course exported from Canvas as a Common Cartridge file. '
     . 'Analyse-only inspects the file; Build course creates a new Moodle course.';

@@ -624,6 +624,49 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * The analyse report summarises learning outcomes the build would import,
+     * splitting those that will create a course grade outcome from those whose
+     * ratings can't form a usable scale — so the preview matches the build.
+     *
+     * @return void
+     */
+    public function test_reports_outcomes_summary(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<learningOutcomeGroup identifier="g1"><title>G</title><learningOutcomes>'
+            . '<learningOutcome identifier="o1"><title>Usable</title><description></description>'
+            . '<ratings>'
+            . '<rating><description>Met</description><points>1</points></rating>'
+            . '<rating><description>Not met</description><points>0</points></rating>'
+            . '</ratings></learningOutcome>'
+            . '<learningOutcome identifier="o2"><title>Thin</title><description></description>'
+            . '<ratings><rating><description>Only one</description><points>1</points></rating></ratings>'
+            . '</learningOutcome>'
+            . '</learningOutcomes></learningOutcomeGroup></learningOutcomes>';
+        file_put_contents($dir . '/course_settings/learning_outcomes.xml', $xml);
+
+        $report = (new conversion_report(new course_model(), $dir))->build();
+
+        $this->assertSame(2, $report['outcomes']['total']);
+        $this->assertSame(1, $report['outcomes']['importable']);
+        $this->assertSame(1, $report['outcomes']['skipped']);
+    }
+
+    /**
+     * With no learning_outcomes.xml the outcomes summary is empty (so the report
+     * renders nothing for it), not a zeroed block.
+     *
+     * @return void
+     */
+    public function test_outcomes_summary_empty_without_file(): void {
+        $dir = make_request_directory();
+        $report = (new conversion_report(new course_model(), $dir))->build();
+        $this->assertSame([], $report['outcomes']);
+    }
+
+    /**
      * A recognised question type Moodle would reject (a single-option choice) is
      * counted as not converting, so the "will convert" total stays honest.
      *

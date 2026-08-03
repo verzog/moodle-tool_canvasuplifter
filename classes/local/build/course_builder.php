@@ -284,6 +284,7 @@ class course_builder {
         $this->rewrite_assign_links((int) $course->id, $urlmap);
         $this->rewrite_quiz_links((int) $course->id, $urlmap);
         $this->rewrite_question_links($this->imported_question_ids($builders), $urlmap);
+        $this->rewrite_outcome_links($outcomebuilder->createdids, $urlmap);
 
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
@@ -927,6 +928,34 @@ class course_builder {
             $newcontent = $rewriter->rewrite_internal_links((string) $page->content, $urlmap);
             if ($newcontent !== $page->content) {
                 $DB->set_field('page', 'content', $newcontent, ['id' => $page->id]);
+            }
+        }
+    }
+
+    /**
+     * Rewrite internal Canvas links in imported outcome descriptions once every
+     * link target exists. Outcomes are created up front (before the URL map is
+     * complete), so any $WIKI_REFERENCE$/$CANVAS_OBJECT_REFERENCE$ tokens in their
+     * descriptions are resolved here in the same second pass as pages.
+     *
+     * @param array $outcomeids Ids of the grade_outcomes to process.
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_outcome_links(array $outcomeids, array $urlmap): void {
+        global $DB;
+        if (empty($outcomeids) || empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        foreach ($outcomeids as $id) {
+            $record = $DB->get_record('grade_outcomes', ['id' => (int) $id], 'id, description');
+            if (!$record) {
+                continue;
+            }
+            $newdesc = $rewriter->rewrite_internal_links((string) $record->description, $urlmap);
+            if ($newdesc !== $record->description) {
+                $DB->set_field('grade_outcomes', 'description', $newdesc, ['id' => $record->id]);
             }
         }
     }

@@ -182,10 +182,70 @@ final class outcome_builder_test extends \advanced_testcase {
         $this->assertSame(1, $created);
         $outcome = $DB->get_record('grade_outcomes', ['courseid' => $course->id], '*', MUST_EXIST);
         $scale = $DB->get_record('scale', ['id' => $outcome->scaleid], '*', MUST_EXIST);
-        // Two items, and the comma'd label stayed whole (comma swapped for ";").
+        // Two items, and the comma'd label stayed whole (comma swapped for a
+        // fullwidth comma that can't be mistaken for the ASCII delimiter).
         $items = explode(',', $scale->scale);
         $this->assertCount(2, $items);
-        $this->assertContains('Meets expectations; with support', $items);
+        $this->assertContains("Meets expectations\u{FF0C} with support", $items);
+    }
+
+    /**
+     * Labels differing only by comma vs semicolon stay distinct: the comma
+     * becomes a fullwidth comma, so `Meets, with support` and `Meets; with
+     * support` don't collapse to one item during deduplication.
+     *
+     * @return void
+     */
+    public function test_comma_and_semicolon_labels_stay_distinct(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<learningOutcomeGroup identifier="g1"><title>G</title><learningOutcomes>'
+            . '<learningOutcome identifier="o1"><title>Punctuation</title><description></description>'
+            . '<ratings>'
+            . '<rating><description>Meets, with support</description><points>1</points></rating>'
+            . '<rating><description>Meets; with support</description><points>0</points></rating>'
+            . '</ratings></learningOutcome>'
+            . '</learningOutcomes></learningOutcomeGroup></learningOutcomes>';
+
+        $created = (new outcome_builder($this->package($xml)))->build($course);
+
+        $this->assertSame(1, $created);
+        $outcome = $DB->get_record('grade_outcomes', ['courseid' => $course->id], '*', MUST_EXIST);
+        $scale = $DB->get_record('scale', ['id' => $outcome->scaleid], '*', MUST_EXIST);
+        // Both labels survived as two distinct scale items.
+        $this->assertCount(2, explode(',', $scale->scale));
+    }
+
+    /**
+     * An outcome Canvas exported without a title is still imported under a
+     * fallback name (with its ratings) rather than being dropped silently.
+     *
+     * @return void
+     */
+    public function test_untitled_outcome_imports_under_fallback_name(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<learningOutcomeGroup identifier="g1"><title>G</title><learningOutcomes>'
+            . '<learningOutcome identifier="o1"><title></title><description></description>'
+            . '<ratings>'
+            . '<rating><description>Yes</description><points>1</points></rating>'
+            . '<rating><description>No</description><points>0</points></rating>'
+            . '</ratings></learningOutcome>'
+            . '</learningOutcomes></learningOutcomeGroup></learningOutcomes>';
+
+        $created = (new outcome_builder($this->package($xml)))->build($course);
+
+        $this->assertSame(1, $created);
+        $outcome = $DB->get_record('grade_outcomes', ['courseid' => $course->id], '*', MUST_EXIST);
+        $this->assertSame(get_string('outcomeuntitled', 'tool_canvasuplifter'), $outcome->fullname);
     }
 
     /**

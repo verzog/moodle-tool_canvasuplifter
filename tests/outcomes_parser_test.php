@@ -90,18 +90,18 @@ final class outcomes_parser_test extends \basic_testcase {
     }
 
     /**
-     * An outcome without a title is skipped (it can't be created), and a rating
-     * with an empty description is dropped so it never becomes a blank scale item.
+     * A node with neither a title nor ratings is empty noise and is dropped, and
+     * a rating with an empty description is dropped so it never becomes a blank
+     * scale item.
      *
      * @return void
      */
-    public function test_skips_untitled_outcome_and_blank_ratings(): void {
+    public function test_drops_empty_node_and_blank_ratings(): void {
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'
             . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
             . '<learningOutcomeGroup identifier="g1"><title>Group 1</title><learningOutcomes>'
             . '<learningOutcome identifier="o0"><title></title><description></description>'
-            . '<ratings><rating><description>A</description><points>1</points></rating></ratings>'
-            . '</learningOutcome>'
+            . '<ratings></ratings></learningOutcome>'
             . '<learningOutcome identifier="o1"><title>Kept</title><description></description>'
             . '<ratings>'
             . '<rating><description>Good</description><points>1</points></rating>'
@@ -116,6 +116,31 @@ final class outcomes_parser_test extends \basic_testcase {
         // The blank-description rating was dropped; only the real one remains.
         $this->assertCount(1, $outcomes[0]->ratings);
         $this->assertSame('Good', $outcomes[0]->ratings[0]['description']);
+    }
+
+    /**
+     * An untitled outcome that still carries ratings is retained (with an empty
+     * fullname) so it isn't lost before the builder can surface it — the builder
+     * imports it under a fallback name or counts it as skipped.
+     *
+     * @return void
+     */
+    public function test_keeps_untitled_outcome_with_ratings(): void {
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<learningOutcomeGroup identifier="g1"><title>Group 1</title><learningOutcomes>'
+            . '<learningOutcome identifier="o1"><title></title><description></description>'
+            . '<ratings>'
+            . '<rating><description>Yes</description><points>1</points></rating>'
+            . '<rating><description>No</description><points>0</points></rating>'
+            . '</ratings></learningOutcome>'
+            . '</learningOutcomes></learningOutcomeGroup></learningOutcomes>';
+
+        $outcomes = (new outcomes_parser())->parse($xml);
+
+        $this->assertCount(1, $outcomes);
+        $this->assertSame('', $outcomes[0]->fullname);
+        $this->assertCount(2, $outcomes[0]->ratings);
     }
 
     /**

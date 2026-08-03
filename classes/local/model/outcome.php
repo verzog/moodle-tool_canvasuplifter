@@ -38,4 +38,34 @@ class outcome {
      *            ['description' => string, 'points' => float].
      */
     public array $ratings = [];
+
+    /**
+     * The rating labels as Moodle scale items: reversed to Moodle's
+     * lowest-to-highest order, commas swapped for a fullwidth comma (Moodle scale
+     * items are comma-delimited with no escaping, and a fullwidth comma can't
+     * collide with the ASCII delimiter or another label's punctuation), blanks
+     * dropped, and deduplicated case-insensitively (Moodle can't tell identical
+     * scale items apart). A usable Moodle scale needs at least two of these.
+     *
+     * Moodle-free so both the builder and the analyse report can share it.
+     *
+     * @return array The distinct scale-item labels, low to high.
+     */
+    public function scale_labels(): array {
+        $items = [];
+        $seen = [];
+        foreach (array_reverse($this->ratings) as $rating) {
+            $label = trim(str_replace(',', "\u{FF0C}", (string) ($rating['description'] ?? '')));
+            if ($label === '') {
+                continue;
+            }
+            $key = mb_strtolower($label, 'UTF-8');
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $items[] = $label;
+        }
+        return $items;
+    }
 }

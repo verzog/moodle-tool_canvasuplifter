@@ -45,6 +45,9 @@ class outcome_builder {
     /** @var int Outcomes dropped because their ratings can't form a usable scale. */
     public int $skippedcount = 0;
 
+    /** @var int[] Ids of the grade_outcomes created, for the post-build link pass. */
+    public array $createdids = [];
+
     /**
      * Constructor.
      *
@@ -97,10 +100,11 @@ class outcome_builder {
             // outcome whose ratings can't form one rather than fail the build.
             return false;
         }
+        $name = $this->outcome_name($model);
         $outcome = new grade_outcome();
         $outcome->courseid = (int) $course->id;
-        $outcome->fullname = shorten_text($model->fullname, 254);
-        $outcome->shortname = $this->unique_shortname($course, $model->fullname);
+        $outcome->fullname = shorten_text($name, 254);
+        $outcome->shortname = $this->unique_shortname($course, $name);
         $outcome->scaleid = $scaleid;
         $outcome->description = $model->description;
         $outcome->descriptionformat = FORMAT_HTML;
@@ -108,6 +112,7 @@ class outcome_builder {
         if (!$id) {
             return false;
         }
+        $this->createdids[] = (int) $id;
         // The description may embed package files via $IMS-CC-FILEBASE$ tokens.
         // grade_outcome::get_description() serves them from the system context's
         // grade/outcome file area keyed by the outcome id, so import them there
@@ -134,38 +139,34 @@ class outcome_builder {
      */
     private function create_scale(stdClass $course, outcome $model): ?int {
         global $USER;
-        $items = [];
-        $seen = [];
-        foreach (array_reverse($model->ratings) as $rating) {
-            // Moodle scale items are comma-delimited with no escaping, so a comma
-            // in a rating label would split it into two items; swap commas for
-            // semicolons to keep each label a single scale item.
-            $label = trim(str_replace(',', ';', (string) $rating['description']));
-            if ($label === '') {
-                continue;
-            }
-            // Deduplicate labels (case-insensitively): Moodle can't distinguish
-            // identical scale items, and duplicates would otherwise let a scale
-            // with only one distinct label pass the two-item check below.
-            $key = \core_text::strtolower($label);
-            if (isset($seen[$key])) {
-                continue;
-            }
-            $seen[$key] = true;
-            $items[] = $label;
-        }
+        // Rating labels normalised to Moodle scale items (reversed, comma-safe,
+        // deduplicated); a usable scale needs at least two distinct labels.
+        $items = $model->scale_labels();
         if (count($items) < 2) {
             return null;
         }
         $scale = new grade_scale();
         $scale->courseid = (int) $course->id;
         $scale->userid = (int) $USER->id;
-        $scale->name = shorten_text($model->fullname . ' mastery', 254);
+        $scale->name = shorten_text($this->outcome_name($model) . ' mastery', 254);
         $scale->scale = implode(',', $items);
         $scale->description = '';
         $scale->descriptionformat = FORMAT_HTML;
         $scale->standard = 0;
         return (int) $scale->insert('tool_canvasuplifter');
+    }
+
+    /**
+     * The outcome's display name, falling back to a generic label when Canvas
+     * exported it without a title, so an untitled-but-rated outcome is still
+     * imported (and visible to an admin) rather than dropped.
+     *
+     * @param outcome $model The parsed outcome.
+     * @return string
+     */
+    private function outcome_name(outcome $model): string {
+        $name = trim($model->fullname);
+        return $name !== '' ? $name : get_string('outcomeuntitled', 'tool_canvasuplifter');
     }
 
     /**

@@ -71,7 +71,11 @@ class outcomes_parser {
                     'points' => (float) trim($this->direct_child_text($rating, 'points')),
                 ];
             }
-            if ($model->fullname !== '') {
+            // Keep any outcome carrying a title or ratings; a node with neither
+            // is empty noise. An untitled-but-rated outcome is retained so the
+            // builder surfaces it (imported under a fallback name, or counted as
+            // skipped) instead of dropping it silently here.
+            if ($model->fullname !== '' || !empty($model->ratings)) {
                 $outcomes[] = $model;
             }
         }

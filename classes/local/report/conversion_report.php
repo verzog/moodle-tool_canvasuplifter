@@ -19,6 +19,7 @@ namespace tool_canvasuplifter\local\report;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\model\qti_question;
+use tool_canvasuplifter\local\parser\outcomes_parser;
 use tool_canvasuplifter\local\parser\qti_parser;
 
 /**
@@ -433,7 +434,40 @@ class conversion_report {
             'warnings' => $warnings,
             'unknowntypes' => $this->counts_by_resourcetype(item::KIND_UNKNOWN),
             'questionmatrix' => $this->question_type_matrix(),
+            'outcomes' => $this->outcomes_summary(),
         ];
+    }
+
+    /**
+     * Summarise the Canvas learning outcomes the build would import, so the
+     * analyse preview reflects them (the build creates a course grade outcome per
+     * usable outcome and skips those whose ratings can't form a scale). Requires a
+     * package root; returns an empty array when there is no outcomes file or it
+     * holds none.
+     *
+     * @return array Empty, or {total:int, importable:int, skipped:int}.
+     */
+    protected function outcomes_summary(): array {
+        if ($this->packageroot === null) {
+            return [];
+        }
+        $path = $this->packageroot . '/course_settings/learning_outcomes.xml';
+        if (!is_readable($path)) {
+            return [];
+        }
+        $outcomes = (new outcomes_parser())->parse((string) @file_get_contents($path));
+        if (empty($outcomes)) {
+            return [];
+        }
+        $importable = 0;
+        foreach ($outcomes as $outcome) {
+            // Mirrors outcome_builder: a usable scale needs two distinct labels.
+            if (count($outcome->scale_labels()) >= 2) {
+                $importable++;
+            }
+        }
+        $total = count($outcomes);
+        return ['total' => $total, 'importable' => $importable, 'skipped' => $total - $importable];
     }
 
     /**

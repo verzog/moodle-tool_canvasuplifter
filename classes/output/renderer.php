@@ -71,6 +71,7 @@ class renderer extends plugin_renderer_base {
 
         $out .= $this->mapping_table($report['rows'] ?? []);
         $out .= $this->question_matrix($report['questionmatrix'] ?? []);
+        $out .= $this->outcomes($report['outcomes'] ?? []);
         $out .= $this->section_detail($report['sections'] ?? []);
         $out .= $this->orphans($report['orphans'] ?? []);
         if (debugging() && !empty($report['unknowntypes'])) {
@@ -158,6 +159,25 @@ class renderer extends plugin_renderer_base {
             ];
         }
         return $out . html_writer::table($table);
+    }
+
+    /**
+     * The learning-outcomes summary, or '' when the package has none.
+     *
+     * @param array $outcomes The outcomes sub-report.
+     * @return string HTML.
+     */
+    private function outcomes(array $outcomes): string {
+        if (empty($outcomes)) {
+            return '';
+        }
+        $out = $this->output->heading(get_string('outcomesheading', 'tool_canvasuplifter'), 4);
+        $out .= html_writer::tag('p', get_string('outcomessummary', 'tool_canvasuplifter', [
+            'total' => (int) ($outcomes['total'] ?? 0),
+            'importable' => (int) ($outcomes['importable'] ?? 0),
+            'skipped' => (int) ($outcomes['skipped'] ?? 0),
+        ]));
+        return $out;
     }
 
     /**
