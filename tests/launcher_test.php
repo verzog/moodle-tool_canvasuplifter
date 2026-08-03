@@ -146,6 +146,33 @@ final class launcher_test extends \advanced_testcase {
     }
 
     /**
+     * launcher::list_jobs exposes a user's jobs through the public facade,
+     * without callers reaching into local\job_manager.
+     *
+     * @return void
+     */
+    public function test_list_jobs_lists_the_users_jobs(): void {
+        global $USER;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $jobid = launcher::queue_from_url(
+            (int) $USER->id,
+            (int) $category->id,
+            job_manager::KIND_ANALYSE,
+            'https://example.com/c.imscc'
+        );
+
+        $jobs = launcher::list_jobs((int) $USER->id);
+        $this->assertArrayHasKey($jobid, $jobs);
+        $this->assertSame(job_manager::KIND_ANALYSE, $jobs[$jobid]->kind);
+
+        // Filtering flows through to job_manager.
+        $this->assertCount(0, launcher::list_jobs((int) $USER->id, job_manager::KIND_BUILD));
+    }
+
+    /**
      * queue_job rejects a call with neither a file id nor a URL, before any job
      * row or task is created.
      *
