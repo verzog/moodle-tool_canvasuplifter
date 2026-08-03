@@ -140,7 +140,24 @@ class launcher {
         $kind = self::normalise_kind($kind);
 
         $jobs = new job_manager();
-        $jobid = $jobs->create($userid, $categoryid, $kind, $fileid, $url);
+        if ($fileid !== null) {
+            // Insert the job row under the same per-file lock delete_job() takes,
+            // re-checking the package still exists first: a concurrent delete_job()
+            // could have freed it since the validation above, and the lock keeps it
+            // from being freed between this check and the insert - so the new job
+            // can never reference a package that has just been deleted.
+            $fid = $fileid;
+            $jobid = self::with_package_lock($fid, function () use ($jobs, $userid, $categoryid, $kind, $fid) {
+                if (!get_file_storage()->get_file_by_id($fid)) {
+                    throw new \InvalidArgumentException(
+                        'launcher: $fileid must be an existing tool_canvasuplifter package file owned by the user'
+                    );
+                }
+                return $jobs->create($userid, $categoryid, $kind, $fid, null);
+            });
+        } else {
+            $jobid = $jobs->create($userid, $categoryid, $kind, null, $url);
+        }
 
         $task = $kind === job_manager::KIND_BUILD ? new build_course_task() : new analyse_package_task();
         $task->set_custom_data([
@@ -283,23 +300,62 @@ class launcher {
         // Free the stored package only when no other job still references it. The
         // "Build this course" flow builds from the analyse job's stored file, so
         // the analyse and build jobs share a fileid; deleting one must not pull
-        // the package out from under the other.
+        // the package out from under the other. The reference check, the file
+        // delete and this job's row delete all run under a per-file lock (which
+        // queue_job() also takes) so they are atomic against a build being queued
+        // for the same package or a parallel delete of a sharing job - otherwise
+        // a job could be left with a dead fileid, or the package orphaned.
         if (!empty($job->fileid)) {
             $fileid = (int) $job->fileid;
-            $shared = $DB->record_exists_select(
-                job_manager::TABLE,
-                'fileid = :fileid AND id <> :id',
-                ['fileid' => $fileid, 'id' => $jobid]
-            );
-            if (!$shared) {
-                $file = get_file_storage()->get_file_by_id($fileid);
-                if ($file) {
-                    $file->delete();
+            self::with_package_lock($fileid, function () use ($DB, $jobs, $fileid, $jobid) {
+                $shared = $DB->record_exists_select(
+                    job_manager::TABLE,
+                    'fileid = :fileid AND id <> :id',
+                    ['fileid' => $fileid, 'id' => $jobid]
+                );
+                if (!$shared) {
+                    $file = get_file_storage()->get_file_by_id($fileid);
+                    if ($file) {
+                        $file->delete();
+                    }
                 }
-            }
+                // Delete the row inside the lock, before releasing it, so a
+                // concurrent delete of a sharing job sees this row already gone
+                // and correctly frees the now-unreferenced package.
+                $jobs->delete($jobid);
+            });
+        } else {
+            $jobs->delete($jobid);
         }
-        $jobs->delete($jobid);
         return true;
+    }
+
+    /**
+     * Run a callback while holding an exclusive lock for one stored package.
+     *
+     * Serialises delete_job()'s reference-count-check-and-free against
+     * queue_job()'s validate-file-then-insert-job for the same stored file,
+     * closing the window where a build queued from an analyse job's package could
+     * race that package's deletion (leaving a job with a dead fileid, or orphaning
+     * the package when two sharing jobs are deleted at once). The lock is keyed on
+     * the file id, so unrelated packages never contend.
+     *
+     * @param int $fileid Stored package file id to lock on.
+     * @param callable $fn Work to run under the lock; its return value is returned.
+     * @return mixed Whatever $fn returns.
+     * @throws \moodle_exception When the lock cannot be acquired in time.
+     */
+    protected static function with_package_lock(int $fileid, callable $fn) {
+        $factory = \core\lock\lock_config::get_lock_factory('tool_canvasuplifter_packages');
+        $lock = $factory->get_lock('package_' . $fileid, 10);
+        if (!$lock) {
+            throw new \moodle_exception('locktimeout', 'core');
+        }
+        try {
+            return $fn();
+        } finally {
+            $lock->release();
+        }
     }
 
     /**

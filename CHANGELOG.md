@@ -12,6 +12,11 @@ quickly.
   `delete_job()` removes a job and frees its stored `.imscc` package (leaving any
   course a build already created in place, and refusing to delete another user's
   job), and `package_storage_used()` totals the bytes the stored packages use.
+  `delete_job()` only removes finished (done/failed) jobs — so it never races an
+  in-flight task — and frees a shared package only once no other job references
+  it. The reference check, file delete and job-row delete run under a per-file
+  lock that `queue_job()` also takes, so queuing a build from an analyse job's
+  package cannot race that package's deletion.
 
 ## [0.42.0] - 2026-08-03
 
