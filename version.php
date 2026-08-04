@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026080305;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026080306;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Add job delete and package storage-usage helpers to the launcher facade.
-$plugin->release   = '0.44.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Refresh the roadmap: learning outcomes and LTI placeholders now build.
+$plugin->release   = '0.45.0';

@@ -2,7 +2,7 @@
 
 Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 
-> **Status: alpha, Phases 0–5 complete.** This release can both *analyse* a
+> **Status: alpha, Phases 0–6 complete.** This release can both *analyse* a
 > Canvas package (report what it contains and how cleanly each part maps to
 > Moodle — run as a background task so large packages don't time out the web
 > request) and *build* a new Moodle course from it. The builder creates
@@ -10,11 +10,13 @@ Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 > assignments (`mod_assign`) with optional Canvas rubrics on the
 > `submissions` grading area, quizzes and question banks (`mod_quiz` /
 > `mod_qbank`), forums (`mod_forum`), in-section labels (`mod_label`) for
-> Canvas module subheaders, LTI tool placeholders (`mod_lti`), and a
-> gradebook of categories with Canvas-derived weights. Canvas announcements
-> are posted into the course's news forum. Non-Canvas CC 1.3 packages whose
-> assignments use the IMS Assignment profile build through the same
-> `mod_assign` path. See the Roadmap and "Path to beta" sections below.
+> Canvas module subheaders, LTI tool placeholders (`mod_lti`), a
+> gradebook of categories with Canvas-derived weights, and Canvas learning
+> outcomes as course grade outcomes. Canvas announcements are posted into the
+> course's news forum. Non-Canvas CC 1.3 packages whose assignments use the IMS
+> Assignment profile build through the same `mod_assign` path. For large-scale
+> migrations the sibling `tool_automate` plugin can drive this one in bulk (see
+> "Bulk migrations" below). See the Roadmap and "Path to beta" sections below.
 
 ## Security — import only trusted packages
 
@@ -124,7 +126,10 @@ Admin tools > Canvas Uplifter*.
 - Discussion topics build as forums, seeded with the Canvas prompt as the
   opening post. Canvas does not export the replies, so existing threads do not
   carry across.
-- LTI tools are reported but not yet built.
+- LTI tools build as **hidden** `mod_lti` placeholders carrying the cartridge's
+  launch URL and a teacher note. Canvas does not export tool credentials, so an
+  admin points each at a configured external tool and unhides it; a cartridge
+  with no usable `http(s)` launch URL is reported and skipped rather than built.
 
 ### Canvas quiz exports (QTI 1.2)
 
@@ -282,7 +287,8 @@ Everything lives under `~/.moodle-plugin-ci` (outside the repo).
 | 3 | Quizzes + `mod_qbank` question banks (QTI import) | Done |
 | 4 | Gradebook categories with Canvas weights, LTI placeholders, in-section labels, Canvas rubrics → `gradingform_rubric`, CC 1.3 IMS Assignment profile | Done |
 | 5 | Asynchronous **analyse**: run extract + parse + report as an adhoc task behind the existing polled status page, and move the remote-URL fetch into the task too, so large packages don't time out the web request (the build is already async; this closes the server-side gap that complements the built-in chunked-upload support) | Done |
-| 6 | Learning outcomes, remaining question types (numerical, calculated, free-text multi-blank), and built LTI activities | Planned |
+| 6 | Learning outcomes → course grade outcomes (scales from mastery ratings); Canvas LTI links → hidden `mod_lti` placeholders | Done |
+| 7 | Remaining QTI question types (numerical, calculated, free-text multi-blank) | Planned |
 
 ## Path to beta
 
@@ -314,11 +320,12 @@ shapes against `main`:
       content plus 54/54 questions, 0 skipped; its `web_content*.log` build
       artifact is now filtered, with a regression fixture added). Schoology and
       OpenStax are still untried.
-- [ ] An **outcomes-heavy course** — Canvas learning outcomes are
-      currently dropped (`learning_outcome_identifierref` on rubric
-      criteria and assignments). A surviving build here either confirms
-      we don't break or points at the outcomes pipeline as the next
-      phase.
+- [ ] An **outcomes-heavy course** — Canvas learning outcomes now import
+      as course grade outcomes, each backed by a scale from its mastery
+      ratings (Phase 6 / the 0.41.0 changelog). A clean build of a course
+      rich in outcomes — and in `learning_outcome_identifierref` links on
+      rubric criteria and assignments — is still needed to validate that
+      pipeline end-to-end at scale.
 
 Additional coverage (analysed, doesn't close a box above): **ITSE 1411
 "Beginning Web Programming"** (Canvas, CC 1.1) carries the first-class CC
@@ -347,6 +354,31 @@ friendlier handling of unresolvable filebase references.
 Each successful build narrows the shape space; if all five land cleanly
 (or only surface small fixes), flip `version.php` to `MATURITY_BETA` and
 submit.
+
+## Releasing (maintainers)
+
+The GitHub Actions workflow (`.github/workflows/moodle-ci.yml`) runs the full
+`moodle-plugin-ci` suite — PHP lint, `phpcs` (Moodle standard), PHPDoc, Mustache
+lint, Grunt, PHPUnit and Behat — across every supported Moodle branch (5.0–5.2)
+on the PHP versions each supports (8.2–8.4), against PostgreSQL, MariaDB and
+MySQL: the same tooling the Moodle Plugins directory runs on upload. Reproduce it
+locally with `tooling/local-ci.sh` before tagging.
+
+To cut a release:
+
+1. Keep `$plugin->version` (`YYYYMMDDXX`) monotonically increasing, and set
+   `$plugin->release` (the `0.x` string) and `$plugin->maturity`.
+2. Update `CHANGELOG.md` — add a dated section for the new `release`.
+3. Land those on `main` green, then tag it:
+   `git tag -a v0.45.0 -m 'tool_canvasuplifter 0.45.0' && git push origin v0.45.0`.
+4. Package the ZIP with a **top-level folder named `canvasuplifter`** (not
+   `moodle-tool_canvasuplifter`), which is the directory name Moodle installs it
+   under (`admin/tool/canvasuplifter`).
+
+`$plugin->maturity` stays `MATURITY_ALPHA` — and releases are `0.x` — until the
+**Path to beta** boxes above are met; flipping to `MATURITY_BETA` (and a first
+`1.0`) is the trigger to submit to the Moodle Plugins directory. Alpha `0.x`
+releases can be tagged and distributed as ZIPs in the meantime.
 
 ## Licence
 

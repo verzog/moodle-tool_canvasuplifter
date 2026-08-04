@@ -5,6 +5,16 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.45.0] - 2026-08-04
+
+- Documentation/release-prep, no code or behaviour change. Correct the README to
+  match what the builder actually does today: learning outcomes (0.41.0) and
+  Canvas LTI links now build (LTI as hidden `mod_lti` placeholders), so the
+  status blurb, the "known limitations" LTI note, and the roadmap are updated —
+  Phase 6 (outcomes + LTI) is marked Done and the remaining QTI question types
+  become a new planned Phase 7. Refresh the "Path to beta" outcomes item (they
+  are imported now, not dropped) and add a "Releasing (maintainers)" section.
+
 ## [0.44.0] - 2026-08-03
 
 - Add `launcher::get_job()` to the public facade, so a caller can poll an import
