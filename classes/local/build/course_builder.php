@@ -283,6 +283,7 @@ class course_builder {
         $this->rewrite_forum_links((int) $course->id, $urlmap);
         $this->rewrite_assign_links((int) $course->id, $urlmap);
         $this->rewrite_quiz_links((int) $course->id, $urlmap);
+        $this->rewrite_lti_links((int) $course->id, $urlmap);
         $this->rewrite_question_links($this->imported_question_ids($builders), $urlmap);
         $this->rewrite_outcome_links($outcomebuilder->createdids, $urlmap);
 
@@ -1088,6 +1089,33 @@ class course_builder {
             $newintro = $rewriter->rewrite_internal_links((string) $quiz->intro, $urlmap);
             if ($newintro !== $quiz->intro) {
                 $DB->set_field('quiz', 'intro', $newintro, ['id' => $quiz->id]);
+            }
+        }
+    }
+
+    /**
+     * Rewrite internal Canvas links in built LTI intros.
+     *
+     * An external-tool assignment re-homed to a mod_lti placeholder carries the
+     * assignment instructions into its intro (see lti_builder), which can include
+     * $WIKI_REFERENCE$ or $CANVAS_OBJECT_REFERENCE$ placeholders. As with the
+     * assignment and quiz passes, the URL map isn't complete when each activity is
+     * created, so resolve them here once every link target exists.
+     *
+     * @param int $courseid The built course id.
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_lti_links(int $courseid, array $urlmap): void {
+        global $DB;
+        if (empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        foreach ($DB->get_records('lti', ['course' => $courseid], '', 'id, intro') as $lti) {
+            $newintro = $rewriter->rewrite_internal_links((string) $lti->intro, $urlmap);
+            if ($newintro !== $lti->intro) {
+                $DB->set_field('lti', 'intro', $newintro, ['id' => $lti->id]);
             }
         }
     }

@@ -1065,7 +1065,7 @@ class manifest_parser {
             // resource, so a companion file that merely shares a directory with an
             // unrelated activity (e.g. a web-content file beside a quiz's
             // assessment_meta.xml) never drives this item's visibility.
-            $absolute = null;
+            $xml = '';
             if (
                 $resourceitem->kind === item::KIND_DISCUSSION
                 && !empty($topicunpublished[$resourceitem->identifier])
@@ -1074,13 +1074,18 @@ class manifest_parser {
                 continue;
             } else if ($resourceitem->kind === item::KIND_ASSIGNMENT) {
                 $absolute = $this->locate_assignment_settings($resourceitem);
+                // A CC 1.3 assignment descriptor can be embedded under <resource>
+                // with no settings file on disk; its draft state then lives in the
+                // inline XML, so fall back to it.
+                $xml = $absolute !== null ? (string) @file_get_contents($absolute) : $resourceitem->inlinexml;
             } else if (in_array($resourceitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
                 $absolute = $this->locate_assessment_meta($resourceitem);
+                $xml = $absolute !== null ? (string) @file_get_contents($absolute) : '';
             }
-            if ($absolute === null) {
+            if ($xml === '') {
                 continue;
             }
-            if ($this->metadata_marks_unpublished((string) @file_get_contents($absolute))) {
+            if ($this->metadata_marks_unpublished($xml)) {
                 $resourceitem->isvisible = false;
             }
         }
@@ -1122,13 +1127,16 @@ class manifest_parser {
     }
 
     /**
-     * Whether a Canvas assignment_settings.xml or assessment_meta.xml marks its
-     * activity unpublished. Only a top-level <workflow_state> on a recognised
-     * root element (<assignment> or <quiz>) counts, so an unrelated document that
-     * merely mentions the word is never misread.
+     * Whether an assignment/quiz descriptor marks its activity unpublished. Scoped
+     * to a recognised root element (<assignment> or <quiz>) so an unrelated
+     * document that merely mentions the word is never misread, but within that it
+     * accepts a <workflow_state>unpublished</workflow_state> wherever the shape
+     * carries it: the top level (flat Canvas assignment_settings.xml), the embedded
+     * <assignment> of a New Quizzes assessment_meta.xml, or the Canvas extension of
+     * an inline CC 1.3 assignment profile.
      *
      * @param string $xml The candidate XML payload.
-     * @return bool True when the root element's workflow_state is "unpublished".
+     * @return bool True when the descriptor's workflow_state is "unpublished".
      */
     protected function metadata_marks_unpublished(string $xml): bool {
         if (trim($xml) === '') {
@@ -1142,21 +1150,15 @@ class manifest_parser {
         if (!$loaded || $dom->documentElement === null) {
             return false;
         }
-        $root = $dom->documentElement;
-        if (!in_array($root->localName, ['assignment', 'quiz'], true)) {
+        if (!in_array($dom->documentElement->localName, ['assignment', 'quiz'], true)) {
             return false;
         }
-        $state = $this->first_child_named($root, 'workflow_state');
-        if ($state !== null && strtolower(trim($state->textContent)) === 'unpublished') {
-            return true;
-        }
-        // A New Quizzes assessment_meta.xml keeps the publish state not on the
-        // <quiz> root but on the embedded <assignment> that backs the quiz.
-        if ($root->localName === 'quiz') {
-            $assignment = $this->first_child_named($root, 'assignment');
-            if ($assignment !== null) {
-                $state = $this->first_child_named($assignment, 'workflow_state');
-                return $state !== null && strtolower(trim($state->textContent)) === 'unpublished';
+        // Every <workflow_state> inside such a descriptor refers to the activity
+        // (the flat root, the New-Quiz embedded <assignment>, or the CC 1.3 Canvas
+        // extension), so an "unpublished" one anywhere within means it is a draft.
+        foreach ($dom->getElementsByTagNameNS('*', 'workflow_state') as $state) {
+            if (strtolower(trim($state->textContent)) === 'unpublished') {
+                return true;
             }
         }
         return false;
