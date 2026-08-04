@@ -5,6 +5,31 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.47.0] - 2026-08-04
+
+- Build-fidelity fixes surfaced by the GBIRD-Sandbox regression fixture, closing
+  the batch of issues found reviewing #124:
+  - **External tools as LTI (#125, #128):** a Canvas external-tool assignment
+    (`submission_types=external_tool` with an `external_tool_url` — Quizzes.Next,
+    SCORM, any LTI) is re-homed as an LTI item and builds as a hidden `mod_lti`
+    placeholder carrying the launch URL, instead of a near-empty `mod_assign`
+    that dropped the tool. A Canvas `ContextExternalTool` placed directly in a
+    module with an inline launch URL (and no backing cartridge resource) is now
+    synthesised into the same placeholder rather than being dropped entirely.
+    `lti_builder` accepts an inline launch URL, not only a cartridge file.
+  - **Quiz grade categories (#130):** a quiz/assessment's Canvas assignment-group
+    reference (read from its `assessment_meta.xml`) is now carried onto the model,
+    and `course_builder` routes quiz grade items into that grade category too —
+    previously only assignments were placed, so quiz gradebook grouping was lost.
+  - **Native-QTI question banks (#127):** `questionbank_builder` gains the same
+    `non_cc_assessments/<id>.xml.qti` fallback `quiz_builder` uses, so an orphan
+    New-Quiz bank whose Common Cartridge QTI is an empty shell recovers its
+    questions from the native dump and genuinely builds instead of being skipped.
+  - Addresses two follow-up review notes: metadata-derived visibility now only
+    consults the companion file that actually describes each resource kind, and
+    `files_meta.xml` folder-hiding applies only to standalone file resources — an
+    activity that merely embeds an asset from a hidden folder is no longer hidden.
+
 ## [0.46.0] - 2026-08-04
 
 - Parser accuracy fixes surfaced by the GBIRD-Sandbox regression fixture, all in

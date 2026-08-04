@@ -114,16 +114,20 @@ class manifest_parser {
         // those so the builder can route them to the course's news forum.
         $this->mark_announcements($resources);
 
-        // Read per-assignment grade-group references so course_builder can move
-        // each built mod_assign into its matching grade category.
-        $this->mark_assignment_groups($resources);
-
         // An unpublished assignment/quiz/discussion that no module places (an
         // orphan) carries its draft state only in its own companion metadata
         // (assignment_settings.xml, assessment_meta.xml or its topicMeta), which
         // the module-visibility pass never sees. Derive visibility from that
-        // metadata so a draft orphan imports hidden rather than live.
+        // metadata so a draft orphan imports hidden rather than live. Run this
+        // before mark_assignment_groups so an external-tool assignment's draft
+        // state is read while it is still a KIND_ASSIGNMENT; the re-home to LTI
+        // then preserves the hidden flag.
         $this->mark_unpublished_from_metadata($resources);
+
+        // Read per-assignment grade-group references so course_builder can move
+        // each built mod_assign into its matching grade category, and re-home
+        // external-tool assignments to LTI placeholders.
+        $this->mark_assignment_groups($resources);
 
         // Canvas records which uploaded files/folders are hidden in
         // course_settings/files_meta.xml (e.g. the "Uploaded Media" folder that
@@ -1057,40 +1061,27 @@ class manifest_parser {
             if (!$resourceitem->isvisible) {
                 continue;
             }
+            // Only consult the metadata that actually describes this kind of
+            // resource, so a companion file that merely shares a directory with an
+            // unrelated activity (e.g. a web-content file beside a quiz's
+            // assessment_meta.xml) never drives this item's visibility.
+            $absolute = null;
             if (
                 $resourceitem->kind === item::KIND_DISCUSSION
                 && !empty($topicunpublished[$resourceitem->identifier])
             ) {
                 $resourceitem->isvisible = false;
                 continue;
+            } else if ($resourceitem->kind === item::KIND_ASSIGNMENT) {
+                $absolute = $this->locate_assignment_settings($resourceitem);
+            } else if (in_array($resourceitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
+                $absolute = $this->locate_assessment_meta($resourceitem);
             }
-            // Assignments and quizzes carry a top-level <workflow_state> in a
-            // companion settings file inside the same resource folder. A quiz's
-            // assessment_meta.xml is a sibling of its assessment_qti.xml (it lives
-            // in a dependency resource, so it is not in this item's own files);
-            // derive that sibling path so the quiz's draft state is still read.
-            $candidates = $resourceitem->files;
-            if ($resourceitem->href !== '') {
-                array_unshift($candidates, $resourceitem->href);
+            if ($absolute === null) {
+                continue;
             }
-            foreach ($candidates as $relative) {
-                $dir = trim(str_replace('\\', '/', dirname((string) $relative)), '.');
-                if ($dir !== '') {
-                    $candidates[] = $dir . '/assessment_meta.xml';
-                }
-            }
-            foreach (array_unique($candidates) as $relative) {
-                if (!preg_match('/(assignment_settings|assessment_meta)\.xml$/i', (string) $relative)) {
-                    continue;
-                }
-                $absolute = $this->resolve_within((string) $relative);
-                if ($absolute === null) {
-                    continue;
-                }
-                if ($this->metadata_marks_unpublished((string) @file_get_contents($absolute))) {
-                    $resourceitem->isvisible = false;
-                    break;
-                }
+            if ($this->metadata_marks_unpublished((string) @file_get_contents($absolute))) {
+                $resourceitem->isvisible = false;
             }
         }
     }
@@ -1231,20 +1222,24 @@ class manifest_parser {
             if (!$resourceitem->isvisible) {
                 continue;
             }
+            // A file explicitly listed as hidden by its own identifier is hidden
+            // whatever its kind.
             if (isset($hiddenids[$identifier])) {
                 $resourceitem->isvisible = false;
                 continue;
             }
-            $paths = $resourceitem->files;
-            if ($resourceitem->href !== '') {
-                $paths[] = $resourceitem->href;
+            // Folder-level hiding applies only to standalone file resources,
+            // matched against the file's own payload - never to an auxiliary file
+            // an activity (a page, an assignment) merely embeds from a hidden
+            // folder, which must not drag the whole activity out of view.
+            if ($resourceitem->kind !== item::KIND_FILE) {
+                continue;
             }
-            foreach ($paths as $path) {
-                foreach ($hiddenprefixes as $prefix) {
-                    if (strncmp((string) $path, $prefix, strlen($prefix)) === 0) {
-                        $resourceitem->isvisible = false;
-                        continue 3;
-                    }
+            $payload = $resourceitem->href !== '' ? $resourceitem->href : ($resourceitem->files[0] ?? '');
+            foreach ($hiddenprefixes as $prefix) {
+                if (strncmp((string) $payload, $prefix, strlen($prefix)) === 0) {
+                    $resourceitem->isvisible = false;
+                    break;
                 }
             }
         }
@@ -1483,6 +1478,27 @@ class manifest_parser {
             $modelitem = new item($id, $title);
             $modelitem->kind = item::KIND_URL;
             $modelitem->url = $url;
+            $modelitem->isvisible = $isvisible;
+            if ($id !== '') {
+                $resources[$id] = $modelitem;
+            }
+            return $modelitem;
+        }
+
+        // A Canvas ContextExternalTool placed directly in a module carries an
+        // inline LTI launch <url> but often no matching Common Cartridge LTI
+        // resource (its identifierref resolves to nothing). Rather than drop the
+        // tool, synthesise a hidden mod_lti placeholder from the inline URL, just
+        // as the cartridge-backed LTI path does.
+        if ($contenttype === 'ContextExternalTool') {
+            $url = $this->child_text($node, 'url');
+            if (preg_match('#^https?://#i', $url) !== 1) {
+                return null;
+            }
+            $id = $node->getAttribute('identifier');
+            $modelitem = new item($id, $title);
+            $modelitem->kind = item::KIND_LTI;
+            $modelitem->launchurl = $url;
             $modelitem->isvisible = $isvisible;
             if ($id !== '') {
                 $resources[$id] = $modelitem;
@@ -2157,6 +2173,16 @@ class manifest_parser {
                 continue;
             }
             $settings = assignment_settings::parse($xml);
+            // A Canvas external-tool assignment (Quizzes.Next, SCORM, any LTI) is
+            // really an LTI launch, not a file/text submission. Re-home it as an
+            // LTI item carrying the launch URL so it builds as a hidden mod_lti
+            // placeholder (consistent with the cartridge-LTI path) rather than a
+            // near-empty mod_assign that silently drops the tool.
+            if ($settings->is_external_tool()) {
+                $resourceitem->kind = item::KIND_LTI;
+                $resourceitem->launchurl = $settings->externaltoolurl;
+                continue;
+            }
             if ($settings->gradegroupref !== '') {
                 $resourceitem->gradegroupref = $settings->gradegroupref;
             }
@@ -2165,6 +2191,102 @@ class manifest_parser {
                 $resourceitem->rubricforgrading = $settings->rubricforgrading;
             }
         }
+        $this->mark_quiz_groups($resources);
+    }
+
+    /**
+     * Read each quiz/assessment's Canvas assignment-group reference from its
+     * assessment_meta.xml (the group id lives on the embedded <assignment>, the
+     * same place its workflow_state does) and stash it on the model item so
+     * course_builder can route the built quiz into that grade category - just as
+     * it already does for assignments.
+     *
+     * @param item[] $resources Resources keyed by identifier (modified in place).
+     * @return void
+     */
+    protected function mark_quiz_groups(array &$resources): void {
+        foreach ($resources as $resourceitem) {
+            if (!in_array($resourceitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
+                continue;
+            }
+            if ($resourceitem->gradegroupref !== '') {
+                continue;
+            }
+            $absolute = $this->locate_assessment_meta($resourceitem);
+            if ($absolute === null) {
+                continue;
+            }
+            $ref = $this->read_assessment_group_ref((string) @file_get_contents($absolute));
+            if ($ref !== '') {
+                $resourceitem->gradegroupref = $ref;
+            }
+        }
+    }
+
+    /**
+     * Locate a quiz resource's assessment_meta.xml. It is a sibling of the
+     * assessment_qti.xml (it lives in a dependency resource, so it is not in the
+     * quiz item's own files), so derive the sibling path when it is not listed
+     * directly.
+     *
+     * @param item $resourceitem The quiz/assessment resource.
+     * @return string|null Absolute path within the package, or null.
+     */
+    private function locate_assessment_meta(item $resourceitem): ?string {
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            array_unshift($candidates, $resourceitem->href);
+        }
+        foreach ($candidates as $relative) {
+            $dir = trim(str_replace('\\', '/', dirname((string) $relative)), '.');
+            if ($dir !== '') {
+                $candidates[] = $dir . '/assessment_meta.xml';
+            }
+        }
+        foreach (array_unique($candidates) as $relative) {
+            if (!str_ends_with((string) $relative, 'assessment_meta.xml')) {
+                continue;
+            }
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute !== null) {
+                return $absolute;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Read the Canvas assignment-group reference from an assessment_meta.xml. The
+     * <assignment_group_identifierref> sits on the embedded <assignment> for a
+     * New Quiz; fall back to a top-level one for older shapes.
+     *
+     * @param string $xml The assessment_meta.xml contents.
+     * @return string The group identifier, or '' when absent.
+     */
+    protected function read_assessment_group_ref(string $xml): string {
+        if (trim($xml) === '') {
+            return '';
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded || $dom->documentElement === null) {
+            return '';
+        }
+        $direct = $this->first_child_named($dom->documentElement, 'assignment_group_identifierref');
+        if ($direct !== null && trim($direct->textContent) !== '') {
+            return trim($direct->textContent);
+        }
+        $assignment = $this->first_child_named($dom->documentElement, 'assignment');
+        if ($assignment !== null) {
+            $nested = $this->first_child_named($assignment, 'assignment_group_identifierref');
+            if ($nested !== null) {
+                return trim($nested->textContent);
+            }
+        }
+        return '';
     }
 
     /**

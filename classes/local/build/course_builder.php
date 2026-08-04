@@ -754,8 +754,14 @@ class course_builder {
             $override = ($builder !== null && property_exists($builder, 'linkurl'))
                 ? $builder->linkurl : null;
             $this->record_link_target($urlmap, $modelitem, $cmid, $override);
-            // Drop assignments into their matching Canvas-derived grade category.
-            if ($modelitem->kind === item::KIND_ASSIGNMENT && $modelitem->gradegroupref !== '') {
+            // Drop graded activities into their matching Canvas-derived grade
+            // category. Quizzes belong to a Canvas assignment group too, so route
+            // them alongside assignments; a bank built for an orphan assessment has
+            // no grade item, so place_in_grade_category no-ops for it.
+            if (
+                in_array($modelitem->kind, [item::KIND_ASSIGNMENT, item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)
+                && $modelitem->gradegroupref !== ''
+            ) {
                 $this->place_in_grade_category($course->id, $cmid, $modelitem->gradegroupref);
             }
             // Attach any Canvas rubric the assignment is linked to.
@@ -1422,11 +1428,13 @@ class course_builder {
     }
 
     /**
-     * Move a just-built assignment's grade item into the matching Canvas-derived
-     * grade category, by re-parenting the auto-created grade_item.
+     * Move a just-built activity's grade item into the matching Canvas-derived
+     * grade category, by re-parenting the auto-created grade_item. Module-agnostic
+     * so quizzes route into their Canvas assignment group just like assignments;
+     * an activity with no grade item (e.g. a mod_qbank question bank) is a no-op.
      *
      * @param int $courseid The course id.
-     * @param int $cmid The assignment's course module id.
+     * @param int $cmid The activity's course module id.
      * @param string $groupref Canvas assignment group identifier from the model.
      * @return void
      */
@@ -1436,14 +1444,14 @@ class course_builder {
         if ($categoryid <= 0) {
             return;
         }
-        $cm = get_coursemodule_from_id('assign', $cmid, $courseid, false, IGNORE_MISSING);
+        $cm = get_coursemodule_from_id('', $cmid, $courseid, false, IGNORE_MISSING);
         if (!$cm) {
             return;
         }
         require_once($CFG->libdir . '/grade/grade_item.php');
         $item = \grade_item::fetch([
             'itemtype' => 'mod',
-            'itemmodule' => 'assign',
+            'itemmodule' => $cm->modname,
             'iteminstance' => (int) $cm->instance,
             'courseid' => $courseid,
         ]);

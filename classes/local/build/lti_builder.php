@@ -64,7 +64,12 @@ class lti_builder {
         require_once($CFG->dirroot . '/course/modlib.php');
         require_once($CFG->dirroot . '/mod/lti/locallib.php');
 
-        $cartridge = $this->read_cartridge($modelitem);
+        // An item may carry an inline launch URL (a Canvas ContextExternalTool
+        // placed in a module, or an external-tool assignment) rather than a
+        // cartridge XML file; prefer that when present, else read the cartridge.
+        $cartridge = $modelitem->launchurl !== ''
+            ? self::cartridge_from_launchurl($modelitem->launchurl, $modelitem->title)
+            : $this->read_cartridge($modelitem);
         if ($cartridge === null || $cartridge['launchurl'] === '') {
             return null;
         }
@@ -138,6 +143,30 @@ class lti_builder {
             }
         }
         return null;
+    }
+
+    /**
+     * Build a cartridge array from an inline launch URL (no cartridge file), for
+     * items that carry only a URL: a Canvas ContextExternalTool placed in a
+     * module or an external-tool assignment. Only http(s) URLs are accepted, so a
+     * javascript:/data:/file: scheme never reaches mod_lti as a tool endpoint.
+     *
+     * @param string $launchurl The inline launch URL.
+     * @param string $title The item title (used as the cartridge title).
+     * @return array|null Cartridge fields, or null when the URL is not http(s).
+     */
+    private static function cartridge_from_launchurl(string $launchurl, string $title): ?array {
+        $launchurl = self::sanitise_url(trim($launchurl));
+        if ($launchurl === '') {
+            return null;
+        }
+        return [
+            'title' => trim($title),
+            'launchurl' => $launchurl,
+            'secureurl' => '',
+            'description' => '',
+            'custom' => [],
+        ];
     }
 
     /**

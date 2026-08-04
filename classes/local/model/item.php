@@ -89,6 +89,11 @@ class item {
     /** @var string Inline URL for items that carry it (e.g. Canvas ExternalUrl). */
     public string $url = '';
 
+    /** @var string For KIND_LTI items with an inline launch URL (no cartridge file), e.g. a Canvas
+     *              ContextExternalTool or an external-tool assignment. When set, lti_builder uses it
+     *              directly instead of reading a cartridge XML. */
+    public string $launchurl = '';
+
     /** @var string For assignments: Canvas <assignment_group_identifierref>. */
     public string $gradegroupref = '';
 
