@@ -114,9 +114,26 @@ class manifest_parser {
         // those so the builder can route them to the course's news forum.
         $this->mark_announcements($resources);
 
+        // An unpublished assignment/quiz/discussion that no module places (an
+        // orphan) carries its draft state only in its own companion metadata
+        // (assignment_settings.xml, assessment_meta.xml or its topicMeta), which
+        // the module-visibility pass never sees. Derive visibility from that
+        // metadata so a draft orphan imports hidden rather than live. Run this
+        // before mark_assignment_groups so an external-tool assignment's draft
+        // state is read while it is still a KIND_ASSIGNMENT; the re-home to LTI
+        // then preserves the hidden flag.
+        $this->mark_unpublished_from_metadata($resources);
+
         // Read per-assignment grade-group references so course_builder can move
-        // each built mod_assign into its matching grade category.
+        // each built mod_assign into its matching grade category, and re-home
+        // external-tool assignments to LTI placeholders.
         $this->mark_assignment_groups($resources);
+
+        // Canvas records which uploaded files/folders are hidden in
+        // course_settings/files_meta.xml (e.g. the "Uploaded Media" folder that
+        // holds QTI-internal images). Honour that so a hidden file imports hidden
+        // rather than surfacing as a visible standalone resource.
+        $this->mark_hidden_from_files_meta($resources);
 
         // Fold eXe/IGEN-style lesson bundles into a single page each so the
         // hundreds of framework asset files those packages ship per lesson
@@ -1003,6 +1020,247 @@ class manifest_parser {
     }
 
     /**
+     * Downgrade a resource's visibility to hidden when its own companion metadata
+     * marks it unpublished. Canvas records an activity's draft state in the file
+     * that describes it — assignment_settings.xml for assignments, assessment_meta.xml
+     * for quizzes, and the topicMeta for discussions — not only in module_meta.xml.
+     * An orphan (no module places it) therefore has no module-level visibility to
+     * inherit, so without this it would default to visible and import live. Only
+     * ever hides (never reveals), so a module that already hid an item is unaffected.
+     *
+     * @param item[] $resources Resources keyed by identifier (modified in place).
+     * @return void
+     */
+    protected function mark_unpublished_from_metadata(array &$resources): void {
+        // Discussions keep their state in a topicMeta whose <topic_id> points back
+        // at the discussion resource, and which is often a separately-named
+        // resource, so build a topic_id => isunpublished map across every XML file
+        // first (mirroring the announcement pass).
+        $topicunpublished = [];
+        foreach ($resources as $resourceitem) {
+            $candidates = $resourceitem->files;
+            if ($resourceitem->href !== '') {
+                $candidates[] = $resourceitem->href;
+            }
+            foreach ($candidates as $relative) {
+                if (!preg_match('/\.xml$/i', (string) $relative)) {
+                    continue;
+                }
+                $absolute = $this->resolve_within((string) $relative);
+                if ($absolute === null) {
+                    continue;
+                }
+                $info = $this->read_topicmeta_state((string) @file_get_contents($absolute));
+                if ($info !== null && $info['isunpublished']) {
+                    $topicunpublished[$info['topic_id']] = true;
+                }
+            }
+        }
+
+        foreach ($resources as $resourceitem) {
+            if (!$resourceitem->isvisible) {
+                continue;
+            }
+            // Only consult the metadata that actually describes this kind of
+            // resource, so a companion file that merely shares a directory with an
+            // unrelated activity (e.g. a web-content file beside a quiz's
+            // assessment_meta.xml) never drives this item's visibility.
+            $xml = '';
+            if (
+                $resourceitem->kind === item::KIND_DISCUSSION
+                && !empty($topicunpublished[$resourceitem->identifier])
+            ) {
+                $resourceitem->isvisible = false;
+                continue;
+            } else if ($resourceitem->kind === item::KIND_ASSIGNMENT) {
+                $absolute = $this->locate_assignment_settings($resourceitem);
+                // A CC 1.3 assignment descriptor can be embedded under <resource>
+                // with no settings file on disk; its draft state then lives in the
+                // inline XML, so fall back to it.
+                $xml = $absolute !== null ? (string) @file_get_contents($absolute) : $resourceitem->inlinexml;
+            } else if (in_array($resourceitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
+                $absolute = $this->locate_assessment_meta($resourceitem);
+                $xml = $absolute !== null ? (string) @file_get_contents($absolute) : '';
+            }
+            if ($xml === '') {
+                continue;
+            }
+            if ($this->metadata_marks_unpublished($xml)) {
+                $resourceitem->isvisible = false;
+            }
+        }
+    }
+
+    /**
+     * Read a topicMeta document's back-reference and draft state, whatever its
+     * <type> (ordinary topic or announcement). Returns null for anything that
+     * is not a topicMeta so it can be called against every XML file.
+     *
+     * @param string $xml The candidate XML payload.
+     * @return array|null ['topic_id'=>string, 'isunpublished'=>bool] or null.
+     */
+    protected function read_topicmeta_state(string $xml): ?array {
+        if (trim($xml) === '' || stripos($xml, 'topicMeta') === false) {
+            return null;
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (
+            !$loaded || $dom->documentElement === null
+            || $dom->documentElement->localName !== 'topicMeta'
+        ) {
+            return null;
+        }
+        $topicid = $this->first_child_named($dom->documentElement, 'topic_id');
+        $id = $topicid === null ? '' : trim($topicid->textContent);
+        if ($id === '') {
+            return null;
+        }
+        $state = $this->first_child_named($dom->documentElement, 'workflow_state');
+        return [
+            'topic_id' => $id,
+            'isunpublished' => $state !== null && strtolower(trim($state->textContent)) === 'unpublished',
+        ];
+    }
+
+    /**
+     * Whether an assignment/quiz descriptor marks its activity unpublished. Scoped
+     * to a recognised root element (<assignment> or <quiz>) so an unrelated
+     * document that merely mentions the word is never misread, but within that it
+     * accepts a <workflow_state>unpublished</workflow_state> wherever the shape
+     * carries it: the top level (flat Canvas assignment_settings.xml), the embedded
+     * <assignment> of a New Quizzes assessment_meta.xml, or the Canvas extension of
+     * an inline CC 1.3 assignment profile.
+     *
+     * @param string $xml The candidate XML payload.
+     * @return bool True when the descriptor's workflow_state is "unpublished".
+     */
+    protected function metadata_marks_unpublished(string $xml): bool {
+        if (trim($xml) === '') {
+            return false;
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded || $dom->documentElement === null) {
+            return false;
+        }
+        if (!in_array($dom->documentElement->localName, ['assignment', 'quiz'], true)) {
+            return false;
+        }
+        // Every <workflow_state> inside such a descriptor refers to the activity
+        // (the flat root, the New-Quiz embedded <assignment>, or the CC 1.3 Canvas
+        // extension), so an "unpublished" one anywhere within means it is a draft.
+        foreach ($dom->getElementsByTagNameNS('*', 'workflow_state') as $state) {
+            if (strtolower(trim($state->textContent)) === 'unpublished') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Hide files Canvas marked hidden in course_settings/files_meta.xml. A file is
+     * hidden either directly (a <file> whose identifier matches a resource and
+     * carries <hidden>true</hidden>) or by living under a hidden <folder> — Canvas
+     * puts QTI-internal images under a hidden "Uploaded Media" folder, which would
+     * otherwise import as visible standalone resources. Only ever hides.
+     *
+     * @param item[] $resources Resources keyed by identifier (modified in place).
+     * @return void
+     */
+    protected function mark_hidden_from_files_meta(array &$resources): void {
+        $absolute = $this->resolve_within('course_settings/files_meta.xml');
+        if ($absolute === null) {
+            return;
+        }
+        $xml = (string) @file_get_contents($absolute);
+        if (trim($xml) === '') {
+            return;
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded || $dom->documentElement === null) {
+            return;
+        }
+
+        // Collect hidden file identifiers and hidden folder path prefixes. Folder
+        // paths in files_meta are relative to the package's web_resources root, so
+        // a file href "web_resources/Uploaded Media/x.jpg" sits under folder path
+        // "Uploaded Media".
+        $hiddenids = [];
+        $hiddenprefixes = [];
+        foreach ($dom->getElementsByTagName('file') as $file) {
+            if (!$file instanceof DOMElement) {
+                continue;
+            }
+            $id = trim($file->getAttribute('identifier'));
+            if ($id !== '' && $this->child_flag_true($file, 'hidden')) {
+                $hiddenids[$id] = true;
+            }
+        }
+        foreach ($dom->getElementsByTagName('folder') as $folder) {
+            if (!$folder instanceof DOMElement) {
+                continue;
+            }
+            $path = trim($folder->getAttribute('path'));
+            if ($path !== '' && $this->child_flag_true($folder, 'hidden')) {
+                $hiddenprefixes[] = 'web_resources/' . trim($path, '/') . '/';
+            }
+        }
+        if ($hiddenids === [] && $hiddenprefixes === []) {
+            return;
+        }
+
+        foreach ($resources as $identifier => $resourceitem) {
+            if (!$resourceitem->isvisible) {
+                continue;
+            }
+            // A file explicitly listed as hidden by its own identifier is hidden
+            // whatever its kind.
+            if (isset($hiddenids[$identifier])) {
+                $resourceitem->isvisible = false;
+                continue;
+            }
+            // Folder-level hiding applies only to standalone file resources,
+            // matched against the file's own payload - never to an auxiliary file
+            // an activity (a page, an assignment) merely embeds from a hidden
+            // folder, which must not drag the whole activity out of view.
+            if ($resourceitem->kind !== item::KIND_FILE) {
+                continue;
+            }
+            $payload = $resourceitem->href !== '' ? $resourceitem->href : ($resourceitem->files[0] ?? '');
+            foreach ($hiddenprefixes as $prefix) {
+                if (strncmp((string) $payload, $prefix, strlen($prefix)) === 0) {
+                    $resourceitem->isvisible = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * Whether a direct child element with the given local name has the boolean
+     * text value "true" (case-insensitive).
+     *
+     * @param DOMElement $parent The parent element.
+     * @param string $name Local name of the flag child.
+     * @return bool
+     */
+    protected function child_flag_true(DOMElement $parent, string $name): bool {
+        $child = $this->first_child_named($parent, $name);
+        return $child !== null && strtolower(trim($child->textContent)) === 'true';
+    }
+
+    /**
      * Decide what Moodle activity a Common Cartridge resource maps to.
      *
      * @param string $type The CC resource type string.
@@ -1207,7 +1465,11 @@ class manifest_parser {
             if ($title !== '') {
                 $modelitem->title = $title;
             }
-            $modelitem->isvisible = $isvisible;
+            // Combine the module occurrence's state with any resource-level hidden
+            // state (files_meta.xml, or draft metadata): a file Canvas marked
+            // hidden must stay hidden even when a published module also places it,
+            // so only ever hide - never let an active module reveal it.
+            $modelitem->isvisible = $isvisible && $resources[$ref]->isvisible;
             return $modelitem;
         }
 
@@ -1222,6 +1484,27 @@ class manifest_parser {
             $modelitem = new item($id, $title);
             $modelitem->kind = item::KIND_URL;
             $modelitem->url = $url;
+            $modelitem->isvisible = $isvisible;
+            if ($id !== '') {
+                $resources[$id] = $modelitem;
+            }
+            return $modelitem;
+        }
+
+        // A Canvas ContextExternalTool placed directly in a module carries an
+        // inline LTI launch <url> but often no matching Common Cartridge LTI
+        // resource (its identifierref resolves to nothing). Rather than drop the
+        // tool, synthesise a hidden mod_lti placeholder from the inline URL, just
+        // as the cartridge-backed LTI path does.
+        if ($contenttype === 'ContextExternalTool') {
+            $url = $this->child_text($node, 'url');
+            if (preg_match('#^https?://#i', $url) !== 1) {
+                return null;
+            }
+            $id = $node->getAttribute('identifier');
+            $modelitem = new item($id, $title);
+            $modelitem->kind = item::KIND_LTI;
+            $modelitem->launchurl = $url;
             $modelitem->isvisible = $isvisible;
             if ($id !== '') {
                 $resources[$id] = $modelitem;
@@ -1449,8 +1732,10 @@ class manifest_parser {
      * section while the assignment becomes an orphan.
      *
      * Marks the fallback as suppressed so the orphan pass doesn't surface it
-     * separately. Currently only swaps for KIND_ASSIGNMENT targets, where the
-     * intent ("the assignment is the real activity") is unambiguous.
+     * separately. Swaps for KIND_ASSIGNMENT targets, where the intent ("the
+     * assignment is the real activity") is unambiguous - including an external-tool
+     * assignment already re-homed to a KIND_LTI launch placeholder, which is still
+     * the real activity behind the webcontent fallback.
      *
      * @param item $fallback The resource the organisation tree references.
      * @param item[] $resources All resources keyed by identifier.
@@ -1465,7 +1750,12 @@ class manifest_parser {
             return $fallback;
         }
         $preferred = $resources[$fallback->variantref];
-        if ($preferred->kind !== item::KIND_ASSIGNMENT) {
+        // An external-tool assignment is converted to KIND_LTI before section
+        // building, so accept that re-homed launch placeholder too (a launch URL
+        // marks it as one) - otherwise the fallback HTML would occupy the module
+        // and the real tool would be orphaned.
+        $isrehomedassignment = $preferred->kind === item::KIND_LTI && $preferred->launchurl !== '';
+        if ($preferred->kind !== item::KIND_ASSIGNMENT && !$isrehomedassignment) {
             return $fallback;
         }
         $fallback->suppressed = true;
@@ -1896,6 +2186,27 @@ class manifest_parser {
                 continue;
             }
             $settings = assignment_settings::parse($xml);
+            // A Canvas external-tool assignment (Quizzes.Next, SCORM, any LTI) is
+            // really an LTI launch, not a file/text submission. Re-home it as an
+            // LTI item carrying the launch URL so it builds as a hidden mod_lti
+            // placeholder (consistent with the cartridge-LTI path) rather than a
+            // near-empty mod_assign that silently drops the tool.
+            if ($settings->is_external_tool()) {
+                $resourceitem->kind = item::KIND_LTI;
+                $resourceitem->launchurl = $settings->externaltoolurl;
+                // Preserve the assignment prompt on the launch placeholder. The CC
+                // 1.3 profile carries it inline (<text>); a flat Canvas assignment
+                // keeps it in a sibling HTML that lti_builder reads at build time.
+                $resourceitem->launchdescription = $settings->description;
+                // An inline CC 1.3 profile may hold the title only in its <title>
+                // (no href/files slug to derive from, and lti_builder no longer
+                // parses inlinexml), so carry it over rather than letting the
+                // activity fall back to the generic "External tool" name.
+                if ($resourceitem->title === '' && $settings->title !== '') {
+                    $resourceitem->title = $settings->title;
+                }
+                continue;
+            }
             if ($settings->gradegroupref !== '') {
                 $resourceitem->gradegroupref = $settings->gradegroupref;
             }
@@ -1904,6 +2215,103 @@ class manifest_parser {
                 $resourceitem->rubricforgrading = $settings->rubricforgrading;
             }
         }
+        $this->mark_quiz_groups($resources);
+    }
+
+    /**
+     * Read each quiz/assessment's Canvas assignment-group reference from its
+     * assessment_meta.xml (the group id lives on the embedded <assignment>, the
+     * same place its workflow_state does) and stash it on the model item so
+     * course_builder can route the built quiz into that grade category - just as
+     * it already does for assignments.
+     *
+     * @param item[] $resources Resources keyed by identifier (modified in place).
+     * @return void
+     */
+    protected function mark_quiz_groups(array &$resources): void {
+        foreach ($resources as $resourceitem) {
+            if (!in_array($resourceitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
+                continue;
+            }
+            if ($resourceitem->gradegroupref !== '') {
+                continue;
+            }
+            $absolute = $this->locate_assessment_meta($resourceitem);
+            if ($absolute === null) {
+                continue;
+            }
+            $ref = $this->read_assessment_group_ref((string) @file_get_contents($absolute));
+            if ($ref !== '') {
+                $resourceitem->gradegroupref = $ref;
+            }
+        }
+    }
+
+    /**
+     * Locate a quiz resource's assessment_meta.xml. It is a sibling of the
+     * assessment_qti.xml (it lives in a dependency resource, so it is not in the
+     * quiz item's own files), so derive the sibling path when it is not listed
+     * directly.
+     *
+     * @param item $resourceitem The quiz/assessment resource.
+     * @return string|null Absolute path within the package, or null.
+     */
+    private function locate_assessment_meta(item $resourceitem): ?string {
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            array_unshift($candidates, $resourceitem->href);
+        }
+        foreach ($candidates as $relative) {
+            // Synthesize the sibling assessment_meta.xml beside each payload. A QTI
+            // stored at the package root has dirname() '.', so the sibling is the
+            // bare filename - not skipped, or a root-level meta would be missed.
+            $dir = str_replace('\\', '/', dirname((string) $relative));
+            $candidates[] = ($dir === '.' || $dir === '') ? 'assessment_meta.xml' : $dir . '/assessment_meta.xml';
+        }
+        foreach (array_unique($candidates) as $relative) {
+            if (!str_ends_with((string) $relative, 'assessment_meta.xml')) {
+                continue;
+            }
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute !== null) {
+                return $absolute;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Read the Canvas assignment-group reference from an assessment_meta.xml. The
+     * <assignment_group_identifierref> sits on the embedded <assignment> for a
+     * New Quiz; fall back to a top-level one for older shapes.
+     *
+     * @param string $xml The assessment_meta.xml contents.
+     * @return string The group identifier, or '' when absent.
+     */
+    protected function read_assessment_group_ref(string $xml): string {
+        if (trim($xml) === '') {
+            return '';
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded || $dom->documentElement === null) {
+            return '';
+        }
+        $direct = $this->first_child_named($dom->documentElement, 'assignment_group_identifierref');
+        if ($direct !== null && trim($direct->textContent) !== '') {
+            return trim($direct->textContent);
+        }
+        $assignment = $this->first_child_named($dom->documentElement, 'assignment');
+        if ($assignment !== null) {
+            $nested = $this->first_child_named($assignment, 'assignment_group_identifierref');
+            if ($nested !== null) {
+                return trim($nested->textContent);
+            }
+        }
+        return '';
     }
 
     /**

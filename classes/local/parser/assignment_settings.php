@@ -41,6 +41,9 @@ class assignment_settings {
     /** @var string[] Canvas submission types, e.g. ["online_text_entry", "online_upload"]. */
     public array $submissiontypes = [];
 
+    /** @var string Canvas <external_tool_url>: the LTI launch URL for an external-tool assignment. */
+    public string $externaltoolurl = '';
+
     /** @var string Comma-separated allowed file extensions, e.g. "pdf,docx". */
     public string $allowedextensions = '';
 
@@ -183,6 +186,11 @@ class assignment_settings {
             'html', 'text' => 'online_text_entry',
             'file' => 'online_upload',
             'url' => 'online_url',
+            // An external-tool submission is an LTI launch; keep the token so
+            // is_external_tool() recognises a CC 1.3 external-tool assignment
+            // (with an external_tool_url from the Canvas extension) the same as a
+            // flat Canvas assignment_settings.xml.
+            'external_tool' => 'external_tool',
             default => '',
         };
     }
@@ -227,6 +235,9 @@ class assignment_settings {
         if (isset($node->lock_at) && trim((string) $node->lock_at) !== '') {
             $settings->cutoff = self::timestamp((string) $node->lock_at);
         }
+        if (isset($node->external_tool_url) && trim((string) $node->external_tool_url) !== '') {
+            $settings->externaltoolurl = trim((string) $node->external_tool_url);
+        }
         if (isset($node->assignment_group_identifierref)) {
             $settings->gradegroupref = trim((string) $node->assignment_group_identifierref);
         }
@@ -254,6 +265,17 @@ class assignment_settings {
         }
         $time = strtotime($value);
         return $time !== false ? $time : 0;
+    }
+
+    /**
+     * Whether this is a Canvas external-tool assignment: submission is an
+     * external tool (Quizzes.Next, SCORM, any LTI) and a launch URL is present.
+     * Such an assignment is really an LTI launch, not a file/text submission.
+     *
+     * @return bool
+     */
+    public function is_external_tool(): bool {
+        return $this->externaltoolurl !== '' && in_array('external_tool', $this->submissiontypes, true);
     }
 
     /**

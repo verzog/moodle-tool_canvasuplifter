@@ -283,6 +283,7 @@ class course_builder {
         $this->rewrite_forum_links((int) $course->id, $urlmap);
         $this->rewrite_assign_links((int) $course->id, $urlmap);
         $this->rewrite_quiz_links((int) $course->id, $urlmap);
+        $this->rewrite_lti_links((int) $course->id, $urlmap);
         $this->rewrite_question_links($this->imported_question_ids($builders), $urlmap);
         $this->rewrite_outcome_links($outcomebuilder->createdids, $urlmap);
 
@@ -407,6 +408,13 @@ class course_builder {
             return false;
         }
         $this->record_link_target($urlmap, $modelitem, $cmid);
+        // The runnable quiz has a real grade item, so route it into its Canvas
+        // grade category (the bank built in build_one() has none, so the placement
+        // there no-ops); without this the standalone quiz keeps Moodle's default
+        // category even though gradegroupref was parsed from assessment_meta.xml.
+        if ($modelitem->gradegroupref !== '') {
+            $this->place_in_grade_category($course->id, $cmid, $modelitem->gradegroupref);
+        }
         if (!$modelitem->isvisible) {
             // The bank built from the same item was already hidden in build_one();
             // mirror that here so an unpublished Canvas assessment doesn't leak as
@@ -754,8 +762,14 @@ class course_builder {
             $override = ($builder !== null && property_exists($builder, 'linkurl'))
                 ? $builder->linkurl : null;
             $this->record_link_target($urlmap, $modelitem, $cmid, $override);
-            // Drop assignments into their matching Canvas-derived grade category.
-            if ($modelitem->kind === item::KIND_ASSIGNMENT && $modelitem->gradegroupref !== '') {
+            // Drop graded activities into their matching Canvas-derived grade
+            // category. Quizzes belong to a Canvas assignment group too, so route
+            // them alongside assignments; a bank built for an orphan assessment has
+            // no grade item, so place_in_grade_category no-ops for it.
+            if (
+                in_array($modelitem->kind, [item::KIND_ASSIGNMENT, item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)
+                && $modelitem->gradegroupref !== ''
+            ) {
                 $this->place_in_grade_category($course->id, $cmid, $modelitem->gradegroupref);
             }
             // Attach any Canvas rubric the assignment is linked to.
@@ -1075,6 +1089,33 @@ class course_builder {
             $newintro = $rewriter->rewrite_internal_links((string) $quiz->intro, $urlmap);
             if ($newintro !== $quiz->intro) {
                 $DB->set_field('quiz', 'intro', $newintro, ['id' => $quiz->id]);
+            }
+        }
+    }
+
+    /**
+     * Rewrite internal Canvas links in built LTI intros.
+     *
+     * An external-tool assignment re-homed to a mod_lti placeholder carries the
+     * assignment instructions into its intro (see lti_builder), which can include
+     * $WIKI_REFERENCE$ or $CANVAS_OBJECT_REFERENCE$ placeholders. As with the
+     * assignment and quiz passes, the URL map isn't complete when each activity is
+     * created, so resolve them here once every link target exists.
+     *
+     * @param int $courseid The built course id.
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_lti_links(int $courseid, array $urlmap): void {
+        global $DB;
+        if (empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        foreach ($DB->get_records('lti', ['course' => $courseid], '', 'id, intro') as $lti) {
+            $newintro = $rewriter->rewrite_internal_links((string) $lti->intro, $urlmap);
+            if ($newintro !== $lti->intro) {
+                $DB->set_field('lti', 'intro', $newintro, ['id' => $lti->id]);
             }
         }
     }
@@ -1422,11 +1463,13 @@ class course_builder {
     }
 
     /**
-     * Move a just-built assignment's grade item into the matching Canvas-derived
-     * grade category, by re-parenting the auto-created grade_item.
+     * Move a just-built activity's grade item into the matching Canvas-derived
+     * grade category, by re-parenting the auto-created grade_item. Module-agnostic
+     * so quizzes route into their Canvas assignment group just like assignments;
+     * an activity with no grade item (e.g. a mod_qbank question bank) is a no-op.
      *
      * @param int $courseid The course id.
-     * @param int $cmid The assignment's course module id.
+     * @param int $cmid The activity's course module id.
      * @param string $groupref Canvas assignment group identifier from the model.
      * @return void
      */
@@ -1436,14 +1479,14 @@ class course_builder {
         if ($categoryid <= 0) {
             return;
         }
-        $cm = get_coursemodule_from_id('assign', $cmid, $courseid, false, IGNORE_MISSING);
+        $cm = get_coursemodule_from_id('', $cmid, $courseid, false, IGNORE_MISSING);
         if (!$cm) {
             return;
         }
         require_once($CFG->libdir . '/grade/grade_item.php');
         $item = \grade_item::fetch([
             'itemtype' => 'mod',
-            'itemmodule' => 'assign',
+            'itemmodule' => $cm->modname,
             'iteminstance' => (int) $cm->instance,
             'courseid' => $courseid,
         ]);

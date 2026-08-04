@@ -423,8 +423,15 @@ class quiz_builder {
                 return $absolute;
             }
         }
-        $id = basename(dirname($qtipath));
-        if ($id !== '' && $id !== '.' && $id !== '/') {
+        // Canvas keys the native dump by the assessment id, which is the CC folder
+        // name for a foldered QTI but the resource identifier when the QTI sits at
+        // the package root (where basename(dirname()) yields the extraction dir,
+        // not the id). Try both.
+        $ids = [basename(dirname($qtipath)), $modelitem->identifier];
+        foreach ($ids as $id) {
+            if ($id === '' || $id === '.' || $id === '/') {
+                continue;
+            }
             $candidate = safe_path::within($this->packageroot, 'non_cc_assessments/' . $id . '.xml.qti');
             if ($candidate !== null && is_readable($candidate) && realpath($candidate) !== $already) {
                 return $candidate;

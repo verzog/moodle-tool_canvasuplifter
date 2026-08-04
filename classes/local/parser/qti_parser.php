@@ -202,6 +202,14 @@ class qti_parser {
                 return qti_question::TYPE_DESCRIPTION;
             case 'matching_question':
                 return qti_question::TYPE_MATCHING;
+            case 'categorization_question':
+            case 'ordering_question':
+                // New Quizzes categorization/ordering items carry a response_lid
+                // per bucket/position, so the cardinality fallback below would
+                // mis-read them as multichoice/multianswer. Moodle has no faithful
+                // equivalent (ddmarker/ordering are not core question types here),
+                // so name them explicitly and leave them unsupported.
+                return qti_question::TYPE_UNSUPPORTED;
             case 'multiple_dropdowns_question':
             case 'fill_in_multiple_blanks_question':
                 // Inline dropdowns/blanks: each blank is a response_lid with its

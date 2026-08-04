@@ -64,7 +64,12 @@ class lti_builder {
         require_once($CFG->dirroot . '/course/modlib.php');
         require_once($CFG->dirroot . '/mod/lti/locallib.php');
 
-        $cartridge = $this->read_cartridge($modelitem);
+        // An item may carry an inline launch URL (a Canvas ContextExternalTool
+        // placed in a module, or an external-tool assignment) rather than a
+        // cartridge XML file; prefer that when present, else read the cartridge.
+        $cartridge = $modelitem->launchurl !== ''
+            ? self::cartridge_from_launchurl($modelitem->launchurl, $modelitem->title, $this->launch_instructions($modelitem))
+            : $this->read_cartridge($modelitem);
         if ($cartridge === null || $cartridge['launchurl'] === '') {
             return null;
         }
@@ -107,7 +112,47 @@ class lti_builder {
             $this->skipreason = 'external tool could not be created (' . $e->getMessage() . ')';
             return null;
         }
+        // When the intro carries assignment instructions with package-relative
+        // images, import them and rewrite the intro to pluginfile refs (mirroring
+        // assign_builder), so a re-homed external-tool assignment's prompt renders.
+        if (($cartridge['descriptionhtml'] ?? '') !== '') {
+            $context = \context_module::instance((int) $created->coursemodule);
+            $newintro = (new file_embedder($this->packageroot))
+                ->embed($context->id, 'mod_lti', 'intro', $moduleinfo->intro);
+            if ($newintro !== $moduleinfo->intro) {
+                $DB->set_field('lti', 'intro', $newintro, ['id' => (int) $created->instance]);
+            }
+        }
         return (int) $created->coursemodule;
+    }
+
+    /**
+     * The instructions HTML to show on a re-homed external-tool assignment's LTI
+     * placeholder: the CC 1.3 <text> carried on the model, or a sibling HTML file
+     * for a flat Canvas assignment. Empty for a plain LTI link (no assignment
+     * prompt to preserve).
+     *
+     * @param item $modelitem The LTI item.
+     * @return string Instructions HTML, or ''.
+     */
+    private function launch_instructions(item $modelitem): string {
+        if ($modelitem->launchdescription !== '') {
+            return $modelitem->launchdescription;
+        }
+        $candidates = $modelitem->files;
+        if ($modelitem->href !== '') {
+            $candidates[] = $modelitem->href;
+        }
+        foreach ($candidates as $relative) {
+            if (!preg_match('/\.html?$/i', (string) $relative)) {
+                continue;
+            }
+            $absolute = safe_path::within($this->packageroot, (string) $relative);
+            if ($absolute !== null && is_readable($absolute)) {
+                return (string) @file_get_contents($absolute);
+            }
+        }
+        return '';
     }
 
     /**
@@ -138,6 +183,32 @@ class lti_builder {
             }
         }
         return null;
+    }
+
+    /**
+     * Build a cartridge array from an inline launch URL (no cartridge file), for
+     * items that carry only a URL: a Canvas ContextExternalTool placed in a
+     * module or an external-tool assignment. Only http(s) URLs are accepted, so a
+     * javascript:/data:/file: scheme never reaches mod_lti as a tool endpoint.
+     *
+     * @param string $launchurl The inline launch URL.
+     * @param string $title The item title (used as the cartridge title).
+     * @param string $descriptionhtml Instructions HTML to show in the intro (or '').
+     * @return array|null Cartridge fields, or null when the URL is not http(s).
+     */
+    private static function cartridge_from_launchurl(string $launchurl, string $title, string $descriptionhtml = ''): ?array {
+        $launchurl = self::sanitise_url(trim($launchurl));
+        if ($launchurl === '') {
+            return null;
+        }
+        return [
+            'title' => trim($title),
+            'launchurl' => $launchurl,
+            'secureurl' => '',
+            'description' => '',
+            'descriptionhtml' => trim($descriptionhtml),
+            'custom' => [],
+        ];
     }
 
     /**
@@ -178,6 +249,9 @@ class lti_builder {
             'launchurl' => $launchurl,
             'secureurl' => $secureurl,
             'description' => $description,
+            // A cartridge carries only a plain-text <description>; the raw-HTML
+            // instructions slot is used by the re-homed-assignment path.
+            'descriptionhtml' => '',
             'custom' => self::read_custom_parameters($dom),
         ];
     }
@@ -263,12 +337,16 @@ class lti_builder {
         array $cartridge
     ): stdClass {
         // Surface the imported description and a per-site reminder so an admin
-        // looking at the activity knows the tool still needs credentials.
-        $description = trim($cartridge['description']);
+        // looking at the activity knows the tool still needs credentials. A
+        // re-homed assignment supplies raw instructions HTML; a cartridge supplies
+        // only a plain-text description, which is escaped.
         $note = get_string('lti_placeholder_note', 'tool_canvasuplifter');
-        $intro = $description !== ''
-            ? '<p>' . s($description) . '</p><p><em>' . s($note) . '</em></p>'
-            : '<p><em>' . s($note) . '</em></p>';
+        $descriptionhtml = trim($cartridge['descriptionhtml'] ?? '');
+        if ($descriptionhtml === '') {
+            $plain = trim($cartridge['description']);
+            $descriptionhtml = $plain !== '' ? '<p>' . s($plain) . '</p>' : '';
+        }
+        $intro = $descriptionhtml . '<p><em>' . s($note) . '</em></p>';
 
         return (object) [
             'modulename' => 'lti',

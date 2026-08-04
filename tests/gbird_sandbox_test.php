@@ -37,13 +37,15 @@ use tool_canvasuplifter\local\report\conversion_report;
  *
  * This suite asserts the analyse pipeline's output (manifest_parser +
  * conversion_report); it does not build the course. Along the way the fixture
- * surfaced build-fidelity gaps that are asserted as known limitations so they
- * cannot regress unnoticed and will trip when fixed: a dropped external tool
- * (issue #125), unpublished orphan activities that parse as visible (#126),
- * empty orphan New-Quiz shells the report counts as building though the build
- * skips them (#127), external-tool assignments that build as plain assignments,
- * losing the launch (#128), and categorization/ordering questions mis-counted as
- * supported choice questions (#129).
+ * surfaced a batch of parser/build-fidelity issues that are now fixed and guarded
+ * here so they cannot regress: an inline ContextExternalTool synthesised into an
+ * LTI placeholder instead of being dropped (issue #125), orphan activities whose
+ * unpublished state is derived from their own metadata (#126), external-tool
+ * assignments re-homed as LTI placeholders (#128), quiz grade items routed to
+ * their Canvas assignment group (#130), categorization/ordering questions marked
+ * unsupported rather than mis-counted (#129), and files_meta hidden files imported
+ * hidden (#131). questionbank_builder's native-QTI fallback (#127) is exercised by
+ * questionbank_builder_test; here the two orphan banks still report as mod_qbank.
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -81,31 +83,34 @@ final class gbird_sandbox_test extends \advanced_testcase {
         $this->assertSame('GBIRD-Sandbox', $report['coursename']);
         $this->assertSame('canvas', $report['source']);
         $this->assertSame(4, $report['sectioncount']);
-        $this->assertSame(32, $report['itemcount']);
+        // 33 items: the 32 previously found plus the inline ContextExternalTool
+        // "Accredible", which is now surfaced as an LTI placeholder (#125) instead
+        // of being dropped.
+        $this->assertSame(33, $report['itemcount']);
         // Everything the analyser finds builds now; nothing is deferred/skipped.
-        $this->assertSame(32, $report['buildsnowtotal']);
+        $this->assertSame(33, $report['buildsnowtotal']);
         $this->assertSame(0, $report['latertotal']);
 
-        // Per-kind tally (quiz covers both the referenced quiz and the two
-        // orphan question banks): 10 assignments, 2 discussions, 10 files,
-        // 7 pages, 3 assessments. Note (issue #128): 7 of the 10 assignments are
-        // external-tool assignments that build as plain assignments, losing the
-        // launch - the report still counts them as mod_assign here.
+        // Per-kind tally. 7 of the original 10 assignments are external-tool
+        // assignments re-homed as LTI placeholders (#128), leaving 3 assignments;
+        // the 8 LTI items are those 7 plus the inline "Accredible" tool (#125).
+        // quiz still covers the referenced quiz and the two orphan banks.
         $bykind = [];
         foreach ($report['rows'] as $row) {
             $bykind[$row['kind']] = ($bykind[$row['kind']] ?? 0) + $row['count'];
         }
-        $this->assertSame(10, $bykind['assignment']);
+        $this->assertSame(3, $bykind['assignment']);
         $this->assertSame(2, $bykind['discussion']);
         $this->assertSame(10, $bykind['file']);
+        $this->assertSame(8, $bykind['lti']);
         $this->assertSame(7, $bykind['page']);
         $this->assertSame(3, $bykind['quiz']);
 
         // The referenced New Quiz builds as mod_quiz; the two unreferenced
-        // assessments are reported as mod_qbank. Note (issue #127): those two
-        // are empty New-Quiz shells, and questionbank_builder has no native-QTI
-        // fallback, so the actual build skips them - the report is optimistic
-        // here. When #127 is fixed these expectations change.
+        // assessments are reported as mod_qbank. questionbank_builder now has the
+        // same native-QTI fallback as quiz_builder (#127), so the orphan bank whose
+        // native dump carries questions genuinely builds; the other orphan's dump
+        // is also empty, so it remains a shell the build skips.
         $targets = [];
         foreach ($report['rows'] as $row) {
             if ($row['kind'] === 'quiz') {
@@ -132,38 +137,46 @@ final class gbird_sandbox_test extends \advanced_testcase {
     public function test_gbird_sandbox_question_matrix(): void {
         $matrix = $this->fixture_report()['questionmatrix'];
 
-        // Note (issue #129): the 7 "supported" include 2 categorization_question
-        // and 1 ordering_question that qti_parser mis-maps into multianswer /
-        // multichoice - they should be unsupported. See the dedicated known-gap
-        // test below; when #129 lands these counts change.
-        $this->assertSame(12, $matrix['total']);
-        $this->assertSame(7, $matrix['supported']);
+        // 16 questions across the referenced "New quiz engine" (12) and the orphan
+        // "New quiz engine (question bank)" (4) - both read through the native-QTI
+        // fallback now that questionbank_builder has it too (#127), so the report
+        // mirrors what builds. Since #129, categorization_question and
+        // ordering_question are unsupported rather than mis-read as choice questions.
+        $this->assertSame(16, $matrix['total']);
+        $this->assertSame(8, $matrix['supported']);
 
         // A supported row (importable type, no dropped-source attribution).
         $supported = static fn(string $label, int $count): array => [
             'label' => $label, 'count' => $count, 'supported' => true, 'status' => 'yes', 'sources' => [],
         ];
-        // An unsupported New-Quiz row: status 'unsupported', dropped from the one
-        // "New quiz engine" assessment (full sources array with its count).
-        $newquiz = static fn(string $label): array => [
-            'label' => $label, 'count' => 1, 'supported' => false, 'status' => 'unsupported',
-            'sources' => [['name' => 'New quiz engine', 'count' => 1]],
+        // An unsupported New-Quiz row: status 'unsupported', dropped from the named
+        // assessments (full sources array with per-assessment counts).
+        $newquiz = static fn(string $label, int $count, array $sources): array => [
+            'label' => $label, 'count' => $count, 'supported' => false, 'status' => 'unsupported',
+            'sources' => $sources,
         ];
+        $engine = [['name' => 'New quiz engine', 'count' => 1]];
 
         // Assert the whole matrix: label, count, supported flag, status and the
         // complete sources array (with counts), in order - so a status or
         // attribution regression is caught, not just a count change.
         $this->assertSame([
-            $supported('description', 1),
+            $supported('description', 2),
             $supported('essay', 1),
-            $supported('matching', 1),
+            $supported('matching', 2),
             $supported('multianswer', 3),
-            $supported('multichoice', 1),
-            $newquiz('file_upload_question'),
-            $newquiz('calculated_question'),
-            $newquiz('fill_in_multiple_blanks_question'),
-            $newquiz('hot_spot_question'),
-            $newquiz('numerical_question'),
+            // The orphan bank and the referenced quiz each contribute one
+            // categorization item, so it carries two source attributions.
+            $newquiz('categorization_question', 2, [
+                ['name' => 'New quiz engine (question bank)', 'count' => 1],
+                ['name' => 'New quiz engine', 'count' => 1],
+            ]),
+            $newquiz('file_upload_question', 1, $engine),
+            $newquiz('calculated_question', 1, $engine),
+            $newquiz('ordering_question', 1, $engine),
+            $newquiz('fill_in_multiple_blanks_question', 1, $engine),
+            $newquiz('hot_spot_question', 1, $engine),
+            $newquiz('numerical_question', 1, $engine),
         ], $matrix['rows']);
     }
 
@@ -214,8 +227,12 @@ final class gbird_sandbox_test extends \advanced_testcase {
             );
         }
 
+        // The external-tool assignments (Test SCORM, HIPPY, Employee Health, Risk
+        // hierarchy) build as LTI placeholders (#128), and the inline
+        // ContextExternalTool "Accredible" now appears as an LTI item (#125) rather
+        // than being dropped; the plain assignment and the quiz are unchanged.
         $this->assertSame([
-            'My first Module' => ['assignment::Test SCORM'],
+            'My first Module' => ['lti::Test SCORM'],
             'Canvas for document management' => [
                 'file::Sample PDF.pdf',
                 'file::Sample word document.docx',
@@ -224,8 +241,9 @@ final class gbird_sandbox_test extends \advanced_testcase {
                 'page::UI elements',
                 'page::Page elements',
                 'page::images',
-                'assignment::HIPPY Lifecycle Calendar',
+                'lti::HIPPY Lifecycle Calendar',
                 'page::ui elements',
+                'lti::Accredible',
             ],
             'This is a new module' => [
                 'discussion::New discussion',
@@ -234,8 +252,8 @@ final class gbird_sandbox_test extends \advanced_testcase {
             ],
             'Week 1' => [
                 'page::Introduction',
-                'assignment::Employee Health and Wellness (Sample Course)',
-                'assignment::Risk hierarchy of control',
+                'lti::Employee Health and Wellness (Sample Course)',
+                'lti::Risk hierarchy of control',
             ],
         ], $structure);
     }
@@ -256,13 +274,16 @@ final class gbird_sandbox_test extends \advanced_testcase {
             $this->fixture_course()->orphans
         );
 
+        // Three of the orphan assignments are external-tool assignments, so they
+        // are re-homed as LTI placeholders (#128); the two plain assignment copies
+        // stay assignments.
         $this->assertSame([
             'page::wiki_content/kitchen-sink.html',
             'assignment::gb33a0fe57d92fca871e56089c5077d59/assignment-copy.html',
             'assignment::g6a3ca58aba8fd36264c8732aa3a34541/assignment-test.html',
-            'assignment::g360087309c27f1c1b6535122b4b1a47f/hippy-lifecycle-calendar.html',
-            'assignment::g059f7fcba556f584d38c917eb5faae9e/module-1-critically-reflective-practice.html',
-            'assignment::g4bbcaba2f97bc3db1a939e82f3e07674/the-3cs.html',
+            'lti::g360087309c27f1c1b6535122b4b1a47f/hippy-lifecycle-calendar.html',
+            'lti::g059f7fcba556f584d38c917eb5faae9e/module-1-critically-reflective-practice.html',
+            'lti::g4bbcaba2f97bc3db1a939e82f3e07674/the-3cs.html',
             'discussion::id=geed05fe2eecad7f1697a643011326699',
             'quiz::id=g51585833ff292ade97dca48bd6f5325f',
             'quiz::id=g78c27639db700ae8ce95dd4a0e414918',
@@ -277,19 +298,53 @@ final class gbird_sandbox_test extends \advanced_testcase {
     }
 
     /**
-     * Known limitation (issue #128), asserted so it cannot regress unnoticed:
-     * seven of the ten assignments are Canvas external-tool assignments
-     * (submission_types=external_tool with an external_tool_url - Quizzes.Next /
-     * SCORM). assign_builder ignores the submission type and builds a plain
-     * mod_assign, so the tool launch is lost, yet the report counts each as a
-     * successful assignment build. Assert the fixture really contains these so
-     * the gap is documented; when #128 lands (build them as an LTI placeholder,
-     * or preserve the launch), revisit the assignment expectations.
+     * Regression guard for issue #131: course_settings/files_meta.xml marks the
+     * "Uploaded Media" folder hidden (it holds a QTI-internal image). That file is
+     * now imported hidden rather than as a visible standalone resource, while files
+     * in non-hidden folders stay visible - so the hidden state is honoured without
+     * blanket-hiding every uploaded file.
      *
      * @return void
      */
-    public function test_gbird_sandbox_external_tool_assignments_are_a_known_gap(): void {
+    public function test_gbird_sandbox_files_meta_hidden_is_honoured(): void {
+        $meta = file_get_contents(__DIR__ . '/fixtures/gbird_sandbox/course_settings/files_meta.xml');
+        // The fixture genuinely marks the "Uploaded Media" folder hidden.
+        $this->assertMatchesRegularExpression(
+            '#<folder path="Uploaded Media">\s*<hidden>true</hidden>#',
+            $meta
+        );
+
+        $byhref = [];
+        foreach ($this->fixture_course()->orphans as $orphan) {
+            if ($orphan->kind === item::KIND_FILE && $orphan->href !== '') {
+                $byhref[$orphan->href] = $orphan;
+            }
+        }
+
+        // The QTI-internal image under the hidden folder imports hidden ...
+        $hidden = 'web_resources/Uploaded Media/755728c4-f4bf-4893-8893-68393414f6cc';
+        $this->assertArrayHasKey($hidden, $byhref);
+        $this->assertFalse($byhref[$hidden]->isvisible);
+
+        // ... while ordinary uploaded files (not under a hidden folder) stay visible.
+        foreach (['web_resources/ABC123/Sample PDF.pdf', 'web_resources/XYZ345/Sample PDF.pdf'] as $visible) {
+            $this->assertArrayHasKey($visible, $byhref);
+            $this->assertTrue($byhref[$visible]->isvisible);
+        }
+    }
+
+    /**
+     * Regression guard for issue #128: seven of the ten assignments are Canvas
+     * external-tool assignments (submission_types=external_tool with an
+     * external_tool_url - Quizzes.Next / SCORM). These are re-homed as LTI items
+     * carrying the launch URL, so they build as hidden mod_lti placeholders rather
+     * than as near-empty mod_assign activities that drop the tool.
+     *
+     * @return void
+     */
+    public function test_gbird_sandbox_external_tool_assignments_become_lti(): void {
         $root = __DIR__ . '/fixtures/gbird_sandbox';
+        // The fixture really contains seven external-tool assignments at source.
         $externaltool = 0;
         foreach (glob($root . '/*/assignment_settings.xml') as $settings) {
             $xml = file_get_contents($settings);
@@ -298,6 +353,22 @@ final class gbird_sandbox_test extends \advanced_testcase {
             }
         }
         $this->assertSame(7, $externaltool);
+
+        // Each parses into an LTI item that carries an http(s) launch URL, and no
+        // assignment retains an external-tool submission.
+        $items = $this->fixture_course()->orphans;
+        foreach ($this->fixture_course()->sections as $section) {
+            $items = array_merge($items, $section->items);
+        }
+        $ltilaunches = 0;
+        foreach ($items as $it) {
+            if ($it->kind === item::KIND_LTI && $it->launchurl !== '') {
+                $this->assertMatchesRegularExpression('#^https?://#', $it->launchurl);
+                $ltilaunches++;
+            }
+        }
+        // The seven ex-assignments plus the inline "Accredible" ContextExternalTool.
+        $this->assertSame(8, $ltilaunches);
     }
 
     /**
@@ -323,39 +394,45 @@ final class gbird_sandbox_test extends \advanced_testcase {
             )
         );
 
-        // Every assignment must still carry its gradegroupref (all ten reference
-        // the "Assignments" category), so the assignment->category link survives.
+        // Every graded activity must carry its gradegroupref into the "Assignments"
+        // category so course_builder can route its grade item there. The three
+        // plain assignments still do; and since #130, the three quiz/assessment
+        // items do too (their group ref lives on the assessment_meta.xml). The
+        // seven external-tool assignments are now LTI placeholders (#128) with no
+        // grade item, so they correctly carry no ref.
         $items = $course->orphans;
         foreach ($course->sections as $section) {
             $items = array_merge($items, $section->items);
         }
         $assignmentrefs = [];
+        $quizrefs = [];
         foreach ($items as $it) {
             if ($it->kind === item::KIND_ASSIGNMENT) {
                 $assignmentrefs[] = $it->gradegroupref;
+            } else if (in_array($it->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
+                $quizrefs[] = $it->gradegroupref;
             }
         }
-        $this->assertCount(10, $assignmentrefs);
+        $this->assertCount(3, $assignmentrefs);
         $this->assertSame(['g91781b5190987f195cb5692a92a91322'], array_values(array_unique($assignmentrefs)));
+        $this->assertCount(3, $quizrefs);
+        $this->assertSame(['g91781b5190987f195cb5692a92a91322'], array_values(array_unique($quizrefs)));
     }
 
     /**
-     * Known limitation (issue #126), asserted so it cannot regress unnoticed:
-     * an orphan activity keeps the model default isvisible=true even when its own
-     * metadata marks it unpublished, because visibility is only derived from a
-     * module occurrence (referenced items) or topicMeta (discussions), never from
-     * an orphan's own assignment_settings.xml. These four orphan assignments carry
-     * workflow_state=unpublished yet currently parse as visible; when #126 lands,
-     * this test should assert isvisible=false for them instead.
+     * Regression guard for issue #126: an orphan activity (no module places it) has
+     * no module occurrence to inherit visibility from, so its draft state must be
+     * read from its own companion metadata. Assignments carry workflow_state in
+     * assignment_settings.xml, New-Quiz shells in assessment_meta.xml (on the
+     * embedded <assignment>), and the discussion in its separately-named topicMeta.
+     * Every one of these is unpublished at source and now imports hidden.
      *
      * @return void
      */
-    public function test_gbird_sandbox_orphan_unpublished_visibility_is_a_known_gap(): void {
+    public function test_gbird_sandbox_orphan_unpublished_visibility_is_derived(): void {
         $root = __DIR__ . '/fixtures/gbird_sandbox';
-        // Every unpublished orphan activity kind, keyed by the orphan's g-id, with
-        // the source metadata file that marks it unpublished: assignments carry it
-        // in assignment_settings.xml, the New-Quiz shells in assessment_meta.xml,
-        // and the discussion in its separately-named topic metadata file.
+        // Every unpublished orphan activity, keyed by the orphan's g-id, with the
+        // source metadata file that marks it unpublished.
         $drafts = [
             'gb33a0fe57d92fca871e56089c5077d59' => 'gb33a0fe57d92fca871e56089c5077d59/assignment_settings.xml',
             'g360087309c27f1c1b6535122b4b1a47f' => 'g360087309c27f1c1b6535122b4b1a47f/assignment_settings.xml',
@@ -379,25 +456,34 @@ final class gbird_sandbox_test extends \advanced_testcase {
             // The fixture genuinely marks each of these unpublished at source ...
             $source = file_get_contents($root . '/' . $sourcefile);
             $this->assertStringContainsString('<workflow_state>unpublished</workflow_state>', $source);
-            // ... but the parser currently exposes them as visible (the gap).
+            // ... and the parser now derives that draft state onto the orphan.
             $this->assertArrayHasKey($identifier, $byid);
-            $this->assertTrue($byid[$identifier]->isvisible);
+            $this->assertFalse($byid[$identifier]->isvisible, "$identifier should import hidden");
         }
+
+        // A published orphan is untouched: the "Assignment test" copy carries
+        // workflow_state=published and stays visible, proving the derivation only
+        // ever hides drafts rather than blanket-hiding every orphan.
+        $publishedid = 'g6a3ca58aba8fd36264c8732aa3a34541';
+        $this->assertStringContainsString(
+            '<workflow_state>published</workflow_state>',
+            file_get_contents($root . '/' . $publishedid . '/assignment_settings.xml')
+        );
+        $this->assertArrayHasKey($publishedid, $byid);
+        $this->assertTrue($byid[$publishedid]->isvisible);
     }
 
     /**
-     * Known limitation (issue #129), asserted so it cannot regress unnoticed: the
-     * native QTI carries categorization_question and ordering_question items, but
-     * qti_parser::map_type() has no mapping for either, so they fall through the
-     * response-cardinality heuristic and are counted as supported multi-answer /
-     * multiple-choice questions - importing silently mis-graded. They therefore do
-     * not appear as their own (unsupported) rows in the matrix. When #129 lands
-     * (map them, or mark them unsupported), those labels appear as unsupported and
-     * this test - plus the multianswer/multichoice counts above - must change.
+     * Regression guard for issue #129: the native QTI carries a
+     * categorization_question and an ordering_question, which qti_parser::map_type()
+     * once left to the response-cardinality heuristic - silently mis-counting them
+     * as supported multi-answer / multiple-choice questions. They are now mapped to
+     * TYPE_UNSUPPORTED, so each appears as its own unsupported row in the matrix,
+     * attributed to the "New quiz engine" assessment they came from.
      *
      * @return void
      */
-    public function test_gbird_sandbox_categorization_ordering_are_a_known_gap(): void {
+    public function test_gbird_sandbox_categorization_ordering_are_unsupported(): void {
         $qti = '';
         foreach (glob(__DIR__ . '/fixtures/gbird_sandbox/non_cc_assessments/*.qti') as $file) {
             $qti .= file_get_contents($file);
@@ -405,27 +491,36 @@ final class gbird_sandbox_test extends \advanced_testcase {
         $this->assertStringContainsString('categorization_question', $qti);
         $this->assertStringContainsString('ordering_question', $qti);
 
-        $labels = array_column($this->fixture_report()['questionmatrix']['rows'], 'label');
-        $this->assertNotContains('categorization_question', $labels);
-        $this->assertNotContains('ordering_question', $labels);
+        $rows = $this->fixture_report()['questionmatrix']['rows'];
+        $byid = [];
+        foreach ($rows as $row) {
+            $byid[$row['label']] = $row;
+        }
+        foreach (['categorization_question', 'ordering_question'] as $label) {
+            $this->assertArrayHasKey($label, $byid, "$label should be its own matrix row");
+            $this->assertFalse($byid[$label]['supported'], "$label must be unsupported");
+            $this->assertSame('unsupported', $byid[$label]['status']);
+        }
+        // Ordering appears only in the referenced quiz; categorization appears in
+        // both it and the orphan bank (whose native questions the report now reads
+        // through the same fallback the builder uses), so it carries two sources.
+        $this->assertSame([['name' => 'New quiz engine', 'count' => 1]], $byid['ordering_question']['sources']);
+        $this->assertSame([
+            ['name' => 'New quiz engine (question bank)', 'count' => 1],
+            ['name' => 'New quiz engine', 'count' => 1],
+        ], $byid['categorization_question']['sources']);
     }
 
     /**
-     * Known limitation, asserted so it cannot regress unnoticed: the fixture's
-     * unpublished "Accredible" ContextExternalTool (a Canvas external tool with
-     * an inline LTI launch URL) is currently dropped. Its module_meta item
-     * references a CC resource that no manifest resource provides, so the parser
-     * does not yet turn it into an LTI item - unlike a cartridge-backed LTI link,
-     * which builds as a hidden mod_lti placeholder. This is why the counts above
-     * total 32 rather than 33.
-     *
-     * See issue #125: import Canvas ContextExternalTool module items that carry
-     * an inline launch URL as hidden mod_lti placeholders. When that lands, this
-     * test should start failing (the tool becomes an item) and be updated.
+     * Regression guard for issue #125: the fixture's unpublished "Accredible"
+     * ContextExternalTool (a Canvas external tool with an inline LTI launch URL,
+     * whose module_meta item references a CC resource no manifest resource
+     * provides) is now synthesised into a hidden LTI placeholder from its inline
+     * URL rather than being dropped - just like a cartridge-backed LTI link.
      *
      * @return void
      */
-    public function test_gbird_sandbox_external_tool_is_a_known_drop(): void {
+    public function test_gbird_sandbox_inline_external_tool_becomes_lti(): void {
         $root = __DIR__ . '/fixtures/gbird_sandbox';
 
         // The fixture genuinely exercises the case: the tool, its launch URL and
@@ -435,16 +530,22 @@ final class gbird_sandbox_test extends \advanced_testcase {
         $this->assertStringContainsString('<title>Accredible</title>', $modulemeta);
         $this->assertStringContainsString('https://api.accredible.com/v1/lti/launch', $modulemeta);
 
-        // But it is absent from the parsed model: no LTI item, and nothing named
-        // after the tool. If this ever changes, revisit the counts above.
+        // It now appears in the parsed model as an LTI item carrying that launch
+        // URL, and - being unpublished in Canvas - imports hidden.
         $course = (new manifest_parser($root))->parse();
         $items = $course->orphans;
         foreach ($course->sections as $section) {
             $items = array_merge($items, $section->items);
         }
+        $accredible = null;
         foreach ($items as $it) {
-            $this->assertNotSame(item::KIND_LTI, $it->kind);
-            $this->assertStringNotContainsStringIgnoringCase('accredible', (string) $it->title);
+            if ($it->title === 'Accredible') {
+                $accredible = $it;
+            }
         }
+        $this->assertNotNull($accredible, 'the Accredible tool should be an item');
+        $this->assertSame(item::KIND_LTI, $accredible->kind);
+        $this->assertSame('https://api.accredible.com/v1/lti/launch', $accredible->launchurl);
+        $this->assertFalse($accredible->isvisible, 'the unpublished tool should import hidden');
     }
 }

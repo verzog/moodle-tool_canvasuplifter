@@ -5,6 +5,56 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.47.0] - 2026-08-04
+
+- Build-fidelity fixes surfaced by the GBIRD-Sandbox regression fixture, closing
+  the batch of issues found reviewing #124:
+  - **External tools as LTI (#125, #128):** a Canvas external-tool assignment
+    (`submission_types=external_tool` with an `external_tool_url` — Quizzes.Next,
+    SCORM, any LTI) is re-homed as an LTI item and builds as a hidden `mod_lti`
+    placeholder carrying the launch URL, instead of a near-empty `mod_assign`
+    that dropped the tool. A Canvas `ContextExternalTool` placed directly in a
+    module with an inline launch URL (and no backing cartridge resource) is now
+    synthesised into the same placeholder rather than being dropped entirely.
+    `lti_builder` accepts an inline launch URL, not only a cartridge file.
+  - **Quiz grade categories (#130):** a quiz/assessment's Canvas assignment-group
+    reference (read from its `assessment_meta.xml`) is now carried onto the model,
+    and `course_builder` routes quiz grade items into that grade category too —
+    previously only assignments were placed, so quiz gradebook grouping was lost.
+  - **Native-QTI question banks (#127):** `questionbank_builder` gains the same
+    `non_cc_assessments/<id>.xml.qti` fallback `quiz_builder` uses, so an orphan
+    New-Quiz bank whose Common Cartridge QTI is an empty shell recovers its
+    questions from the native dump and genuinely builds instead of being skipped.
+  - Addresses the review notes raised on the batch: metadata-derived visibility
+    only consults the companion file that describes each resource kind, and
+    honours a root-level `assessment_meta.xml` sibling; `files_meta.xml`
+    folder-hiding applies only to standalone file resources (and survives a
+    published module placing a hidden file); a CC 1.3 external-tool submission
+    format is recognised; the standalone quiz-from-bank build and the analyse
+    report/nudge mirror the grade-category and native-QTI behaviour; a re-homed
+    external-tool assignment keeps its instructions on the LTI placeholder and is
+    still preferred over its webcontent variant fallback.
+
+## [0.46.0] - 2026-08-04
+
+- Parser accuracy fixes surfaced by the GBIRD-Sandbox regression fixture, all in
+  the Moodle-free `parser`/`report` layer:
+  - **Question mapping (#129):** Canvas New Quizzes `categorization_question` and
+    `ordering_question` items no longer fall through the response-cardinality
+    heuristic (which mis-counted them as supported multi-answer / multiple-choice
+    questions). `qti_parser::map_type()` now maps both to `TYPE_UNSUPPORTED`, so
+    they are reported by name rather than silently mis-imported.
+  - **Orphan visibility (#126):** an unpublished assignment, quiz or discussion
+    that no module places (an orphan) now imports hidden. Visibility is derived
+    from the activity's own companion metadata — `assignment_settings.xml`,
+    `assessment_meta.xml` (including the New-Quiz `<assignment>`/`<workflow_state>`
+    nesting) and the discussion `topicMeta` — rather than only from a module
+    occurrence. The pass only ever hides, so a published orphan stays visible.
+  - **Hidden files (#131):** `course_settings/files_meta.xml` is now honoured, so
+    a file Canvas marked hidden — directly or by living under a hidden folder such
+    as the QTI-internal "Uploaded Media" — imports hidden instead of surfacing as
+    a visible standalone resource.
+
 ## [0.45.0] - 2026-08-04
 
 - Documentation/release-prep, no code or behaviour change. Correct the README to
