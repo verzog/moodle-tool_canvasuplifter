@@ -1730,8 +1730,10 @@ class manifest_parser {
      * section while the assignment becomes an orphan.
      *
      * Marks the fallback as suppressed so the orphan pass doesn't surface it
-     * separately. Currently only swaps for KIND_ASSIGNMENT targets, where the
-     * intent ("the assignment is the real activity") is unambiguous.
+     * separately. Swaps for KIND_ASSIGNMENT targets, where the intent ("the
+     * assignment is the real activity") is unambiguous - including an external-tool
+     * assignment already re-homed to a KIND_LTI launch placeholder, which is still
+     * the real activity behind the webcontent fallback.
      *
      * @param item $fallback The resource the organisation tree references.
      * @param item[] $resources All resources keyed by identifier.
@@ -1746,7 +1748,12 @@ class manifest_parser {
             return $fallback;
         }
         $preferred = $resources[$fallback->variantref];
-        if ($preferred->kind !== item::KIND_ASSIGNMENT) {
+        // An external-tool assignment is converted to KIND_LTI before section
+        // building, so accept that re-homed launch placeholder too (a launch URL
+        // marks it as one) - otherwise the fallback HTML would occupy the module
+        // and the real tool would be orphaned.
+        $isrehomedassignment = $preferred->kind === item::KIND_LTI && $preferred->launchurl !== '';
+        if ($preferred->kind !== item::KIND_ASSIGNMENT && !$isrehomedassignment) {
             return $fallback;
         }
         $fallback->suppressed = true;
@@ -2185,6 +2192,10 @@ class manifest_parser {
             if ($settings->is_external_tool()) {
                 $resourceitem->kind = item::KIND_LTI;
                 $resourceitem->launchurl = $settings->externaltoolurl;
+                // Preserve the assignment prompt on the launch placeholder. The CC
+                // 1.3 profile carries it inline (<text>); a flat Canvas assignment
+                // keeps it in a sibling HTML that lti_builder reads at build time.
+                $resourceitem->launchdescription = $settings->description;
                 continue;
             }
             if ($settings->gradegroupref !== '') {
@@ -2242,10 +2253,11 @@ class manifest_parser {
             array_unshift($candidates, $resourceitem->href);
         }
         foreach ($candidates as $relative) {
-            $dir = trim(str_replace('\\', '/', dirname((string) $relative)), '.');
-            if ($dir !== '') {
-                $candidates[] = $dir . '/assessment_meta.xml';
-            }
+            // Synthesize the sibling assessment_meta.xml beside each payload. A QTI
+            // stored at the package root has dirname() '.', so the sibling is the
+            // bare filename - not skipped, or a root-level meta would be missed.
+            $dir = str_replace('\\', '/', dirname((string) $relative));
+            $candidates[] = ($dir === '.' || $dir === '') ? 'assessment_meta.xml' : $dir . '/assessment_meta.xml';
         }
         foreach (array_unique($candidates) as $relative) {
             if (!str_ends_with((string) $relative, 'assessment_meta.xml')) {

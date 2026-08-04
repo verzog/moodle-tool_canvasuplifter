@@ -25,10 +25,15 @@ quickly.
     `non_cc_assessments/<id>.xml.qti` fallback `quiz_builder` uses, so an orphan
     New-Quiz bank whose Common Cartridge QTI is an empty shell recovers its
     questions from the native dump and genuinely builds instead of being skipped.
-  - Addresses two follow-up review notes: metadata-derived visibility now only
-    consults the companion file that actually describes each resource kind, and
-    `files_meta.xml` folder-hiding applies only to standalone file resources — an
-    activity that merely embeds an asset from a hidden folder is no longer hidden.
+  - Addresses the review notes raised on the batch: metadata-derived visibility
+    only consults the companion file that describes each resource kind, and
+    honours a root-level `assessment_meta.xml` sibling; `files_meta.xml`
+    folder-hiding applies only to standalone file resources (and survives a
+    published module placing a hidden file); a CC 1.3 external-tool submission
+    format is recognised; the standalone quiz-from-bank build and the analyse
+    report/nudge mirror the grade-category and native-QTI behaviour; a re-homed
+    external-tool assignment keeps its instructions on the LTI placeholder and is
+    still preferred over its webcontent variant fallback.
 
 ## [0.46.0] - 2026-08-04
 
