@@ -2,7 +2,7 @@
 
 Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 
-> **Status: alpha, Phases 0–6 complete.** This release can both *analyse* a
+> **Status: alpha, Phases 0–7 complete.** This release can both *analyse* a
 > Canvas package (report what it contains and how cleanly each part maps to
 > Moodle — run as a background task so large packages don't time out the web
 > request) and *build* a new Moodle course from it. The builder creates
@@ -288,7 +288,8 @@ Everything lives under `~/.moodle-plugin-ci` (outside the repo).
 | 4 | Gradebook categories with Canvas weights, LTI placeholders, in-section labels, Canvas rubrics → `gradingform_rubric`, CC 1.3 IMS Assignment profile | Done |
 | 5 | Asynchronous **analyse**: run extract + parse + report as an adhoc task behind the existing polled status page, and move the remote-URL fetch into the task too, so large packages don't time out the web request (the build is already async; this closes the server-side gap that complements the built-in chunked-upload support) | Done |
 | 6 | Learning outcomes → course grade outcomes (scales from mastery ratings); Canvas LTI links → hidden `mod_lti` placeholders | Done |
-| 7 | Remaining QTI question types (numerical, calculated, free-text multi-blank) | Planned |
+| 7 | Bulk-migration integration: the public `\tool_canvasuplifter\launcher` facade (queue / list / get / delete / storage) and the `tool_automate` bulk driver — URL-list and server-directory sources, build-now or analyse-for-later, and a *Staged Canvas imports* review page with a storage counter and selective delete | Done |
+| 8 | Remaining QTI question types (numerical, calculated, free-text multi-blank) | Planned |
 
 ## Path to beta
 
