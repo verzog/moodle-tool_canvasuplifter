@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<learningOutcomes xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd">
+  <learningOutcomeGroup identifier="g83bb73b54b30b0570d08958818998e32">
+    <title>outcome group 1</title>
+    <learningOutcomes>
+      <learningOutcome identifier="gfe4af95062cac41369f350551c4c5abc">
+        <title>New outcome</title>
+        <description>&lt;p&gt;This is a new outcome&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</description>
+        <calculation_method>decaying_average</calculation_method>
+        <calculation_int>65</calculation_int>
+        <copied_from_outcome_id>105140000000000204</copied_from_outcome_id>
+        <friendly_description>This is a new outcome</friendly_description>
+        <points_possible>4.0</points_possible>
+        <mastery_points>3.0</mastery_points>
+        <ratings>
+          <rating>
+            <description>Exceeds Mastery</description>
+            <points>4.0</points>
+          </rating>
+          <rating>
+            <description>Mastery</description>
+            <points>3.0</points>
+          </rating>
+          <rating>
+            <description>Near Mastery</description>
+            <points>2.0</points>
+          </rating>
+          <rating>
+            <description>Below Mastery</description>
+            <points>1.0</points>
+          </rating>
+          <rating>
+            <description>No Evidence</description>
+            <points>0.0</points>
+          </rating>
+        </ratings>
+      </learningOutcome>
+    </learningOutcomes>
+  </learningOutcomeGroup>
+</learningOutcomes>

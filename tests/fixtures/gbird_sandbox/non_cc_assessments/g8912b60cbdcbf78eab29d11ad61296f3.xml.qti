@@ -1,0 +1,1333 @@
+<?xml version="1.0"?>
+<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
+  <assessment ident="g8912b60cbdcbf78eab29d11ad61296f3" title="New quiz engine" external_assignment_id="774">
+    <qtimetadata>
+      <qtimetadatafield>
+        <fieldlabel>cc_maxattempts</fieldlabel>
+        <fieldentry>1</fieldentry>
+      </qtimetadatafield>
+    </qtimetadata>
+    <section ident="root_section">
+      <item ident="a523e0c9b7f2cfac12813b1dba598458" title="">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>categorization_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>1.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry/>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>fcba44f22b024e93b1d2ac1cb2f7c49b</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>none</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>score_method</fieldlabel>
+              <fieldentry>all_or_nothing</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;p&gt;Organise these&lt;/p&gt;</mattext>
+          </material>
+          <response_lid ident="df8c6061-c111-4508-8610-82f716eb5337" rcardinality="Multiple">
+            <material>
+              <mattext texttype="text/plain">Animals</mattext>
+            </material>
+            <render_choice>
+              <response_label ident="1d79ce21-f2fc-4d65-9a26-801079219edb">
+                <material>
+                  <mattext texttype="text/plain">Hamster</mattext>
+                </material>
+              </response_label>
+              <response_label ident="213edb63-9da1-49f4-af25-fcc589e5eeb0">
+                <material>
+                  <mattext texttype="text/plain">Cat</mattext>
+                </material>
+              </response_label>
+              <response_label ident="60448af5-4e32-4b45-b6ec-2f0ea7e39d3f">
+                <material>
+                  <mattext texttype="text/plain">Blackberry</mattext>
+                </material>
+              </response_label>
+              <response_label ident="622109c7-e946-4e54-9617-fe866f46f5a6">
+                <material>
+                  <mattext texttype="text/plain">Trumpet</mattext>
+                </material>
+              </response_label>
+              <response_label ident="90211773-4433-46fb-a4d8-f1c6d445b8d3">
+                <material>
+                  <mattext texttype="text/plain">Thistle</mattext>
+                </material>
+              </response_label>
+              <response_label ident="99d9031e-a269-4e34-a7a8-6bd4c9603e7d">
+                <material>
+                  <mattext texttype="text/plain">Mouse</mattext>
+                </material>
+              </response_label>
+              <response_label ident="a423350a-2234-4044-ba68-a634583b8f3c">
+                <material>
+                  <mattext texttype="text/plain">Dog</mattext>
+                </material>
+              </response_label>
+              <response_label ident="b1dcc0b2-016a-4139-82db-f17942c47962">
+                <material>
+                  <mattext texttype="text/plain">Rose</mattext>
+                </material>
+              </response_label>
+              <response_label ident="d4d7b2d1-9ce3-4292-8f25-238e175f1ab7">
+                <material>
+                  <mattext texttype="text/plain">Mower</mattext>
+                </material>
+              </response_label>
+              <response_label ident="df2d0619-428a-401f-b801-0fef5b4a96c7">
+                <material>
+                  <mattext texttype="text/plain">Ferret</mattext>
+                </material>
+              </response_label>
+              <response_label ident="f13dd684-087f-4920-b56c-373bb9150f80">
+                <material>
+                  <mattext texttype="text/plain">Tomato</mattext>
+                </material>
+              </response_label>
+            </render_choice>
+          </response_lid>
+          <response_lid ident="dfa82253-b7cf-4f77-a99d-f65c138f861e" rcardinality="Multiple">
+            <material>
+              <mattext texttype="text/plain">Plants</mattext>
+            </material>
+            <render_choice>
+              <response_label ident="1d79ce21-f2fc-4d65-9a26-801079219edb">
+                <material>
+                  <mattext texttype="text/plain">Hamster</mattext>
+                </material>
+              </response_label>
+              <response_label ident="213edb63-9da1-49f4-af25-fcc589e5eeb0">
+                <material>
+                  <mattext texttype="text/plain">Cat</mattext>
+                </material>
+              </response_label>
+              <response_label ident="60448af5-4e32-4b45-b6ec-2f0ea7e39d3f">
+                <material>
+                  <mattext texttype="text/plain">Blackberry</mattext>
+                </material>
+              </response_label>
+              <response_label ident="622109c7-e946-4e54-9617-fe866f46f5a6">
+                <material>
+                  <mattext texttype="text/plain">Trumpet</mattext>
+                </material>
+              </response_label>
+              <response_label ident="90211773-4433-46fb-a4d8-f1c6d445b8d3">
+                <material>
+                  <mattext texttype="text/plain">Thistle</mattext>
+                </material>
+              </response_label>
+              <response_label ident="99d9031e-a269-4e34-a7a8-6bd4c9603e7d">
+                <material>
+                  <mattext texttype="text/plain">Mouse</mattext>
+                </material>
+              </response_label>
+              <response_label ident="a423350a-2234-4044-ba68-a634583b8f3c">
+                <material>
+                  <mattext texttype="text/plain">Dog</mattext>
+                </material>
+              </response_label>
+              <response_label ident="b1dcc0b2-016a-4139-82db-f17942c47962">
+                <material>
+                  <mattext texttype="text/plain">Rose</mattext>
+                </material>
+              </response_label>
+              <response_label ident="d4d7b2d1-9ce3-4292-8f25-238e175f1ab7">
+                <material>
+                  <mattext texttype="text/plain">Mower</mattext>
+                </material>
+              </response_label>
+              <response_label ident="df2d0619-428a-401f-b801-0fef5b4a96c7">
+                <material>
+                  <mattext texttype="text/plain">Ferret</mattext>
+                </material>
+              </response_label>
+              <response_label ident="f13dd684-087f-4920-b56c-373bb9150f80">
+                <material>
+                  <mattext texttype="text/plain">Tomato</mattext>
+                </material>
+              </response_label>
+            </render_choice>
+          </response_lid>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition>
+            <conditionvar>
+              <varequal respident="df8c6061-c111-4508-8610-82f716eb5337">a423350a-2234-4044-ba68-a634583b8f3c</varequal>
+              <varequal respident="df8c6061-c111-4508-8610-82f716eb5337">213edb63-9da1-49f4-af25-fcc589e5eeb0</varequal>
+              <varequal respident="df8c6061-c111-4508-8610-82f716eb5337">df2d0619-428a-401f-b801-0fef5b4a96c7</varequal>
+              <varequal respident="df8c6061-c111-4508-8610-82f716eb5337">99d9031e-a269-4e34-a7a8-6bd4c9603e7d</varequal>
+              <varequal respident="df8c6061-c111-4508-8610-82f716eb5337">1d79ce21-f2fc-4d65-9a26-801079219edb</varequal>
+            </conditionvar>
+            <setvar action="Add" varname="SCORE">50.00</setvar>
+          </respcondition>
+          <respcondition>
+            <conditionvar>
+              <varequal respident="dfa82253-b7cf-4f77-a99d-f65c138f861e">b1dcc0b2-016a-4139-82db-f17942c47962</varequal>
+              <varequal respident="dfa82253-b7cf-4f77-a99d-f65c138f861e">60448af5-4e32-4b45-b6ec-2f0ea7e39d3f</varequal>
+              <varequal respident="dfa82253-b7cf-4f77-a99d-f65c138f861e">90211773-4433-46fb-a4d8-f1c6d445b8d3</varequal>
+              <varequal respident="dfa82253-b7cf-4f77-a99d-f65c138f861e">f13dd684-087f-4920-b56c-373bb9150f80</varequal>
+            </conditionvar>
+            <setvar action="Add" varname="SCORE">50.00</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>
+      <item ident="30ad746fde5baa38accf539f9a2609f3" title="Match these">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>matching_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>1.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>37183,71727,98096,98759</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>7e1ddc46242d1ad674b7b91024813eaf</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>none</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>scoring_algorithm</fieldlabel>
+              <fieldentry>PartialDeep</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;p&gt;Match the following&lt;/p&gt;</mattext>
+          </material>
+          <response_lid ident="response_37183">
+            <material>
+              <mattext texttype="text/plain">Adelaide</mattext>
+            </material>
+            <render_choice>
+              <response_label ident="37183">
+                <material>
+                  <mattext>Crows</mattext>
+                </material>
+              </response_label>
+              <response_label ident="71727">
+                <material>
+                  <mattext>Sea Eagles</mattext>
+                </material>
+              </response_label>
+              <response_label ident="98096">
+                <material>
+                  <mattext>Hawks</mattext>
+                </material>
+              </response_label>
+              <response_label ident="98759">
+                <material>
+                  <mattext>Eagles</mattext>
+                </material>
+              </response_label>
+            </render_choice>
+          </response_lid>
+          <response_lid ident="response_98096">
+            <material>
+              <mattext texttype="text/plain">Hawthorn</mattext>
+            </material>
+            <render_choice>
+              <response_label ident="37183">
+                <material>
+                  <mattext>Crows</mattext>
+                </material>
+              </response_label>
+              <response_label ident="71727">
+                <material>
+                  <mattext>Sea Eagles</mattext>
+                </material>
+              </response_label>
+              <response_label ident="98096">
+                <material>
+                  <mattext>Hawks</mattext>
+                </material>
+              </response_label>
+              <response_label ident="98759">
+                <material>
+                  <mattext>Eagles</mattext>
+                </material>
+              </response_label>
+            </render_choice>
+          </response_lid>
+          <response_lid ident="response_71727">
+            <material>
+              <mattext texttype="text/plain">Manly</mattext>
+            </material>
+            <render_choice>
+              <response_label ident="37183">
+                <material>
+                  <mattext>Crows</mattext>
+                </material>
+              </response_label>
+              <response_label ident="71727">
+                <material>
+                  <mattext>Sea Eagles</mattext>
+                </material>
+              </response_label>
+              <response_label ident="98096">
+                <material>
+                  <mattext>Hawks</mattext>
+                </material>
+              </response_label>
+              <response_label ident="98759">
+                <material>
+                  <mattext>Eagles</mattext>
+                </material>
+              </response_label>
+            </render_choice>
+          </response_lid>
+          <response_lid ident="response_98759">
+            <material>
+              <mattext texttype="text/plain">West Coast</mattext>
+            </material>
+            <render_choice>
+              <response_label ident="37183">
+                <material>
+                  <mattext>Crows</mattext>
+                </material>
+              </response_label>
+              <response_label ident="71727">
+                <material>
+                  <mattext>Sea Eagles</mattext>
+                </material>
+              </response_label>
+              <response_label ident="98096">
+                <material>
+                  <mattext>Hawks</mattext>
+                </material>
+              </response_label>
+              <response_label ident="98759">
+                <material>
+                  <mattext>Eagles</mattext>
+                </material>
+              </response_label>
+            </render_choice>
+          </response_lid>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition>
+            <conditionvar>
+              <varequal respident="response_37183">37183</varequal>
+            </conditionvar>
+            <setvar action="Add" varname="SCORE">25.00</setvar>
+          </respcondition>
+          <respcondition>
+            <conditionvar>
+              <varequal respident="response_98096">98096</varequal>
+            </conditionvar>
+            <setvar action="Add" varname="SCORE">25.00</setvar>
+          </respcondition>
+          <respcondition>
+            <conditionvar>
+              <varequal respident="response_71727">71727</varequal>
+            </conditionvar>
+            <setvar action="Add" varname="SCORE">25.00</setvar>
+          </respcondition>
+          <respcondition>
+            <conditionvar>
+              <varequal respident="response_98759">98759</varequal>
+            </conditionvar>
+            <setvar action="Add" varname="SCORE">25.00</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>
+      <item ident="2edc0217e6d0b5110a48f736e16a08fc" title="Stimulus question" instructions="What happens here?">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>text_only_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>0.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry/>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>f028ae0f5e1f0e754392a3c4b2fd1f8e</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>none</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>source_url</fieldlabel>
+              <fieldentry/>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>passage</fieldlabel>
+              <fieldentry>false</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material orientation="left">
+            <mattext texttype="text/html">&lt;p&gt;Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.&lt;/p&gt;</mattext>
+          </material>
+        </presentation>
+      </item>
+      <item ident="cd66f8dea4985ca39b9cd49d85ea542a" title="">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>multiple_answers_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>1.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>c151b768-f8d1-40fc-8da9-b63247cd99ff,aa1fddb8-edd3-4d03-867e-8a6b77b7634c,aec8f6f7-8310-4196-a063-c05b7f7c79f0,61a85eb5-604b-4ad0-9e62-9999e6092137</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>02a654a34074b31464b2e7d55aff3410</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>parent_stimulus_item_ident</fieldlabel>
+              <fieldentry>2edc0217e6d0b5110a48f736e16a08fc</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>none</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>scoring_algorithm</fieldlabel>
+              <fieldentry>PartialScore</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;p&gt;Which are true?&lt;/p&gt;</mattext>
+          </material>
+          <response_lid ident="response1" rcardinality="Multiple">
+            <render_choice>
+              <response_label ident="c151b768-f8d1-40fc-8da9-b63247cd99ff">
+                <material>
+                  <mattext texttype="text/html">&lt;p&gt;Me&lt;/p&gt;</mattext>
+                </material>
+              </response_label>
+              <response_label ident="aa1fddb8-edd3-4d03-867e-8a6b77b7634c">
+                <material>
+                  <mattext texttype="text/html">&lt;p&gt;and me&lt;/p&gt;</mattext>
+                </material>
+              </response_label>
+              <response_label ident="aec8f6f7-8310-4196-a063-c05b7f7c79f0">
+                <material>
+                  <mattext texttype="text/html">&lt;p&gt;and also me&lt;/p&gt;</mattext>
+                </material>
+              </response_label>
+              <response_label ident="61a85eb5-604b-4ad0-9e62-9999e6092137">
+                <material>
+                  <mattext texttype="text/html">&lt;p&gt;but not me&lt;/p&gt;</mattext>
+                </material>
+              </response_label>
+            </render_choice>
+          </response_lid>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>
+              <and>
+                <varequal respident="response1">c151b768-f8d1-40fc-8da9-b63247cd99ff</varequal>
+                <varequal respident="response1">aa1fddb8-edd3-4d03-867e-8a6b77b7634c</varequal>
+                <varequal respident="response1">aec8f6f7-8310-4196-a063-c05b7f7c79f0</varequal>
+                <not>
+                  <varequal respident="response1">61a85eb5-604b-4ad0-9e62-9999e6092137</varequal>
+                </not>
+              </and>
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">100</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>
+      <item ident="da0b32fa4faf580ac815c464f455bcb3" title="Upload your evidence">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>file_upload_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>1.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry/>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>e3afe35fe0e542e6c694f91d896094b6</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>none</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;p&gt;Provide a 500 word summary on frogs&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+          </material>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+        </resprocessing>
+      </item>
+      <item ident="60f13ca5ebc176dbbad3aee5fedc68a7" title="calculate the volume of a rectangular prism">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>calculated_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>1.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry/>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>1720fa77cfd926216b8be3de76f644ee</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>basic</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;p&gt;Calculate the volume of a rectangular prism `l` x `w` x `h` meters.&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+          </material>
+          <response_str ident="response1" rcardinality="Single">
+            <render_fib fibtype="Decimal">
+              <response_label ident="answer1"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition title="correct">
+            <conditionvar>
+              <other/>
+            </conditionvar>
+            <setvar varname="SCORE" action="Set">100</setvar>
+          </respcondition>
+          <respcondition title="incorrect">
+            <conditionvar>
+              <not>
+                <other/>
+              </not>
+            </conditionvar>
+            <setvar varname="SCORE" action="Set">0</setvar>
+          </respcondition>
+        </resprocessing>
+        <itemproc_extension>
+          <calculated>
+            <answer_tolerance margin_type="absolute">0</answer_tolerance>
+            <formulas decimal_places="" scientific_notation="false">
+              <formula>l*w*h</formula>
+            </formulas>
+            <vars>
+              <var name="h" scale="0">
+                <min>2</min>
+                <max>4</max>
+              </var>
+              <var name="l" scale="0">
+                <min>5</min>
+                <max>10</max>
+              </var>
+              <var name="w" scale="0">
+                <min>1</min>
+                <max>3</max>
+              </var>
+            </vars>
+            <var_sets>
+              <var_set ident="40a648614d71ae7dce2daa506c219185">
+                <var name="h">4</var>
+                <var name="l">9</var>
+                <var name="w">2</var>
+                <answer>72</answer>
+              </var_set>
+              <var_set ident="a3de152efd0183844550ce22d88ed60e">
+                <var name="h">2</var>
+                <var name="l">6</var>
+                <var name="w">3</var>
+                <answer>36</answer>
+              </var_set>
+              <var_set ident="e22085747612b130f518010cf4392dd7">
+                <var name="h">3</var>
+                <var name="l">7</var>
+                <var name="w">2</var>
+                <answer>42</answer>
+              </var_set>
+              <var_set ident="a0463f9dad3fa9a67250cb85e7504403">
+                <var name="h">4</var>
+                <var name="l">6</var>
+                <var name="w">1</var>
+                <answer>24</answer>
+              </var_set>
+              <var_set ident="ef6def1b9fee0e7abe80468e62c81354">
+                <var name="h">3</var>
+                <var name="l">8</var>
+                <var name="w">2</var>
+                <answer>48</answer>
+              </var_set>
+              <var_set ident="ebad5ab1ec78a6d8fc563994706aacc1">
+                <var name="h">4</var>
+                <var name="l">7</var>
+                <var name="w">3</var>
+                <answer>84</answer>
+              </var_set>
+              <var_set ident="75c9b9ae2c7eb7ba13860f132f4b69b9">
+                <var name="h">3</var>
+                <var name="l">7</var>
+                <var name="w">3</var>
+                <answer>63</answer>
+              </var_set>
+              <var_set ident="81939041616618a226f750129768d318">
+                <var name="h">2</var>
+                <var name="l">10</var>
+                <var name="w">2</var>
+                <answer>40</answer>
+              </var_set>
+              <var_set ident="7ad4b822e421da12ab17417ed6c8eb7f">
+                <var name="h">4</var>
+                <var name="l">9</var>
+                <var name="w">3</var>
+                <answer>108</answer>
+              </var_set>
+              <var_set ident="e3effebe844093ec1004178ca175f0fb">
+                <var name="h">3</var>
+                <var name="l">9</var>
+                <var name="w">1</var>
+                <answer>27</answer>
+              </var_set>
+              <var_set ident="7085833c6d2dfe73770e58ee3e597bd6">
+                <var name="h">3</var>
+                <var name="l">6</var>
+                <var name="w">1</var>
+                <answer>18</answer>
+              </var_set>
+              <var_set ident="c156f120febbb750fede641efc9e435b">
+                <var name="h">2</var>
+                <var name="l">10</var>
+                <var name="w">3</var>
+                <answer>60</answer>
+              </var_set>
+              <var_set ident="84f170bdfe2ff0105b287f48b55c9232">
+                <var name="h">2</var>
+                <var name="l">9</var>
+                <var name="w">3</var>
+                <answer>54</answer>
+              </var_set>
+              <var_set ident="2891443aca569937da08b20d9e974898">
+                <var name="h">3</var>
+                <var name="l">7</var>
+                <var name="w">1</var>
+                <answer>21</answer>
+              </var_set>
+              <var_set ident="7bf828d3807af771a31449c500889f01">
+                <var name="h">3</var>
+                <var name="l">9</var>
+                <var name="w">3</var>
+                <answer>81</answer>
+              </var_set>
+              <var_set ident="41936e9bd2f17fcb7a4353d969f5e7e2">
+                <var name="h">4</var>
+                <var name="l">9</var>
+                <var name="w">1</var>
+                <answer>36</answer>
+              </var_set>
+              <var_set ident="f954315f5367cb86a7451bff4df53c53">
+                <var name="h">4</var>
+                <var name="l">8</var>
+                <var name="w">1</var>
+                <answer>32</answer>
+              </var_set>
+              <var_set ident="f959c0a453fdbb54df4ef4ce09bb4cf7">
+                <var name="h">4</var>
+                <var name="l">8</var>
+                <var name="w">2</var>
+                <answer>64</answer>
+              </var_set>
+              <var_set ident="552ee1ec429b3d97b9bc11f65754cbc2">
+                <var name="h">3</var>
+                <var name="l">6</var>
+                <var name="w">2</var>
+                <answer>36</answer>
+              </var_set>
+              <var_set ident="6442657377a35272ca91a2a0cff944ab">
+                <var name="h">2</var>
+                <var name="l">5</var>
+                <var name="w">2</var>
+                <answer>20</answer>
+              </var_set>
+              <var_set ident="99e3c9426f1393046193fd5c6ef11b0b">
+                <var name="h">3</var>
+                <var name="l">5</var>
+                <var name="w">2</var>
+                <answer>30</answer>
+              </var_set>
+              <var_set ident="43390beef84d210b10c15f591fc79aee">
+                <var name="h">3</var>
+                <var name="l">10</var>
+                <var name="w">2</var>
+                <answer>60</answer>
+              </var_set>
+              <var_set ident="43ccfd595a6ce65a91c79cca0861c458">
+                <var name="h">2</var>
+                <var name="l">8</var>
+                <var name="w">2</var>
+                <answer>32</answer>
+              </var_set>
+              <var_set ident="7daaa8f1ebae37c7ead62733f5c61341">
+                <var name="h">2</var>
+                <var name="l">6</var>
+                <var name="w">2</var>
+                <answer>24</answer>
+              </var_set>
+              <var_set ident="e1a0fdac847f1aaddaa5036077372386">
+                <var name="h">3</var>
+                <var name="l">8</var>
+                <var name="w">1</var>
+                <answer>24</answer>
+              </var_set>
+              <var_set ident="b9e1d06c6dd968b8c7675b362012848b">
+                <var name="h">2</var>
+                <var name="l">7</var>
+                <var name="w">3</var>
+                <answer>42</answer>
+              </var_set>
+              <var_set ident="5aee685365bfe503e2f2805f3cc2f1aa">
+                <var name="h">4</var>
+                <var name="l">6</var>
+                <var name="w">3</var>
+                <answer>72</answer>
+              </var_set>
+              <var_set ident="d17b7da2ff6d6b2f96f999283d35d64a">
+                <var name="h">2</var>
+                <var name="l">6</var>
+                <var name="w">1</var>
+                <answer>12</answer>
+              </var_set>
+              <var_set ident="e3cb4e8eee853ebf55e8c04b06619429">
+                <var name="h">2</var>
+                <var name="l">7</var>
+                <var name="w">1</var>
+                <answer>14</answer>
+              </var_set>
+              <var_set ident="b004cad527f4d2cb5de5c03ef2fb2663">
+                <var name="h">2</var>
+                <var name="l">5</var>
+                <var name="w">1</var>
+                <answer>10</answer>
+              </var_set>
+              <var_set ident="e7974a17cf83dce33ad028bb59c00442">
+                <var name="h">2</var>
+                <var name="l">7</var>
+                <var name="w">2</var>
+                <answer>28</answer>
+              </var_set>
+              <var_set ident="3e0c1428c7248d4b47cf5b1ec2065f8d">
+                <var name="h">4</var>
+                <var name="l">8</var>
+                <var name="w">3</var>
+                <answer>96</answer>
+              </var_set>
+              <var_set ident="b6d8a7a8b3cdeddc89cd76f24d18072a">
+                <var name="h">3</var>
+                <var name="l">9</var>
+                <var name="w">2</var>
+                <answer>54</answer>
+              </var_set>
+              <var_set ident="5c1b492b684be8e2c7c1c111250610da">
+                <var name="h">3</var>
+                <var name="l">5</var>
+                <var name="w">1</var>
+                <answer>15</answer>
+              </var_set>
+              <var_set ident="af27f6dbd97df61113e97e23b31efd7f">
+                <var name="h">4</var>
+                <var name="l">7</var>
+                <var name="w">2</var>
+                <answer>56</answer>
+              </var_set>
+              <var_set ident="fdce0f179fd535fff5b9f80831285fae">
+                <var name="h">4</var>
+                <var name="l">10</var>
+                <var name="w">2</var>
+                <answer>80</answer>
+              </var_set>
+              <var_set ident="cb034d025df95f90588692c800205aab">
+                <var name="h">2</var>
+                <var name="l">9</var>
+                <var name="w">2</var>
+                <answer>36</answer>
+              </var_set>
+              <var_set ident="e5c95e94da92cdfafb95539fdeb51542">
+                <var name="h">3</var>
+                <var name="l">8</var>
+                <var name="w">3</var>
+                <answer>72</answer>
+              </var_set>
+              <var_set ident="a4319d0b66d9eac9d7a2de1acde61287">
+                <var name="h">2</var>
+                <var name="l">8</var>
+                <var name="w">3</var>
+                <answer>48</answer>
+              </var_set>
+              <var_set ident="519b0089c81406dec6b8f8cc3c6d3df8">
+                <var name="h">3</var>
+                <var name="l">5</var>
+                <var name="w">3</var>
+                <answer>45</answer>
+              </var_set>
+              <var_set ident="4ee810eeada36d759c98467c650a6046">
+                <var name="h">2</var>
+                <var name="l">5</var>
+                <var name="w">3</var>
+                <answer>30</answer>
+              </var_set>
+              <var_set ident="dd41407213fb97811857808da7df3131">
+                <var name="h">4</var>
+                <var name="l">6</var>
+                <var name="w">2</var>
+                <answer>48</answer>
+              </var_set>
+              <var_set ident="7cf1e3f620776741c0cca9f6050fe36f">
+                <var name="h">4</var>
+                <var name="l">10</var>
+                <var name="w">1</var>
+                <answer>40</answer>
+              </var_set>
+              <var_set ident="88f666d7e497fe8bf311b768a6e854bb">
+                <var name="h">3</var>
+                <var name="l">6</var>
+                <var name="w">3</var>
+                <answer>54</answer>
+              </var_set>
+              <var_set ident="bf69596ef7b166d23af3b743ae1e912d">
+                <var name="h">2</var>
+                <var name="l">10</var>
+                <var name="w">1</var>
+                <answer>20</answer>
+              </var_set>
+              <var_set ident="9b4cdf3892b5663b94519433dac7944d">
+                <var name="h">2</var>
+                <var name="l">8</var>
+                <var name="w">1</var>
+                <answer>16</answer>
+              </var_set>
+              <var_set ident="f1ccf911e6ed9f166a45fee5bb1cdeda">
+                <var name="h">3</var>
+                <var name="l">10</var>
+                <var name="w">3</var>
+                <answer>90</answer>
+              </var_set>
+              <var_set ident="c36126e2cfbbafac1737e2d32229586a">
+                <var name="h">2</var>
+                <var name="l">9</var>
+                <var name="w">1</var>
+                <answer>18</answer>
+              </var_set>
+              <var_set ident="bc0b182d3eddf2e8ee8c46e00510eb2d">
+                <var name="h">4</var>
+                <var name="l">7</var>
+                <var name="w">1</var>
+                <answer>28</answer>
+              </var_set>
+              <var_set ident="45eaa7a292e0d3145aecde17faf5a1d9">
+                <var name="h">4</var>
+                <var name="l">5</var>
+                <var name="w">2</var>
+                <answer>40</answer>
+              </var_set>
+              <var_set ident="9a6b6da9d91e1fc72ddf90955e66225d">
+                <var name="h">4</var>
+                <var name="l">5</var>
+                <var name="w">1</var>
+                <answer>20</answer>
+              </var_set>
+              <var_set ident="cd339f0e9ef30a08f186cc0f409f9122">
+                <var name="h">4</var>
+                <var name="l">5</var>
+                <var name="w">3</var>
+                <answer>60</answer>
+              </var_set>
+              <var_set ident="548296349ee7aac16dac6971ca8ca5c9">
+                <var name="h">4</var>
+                <var name="l">10</var>
+                <var name="w">3</var>
+                <answer>120</answer>
+              </var_set>
+              <var_set ident="84465f02dbe333deab13097aefaa91af">
+                <var name="h">3</var>
+                <var name="l">10</var>
+                <var name="w">1</var>
+                <answer>30</answer>
+              </var_set>
+            </var_sets>
+          </calculated>
+        </itemproc_extension>
+      </item>
+      <item ident="7fcb8939401d32db17e30c12f360235e" title="Place these from smallest to largest">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>ordering_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>1.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>5552b74b-90a5-4110-8685-5cf4327073c7,70969e20-a7b0-44ab-a271-e45900ba66cb,e9115685-fd73-4862-a437-fd803bb67d13,fea36a40-e4e9-409e-8a57-244fe420238a</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>5a0f50a54c57891a2d5770e12a0f5103</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>none</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;p&gt;Organise these animals from smallest to largest, by body length&amp;nbsp;&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+          </material>
+          <response_lid ident="response1" rcardinality="Ordered">
+            <render_extension>
+              <material position="top">
+                <mattext>amoeba</mattext>
+              </material>
+              <ims_render_object shuffle="No">
+                <flow_label>
+                  <response_label ident="5552b74b-90a5-4110-8685-5cf4327073c7">
+                    <material>
+                      <mattext texttype="text/html">&lt;p&gt;tadpole&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+                    </material>
+                  </response_label>
+                  <response_label ident="70969e20-a7b0-44ab-a271-e45900ba66cb">
+                    <material>
+                      <mattext texttype="text/html">&lt;p&gt;horse&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+                    </material>
+                  </response_label>
+                  <response_label ident="e9115685-fd73-4862-a437-fd803bb67d13">
+                    <material>
+                      <mattext texttype="text/html">&lt;p&gt;chicken&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+                    </material>
+                  </response_label>
+                  <response_label ident="fea36a40-e4e9-409e-8a57-244fe420238a">
+                    <material>
+                      <mattext texttype="text/html">&lt;p&gt;hippo&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+                    </material>
+                  </response_label>
+                </flow_label>
+              </ims_render_object>
+              <material position="bottom">
+                <mattext>blue whale</mattext>
+              </material>
+            </render_extension>
+          </response_lid>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar defaultval="1" varname="ORDERSCORE" vartype="Integer"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>
+              <varequal respident="response1">5552b74b-90a5-4110-8685-5cf4327073c7</varequal>
+              <varequal respident="response1">e9115685-fd73-4862-a437-fd803bb67d13</varequal>
+              <varequal respident="response1">70969e20-a7b0-44ab-a271-e45900ba66cb</varequal>
+              <varequal respident="response1">fea36a40-e4e9-409e-8a57-244fe420238a</varequal>
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">100</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>
+      <item ident="b7993849cc5ae62c76ace7489e9f86d7" title="">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>essay_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>1.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry/>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>f3a576ede5e86db5bf9eefcc3d9d4571</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>none</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>grading_notes</fieldlabel>
+              <fieldentry/>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;p&gt;Write 50 words about parrots&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+          </material>
+          <response_str ident="response1" rcardinality="Single" rce="Yes" word_count="No" spell_check="No" word_limit_enabled="No">
+            <render_fib>
+              <response_label ident="answer1" rshuffle="No"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>
+              <other/>
+            </conditionvar>
+          </respcondition>
+        </resprocessing>
+      </item>
+      <item ident="e7b7484ae57c9d9df655d1a2c258e293" title="">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>fill_in_multiple_blanks_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>1.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>["17f692e1-f36f-4858-80d8-a6ca31a3b652-0", "d1dafe6c-971d-414d-a14f-186129fdd8e4-0", "292555f5-fc78-442e-9b0f-bb292d6e9cfa-0"]</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>689f8f1f29a18bb5262c108c7b862add</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>none</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;p&gt;Lorem [17f692e1-f36f-4858-80d8-a6ca31a3b652] dolor sit amet, consectetur adipiscing elit, [d1dafe6c-971d-414d-a14f-186129fdd8e4] do eiusmod tempor incididunt ut labore et dolore [292555f5-fc78-442e-9b0f-bb292d6e9cfa] aliqua.&amp;nbsp;&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+          </material>
+          <response_lid ident="response_17f692e1-f36f-4858-80d8-a6ca31a3b652">
+            <material>
+              <mattext>ipsum</mattext>
+            </material>
+            <render_choice>
+              <response_label scoring_algorithm="TextContainsAnswer" answer_type="openEntry" ident="17f692e1-f36f-4858-80d8-a6ca31a3b652-0">
+                <material>
+                  <mattext texttype="text/plain">ipsum</mattext>
+                </material>
+              </response_label>
+            </render_choice>
+          </response_lid>
+          <response_lid ident="response_d1dafe6c-971d-414d-a14f-186129fdd8e4">
+            <material>
+              <mattext>sed</mattext>
+            </material>
+            <render_choice>
+              <response_label scoring_algorithm="TextContainsAnswer" answer_type="openEntry" ident="d1dafe6c-971d-414d-a14f-186129fdd8e4-0">
+                <material>
+                  <mattext texttype="text/plain">sed</mattext>
+                </material>
+              </response_label>
+            </render_choice>
+          </response_lid>
+          <response_lid ident="response_292555f5-fc78-442e-9b0f-bb292d6e9cfa">
+            <material>
+              <mattext>magna</mattext>
+            </material>
+            <render_choice>
+              <response_label scoring_algorithm="TextContainsAnswer" answer_type="openEntry" ident="292555f5-fc78-442e-9b0f-bb292d6e9cfa-0">
+                <material>
+                  <mattext texttype="text/plain">magna</mattext>
+                </material>
+              </response_label>
+            </render_choice>
+          </response_lid>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition>
+            <conditionvar>
+              <varequal respident="response_17f692e1-f36f-4858-80d8-a6ca31a3b652">17f692e1-f36f-4858-80d8-a6ca31a3b652-0</varequal>
+            </conditionvar>
+            <setvar action="Add" varname="SCORE">33.33</setvar>
+          </respcondition>
+          <respcondition>
+            <conditionvar>
+              <varequal respident="response_d1dafe6c-971d-414d-a14f-186129fdd8e4">d1dafe6c-971d-414d-a14f-186129fdd8e4-0</varequal>
+            </conditionvar>
+            <setvar action="Add" varname="SCORE">33.33</setvar>
+          </respcondition>
+          <respcondition>
+            <conditionvar>
+              <varequal respident="response_292555f5-fc78-442e-9b0f-bb292d6e9cfa">292555f5-fc78-442e-9b0f-bb292d6e9cfa-0</varequal>
+            </conditionvar>
+            <setvar action="Add" varname="SCORE">33.33</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>
+      <item ident="7ee1e5ac71862281c5a9a5310960324a" title="Find the bee">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>hot_spot_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>1.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry/>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>361322d600c95ff88418c34ac6757c50</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>none</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <flow>
+            <response_xy ident="response1" rcardinality="Multiple" rtiming="No">
+              <material>
+                <mattext texttype="text/html">&lt;p&gt;Click on the bee&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+              </material>
+              <render_hotspot>
+                <material>
+                  <matimage uri="$IMS-CC-FILEBASE$/Uploaded Media/755728c4-f4bf-4893-8893-68393414f6cc"/>
+                </material>
+                <response_label ident="1" rarea="rectangle">0.12295869356388088,0.19582072946003268,0.39327264687495234,0.4702664487790179</response_label>
+              </render_hotspot>
+            </response_xy>
+          </flow>
+        </presentation>
+      </item>
+      <item ident="d3557f3f74d204e091c43b37dd400d91" title="Which of the following are parts of the human eye">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>multiple_answers_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>1.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>08946155-510b-4693-b30a-bbb16d2be860,57115097-7d07-4b33-b0d3-bce41a62f4ac,3d291de3-ee0c-42a6-90fa-e98030f8835e,a4354d44-95e0-4c92-92c5-dd941465b835</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>8c09a660564795a2bd1c93b92ce1ad10</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>none</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>scoring_algorithm</fieldlabel>
+              <fieldentry>PartialScore</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;p&gt;Which of the following are parts of the human eye&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+          </material>
+          <response_lid ident="response1" rcardinality="Multiple">
+            <render_choice>
+              <response_label ident="08946155-510b-4693-b30a-bbb16d2be860">
+                <material>
+                  <mattext texttype="text/html">&lt;p&gt;fovea centralis&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+                </material>
+              </response_label>
+              <response_label ident="57115097-7d07-4b33-b0d3-bce41a62f4ac">
+                <material>
+                  <mattext texttype="text/html">&lt;p&gt;cornea&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+                </material>
+              </response_label>
+              <response_label ident="3d291de3-ee0c-42a6-90fa-e98030f8835e">
+                <material>
+                  <mattext texttype="text/html">&lt;p&gt;iris&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+                </material>
+              </response_label>
+              <response_label ident="a4354d44-95e0-4c92-92c5-dd941465b835">
+                <material>
+                  <mattext texttype="text/html">&lt;p&gt;tapena&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+                </material>
+              </response_label>
+            </render_choice>
+          </response_lid>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>
+              <and>
+                <varequal respident="response1">08946155-510b-4693-b30a-bbb16d2be860</varequal>
+                <varequal respident="response1">57115097-7d07-4b33-b0d3-bce41a62f4ac</varequal>
+                <varequal respident="response1">3d291de3-ee0c-42a6-90fa-e98030f8835e</varequal>
+                <not>
+                  <varequal respident="response1">a4354d44-95e0-4c92-92c5-dd941465b835</varequal>
+                </not>
+              </and>
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">100</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>
+      <item ident="9e7f53b1018bdcad04c329b2d8493e1b" title="">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>numerical_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>1.0</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>1</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>dc08a990ac15b9ec7a23bdf48035a7d9</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>calculator_type</fieldlabel>
+              <fieldentry>none</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;p&gt;What is the secret to life, the universe and everything?&lt;/p&gt;
+&lt;p&gt;&amp;nbsp;&lt;/p&gt;</mattext>
+          </material>
+          <response_str ident="response1" rcardinality="Single">
+            <render_fib fibtype="Decimal">
+              <response_label ident="answer1"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>
+              <or>
+                <varequal respident="response1">42</varequal>
+                <and>
+                  <vargte respident="response1">42</vargte>
+                  <varlte respident="response1">42</varlte>
+                </and>
+              </or>
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">100</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>
+    </section>
+  </assessment>
+</questestinterop>

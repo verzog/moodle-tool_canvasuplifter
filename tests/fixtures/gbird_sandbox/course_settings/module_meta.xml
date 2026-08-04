@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd">
+  <module identifier="g7430e062114ab653ad7dad56910e9136">
+    <title>My first Module</title>
+    <workflow_state>unpublished</workflow_state>
+    <position>1</position>
+    <require_sequential_progress>false</require_sequential_progress>
+    <locked>false</locked>
+    <items>
+      <item identifier="g4aa382c80b8e29432029d7c999d97213">
+        <content_type>Assignment</content_type>
+        <workflow_state>unpublished</workflow_state>
+        <title>Test SCORM</title>
+        <identifierref>g994cd4d01901cdb58e0ac540a3a90982</identifierref>
+        <position>1</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+    </items>
+  </module>
+  <module identifier="g8edaa2b04565f47a5a959ed5d54ac92d">
+    <title>Canvas for document management</title>
+    <workflow_state>unpublished</workflow_state>
+    <position>2</position>
+    <require_sequential_progress>false</require_sequential_progress>
+    <locked>false</locked>
+    <items>
+      <item identifier="g214baddb56f937522aebc488d9a3538a">
+        <content_type>Attachment</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Sample PDF.pdf</title>
+        <identifierref>g91950bc79d3282eeedc1d7b5b965e926</identifierref>
+        <position>1</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="g2cb1f4b07470163e02e7c994c1377c8b">
+        <content_type>Attachment</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Sample word document.docx</title>
+        <identifierref>g2827c69eec48cbbf326979aed7dc337b</identifierref>
+        <position>2</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="g53577127e361c1c05798c819cf3f20df">
+        <content_type>Attachment</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Sample powerpoint.pptx</title>
+        <identifierref>g00bb8f8414141f6082f7bc83acf2a475</identifierref>
+        <position>3</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="ga103dfabda484455bbf3667d2a53aef3">
+        <content_type>WikiPage</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Page with linked files</title>
+        <identifierref>gf5ff07283f61d053d88bdd0e603bddb9</identifierref>
+        <position>4</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="gf1208fc832a1d82d9b13fac37df0bc2b">
+        <content_type>WikiPage</content_type>
+        <workflow_state>active</workflow_state>
+        <title>UI elements</title>
+        <identifierref>gb6028a917cddf941e05973ab142d7efb</identifierref>
+        <position>5</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="gf5adac8da42f05edbf212792d304670f">
+        <content_type>WikiPage</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Page elements</title>
+        <identifierref>g5b1366d559b651776477f411492ec88b</identifierref>
+        <position>6</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="gfdc27939e1d01cd6202f7d0327596617">
+        <content_type>WikiPage</content_type>
+        <workflow_state>active</workflow_state>
+        <title>images</title>
+        <identifierref>g2cbde99013eead201e2b5d1f253229d1</identifierref>
+        <position>7</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="g59734fa2d2ce739c7762d46c6b3cf870">
+        <content_type>Assignment</content_type>
+        <workflow_state>active</workflow_state>
+        <title>HIPPY Lifecycle Calendar</title>
+        <identifierref>g020bdd3b4a04c39f0124e48ae27bc8f0</identifierref>
+        <position>8</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="g102b02389887eddaf7800fbbf5a0f543">
+        <content_type>WikiPage</content_type>
+        <workflow_state>unpublished</workflow_state>
+        <title>ui elements</title>
+        <identifierref>g87033b73215beb3310a1a74dceac73e5</identifierref>
+        <position>9</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="g974537b5126367ed3bbf3404cdc2a2b0">
+        <content_type>ContextExternalTool</content_type>
+        <workflow_state>unpublished</workflow_state>
+        <title>Accredible</title>
+        <identifierref>gf1e93c7d1a6c6d96c68914593dc82dfe</identifierref>
+        <url>https://api.accredible.com/v1/lti/launch</url>
+        <global_identifierref>76</global_identifierref>
+        <position>10</position>
+        <new_tab>false</new_tab>
+        <indent>0</indent>
+        <link_settings_json>{"selection_width":"","selection_height":""}</link_settings_json>
+      </item>
+    </items>
+  </module>
+  <module identifier="g17eb10c3a728409776767ce316db60b7">
+    <title>This is a new module</title>
+    <workflow_state>active</workflow_state>
+    <position>3</position>
+    <require_sequential_progress>false</require_sequential_progress>
+    <locked>false</locked>
+    <items>
+      <item identifier="g6b5b00f63820cbd784967cfd2ced0e30">
+        <content_type>DiscussionTopic</content_type>
+        <workflow_state>active</workflow_state>
+        <title>New discussion</title>
+        <identifierref>g759c2c5c042d7d826e5d101acb10163d</identifierref>
+        <position>3</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="g122aef2878c0236fff6e3c38f878edd9">
+        <content_type>Assignment</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Assignment</title>
+        <identifierref>g1aae9585a2182f69a6dbccccfb5e2848</identifierref>
+        <position>4</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="gfc1ec2331083e09e139ba67721f76ee0">
+        <content_type>Quizzes::Quiz</content_type>
+        <workflow_state>active</workflow_state>
+        <title>New quiz engine</title>
+        <identifierref>g8912b60cbdcbf78eab29d11ad61296f3</identifierref>
+        <position>5</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+    </items>
+  </module>
+  <module identifier="g6cdfab40e0d1a39d99ac803824a3f8df">
+    <title>Week 1</title>
+    <workflow_state>active</workflow_state>
+    <position>5</position>
+    <require_sequential_progress>false</require_sequential_progress>
+    <locked>false</locked>
+    <prerequisites>
+      <prerequisite type="context_module">
+        <title>Canvas for document management</title>
+        <identifierref>g8edaa2b04565f47a5a959ed5d54ac92d</identifierref>
+      </prerequisite>
+    </prerequisites>
+    <items>
+      <item identifier="gbadf760ba3e1b28b47a9f41d382417b2">
+        <content_type>WikiPage</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Introduction</title>
+        <identifierref>gc5459f45a40b04f14c9b2a15e0b415c3</identifierref>
+        <position>1</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="g982392b25074f68f42ff878f2108704f">
+        <content_type>Assignment</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Employee Health and Wellness (Sample Course)</title>
+        <identifierref>gb3ffe4e718b2cf1af61b8526d87fb9db</identifierref>
+        <position>2</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+      <item identifier="g426dc8ac23d9d99c8d226f25b0bcbf2b">
+        <content_type>Assignment</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Risk hierarchy of control</title>
+        <identifierref>g56d1d56a80322ccd2fea12a76efe3b11</identifierref>
+        <position>3</position>
+        <new_tab/>
+        <indent>0</indent>
+        <link_settings_json>null</link_settings_json>
+      </item>
+    </items>
+  </module>
+</modules>
