@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="g2572c339621e0d59da757930f5c97b93" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1" xmlns:lom="http://ltsc.ieee.org/xsd/imsccv1p1/LOM/resource" xmlns:lomimscc="http://ltsc.ieee.org/xsd/imsccv1p1/LOM/manifest" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1 http://www.imsglobal.org/profile/cc/ccv1p1/ccv1p1_imscp_v1p2_v1p0.xsd http://ltsc.ieee.org/xsd/imsccv1p1/LOM/resource http://www.imsglobal.org/profile/cc/ccv1p1/LOM/ccv1p1_lomresource_v1p0.xsd http://ltsc.ieee.org/xsd/imsccv1p1/LOM/manifest http://www.imsglobal.org/profile/cc/ccv1p1/LOM/ccv1p1_lommanifest_v1p0.xsd">
+  <metadata>
+    <schema>IMS Common Cartridge</schema>
+    <schemaversion>1.1.0</schemaversion>
+    <lomimscc:lom>
+      <lomimscc:general>
+        <lomimscc:title>
+          <lomimscc:string>GBIRD-Sandbox</lomimscc:string>
+        </lomimscc:title>
+      </lomimscc:general>
+      <lomimscc:lifeCycle>
+        <lomimscc:contribute>
+          <lomimscc:date>
+            <lomimscc:dateTime>2026-08-03</lomimscc:dateTime>
+          </lomimscc:date>
+        </lomimscc:contribute>
+      </lomimscc:lifeCycle>
+      <lomimscc:rights>
+        <lomimscc:copyrightAndOtherRestrictions>
+          <lomimscc:value>yes</lomimscc:value>
+        </lomimscc:copyrightAndOtherRestrictions>
+        <lomimscc:description>
+          <lomimscc:string>Private (Copyrighted) - http://en.wikipedia.org/wiki/Copyright</lomimscc:string>
+        </lomimscc:description>
+      </lomimscc:rights>
+    </lomimscc:lom>
+  </metadata>
+  <organizations>
+    <organization identifier="org_1" structure="rooted-hierarchy">
+      <item identifier="LearningModules">
+        <item identifier="g7430e062114ab653ad7dad56910e9136">
+          <title>My first Module</title>
+          <item identifier="g4aa382c80b8e29432029d7c999d97213" identifierref="g994cd4d01901cdb58e0ac540a3a90982">
+            <title>Test SCORM</title>
+          </item>
+        </item>
+        <item identifier="g8edaa2b04565f47a5a959ed5d54ac92d">
+          <title>Canvas for document management</title>
+          <item identifier="g214baddb56f937522aebc488d9a3538a" identifierref="g91950bc79d3282eeedc1d7b5b965e926">
+            <title>Sample PDF.pdf</title>
+          </item>
+          <item identifier="g2cb1f4b07470163e02e7c994c1377c8b" identifierref="g2827c69eec48cbbf326979aed7dc337b">
+            <title>Sample word document.docx</title>
+          </item>
+          <item identifier="g53577127e361c1c05798c819cf3f20df" identifierref="g00bb8f8414141f6082f7bc83acf2a475">
+            <title>Sample powerpoint.pptx</title>
+          </item>
+          <item identifier="ga103dfabda484455bbf3667d2a53aef3" identifierref="gf5ff07283f61d053d88bdd0e603bddb9">
+            <title>Page with linked files</title>
+          </item>
+          <item identifier="gf1208fc832a1d82d9b13fac37df0bc2b" identifierref="gb6028a917cddf941e05973ab142d7efb">
+            <title>UI elements</title>
+          </item>
+          <item identifier="gf5adac8da42f05edbf212792d304670f" identifierref="g5b1366d559b651776477f411492ec88b">
+            <title>Page elements</title>
+          </item>
+          <item identifier="gfdc27939e1d01cd6202f7d0327596617" identifierref="g2cbde99013eead201e2b5d1f253229d1">
+            <title>images</title>
+          </item>
+          <item identifier="g59734fa2d2ce739c7762d46c6b3cf870" identifierref="g020bdd3b4a04c39f0124e48ae27bc8f0">
+            <title>HIPPY Lifecycle Calendar</title>
+          </item>
+          <item identifier="g102b02389887eddaf7800fbbf5a0f543" identifierref="g87033b73215beb3310a1a74dceac73e5">
+            <title>ui elements</title>
+          </item>
+          <item identifier="ge77c07a9eadd694670a277d1dc440d6c" identifierref="g974537b5126367ed3bbf3404cdc2a2b0">
+            <title>Accredible</title>
+          </item>
+        </item>
+        <item identifier="g17eb10c3a728409776767ce316db60b7">
+          <title>This is a new module</title>
+          <item identifier="g6b5b00f63820cbd784967cfd2ced0e30" identifierref="g759c2c5c042d7d826e5d101acb10163d">
+            <title>New discussion</title>
+          </item>
+          <item identifier="g122aef2878c0236fff6e3c38f878edd9" identifierref="g1aae9585a2182f69a6dbccccfb5e2848">
+            <title>Assignment</title>
+          </item>
+          <item identifier="gfc1ec2331083e09e139ba67721f76ee0" identifierref="g8912b60cbdcbf78eab29d11ad61296f3">
+            <title>New quiz engine</title>
+          </item>
+        </item>
+        <item identifier="g6cdfab40e0d1a39d99ac803824a3f8df">
+          <title>Week 1</title>
+          <item identifier="gbadf760ba3e1b28b47a9f41d382417b2" identifierref="gc5459f45a40b04f14c9b2a15e0b415c3">
+            <title>Introduction</title>
+          </item>
+          <item identifier="g982392b25074f68f42ff878f2108704f" identifierref="gb3ffe4e718b2cf1af61b8526d87fb9db">
+            <title>Employee Health and Wellness (Sample Course)</title>
+          </item>
+          <item identifier="g426dc8ac23d9d99c8d226f25b0bcbf2b" identifierref="g56d1d56a80322ccd2fea12a76efe3b11">
+            <title>Risk hierarchy of control</title>
+          </item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="ga061bcb8756c01c63f60a4ccd07d23cf" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="course_settings/canvas_export.txt">
+      <file href="course_settings/course_settings.xml"/>
+      <file href="course_settings/module_meta.xml"/>
+      <file href="course_settings/assignment_groups.xml"/>
+      <file href="course_settings/learning_outcomes.xml"/>
+      <file href="course_settings/files_meta.xml"/>
+      <file href="course_settings/context.xml"/>
+      <file href="course_settings/media_tracks.xml"/>
+      <file href="course_settings/canvas_export.txt"/>
+    </resource>
+    <resource identifier="gf5ff07283f61d053d88bdd0e603bddb9" type="webcontent" href="wiki_content/page-with-linked-files.html">
+      <file href="wiki_content/page-with-linked-files.html"/>
+    </resource>
+    <resource identifier="gb6028a917cddf941e05973ab142d7efb" type="webcontent" href="wiki_content/ui-elements.html">
+      <file href="wiki_content/ui-elements.html"/>
+    </resource>
+    <resource identifier="g94b5475e9a55127fb1da8737c55d484b" type="webcontent" href="wiki_content/kitchen-sink.html">
+      <file href="wiki_content/kitchen-sink.html"/>
+    </resource>
+    <resource identifier="gc5459f45a40b04f14c9b2a15e0b415c3" type="webcontent" href="wiki_content/introduction.html">
+      <file href="wiki_content/introduction.html"/>
+    </resource>
+    <resource identifier="g5b1366d559b651776477f411492ec88b" type="webcontent" href="wiki_content/page-elements.html">
+      <file href="wiki_content/page-elements.html"/>
+    </resource>
+    <resource identifier="g2cbde99013eead201e2b5d1f253229d1" type="webcontent" href="wiki_content/images.html">
+      <file href="wiki_content/images.html"/>
+    </resource>
+    <resource identifier="g87033b73215beb3310a1a74dceac73e5" type="webcontent" href="wiki_content/ui-elements-2.html">
+      <file href="wiki_content/ui-elements-2.html"/>
+    </resource>
+    <resource identifier="g1aae9585a2182f69a6dbccccfb5e2848" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g1aae9585a2182f69a6dbccccfb5e2848/assignment.html">
+      <file href="g1aae9585a2182f69a6dbccccfb5e2848/assignment.html"/>
+      <file href="g1aae9585a2182f69a6dbccccfb5e2848/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="gb33a0fe57d92fca871e56089c5077d59" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="gb33a0fe57d92fca871e56089c5077d59/assignment-copy.html">
+      <file href="gb33a0fe57d92fca871e56089c5077d59/assignment-copy.html"/>
+      <file href="gb33a0fe57d92fca871e56089c5077d59/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="g6a3ca58aba8fd36264c8732aa3a34541" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g6a3ca58aba8fd36264c8732aa3a34541/assignment-test.html">
+      <file href="g6a3ca58aba8fd36264c8732aa3a34541/assignment-test.html"/>
+      <file href="g6a3ca58aba8fd36264c8732aa3a34541/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="gb3ffe4e718b2cf1af61b8526d87fb9db" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="gb3ffe4e718b2cf1af61b8526d87fb9db/employee-health-and-wellness-sample-course.html">
+      <file href="gb3ffe4e718b2cf1af61b8526d87fb9db/employee-health-and-wellness-sample-course.html"/>
+      <file href="gb3ffe4e718b2cf1af61b8526d87fb9db/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="g360087309c27f1c1b6535122b4b1a47f" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g360087309c27f1c1b6535122b4b1a47f/hippy-lifecycle-calendar.html">
+      <file href="g360087309c27f1c1b6535122b4b1a47f/hippy-lifecycle-calendar.html"/>
+      <file href="g360087309c27f1c1b6535122b4b1a47f/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="g020bdd3b4a04c39f0124e48ae27bc8f0" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g020bdd3b4a04c39f0124e48ae27bc8f0/hippy-lifecycle-calendar.html">
+      <file href="g020bdd3b4a04c39f0124e48ae27bc8f0/hippy-lifecycle-calendar.html"/>
+      <file href="g020bdd3b4a04c39f0124e48ae27bc8f0/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="g059f7fcba556f584d38c917eb5faae9e" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g059f7fcba556f584d38c917eb5faae9e/module-1-critically-reflective-practice.html">
+      <file href="g059f7fcba556f584d38c917eb5faae9e/module-1-critically-reflective-practice.html"/>
+      <file href="g059f7fcba556f584d38c917eb5faae9e/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="g56d1d56a80322ccd2fea12a76efe3b11" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g56d1d56a80322ccd2fea12a76efe3b11/risk-hierarchy-of-control.html">
+      <file href="g56d1d56a80322ccd2fea12a76efe3b11/risk-hierarchy-of-control.html"/>
+      <file href="g56d1d56a80322ccd2fea12a76efe3b11/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="g994cd4d01901cdb58e0ac540a3a90982" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g994cd4d01901cdb58e0ac540a3a90982/test-scorm.html">
+      <file href="g994cd4d01901cdb58e0ac540a3a90982/test-scorm.html"/>
+      <file href="g994cd4d01901cdb58e0ac540a3a90982/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="g4bbcaba2f97bc3db1a939e82f3e07674" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g4bbcaba2f97bc3db1a939e82f3e07674/the-3cs.html">
+      <file href="g4bbcaba2f97bc3db1a939e82f3e07674/the-3cs.html"/>
+      <file href="g4bbcaba2f97bc3db1a939e82f3e07674/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="geed05fe2eecad7f1697a643011326699" type="imsdt_xmlv1p1">
+      <file href="geed05fe2eecad7f1697a643011326699.xml"/>
+      <dependency identifierref="gc26eeb2556ed538c7d57d0ce227a90e0"/>
+    </resource>
+    <resource identifier="gc26eeb2556ed538c7d57d0ce227a90e0" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="gc26eeb2556ed538c7d57d0ce227a90e0.xml">
+      <file href="gc26eeb2556ed538c7d57d0ce227a90e0.xml"/>
+    </resource>
+    <resource identifier="g759c2c5c042d7d826e5d101acb10163d" type="imsdt_xmlv1p1">
+      <file href="g759c2c5c042d7d826e5d101acb10163d.xml"/>
+      <dependency identifierref="g5ecbe6969083fc966e9dff3fb83ea123"/>
+    </resource>
+    <resource identifier="g5ecbe6969083fc966e9dff3fb83ea123" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g5ecbe6969083fc966e9dff3fb83ea123.xml">
+      <file href="g5ecbe6969083fc966e9dff3fb83ea123.xml"/>
+    </resource>
+    <resource identifier="g51585833ff292ade97dca48bd6f5325f" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">
+      <file href="g51585833ff292ade97dca48bd6f5325f/assessment_qti.xml"/>
+      <dependency identifierref="i21fbb2fe156785bf1141abbb27834e0b"/>
+    </resource>
+    <resource identifier="i21fbb2fe156785bf1141abbb27834e0b" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g51585833ff292ade97dca48bd6f5325f/assessment_meta.xml">
+      <file href="g51585833ff292ade97dca48bd6f5325f/assessment_meta.xml"/>
+      <file href="non_cc_assessments/g51585833ff292ade97dca48bd6f5325f.xml.qti"/>
+    </resource>
+    <resource identifier="g8912b60cbdcbf78eab29d11ad61296f3" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">
+      <file href="g8912b60cbdcbf78eab29d11ad61296f3/assessment_qti.xml"/>
+      <dependency identifierref="ibd7574050a9fd317f41135c343b4851a"/>
+    </resource>
+    <resource identifier="ibd7574050a9fd317f41135c343b4851a" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g8912b60cbdcbf78eab29d11ad61296f3/assessment_meta.xml">
+      <file href="g8912b60cbdcbf78eab29d11ad61296f3/assessment_meta.xml"/>
+      <file href="non_cc_assessments/g8912b60cbdcbf78eab29d11ad61296f3.xml.qti"/>
+    </resource>
+    <resource identifier="g78c27639db700ae8ce95dd4a0e414918" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">
+      <file href="g78c27639db700ae8ce95dd4a0e414918/assessment_qti.xml"/>
+      <dependency identifierref="i2423b5913f8da5cb90ed99a96f384b93"/>
+    </resource>
+    <resource identifier="i2423b5913f8da5cb90ed99a96f384b93" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="g78c27639db700ae8ce95dd4a0e414918/assessment_meta.xml">
+      <file href="g78c27639db700ae8ce95dd4a0e414918/assessment_meta.xml"/>
+      <file href="non_cc_assessments/g78c27639db700ae8ce95dd4a0e414918.xml.qti"/>
+    </resource>
+    <resource identifier="i5b54fe89b980c60d581325acb4b9dac0" type="webcontent" href="web_resources/Uploaded Media/755728c4-f4bf-4893-8893-68393414f6cc">
+      <file href="web_resources/Uploaded Media/755728c4-f4bf-4893-8893-68393414f6cc"/>
+    </resource>
+    <resource type="webcontent" identifier="g2827c69eec48cbbf326979aed7dc337b" href="web_resources/Sample word document.docx">
+      <file href="web_resources/Sample word document.docx"/>
+    </resource>
+    <resource type="webcontent" identifier="g00bb8f8414141f6082f7bc83acf2a475" href="web_resources/Sample powerpoint.pptx">
+      <file href="web_resources/Sample powerpoint.pptx"/>
+    </resource>
+    <resource type="webcontent" identifier="g91950bc79d3282eeedc1d7b5b965e926" href="web_resources/Sample PDF.pdf">
+      <file href="web_resources/Sample PDF.pdf"/>
+    </resource>
+    <resource type="webcontent" identifier="g10dd254a316cc33ecc3faa1dbfbcc169" href="web_resources/Uploaded Media/Unsplash-Ori_JWlqVpc-720x480.jpg">
+      <file href="web_resources/Uploaded Media/Unsplash-Ori_JWlqVpc-720x480.jpg"/>
+    </resource>
+    <resource type="webcontent" identifier="g17d649be4935e7254aa091920ec4203c" href="web_resources/ABC123/Sample PDF.pdf">
+      <file href="web_resources/ABC123/Sample PDF.pdf"/>
+    </resource>
+    <resource type="webcontent" identifier="g30e47334c6ff646fb13be779454c5bda" href="web_resources/ABC123/Sample word document.docx">
+      <file href="web_resources/ABC123/Sample word document.docx"/>
+    </resource>
+    <resource type="webcontent" identifier="g3a95b765829b0bfc4b0c79dd4ccac7c3" href="web_resources/ABC123/Sample powerpoint.pptx">
+      <file href="web_resources/ABC123/Sample powerpoint.pptx"/>
+    </resource>
+    <resource type="webcontent" identifier="g666afa6517c4280c82749e837506a42d" href="web_resources/ABC123/Unsplash-fZ2hMpHIrbI-360x240.jpg">
+      <file href="web_resources/ABC123/Unsplash-fZ2hMpHIrbI-360x240.jpg"/>
+    </resource>
+    <resource type="webcontent" identifier="g46c922791afceaef56484c6a3d349ae9" href="web_resources/ABC123/Unsplash-E0sZJOqTmL4-1080x810.jpg">
+      <file href="web_resources/ABC123/Unsplash-E0sZJOqTmL4-1080x810.jpg"/>
+    </resource>
+    <resource type="webcontent" identifier="gb652743a48e0ff0aaf1d6fe3b957af2a" href="web_resources/XYZ345/This is a long and descriptive name.pdf">
+      <file href="web_resources/XYZ345/This is a long and descriptive name.pdf"/>
+    </resource>
+    <resource type="webcontent" identifier="g9f5e0f494fcac2e2d32197b595092ddf" href="web_resources/XYZ345/Sample powerpoint.pptx">
+      <file href="web_resources/XYZ345/Sample powerpoint.pptx"/>
+    </resource>
+    <resource type="webcontent" identifier="g6b2d4089c4f1f013ef35d7fb26b94940" href="web_resources/XYZ345/Sample word document.docx">
+      <file href="web_resources/XYZ345/Sample word document.docx"/>
+    </resource>
+    <resource type="webcontent" identifier="g0c138dd8f47f3f19da289856e44a1ad6" href="web_resources/XYZ345/Sample PDF.pdf">
+      <file href="web_resources/XYZ345/Sample PDF.pdf"/>
+    </resource>
+  </resources>
+</manifest>

@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
+  <assessment ident="g78c27639db700ae8ce95dd4a0e414918" title="New quiz" external_assignment_id="770">
+    <qtimetadata>
+      <qtimetadatafield>
+        <fieldlabel>cc_maxattempts</fieldlabel>
+        <fieldentry>unlimited</fieldentry>
+      </qtimetadatafield>
+    </qtimetadata>
+    <section ident="root_section"/>
+  </assessment>
+</questestinterop>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<course identifier="ga061bcb8756c01c63f60a4ccd07d23cf" xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd">
+  <title>GBIRD-Sandbox</title>
+  <course_code>GBIRD-Sandbox</course_code>
+  <start_at/>
+  <conclude_at/>
+  <tab_configuration>[{"id":0},{"id":14},{"id":"context_external_tool_g7e72e48002f0c591d30a7e62fe1478a0"},{"id":3},{"id":8},{"id":5},{"id":6},{"id":2},{"id":11},{"id":1},{"id":15},{"id":4},{"id":10},{"id":12},{"id":16},{"id":"context_external_tool_gf1e93c7d1a6c6d96c68914593dc82dfe"}]</tab_configuration>
+  <is_public>false</is_public>
+  <is_public_to_auth_users>false</is_public_to_auth_users>
+  <public_syllabus>false</public_syllabus>
+  <public_syllabus_to_auth>false</public_syllabus_to_auth>
+  <allow_student_wiki_edits>false</allow_student_wiki_edits>
+  <lock_all_announcements>false</lock_all_announcements>
+  <default_wiki_editing_roles>teachers</default_wiki_editing_roles>
+  <allow_student_organized_groups>true</allow_student_organized_groups>
+  <default_view>modules</default_view>
+  <license>private</license>
+  <indexed>false</indexed>
+  <hide_final_grade>false</hide_final_grade>
+  <hide_distribution_graphs>false</hide_distribution_graphs>
+  <allow_student_discussion_topics>true</allow_student_discussion_topics>
+  <allow_student_discussion_editing>true</allow_student_discussion_editing>
+  <show_announcements_on_home_page>false</show_announcements_on_home_page>
+  <home_page_announcement_limit>3</home_page_announcement_limit>
+  <usage_rights_required>false</usage_rights_required>
+  <restrict_student_future_view>false</restrict_student_future_view>
+  <restrict_student_past_view>false</restrict_student_past_view>
+  <restrict_enrollments_to_course_dates>false</restrict_enrollments_to_course_dates>
+  <homeroom_course>false</homeroom_course>
+  <horizon_course>false</horizon_course>
+  <career_learning_library_only>false</career_learning_library_only>
+  <conditional_release>true</conditional_release>
+  <content_library>false</content_library>
+  <grading_standard_enabled>false</grading_standard_enabled>
+  <storage_quota>500000000</storage_quota>
+  <overridden_course_visibility/>
+  <root_account_uuid>TWoCgvoGQd3uZDYSSMSPzlkdjR2nLsmIwpVSnMsv</root_account_uuid>
+  <default_post_policy>
+    <post_manually>false</post_manually>
+  </default_post_policy>
+  <enable_course_paces>false</enable_course_paces>
+  <hide_sections_on_course_users_page>false</hide_sections_on_course_users_page>
+</course>
