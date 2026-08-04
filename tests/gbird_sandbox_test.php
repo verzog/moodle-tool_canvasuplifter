@@ -29,18 +29,20 @@ use tool_canvasuplifter\local\report\conversion_report;
  * with tiny stubs - the parser and report read only the manifest, page HTML,
  * settings XML and QTI, never the binary bytes, so the analysis is unchanged.
  * It exercises pages, files, assignments (including external-tool/SCORM),
- * discussions, a Classic quiz plus a New Quiz, a learning outcome, grade
- * categories, unreferenced duplicates, and the unsupported-question-type
- * reporting in one package, so a parser or report regression that changes any of
- * those counts is caught here.
+ * discussions, New Quizzes (whose questions are recovered from the native QTI
+ * dump - every CC assessment_qti.xml here is an empty shell), a learning
+ * outcome, grade categories, unreferenced duplicates, and the
+ * unsupported-question-type reporting in one package, so a parser or report
+ * regression that changes any of those counts is caught here.
  *
  * This suite asserts the analyse pipeline's output (manifest_parser +
  * conversion_report); it does not build the course. Along the way the fixture
  * surfaced build-fidelity gaps that are asserted as known limitations so they
  * cannot regress unnoticed and will trip when fixed: a dropped external tool
- * (issue #125), unpublished orphan activities that parse as visible (#126), and
+ * (issue #125), unpublished orphan activities that parse as visible (#126),
  * empty orphan New-Quiz shells the report counts as building though the build
- * skips them (#127).
+ * skips them (#127), and external-tool assignments that build as plain
+ * assignments, losing the launch (#128).
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -85,7 +87,9 @@ final class gbird_sandbox_test extends \advanced_testcase {
 
         // Per-kind tally (quiz covers both the referenced quiz and the two
         // orphan question banks): 10 assignments, 2 discussions, 10 files,
-        // 7 pages, 3 assessments.
+        // 7 pages, 3 assessments. Note (issue #128): 7 of the 10 assignments are
+        // external-tool assignments that build as plain assignments, losing the
+        // launch - the report still counts them as mod_assign here.
         $bykind = [];
         foreach ($report['rows'] as $row) {
             $bykind[$row['kind']] = ($bykind[$row['kind']] ?? 0) + $row['count'];
@@ -229,6 +233,66 @@ final class gbird_sandbox_test extends \advanced_testcase {
                 'assignment::Risk hierarchy of control',
             ],
         ], $structure);
+    }
+
+    /**
+     * Lock down which resources are unreferenced (not just how many): a
+     * suppression regression (e.g. suppress_embedded_page_assets leaving an
+     * embedded asset as an orphan while a different one vanishes) would keep the
+     * count and placements unchanged, so assert the ordered orphan identities.
+     * Files are identified by href (unique per directory); the discussion and
+     * the two empty New-Quiz shells have no href, so use their resource id.
+     *
+     * @return void
+     */
+    public function test_gbird_sandbox_orphan_identities_are_locked_down(): void {
+        $identities = array_map(
+            static fn(item $o): string => $o->kind . '::' . ($o->href !== '' ? $o->href : 'id=' . $o->identifier),
+            $this->fixture_course()->orphans
+        );
+
+        $this->assertSame([
+            'page::wiki_content/kitchen-sink.html',
+            'assignment::gb33a0fe57d92fca871e56089c5077d59/assignment-copy.html',
+            'assignment::g6a3ca58aba8fd36264c8732aa3a34541/assignment-test.html',
+            'assignment::g360087309c27f1c1b6535122b4b1a47f/hippy-lifecycle-calendar.html',
+            'assignment::g059f7fcba556f584d38c917eb5faae9e/module-1-critically-reflective-practice.html',
+            'assignment::g4bbcaba2f97bc3db1a939e82f3e07674/the-3cs.html',
+            'discussion::id=geed05fe2eecad7f1697a643011326699',
+            'quiz::id=g51585833ff292ade97dca48bd6f5325f',
+            'quiz::id=g78c27639db700ae8ce95dd4a0e414918',
+            'file::web_resources/Uploaded Media/755728c4-f4bf-4893-8893-68393414f6cc',
+            'file::web_resources/ABC123/Sample PDF.pdf',
+            'file::web_resources/ABC123/Sample word document.docx',
+            'file::web_resources/ABC123/Sample powerpoint.pptx',
+            'file::web_resources/XYZ345/Sample powerpoint.pptx',
+            'file::web_resources/XYZ345/Sample word document.docx',
+            'file::web_resources/XYZ345/Sample PDF.pdf',
+        ], $identities);
+    }
+
+    /**
+     * Known limitation (issue #128), asserted so it cannot regress unnoticed:
+     * seven of the ten assignments are Canvas external-tool assignments
+     * (submission_types=external_tool with an external_tool_url - Quizzes.Next /
+     * SCORM). assign_builder ignores the submission type and builds a plain
+     * mod_assign, so the tool launch is lost, yet the report counts each as a
+     * successful assignment build. Assert the fixture really contains these so
+     * the gap is documented; when #128 lands (build them as an LTI placeholder,
+     * or preserve the launch), revisit the assignment expectations.
+     *
+     * @return void
+     */
+    public function test_gbird_sandbox_external_tool_assignments_are_a_known_gap(): void {
+        $root = __DIR__ . '/fixtures/gbird_sandbox';
+        $externaltool = 0;
+        foreach (glob($root . '/*/assignment_settings.xml') as $settings) {
+            $xml = file_get_contents($settings);
+            if (str_contains($xml, '<submission_types>external_tool') && str_contains($xml, '<external_tool_url>')) {
+                $externaltool++;
+            }
+        }
+        $this->assertSame(7, $externaltool);
     }
 
     /**
