@@ -41,8 +41,9 @@ use tool_canvasuplifter\local\report\conversion_report;
  * cannot regress unnoticed and will trip when fixed: a dropped external tool
  * (issue #125), unpublished orphan activities that parse as visible (#126),
  * empty orphan New-Quiz shells the report counts as building though the build
- * skips them (#127), and external-tool assignments that build as plain
- * assignments, losing the launch (#128).
+ * skips them (#127), external-tool assignments that build as plain assignments,
+ * losing the launch (#128), and categorization/ordering questions mis-counted as
+ * supported choice questions (#129).
  *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
@@ -131,6 +132,10 @@ final class gbird_sandbox_test extends \advanced_testcase {
     public function test_gbird_sandbox_question_matrix(): void {
         $matrix = $this->fixture_report()['questionmatrix'];
 
+        // Note (issue #129): the 7 "supported" include 2 categorization_question
+        // and 1 ordering_question that qti_parser mis-maps into multianswer /
+        // multichoice - they should be unsupported. See the dedicated known-gap
+        // test below; when #129 lands these counts change.
         $this->assertSame(12, $matrix['total']);
         $this->assertSame(7, $matrix['supported']);
 
@@ -302,11 +307,36 @@ final class gbird_sandbox_test extends \advanced_testcase {
      * @return void
      */
     public function test_gbird_sandbox_parses_the_grade_categories(): void {
-        $categories = $this->fixture_course()->gradecategories;
+        $course = $this->fixture_course();
 
-        $this->assertCount(2, $categories);
-        $titles = array_map(static fn(array $c): string => $c['title'], $categories);
-        $this->assertSame(['Assignments', 'Imported Assignments'], $titles);
+        // Full category specs (identifier + title + position), so a dropped or
+        // changed identifier - which would stop course_builder matching
+        // assignments to categories - is caught, not just a renamed title.
+        $this->assertSame(
+            [
+                ['g91781b5190987f195cb5692a92a91322', 'Assignments', 1],
+                ['gd419b3a4c35c4fc26ea774f481e86ffc', 'Imported Assignments', 2],
+            ],
+            array_map(
+                static fn(array $c): array => [$c['identifier'], $c['title'], $c['position']],
+                $course->gradecategories
+            )
+        );
+
+        // Every assignment must still carry its gradegroupref (all ten reference
+        // the "Assignments" category), so the assignment->category link survives.
+        $items = $course->orphans;
+        foreach ($course->sections as $section) {
+            $items = array_merge($items, $section->items);
+        }
+        $assignmentrefs = [];
+        foreach ($items as $it) {
+            if ($it->kind === item::KIND_ASSIGNMENT) {
+                $assignmentrefs[] = $it->gradegroupref;
+            }
+        }
+        $this->assertCount(10, $assignmentrefs);
+        $this->assertSame(['g91781b5190987f195cb5692a92a91322'], array_values(array_unique($assignmentrefs)));
     }
 
     /**
@@ -321,26 +351,63 @@ final class gbird_sandbox_test extends \advanced_testcase {
      * @return void
      */
     public function test_gbird_sandbox_orphan_unpublished_visibility_is_a_known_gap(): void {
-        $draftidentifiers = [
-            'gb33a0fe57d92fca871e56089c5077d59', // Assignment Copy.
-            'g360087309c27f1c1b6535122b4b1a47f', // HIPPY Lifecycle Calendar.
-            'g059f7fcba556f584d38c917eb5faae9e', // Module 1: Critically reflective practice.
-            'g4bbcaba2f97bc3db1a939e82f3e07674', // The 3Cs.
-        ];
         $root = __DIR__ . '/fixtures/gbird_sandbox';
-        $byhrefprefix = [];
+        // Every unpublished orphan activity kind, keyed by the orphan's g-id, with
+        // the source metadata file that marks it unpublished: assignments carry it
+        // in assignment_settings.xml, the New-Quiz shells in assessment_meta.xml,
+        // and the discussion in its separately-named topic metadata file.
+        $drafts = [
+            'gb33a0fe57d92fca871e56089c5077d59' => 'gb33a0fe57d92fca871e56089c5077d59/assignment_settings.xml',
+            'g360087309c27f1c1b6535122b4b1a47f' => 'g360087309c27f1c1b6535122b4b1a47f/assignment_settings.xml',
+            'g059f7fcba556f584d38c917eb5faae9e' => 'g059f7fcba556f584d38c917eb5faae9e/assignment_settings.xml',
+            'g4bbcaba2f97bc3db1a939e82f3e07674' => 'g4bbcaba2f97bc3db1a939e82f3e07674/assignment_settings.xml',
+            'g51585833ff292ade97dca48bd6f5325f' => 'g51585833ff292ade97dca48bd6f5325f/assessment_meta.xml',
+            'g78c27639db700ae8ce95dd4a0e414918' => 'g78c27639db700ae8ce95dd4a0e414918/assessment_meta.xml',
+            'geed05fe2eecad7f1697a643011326699' => 'gc26eeb2556ed538c7d57d0ce227a90e0.xml',
+        ];
+
+        // Key orphans by resource id and (for the file-backed ones) href prefix.
+        $byid = [];
         foreach ($this->fixture_course()->orphans as $orphan) {
-            $byhrefprefix[explode('/', $orphan->href)[0]] = $orphan;
+            $byid[$orphan->identifier] = $orphan;
+            if ($orphan->href !== '') {
+                $byid[explode('/', $orphan->href)[0]] = $orphan;
+            }
         }
 
-        foreach ($draftidentifiers as $identifier) {
-            // The fixture genuinely marks each of these unpublished at source.
-            $settings = file_get_contents($root . '/' . $identifier . '/assignment_settings.xml');
-            $this->assertStringContainsString('<workflow_state>unpublished</workflow_state>', $settings);
+        foreach ($drafts as $identifier => $sourcefile) {
+            // The fixture genuinely marks each of these unpublished at source ...
+            $source = file_get_contents($root . '/' . $sourcefile);
+            $this->assertStringContainsString('<workflow_state>unpublished</workflow_state>', $source);
             // ... but the parser currently exposes them as visible (the gap).
-            $this->assertArrayHasKey($identifier, $byhrefprefix);
-            $this->assertTrue($byhrefprefix[$identifier]->isvisible);
+            $this->assertArrayHasKey($identifier, $byid);
+            $this->assertTrue($byid[$identifier]->isvisible);
         }
+    }
+
+    /**
+     * Known limitation (issue #129), asserted so it cannot regress unnoticed: the
+     * native QTI carries categorization_question and ordering_question items, but
+     * qti_parser::map_type() has no mapping for either, so they fall through the
+     * response-cardinality heuristic and are counted as supported multi-answer /
+     * multiple-choice questions - importing silently mis-graded. They therefore do
+     * not appear as their own (unsupported) rows in the matrix. When #129 lands
+     * (map them, or mark them unsupported), those labels appear as unsupported and
+     * this test - plus the multianswer/multichoice counts above - must change.
+     *
+     * @return void
+     */
+    public function test_gbird_sandbox_categorization_ordering_are_a_known_gap(): void {
+        $qti = '';
+        foreach (glob(__DIR__ . '/fixtures/gbird_sandbox/non_cc_assessments/*.qti') as $file) {
+            $qti .= file_get_contents($file);
+        }
+        $this->assertStringContainsString('categorization_question', $qti);
+        $this->assertStringContainsString('ordering_question', $qti);
+
+        $labels = array_column($this->fixture_report()['questionmatrix']['rows'], 'label');
+        $this->assertNotContains('categorization_question', $labels);
+        $this->assertNotContains('ordering_question', $labels);
     }
 
     /**
