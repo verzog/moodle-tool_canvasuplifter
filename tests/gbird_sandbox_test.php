@@ -132,12 +132,12 @@ final class gbird_sandbox_test extends \advanced_testcase {
     public function test_gbird_sandbox_question_matrix(): void {
         $matrix = $this->fixture_report()['questionmatrix'];
 
-        // Note (issue #129): the 7 "supported" include 2 categorization_question
-        // and 1 ordering_question that qti_parser mis-maps into multianswer /
-        // multichoice - they should be unsupported. See the dedicated known-gap
-        // test below; when #129 lands these counts change.
+        // Since #129, categorization_question and ordering_question are mapped to
+        // TYPE_UNSUPPORTED rather than mis-read as multianswer/multichoice by the
+        // cardinality fallback, so 5 of the 12 are supported (multichoice drops to
+        // zero and its row disappears; multianswer drops from 3 to 2).
         $this->assertSame(12, $matrix['total']);
-        $this->assertSame(7, $matrix['supported']);
+        $this->assertSame(5, $matrix['supported']);
 
         // A supported row (importable type, no dropped-source attribution).
         $supported = static fn(string $label, int $count): array => [
@@ -157,10 +157,11 @@ final class gbird_sandbox_test extends \advanced_testcase {
             $supported('description', 1),
             $supported('essay', 1),
             $supported('matching', 1),
-            $supported('multianswer', 3),
-            $supported('multichoice', 1),
+            $supported('multianswer', 2),
+            $newquiz('categorization_question'),
             $newquiz('file_upload_question'),
             $newquiz('calculated_question'),
+            $newquiz('ordering_question'),
             $newquiz('fill_in_multiple_blanks_question'),
             $newquiz('hot_spot_question'),
             $newquiz('numerical_question'),
@@ -277,6 +278,42 @@ final class gbird_sandbox_test extends \advanced_testcase {
     }
 
     /**
+     * Regression guard for issue #131: course_settings/files_meta.xml marks the
+     * "Uploaded Media" folder hidden (it holds a QTI-internal image). That file is
+     * now imported hidden rather than as a visible standalone resource, while files
+     * in non-hidden folders stay visible - so the hidden state is honoured without
+     * blanket-hiding every uploaded file.
+     *
+     * @return void
+     */
+    public function test_gbird_sandbox_files_meta_hidden_is_honoured(): void {
+        $meta = file_get_contents(__DIR__ . '/fixtures/gbird_sandbox/course_settings/files_meta.xml');
+        // The fixture genuinely marks the "Uploaded Media" folder hidden.
+        $this->assertMatchesRegularExpression(
+            '#<folder path="Uploaded Media">\s*<hidden>true</hidden>#',
+            $meta
+        );
+
+        $byhref = [];
+        foreach ($this->fixture_course()->orphans as $orphan) {
+            if ($orphan->kind === item::KIND_FILE && $orphan->href !== '') {
+                $byhref[$orphan->href] = $orphan;
+            }
+        }
+
+        // The QTI-internal image under the hidden folder imports hidden ...
+        $hidden = 'web_resources/Uploaded Media/755728c4-f4bf-4893-8893-68393414f6cc';
+        $this->assertArrayHasKey($hidden, $byhref);
+        $this->assertFalse($byhref[$hidden]->isvisible);
+
+        // ... while ordinary uploaded files (not under a hidden folder) stay visible.
+        foreach (['web_resources/ABC123/Sample PDF.pdf', 'web_resources/XYZ345/Sample PDF.pdf'] as $visible) {
+            $this->assertArrayHasKey($visible, $byhref);
+            $this->assertTrue($byhref[$visible]->isvisible);
+        }
+    }
+
+    /**
      * Known limitation (issue #128), asserted so it cannot regress unnoticed:
      * seven of the ten assignments are Canvas external-tool assignments
      * (submission_types=external_tool with an external_tool_url - Quizzes.Next /
@@ -340,22 +377,19 @@ final class gbird_sandbox_test extends \advanced_testcase {
     }
 
     /**
-     * Known limitation (issue #126), asserted so it cannot regress unnoticed:
-     * an orphan activity keeps the model default isvisible=true even when its own
-     * metadata marks it unpublished, because visibility is only derived from a
-     * module occurrence (referenced items) or topicMeta (discussions), never from
-     * an orphan's own assignment_settings.xml. These four orphan assignments carry
-     * workflow_state=unpublished yet currently parse as visible; when #126 lands,
-     * this test should assert isvisible=false for them instead.
+     * Regression guard for issue #126: an orphan activity (no module places it) has
+     * no module occurrence to inherit visibility from, so its draft state must be
+     * read from its own companion metadata. Assignments carry workflow_state in
+     * assignment_settings.xml, New-Quiz shells in assessment_meta.xml (on the
+     * embedded <assignment>), and the discussion in its separately-named topicMeta.
+     * Every one of these is unpublished at source and now imports hidden.
      *
      * @return void
      */
-    public function test_gbird_sandbox_orphan_unpublished_visibility_is_a_known_gap(): void {
+    public function test_gbird_sandbox_orphan_unpublished_visibility_is_derived(): void {
         $root = __DIR__ . '/fixtures/gbird_sandbox';
-        // Every unpublished orphan activity kind, keyed by the orphan's g-id, with
-        // the source metadata file that marks it unpublished: assignments carry it
-        // in assignment_settings.xml, the New-Quiz shells in assessment_meta.xml,
-        // and the discussion in its separately-named topic metadata file.
+        // Every unpublished orphan activity, keyed by the orphan's g-id, with the
+        // source metadata file that marks it unpublished.
         $drafts = [
             'gb33a0fe57d92fca871e56089c5077d59' => 'gb33a0fe57d92fca871e56089c5077d59/assignment_settings.xml',
             'g360087309c27f1c1b6535122b4b1a47f' => 'g360087309c27f1c1b6535122b4b1a47f/assignment_settings.xml',
@@ -379,25 +413,34 @@ final class gbird_sandbox_test extends \advanced_testcase {
             // The fixture genuinely marks each of these unpublished at source ...
             $source = file_get_contents($root . '/' . $sourcefile);
             $this->assertStringContainsString('<workflow_state>unpublished</workflow_state>', $source);
-            // ... but the parser currently exposes them as visible (the gap).
+            // ... and the parser now derives that draft state onto the orphan.
             $this->assertArrayHasKey($identifier, $byid);
-            $this->assertTrue($byid[$identifier]->isvisible);
+            $this->assertFalse($byid[$identifier]->isvisible, "$identifier should import hidden");
         }
+
+        // A published orphan is untouched: the "Assignment test" copy carries
+        // workflow_state=published and stays visible, proving the derivation only
+        // ever hides drafts rather than blanket-hiding every orphan.
+        $publishedid = 'g6a3ca58aba8fd36264c8732aa3a34541';
+        $this->assertStringContainsString(
+            '<workflow_state>published</workflow_state>',
+            file_get_contents($root . '/' . $publishedid . '/assignment_settings.xml')
+        );
+        $this->assertArrayHasKey($publishedid, $byid);
+        $this->assertTrue($byid[$publishedid]->isvisible);
     }
 
     /**
-     * Known limitation (issue #129), asserted so it cannot regress unnoticed: the
-     * native QTI carries categorization_question and ordering_question items, but
-     * qti_parser::map_type() has no mapping for either, so they fall through the
-     * response-cardinality heuristic and are counted as supported multi-answer /
-     * multiple-choice questions - importing silently mis-graded. They therefore do
-     * not appear as their own (unsupported) rows in the matrix. When #129 lands
-     * (map them, or mark them unsupported), those labels appear as unsupported and
-     * this test - plus the multianswer/multichoice counts above - must change.
+     * Regression guard for issue #129: the native QTI carries a
+     * categorization_question and an ordering_question, which qti_parser::map_type()
+     * once left to the response-cardinality heuristic - silently mis-counting them
+     * as supported multi-answer / multiple-choice questions. They are now mapped to
+     * TYPE_UNSUPPORTED, so each appears as its own unsupported row in the matrix,
+     * attributed to the "New quiz engine" assessment they came from.
      *
      * @return void
      */
-    public function test_gbird_sandbox_categorization_ordering_are_a_known_gap(): void {
+    public function test_gbird_sandbox_categorization_ordering_are_unsupported(): void {
         $qti = '';
         foreach (glob(__DIR__ . '/fixtures/gbird_sandbox/non_cc_assessments/*.qti') as $file) {
             $qti .= file_get_contents($file);
@@ -405,9 +448,17 @@ final class gbird_sandbox_test extends \advanced_testcase {
         $this->assertStringContainsString('categorization_question', $qti);
         $this->assertStringContainsString('ordering_question', $qti);
 
-        $labels = array_column($this->fixture_report()['questionmatrix']['rows'], 'label');
-        $this->assertNotContains('categorization_question', $labels);
-        $this->assertNotContains('ordering_question', $labels);
+        $rows = $this->fixture_report()['questionmatrix']['rows'];
+        $byid = [];
+        foreach ($rows as $row) {
+            $byid[$row['label']] = $row;
+        }
+        foreach (['categorization_question', 'ordering_question'] as $label) {
+            $this->assertArrayHasKey($label, $byid, "$label should be its own matrix row");
+            $this->assertFalse($byid[$label]['supported'], "$label must be unsupported");
+            $this->assertSame('unsupported', $byid[$label]['status']);
+            $this->assertSame([['name' => 'New quiz engine', 'count' => 1]], $byid[$label]['sources']);
+        }
     }
 
     /**

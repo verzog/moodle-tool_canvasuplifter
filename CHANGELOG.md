@@ -5,6 +5,26 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.46.0] - 2026-08-04
+
+- Parser accuracy fixes surfaced by the GBIRD-Sandbox regression fixture, all in
+  the Moodle-free `parser`/`report` layer:
+  - **Question mapping (#129):** Canvas New Quizzes `categorization_question` and
+    `ordering_question` items no longer fall through the response-cardinality
+    heuristic (which mis-counted them as supported multi-answer / multiple-choice
+    questions). `qti_parser::map_type()` now maps both to `TYPE_UNSUPPORTED`, so
+    they are reported by name rather than silently mis-imported.
+  - **Orphan visibility (#126):** an unpublished assignment, quiz or discussion
+    that no module places (an orphan) now imports hidden. Visibility is derived
+    from the activity's own companion metadata — `assignment_settings.xml`,
+    `assessment_meta.xml` (including the New-Quiz `<assignment>`/`<workflow_state>`
+    nesting) and the discussion `topicMeta` — rather than only from a module
+    occurrence. The pass only ever hides, so a published orphan stays visible.
+  - **Hidden files (#131):** `course_settings/files_meta.xml` is now honoured, so
+    a file Canvas marked hidden — directly or by living under a hidden folder such
+    as the QTI-internal "Uploaded Media" — imports hidden instead of surfacing as
+    a visible standalone resource.
+
 ## [0.45.0] - 2026-08-04
 
 - Documentation/release-prep, no code or behaviour change. Correct the README to
