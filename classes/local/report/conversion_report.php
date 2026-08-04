@@ -309,16 +309,11 @@ class conversion_report {
      * @return bool
      */
     protected function quiz_has_importable_questions(item $modelitem): bool {
-        // Judge the Common Cartridge file only, with no native-dump fallback:
-        // an unreferenced quiz builds through questionbank_builder, which reads
-        // just the CC file. A native-only New Quiz shell therefore builds no bank
-        // (and so no quiz-from-bank), so it must not trigger the nudge.
-        $path = $this->resolve_qti($modelitem);
-        if ($path === null) {
-            return false;
-        }
-        $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
-        return $this->any_importable($parsed['questions']);
+        // Since #127 questionbank_builder falls back to the native dump, so an
+        // orphan New-Quiz shell whose native questions are importable does build a
+        // bank (and, with the toggle, a runnable quiz); judge with the same native
+        // fallback so the nudge count matches what would actually build.
+        return $this->any_importable($this->assessment_questions($modelitem, true));
     }
 
     /**
@@ -519,11 +514,12 @@ class conversion_report {
             if (!in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
                 continue;
             }
-            // Only a referenced quiz builds through quiz_builder (with its native
-            // fallback); orphan quizzes and question banks use questionbank_builder,
-            // which reads only the CC file.
-            $usenative = $referenced && $modelitem->kind === item::KIND_QUIZ;
-            $questions = $this->assessment_questions($modelitem, $usenative);
+            // Both builders now fall back to the native non_cc_assessments dump
+            // when the Common Cartridge QTI is an empty shell: a referenced quiz
+            // through quiz_builder, and an orphan quiz or question bank through
+            // questionbank_builder (#127). So report the native questions for every
+            // assessment, matching what the build actually imports.
+            $questions = $this->assessment_questions($modelitem, true);
             if (empty($questions)) {
                 continue;
             }
@@ -777,11 +773,9 @@ class conversion_report {
      * matrix for New Quizzes even though the builder imports (and drops) real
      * questions from the native dump.
      *
-     * The native-dump fallback only applies to items the builder would route
-     * through quiz_builder — a referenced quiz. Orphan quizzes and question banks
-     * go through questionbank_builder, which reads only its selected CC file, so
-     * counting native questions there would report as convertible what the build
-     * actually drops.
+     * Since #127 both builders use this fallback — quiz_builder for a referenced
+     * quiz, questionbank_builder for an orphan quiz or question bank — so callers
+     * pass true for every assessment and the matrix reflects what the build imports.
      *
      * @param item $modelitem The quiz/question-bank item.
      * @param bool $nativefallback Whether to fall back to the native dump.

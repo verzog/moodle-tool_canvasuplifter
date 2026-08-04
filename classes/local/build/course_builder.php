@@ -407,6 +407,13 @@ class course_builder {
             return false;
         }
         $this->record_link_target($urlmap, $modelitem, $cmid);
+        // The runnable quiz has a real grade item, so route it into its Canvas
+        // grade category (the bank built in build_one() has none, so the placement
+        // there no-ops); without this the standalone quiz keeps Moodle's default
+        // category even though gradegroupref was parsed from assessment_meta.xml.
+        if ($modelitem->gradegroupref !== '') {
+            $this->place_in_grade_category($course->id, $cmid, $modelitem->gradegroupref);
+        }
         if (!$modelitem->isvisible) {
             // The bank built from the same item was already hidden in build_one();
             // mirror that here so an unpublished Canvas assessment doesn't leak as

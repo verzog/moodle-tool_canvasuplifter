@@ -186,6 +186,11 @@ class assignment_settings {
             'html', 'text' => 'online_text_entry',
             'file' => 'online_upload',
             'url' => 'online_url',
+            // An external-tool submission is an LTI launch; keep the token so
+            // is_external_tool() recognises a CC 1.3 external-tool assignment
+            // (with an external_tool_url from the Canvas extension) the same as a
+            // flat Canvas assignment_settings.xml.
+            'external_tool' => 'external_tool',
             default => '',
         };
     }

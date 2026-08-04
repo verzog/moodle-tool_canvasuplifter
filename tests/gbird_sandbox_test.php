@@ -137,39 +137,46 @@ final class gbird_sandbox_test extends \advanced_testcase {
     public function test_gbird_sandbox_question_matrix(): void {
         $matrix = $this->fixture_report()['questionmatrix'];
 
-        // Since #129, categorization_question and ordering_question are mapped to
-        // TYPE_UNSUPPORTED rather than mis-read as multianswer/multichoice by the
-        // cardinality fallback, so 5 of the 12 are supported (multichoice drops to
-        // zero and its row disappears; multianswer drops from 3 to 2).
-        $this->assertSame(12, $matrix['total']);
-        $this->assertSame(5, $matrix['supported']);
+        // 16 questions across the referenced "New quiz engine" (12) and the orphan
+        // "New quiz engine (question bank)" (4) - both read through the native-QTI
+        // fallback now that questionbank_builder has it too (#127), so the report
+        // mirrors what builds. Since #129, categorization_question and
+        // ordering_question are unsupported rather than mis-read as choice questions.
+        $this->assertSame(16, $matrix['total']);
+        $this->assertSame(8, $matrix['supported']);
 
         // A supported row (importable type, no dropped-source attribution).
         $supported = static fn(string $label, int $count): array => [
             'label' => $label, 'count' => $count, 'supported' => true, 'status' => 'yes', 'sources' => [],
         ];
-        // An unsupported New-Quiz row: status 'unsupported', dropped from the one
-        // "New quiz engine" assessment (full sources array with its count).
-        $newquiz = static fn(string $label): array => [
-            'label' => $label, 'count' => 1, 'supported' => false, 'status' => 'unsupported',
-            'sources' => [['name' => 'New quiz engine', 'count' => 1]],
+        // An unsupported New-Quiz row: status 'unsupported', dropped from the named
+        // assessments (full sources array with per-assessment counts).
+        $newquiz = static fn(string $label, int $count, array $sources): array => [
+            'label' => $label, 'count' => $count, 'supported' => false, 'status' => 'unsupported',
+            'sources' => $sources,
         ];
+        $engine = [['name' => 'New quiz engine', 'count' => 1]];
 
         // Assert the whole matrix: label, count, supported flag, status and the
         // complete sources array (with counts), in order - so a status or
         // attribution regression is caught, not just a count change.
         $this->assertSame([
-            $supported('description', 1),
+            $supported('description', 2),
             $supported('essay', 1),
-            $supported('matching', 1),
-            $supported('multianswer', 2),
-            $newquiz('categorization_question'),
-            $newquiz('file_upload_question'),
-            $newquiz('calculated_question'),
-            $newquiz('ordering_question'),
-            $newquiz('fill_in_multiple_blanks_question'),
-            $newquiz('hot_spot_question'),
-            $newquiz('numerical_question'),
+            $supported('matching', 2),
+            $supported('multianswer', 3),
+            // The orphan bank and the referenced quiz each contribute one
+            // categorization item, so it carries two source attributions.
+            $newquiz('categorization_question', 2, [
+                ['name' => 'New quiz engine (question bank)', 'count' => 1],
+                ['name' => 'New quiz engine', 'count' => 1],
+            ]),
+            $newquiz('file_upload_question', 1, $engine),
+            $newquiz('calculated_question', 1, $engine),
+            $newquiz('ordering_question', 1, $engine),
+            $newquiz('fill_in_multiple_blanks_question', 1, $engine),
+            $newquiz('hot_spot_question', 1, $engine),
+            $newquiz('numerical_question', 1, $engine),
         ], $matrix['rows']);
     }
 
@@ -493,8 +500,15 @@ final class gbird_sandbox_test extends \advanced_testcase {
             $this->assertArrayHasKey($label, $byid, "$label should be its own matrix row");
             $this->assertFalse($byid[$label]['supported'], "$label must be unsupported");
             $this->assertSame('unsupported', $byid[$label]['status']);
-            $this->assertSame([['name' => 'New quiz engine', 'count' => 1]], $byid[$label]['sources']);
         }
+        // Ordering appears only in the referenced quiz; categorization appears in
+        // both it and the orphan bank (whose native questions the report now reads
+        // through the same fallback the builder uses), so it carries two sources.
+        $this->assertSame([['name' => 'New quiz engine', 'count' => 1]], $byid['ordering_question']['sources']);
+        $this->assertSame([
+            ['name' => 'New quiz engine (question bank)', 'count' => 1],
+            ['name' => 'New quiz engine', 'count' => 1],
+        ], $byid['categorization_question']['sources']);
     }
 
     /**

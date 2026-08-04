@@ -1463,7 +1463,11 @@ class manifest_parser {
             if ($title !== '') {
                 $modelitem->title = $title;
             }
-            $modelitem->isvisible = $isvisible;
+            // Combine the module occurrence's state with any resource-level hidden
+            // state (files_meta.xml, or draft metadata): a file Canvas marked
+            // hidden must stay hidden even when a published module also places it,
+            // so only ever hide - never let an active module reveal it.
+            $modelitem->isvisible = $isvisible && $resources[$ref]->isvisible;
             return $modelitem;
         }
 
