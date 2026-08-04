@@ -16,6 +16,7 @@
 
 namespace tool_canvasuplifter;
 
+use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\parser\manifest_parser;
 use tool_canvasuplifter\local\report\conversion_report;
 
@@ -150,5 +151,43 @@ final class gbird_sandbox_test extends \advanced_testcase {
         $this->assertSame(1, $outcomes['importable']);
         $this->assertSame(0, $outcomes['skipped']);
         $this->assertFalse($outcomes['malformed']);
+    }
+
+    /**
+     * Known limitation, asserted so it cannot regress unnoticed: the fixture's
+     * unpublished "Accredible" ContextExternalTool (a Canvas external tool with
+     * an inline LTI launch URL) is currently dropped. Its module_meta item
+     * references a CC resource that no manifest resource provides, so the parser
+     * does not yet turn it into an LTI item - unlike a cartridge-backed LTI link,
+     * which builds as a hidden mod_lti placeholder. This is why the counts above
+     * total 32 rather than 33.
+     *
+     * See issue #125: import Canvas ContextExternalTool module items that carry
+     * an inline launch URL as hidden mod_lti placeholders. When that lands, this
+     * test should start failing (the tool becomes an item) and be updated.
+     *
+     * @return void
+     */
+    public function test_gbird_sandbox_external_tool_is_a_known_drop(): void {
+        $root = __DIR__ . '/fixtures/gbird_sandbox';
+
+        // The fixture genuinely exercises the case: the tool, its launch URL and
+        // its unpublished state are all present in the Canvas module metadata.
+        $modulemeta = file_get_contents($root . '/course_settings/module_meta.xml');
+        $this->assertStringContainsString('<content_type>ContextExternalTool</content_type>', $modulemeta);
+        $this->assertStringContainsString('<title>Accredible</title>', $modulemeta);
+        $this->assertStringContainsString('https://api.accredible.com/v1/lti/launch', $modulemeta);
+
+        // But it is absent from the parsed model: no LTI item, and nothing named
+        // after the tool. If this ever changes, revisit the counts above.
+        $course = (new manifest_parser($root))->parse();
+        $items = $course->orphans;
+        foreach ($course->sections as $section) {
+            $items = array_merge($items, $section->items);
+        }
+        foreach ($items as $it) {
+            $this->assertNotSame(item::KIND_LTI, $it->kind);
+            $this->assertStringNotContainsStringIgnoringCase('accredible', (string) $it->title);
+        }
     }
 }
