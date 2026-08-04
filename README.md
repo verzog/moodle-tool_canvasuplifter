@@ -287,7 +287,7 @@ Everything lives under `~/.moodle-plugin-ci` (outside the repo).
 | 3 | Quizzes + `mod_qbank` question banks (QTI import) | Done |
 | 4 | Gradebook categories with Canvas weights, LTI placeholders, in-section labels, Canvas rubrics → `gradingform_rubric`, CC 1.3 IMS Assignment profile | Done |
 | 5 | Asynchronous **analyse**: run extract + parse + report as an adhoc task behind the existing polled status page, and move the remote-URL fetch into the task too, so large packages don't time out the web request (the build is already async; this closes the server-side gap that complements the built-in chunked-upload support) | Done |
-| 6 | Learning outcomes → course grade outcomes (scales from mastery ratings); Canvas LTI links → hidden `mod_lti` placeholders | Done |
+| 6 | Learning outcomes → course grade outcomes (scales from mastery ratings) | Done |
 | 7 | Bulk-migration integration: the public `\tool_canvasuplifter\launcher` facade (queue / list / get / delete / storage) and the `tool_automate` bulk driver — URL-list and server-directory sources, build-now or analyse-for-later, and a *Staged Canvas imports* review page with a storage counter and selective delete | Done |
 | 8 | Remaining QTI question types (numerical, calculated, free-text multi-blank) | Planned |
 
@@ -324,9 +324,12 @@ shapes against `main`:
 - [ ] An **outcomes-heavy course** — Canvas learning outcomes now import
       as course grade outcomes, each backed by a scale from its mastery
       ratings (Phase 6 / the 0.41.0 changelog). A clean build of a course
-      rich in outcomes — and in `learning_outcome_identifierref` links on
-      rubric criteria and assignments — is still needed to validate that
-      pipeline end-to-end at scale.
+      rich in outcomes is still needed to validate that import at scale.
+      Note this box validates outcome *import* only: the **alignment** of
+      outcomes to specific rubric criteria or assignments
+      (`learning_outcome_identifierref`) is a known non-carry — Canvas
+      records it separately and Moodle models it differently — so those
+      links are dropped, not converted.
 
 Additional coverage (analysed, doesn't close a box above): **ITSE 1411
 "Beginning Web Programming"** (Canvas, CC 1.1) carries the first-class CC
@@ -358,20 +361,23 @@ submit.
 
 ## Releasing (maintainers)
 
-The GitHub Actions workflow (`.github/workflows/moodle-ci.yml`) runs the full
-`moodle-plugin-ci` suite — PHP lint, `phpcs` (Moodle standard), PHPDoc, Mustache
-lint, Grunt, PHPUnit and Behat — across every supported Moodle branch (5.0–5.2)
-on the PHP versions each supports (8.2–8.4), against PostgreSQL, MariaDB and
-MySQL: the same tooling the Moodle Plugins directory runs on upload. Reproduce it
-locally with `tooling/local-ci.sh` before tagging.
+The GitHub Actions workflow (`.github/workflows/moodle-ci.yml`) runs the
+`moodle-plugin-ci` checks — PHP lint, `phpcpd`, `phpmd`, `phpcs` (the Moodle Code
+Checker), PHPDoc, `validate`, upgrade `savepoints`, Mustache lint and PHPUnit —
+across every supported Moodle branch (5.0–5.2) on the PHP versions each supports
+(8.2–8.4), against PostgreSQL, MariaDB and MySQL. (The workflow does not run
+Grunt or Behat; committed AMD under `amd/build/` is rebuilt with `grunt amd`
+locally when `amd/src/` changes.) Reproduce the same set locally with
+`tooling/local-ci.sh` before tagging.
 
 To cut a release:
 
 1. Keep `$plugin->version` (`YYYYMMDDXX`) monotonically increasing, and set
    `$plugin->release` (the `0.x` string) and `$plugin->maturity`.
 2. Update `CHANGELOG.md` — add a dated section for the new `release`.
-3. Land those on `main` green, then tag it:
-   `git tag -a v0.45.0 -m 'tool_canvasuplifter 0.45.0' && git push origin v0.45.0`.
+3. Land those on `main` green, then tag it — substituting the same version you
+   set in `$plugin->release` in step 1 for `X.Y.Z` (e.g. `v0.45.0`):
+   `git tag -a vX.Y.Z -m 'tool_canvasuplifter X.Y.Z' && git push origin vX.Y.Z`.
 4. Package the ZIP with a **top-level folder named `canvasuplifter`** (not
    `moodle-tool_canvasuplifter`), which is the directory name Moodle installs it
    under (`admin/tool/canvasuplifter`).

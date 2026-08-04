@@ -8,15 +8,17 @@ quickly.
 ## [0.45.0] - 2026-08-04
 
 - Documentation/release-prep, no code or behaviour change. Correct the README to
-  match what the builder actually does today: learning outcomes (0.41.0) and
-  Canvas LTI links now build (LTI as hidden `mod_lti` placeholders), so the
-  status blurb, the "known limitations" LTI note, and the roadmap are updated —
-  Phase 6 (outcomes + LTI) is marked Done. The roadmap also gains a Phase 7 that
-  records the bulk-migration integration shipped in 0.42.0–0.44.0 (the public
-  `launcher` facade and the `tool_automate` bulk driver, with its Staged Canvas
-  imports review page), and the remaining QTI question types move to a planned
-  Phase 8. Refresh the "Path to beta" outcomes item (they are imported now, not
-  dropped) and add a "Releasing (maintainers)" section.
+  match what the builder actually does today: learning outcomes (0.41.0) build,
+  so Phase 6 is marked Done for outcomes, and the stale "LTI tools are reported
+  but not yet built" limitation note is corrected — LTI links build as hidden
+  `mod_lti` placeholders, which shipped in Phase 4. The roadmap also gains a
+  Phase 7 that records the bulk-migration integration shipped in 0.42.0–0.44.0
+  (the public `launcher` facade and the `tool_automate` bulk driver, with its
+  Staged Canvas imports review page), and the remaining QTI question types move
+  to a planned Phase 8. Refresh the "Path to beta" outcomes item (outcomes are
+  imported now, not dropped; their rubric/assignment *alignment* remains a known
+  non-carry) and add a "Releasing (maintainers)" section describing the checks
+  CI actually runs.
 
 ## [0.44.0] - 2026-08-03
 
