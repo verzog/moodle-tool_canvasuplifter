@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\parser\manifest_parser;
+use tool_canvasuplifter\local\parser\outcomes_parser;
 use tool_canvasuplifter\local\report\conversion_report;
 
 /**
@@ -129,32 +130,32 @@ final class gbird_sandbox_test extends \advanced_testcase {
         $this->assertSame(12, $matrix['total']);
         $this->assertSame(7, $matrix['supported']);
 
-        $supported = [];
-        $unsupported = [];
-        foreach ($matrix['rows'] as $row) {
-            if ($row['supported']) {
-                $supported[$row['label']] = $row['count'];
-            } else {
-                $unsupported[$row['label']] = $row['count'];
-                // Every dropped question is attributed to the New Quiz.
-                $this->assertSame('New quiz engine', $row['sources'][0]['name']);
-            }
-        }
+        // A supported row (importable type, no dropped-source attribution).
+        $supported = static fn(string $label, int $count): array => [
+            'label' => $label, 'count' => $count, 'supported' => true, 'status' => 'yes', 'sources' => [],
+        ];
+        // An unsupported New-Quiz row: status 'unsupported', dropped from the one
+        // "New quiz engine" assessment (full sources array with its count).
+        $newquiz = static fn(string $label): array => [
+            'label' => $label, 'count' => 1, 'supported' => false, 'status' => 'unsupported',
+            'sources' => [['name' => 'New quiz engine', 'count' => 1]],
+        ];
 
-        $this->assertSame(
-            ['description' => 1, 'essay' => 1, 'matching' => 1, 'multianswer' => 3, 'multichoice' => 1],
-            $supported
-        );
-        $this->assertSame(
-            [
-                'file_upload_question' => 1,
-                'calculated_question' => 1,
-                'fill_in_multiple_blanks_question' => 1,
-                'hot_spot_question' => 1,
-                'numerical_question' => 1,
-            ],
-            $unsupported
-        );
+        // Assert the whole matrix: label, count, supported flag, status and the
+        // complete sources array (with counts), in order - so a status or
+        // attribution regression is caught, not just a count change.
+        $this->assertSame([
+            $supported('description', 1),
+            $supported('essay', 1),
+            $supported('matching', 1),
+            $supported('multianswer', 3),
+            $supported('multichoice', 1),
+            $newquiz('file_upload_question'),
+            $newquiz('calculated_question'),
+            $newquiz('fill_in_multiple_blanks_question'),
+            $newquiz('hot_spot_question'),
+            $newquiz('numerical_question'),
+        ], $matrix['rows']);
     }
 
     /**
@@ -169,6 +170,65 @@ final class gbird_sandbox_test extends \advanced_testcase {
         $this->assertSame(1, $outcomes['importable']);
         $this->assertSame(0, $outcomes['skipped']);
         $this->assertFalse($outcomes['malformed']);
+
+        // Beyond the counts, lock down the outcome's payload so a parser that
+        // dropped its name/description or scrambled the mastery ratings' points
+        // would be caught (an importable count of 1 alone would not notice).
+        $xml = file_get_contents(__DIR__ . '/fixtures/gbird_sandbox/course_settings/learning_outcomes.xml');
+        $parsed = (new outcomes_parser())->parse($xml);
+        $this->assertCount(1, $parsed);
+        $this->assertSame('New outcome', $parsed[0]->fullname);
+        $this->assertStringContainsString('This is a new outcome', $parsed[0]->description);
+        $this->assertSame([
+            ['description' => 'Exceeds Mastery', 'points' => 4.0],
+            ['description' => 'Mastery', 'points' => 3.0],
+            ['description' => 'Near Mastery', 'points' => 2.0],
+            ['description' => 'Below Mastery', 'points' => 1.0],
+            ['description' => 'No Evidence', 'points' => 0.0],
+        ], $parsed[0]->ratings);
+    }
+
+    /**
+     * Lock down the module structure: the four sections in order, and each
+     * section's items in order (kind + title). A regression that reassigned an
+     * item to the wrong module or reordered items leaves the section/item counts
+     * unchanged, so only asserting the structure itself catches it.
+     *
+     * @return void
+     */
+    public function test_gbird_sandbox_section_structure_is_ordered(): void {
+        $structure = [];
+        foreach ($this->fixture_report()['sections'] as $section) {
+            $structure[$section['title']] = array_map(
+                static fn(array $it): string => $it['kind'] . '::' . $it['title'],
+                $section['items']
+            );
+        }
+
+        $this->assertSame([
+            'My first Module' => ['assignment::Test SCORM'],
+            'Canvas for document management' => [
+                'file::Sample PDF.pdf',
+                'file::Sample word document.docx',
+                'file::Sample powerpoint.pptx',
+                'page::Page with linked files',
+                'page::UI elements',
+                'page::Page elements',
+                'page::images',
+                'assignment::HIPPY Lifecycle Calendar',
+                'page::ui elements',
+            ],
+            'This is a new module' => [
+                'discussion::New discussion',
+                'assignment::Assignment',
+                'quiz::New quiz engine',
+            ],
+            'Week 1' => [
+                'page::Introduction',
+                'assignment::Employee Health and Wellness (Sample Course)',
+                'assignment::Risk hierarchy of control',
+            ],
+        ], $structure);
     }
 
     /**
