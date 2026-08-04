@@ -302,14 +302,18 @@ shapes against `main`:
 - [ ] A **multi-module Canvas course with cross-references** between pages
       (`$WIKI_REFERENCE$`, `$CANVAS_OBJECT_REFERENCE$`) — exercises the
       post-build link rewriter across pages, forums and assignment intros.
-      Partial: **ANE 260** (Canvas, 18 sections, 165 items — 73 files, 30
-      discussions, 22 Classic quizzes, 17 assignments, 4 URLs) analysed
-      cleanly with 0 items skipped and **578/578 questions converting**
-      across all 22 assessments — a good multi-module and Classic-Quizzes-at-
-      scale data point. This does not yet close the box: it was an analysis,
-      not a completed build, and cross-references live in page HTML that the
-      manifest doesn't expose, so a full build of a cross-linked course is
-      still needed to exercise the link rewriter itself.
+      Strong data point: **ANE 260** (Canvas — 165 items: 73 files, 30
+      discussions, 22 assessments [18 standalone question banks + 4 quizzes],
+      17 assignments, 19 subheaders, 4 URLs) **built cleanly end-to-end —
+      165 of 165 items across 19 sections, 0 skipped** — with **583/583
+      questions converting**, 18 runnable quizzes seeded from the standalone
+      banks, announcements posted to the news forum, unreferenced resources
+      collected into an "Additional resources" section, and Canvas
+      unpublished → Moodle hidden states preserved. This does not fully close
+      the box on its own: ANE 260 carries no wiki pages, so the page↔page
+      link rewriter is not exercised — a page-heavy cross-linked course is
+      still wanted for that specific path. But it clears the
+      multi-module-build-at-scale concern.
 - [ ] An **embedded-media-heavy course** — videos, audio, images both in
       page bodies and in QTI question stems — exercises `file_embedder`
       and the question-asset import path end-to-end.
@@ -361,14 +365,15 @@ submit.
 
 ## Releasing (maintainers)
 
-The GitHub Actions workflow (`.github/workflows/moodle-ci.yml`) runs the
-`moodle-plugin-ci` checks — PHP lint, `phpcpd`, `phpmd`, `phpcs` (the Moodle Code
-Checker), PHPDoc, `validate`, upgrade `savepoints`, Mustache lint and PHPUnit —
-across every supported Moodle branch (5.0–5.2) on the PHP versions each supports
-(8.2–8.4), against PostgreSQL, MariaDB and MySQL. (The workflow does not run
-Grunt or Behat; committed AMD under `amd/build/` is rebuilt with `grunt amd`
-locally when `amd/src/` changes.) Reproduce the same set locally with
-`tooling/local-ci.sh` before tagging.
+The GitHub Actions workflow (`.github/workflows/moodle-ci.yml`) runs
+`moodle-plugin-ci` across every supported Moodle branch (5.0–5.2) on the PHP
+versions each supports (8.2–8.4), against PostgreSQL, MariaDB and MySQL. The
+**blocking** checks are PHP lint, `phpcs` (the Moodle Code Checker), PHPDoc,
+`validate`, upgrade `savepoints`, Mustache lint and PHPUnit; it also runs
+`phpcpd` and `phpmd` as **advisory** (`continue-on-error`) steps. There is no
+Grunt or Behat step (committed AMD under `amd/build/` is rebuilt with `grunt amd`
+locally when `amd/src/` changes). `tooling/local-ci.sh` reproduces the blocking
+set before you tag — it does not run the advisory `phpcpd`/`phpmd`.
 
 To cut a release:
 
