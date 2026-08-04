@@ -855,8 +855,14 @@ class conversion_report {
                 return $absolute;
             }
         }
-        $id = basename(dirname($qtipath));
-        if ($id !== '' && $id !== '.' && $id !== '/') {
+        // Canvas keys the native dump by the assessment id: the CC folder name for
+        // a foldered QTI, but the resource identifier when the QTI sits at the
+        // package root (where basename(dirname()) yields the extraction dir). Try
+        // both, mirroring the builders' locate_native_qti.
+        foreach ([basename(dirname($qtipath)), $modelitem->identifier] as $id) {
+            if ($id === '' || $id === '.' || $id === '/') {
+                continue;
+            }
             $absolute = $this->resolve_within('non_cc_assessments/' . $id . '.xml.qti');
             if ($absolute !== null && realpath($absolute) !== $already) {
                 return $absolute;

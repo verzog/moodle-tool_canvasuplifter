@@ -2198,6 +2198,13 @@ class manifest_parser {
                 // 1.3 profile carries it inline (<text>); a flat Canvas assignment
                 // keeps it in a sibling HTML that lti_builder reads at build time.
                 $resourceitem->launchdescription = $settings->description;
+                // An inline CC 1.3 profile may hold the title only in its <title>
+                // (no href/files slug to derive from, and lti_builder no longer
+                // parses inlinexml), so carry it over rather than letting the
+                // activity fall back to the generic "External tool" name.
+                if ($resourceitem->title === '' && $settings->title !== '') {
+                    $resourceitem->title = $settings->title;
+                }
                 continue;
             }
             if ($settings->gradegroupref !== '') {
