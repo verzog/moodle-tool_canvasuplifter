@@ -260,13 +260,26 @@ class qti_parser {
         $correct = $this->correct_idents($item);
         $feedback = $this->label_feedback_map($item);
         $numcorrect = max(1, count($correct));
+        // A <varequal> may score a choice by its response_label ident OR by the
+        // choice's displayed value/text (e.g. <varequal>False</varequal> for a
+        // true/false item, as some IMS CC exporters emit). Keep a normalised copy
+        // of the scored values so the text form is matched as well as the ident.
+        $correcttext = [];
+        foreach ($correct as $value) {
+            $normalised = $this->normalise_answer_value($value);
+            if ($normalised !== '') {
+                $correcttext[$normalised] = true;
+            }
+        }
 
         foreach ($presentation->getElementsByTagNameNS('*', 'response_label') as $label) {
             if (!($label instanceof DOMElement)) {
                 continue;
             }
             $ident = $label->getAttribute('ident');
-            $iscorrect = in_array($ident, $correct, true);
+            $labeltext = $this->normalise_answer_value($this->material_text($label));
+            $iscorrect = in_array($ident, $correct, true)
+                || ($labeltext !== '' && isset($correcttext[$labeltext]));
             $fraction = 0.0;
             if ($iscorrect) {
                 $fraction = $question->type === qti_question::TYPE_MULTIANSWER
@@ -608,6 +621,19 @@ class qti_parser {
     protected function plain_answer(string $html): string {
         $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5);
         return trim((string) preg_replace('/\s+/', ' ', $text));
+    }
+
+    /**
+     * Reduce a scored value or choice label to a case-insensitive plain form, so a
+     * <varequal> that names a choice by its display text can be compared to the
+     * response_label's text regardless of markup or letter case.
+     *
+     * @param string $value The raw value or label text/HTML.
+     * @return string
+     */
+    protected function normalise_answer_value(string $value): string {
+        $plain = $this->plain_answer($value);
+        return function_exists('mb_strtolower') ? mb_strtolower($plain) : strtolower($plain);
     }
 
     /**

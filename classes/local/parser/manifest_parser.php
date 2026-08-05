@@ -78,11 +78,17 @@ class manifest_parser {
         $dom = new DOMDocument();
         // Suppress libxml warnings; we validate the structure ourselves below.
         // LIBXML_NONET blocks any network access while parsing untrusted XML.
+        // LIBXML_RECOVER keeps a locally-malformed manifest usable: Canvas ships
+        // packages whose unsupported/placeholder resources carry a broken tag
+        // (e.g. <filehref=...>), and libxml would otherwise reject the whole
+        // document — dropping the good resources with the bad. Recovery parses the
+        // valid remainder; the structure checks below still reject a manifest with
+        // no usable root, so genuine garbage is not silently accepted.
         $previous = libxml_use_internal_errors(true);
-        $loaded = $dom->load($manifestpath, LIBXML_NONET);
+        $loaded = $dom->load($manifestpath, LIBXML_NONET | LIBXML_RECOVER);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
-        if (!$loaded) {
+        if (!$loaded || $dom->documentElement === null) {
             throw new \RuntimeException('errorbadmanifestxml');
         }
 

@@ -97,6 +97,53 @@ XML;
     }
 
     /**
+     * A manifest with a locally-malformed resource (Canvas ships unsupported
+     * resource types with a broken <filehref=...> tag) is recovered rather than
+     * rejected wholesale: the good resources still parse, and the broken one is
+     * simply not classified as a buildable activity.
+     *
+     * @return void
+     */
+    public function test_malformed_resource_is_recovered_not_fatal(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/syllabus.html', '<html><head><title>Syllabus</title></head><body>hi</body></html>');
+        // The second resource has a malformed <filehref=...> tag (no space), as in
+        // Canvas's cc_unsupported_resources fixture; libxml would reject the whole
+        // document without recovery, losing the valid page too.
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="O1" structure="rooted-hierarchy">
+      <item identifier="root">
+        <item identifier="I1" identifierref="R1"><title>Syllabus</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="R1" type="webcontent" href="syllabus.html">
+      <file href="syllabus.html"/>
+    </resource>
+    <resource identifier="R2" type="imsapip_zipv1p0">
+      <filehref="doesntexist.zip" />
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        // Does not throw, and the good page survives the recovery.
+        $course = (new manifest_parser($dir))->parse();
+        $titles = [];
+        foreach ($course->sections as $section) {
+            foreach ($section->items as $it) {
+                $titles[] = $it->title;
+            }
+        }
+        $this->assertContains('Syllabus', $titles);
+    }
+
+    /**
      * An unreferenced page with no manifest title gets one from its HTML <title>.
      *
      * @return void
