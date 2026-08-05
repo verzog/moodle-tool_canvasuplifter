@@ -5,6 +5,24 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.48.0] - 2026-08-05
+
+- Resilience fixes surfaced by running Canvas/IMS "Validation Cartridge" test
+  packages through the analyser:
+  - **Malformed manifests no longer abort the whole import.** Canvas ships
+    packages whose unsupported/placeholder resources carry a broken tag (e.g.
+    `<filehref=...>`); libxml rejected the entire document, discarding the good
+    resources with the bad. `manifest_parser` now parses with `LIBXML_RECOVER`
+    (still rejecting a manifest with no usable root), so the valid resources
+    import and the broken one is reported as unclassified/skipped — matching how
+    Canvas itself recovers.
+  - **QTI answers scored by choice text now import.** Some IMS Common Cartridge
+    exporters point a question's correct `<varequal>` at the option's displayed
+    text (e.g. `<varequal>False</varequal>`) rather than its `response_label`
+    ident. `qti_parser` matched only the ident, so such true/false (and multiple
+    choice) questions imported with no correct answer and were dropped as
+    unsupported; it now falls back to matching the choice's text, case-insensitively.
+
 ## [0.47.0] - 2026-08-04
 
 - Build-fidelity fixes surfaced by the GBIRD-Sandbox regression fixture, closing

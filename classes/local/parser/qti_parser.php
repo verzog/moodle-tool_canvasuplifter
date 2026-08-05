@@ -261,22 +261,55 @@ class qti_parser {
         $feedback = $this->label_feedback_map($item);
         $numcorrect = max(1, count($correct));
 
+        // Which response_label idents actually exist among the choices?
+        $identset = [];
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_label') as $label) {
+            if ($label instanceof DOMElement && $label->getAttribute('ident') !== '') {
+                $identset[$label->getAttribute('ident')] = true;
+            }
+        }
+        // A <varequal> may score a choice by its response_label ident OR by the
+        // choice's displayed text (e.g. <varequal>False</varequal>, as some IMS CC
+        // exporters emit). Only treat a scored value as a text reference when it is
+        // NOT an existing ident, so a choice whose text merely coincides with
+        // another option's ident is never wrongly marked correct. The feedback map
+        // is keyed by the same scored value, so index the text-keyed feedback the
+        // same way to keep response-specific feedback on text-scored choices.
+        $correcttext = [];
+        foreach ($correct as $value) {
+            if (!isset($identset[$value])) {
+                $normalised = $this->normalise_answer_value($value);
+                if ($normalised !== '') {
+                    $correcttext[$normalised] = true;
+                }
+            }
+        }
+        $feedbacktext = [];
+        foreach ($feedback as $key => $text) {
+            if (!isset($identset[$key])) {
+                $feedbacktext[$this->normalise_answer_value((string) $key)] = $text;
+            }
+        }
+
         foreach ($presentation->getElementsByTagNameNS('*', 'response_label') as $label) {
             if (!($label instanceof DOMElement)) {
                 continue;
             }
             $ident = $label->getAttribute('ident');
-            $iscorrect = in_array($ident, $correct, true);
+            $labeltext = $this->normalise_answer_value($this->material_text($label));
+            $iscorrect = in_array($ident, $correct, true)
+                || ($labeltext !== '' && isset($correcttext[$labeltext]));
             $fraction = 0.0;
             if ($iscorrect) {
                 $fraction = $question->type === qti_question::TYPE_MULTIANSWER
                     ? round(100 / $numcorrect, 5)
                     : 100.0;
             }
+            $labelfeedback = $feedback[$ident] ?? ($labeltext !== '' ? ($feedbacktext[$labeltext] ?? '') : '');
             $question->answers[] = [
                 'text' => $this->material_text($label),
                 'fraction' => $fraction,
-                'feedback' => $feedback[$ident] ?? '',
+                'feedback' => $labelfeedback,
             ];
         }
     }
@@ -608,6 +641,19 @@ class qti_parser {
     protected function plain_answer(string $html): string {
         $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5);
         return trim((string) preg_replace('/\s+/', ' ', $text));
+    }
+
+    /**
+     * Reduce a scored value or choice label to a case-insensitive plain form, so a
+     * <varequal> that names a choice by its display text can be compared to the
+     * response_label's text regardless of markup or letter case.
+     *
+     * @param string $value The raw value or label text/HTML.
+     * @return string
+     */
+    protected function normalise_answer_value(string $value): string {
+        $plain = $this->plain_answer($value);
+        return function_exists('mb_strtolower') ? mb_strtolower($plain) : strtolower($plain);
     }
 
     /**

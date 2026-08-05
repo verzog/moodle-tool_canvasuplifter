@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026080401;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026080500;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Build fidelity: external tools as LTI, quiz grade categories, native-QTI banks.
-$plugin->release   = '0.47.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Resilience: recover malformed manifests, match QTI answers by choice text.
+$plugin->release   = '0.48.0';

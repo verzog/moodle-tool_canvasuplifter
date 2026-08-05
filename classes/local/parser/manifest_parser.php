@@ -76,13 +76,40 @@ class manifest_parser {
         }
 
         $dom = new DOMDocument();
+        // Recover from a locally-malformed manifest: Canvas ships packages whose
+        // unsupported/placeholder resources carry a broken tag (e.g. <filehref=...>),
+        // and libxml would otherwise reject the whole document — dropping the good
+        // resources with the bad. The DOMDocument::$recover property enables the
+        // same behaviour as the LIBXML_RECOVER flag but without depending on that
+        // constant being defined in every PHP/libxml build.
+        $dom->recover = true;
         // Suppress libxml warnings; we validate the structure ourselves below.
         // LIBXML_NONET blocks any network access while parsing untrusted XML.
         $previous = libxml_use_internal_errors(true);
         $loaded = $dom->load($manifestpath, LIBXML_NONET);
+        $errors = libxml_get_errors();
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
-        if (!$loaded) {
+        // A manifest truncated partway through its structure recovers to a partial
+        // tree, which would otherwise import as a silently incomplete course.
+        // libxml reports that as XML_ERR_TAG_NOT_FINISHED (code 77, "Premature end
+        // of data"); a localised malformed tag (Canvas's <filehref=...>) never
+        // does, so treat truncation as fatal while still recovering the latter.
+        $truncated = false;
+        foreach ($errors as $error) {
+            if ((int) $error->code === 77) {
+                $truncated = true;
+                break;
+            }
+        }
+        // Also require a recognisable <manifest> root that carries some structure,
+        // so a file truncated at the opening "<manifest" (a stub root with no
+        // content) raises rather than appearing to import as an empty course.
+        $root = $dom->documentElement;
+        if (
+            !$loaded || $truncated || $root === null || $root->localName !== 'manifest'
+            || $root->getElementsByTagName('*')->length === 0
+        ) {
             throw new \RuntimeException('errorbadmanifestxml');
         }
 
