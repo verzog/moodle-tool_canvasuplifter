@@ -5,6 +5,18 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.49.0] - 2026-08-05
+
+- Add the `cc_full_test` end-to-end build fixture and test — the plugin's first
+  full-course *build* regression (the GBIRD fixture is analyse-only). It builds
+  the IMS "Validation Cartridge 1" (a broad, standards-conformant Common
+  Cartridge) into a real course and asserts the whole module mix: 6 file
+  resources, the two discussions as forums (alongside the course news forum), two
+  hidden `mod_lti` placeholders, two weblinks, the referenced quiz and its
+  question bank, and all 22 questions imported. The cartridge's deliberately
+  broken "Non-existent reference" weblink is reported as a single non-fatal skip
+  rather than aborting the build or silently inventing an activity.
+
 ## [0.48.0] - 2026-08-05
 
 - Resilience fixes surfaced by running Canvas/IMS "Validation Cartridge" test

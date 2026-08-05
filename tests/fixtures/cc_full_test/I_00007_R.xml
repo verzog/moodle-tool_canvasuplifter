@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wl:webLink xmlns:wl="http://www.imsglobal.org/xsd/imsccv1p1/imswl_v1p1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/imsccv1p1/imswl_v1p1 http://www.imsglobal.org/profile/cc/ccv1p1/ccv1p1_imswl_v1p1.xsd">
+  <wl:title>Wikipedia - Sigmund Freud</wl:title>
+  <wl:url href="http://en.wikipedia.org/wiki/Sigmund_Freud" target="_self" windowFeatures="width=100, height=100"/>
+</wl:webLink>
