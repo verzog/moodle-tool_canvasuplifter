@@ -342,15 +342,16 @@ class manifest_parser {
      * time (question stems, forum posts), so an unplaced dependency target must
      * not also surface as a standalone file in "Additional resources".
      *
-     * Scoped to KIND_FILE targets of a placed parent whose builder embeds
-     * owner-relative dependency media — quizzes and question banks (via the QTI
-     * writer) and discussions (via the forum builder). Other rich-content builders
-     * (pages, books, assignments) do not pass an owner directory to file_embedder,
-     * so a dependency they reference from a subfolder is not embedded; hiding it
-     * would drop it entirely, so those are left as downloadable orphans. A
-     * dependency of a dropped resource is left alone too, and a resource the
-     * organisation also places as its own activity is already excluded from the
-     * orphan pass, so this only ever removes the embedded-asset leak.
+     * Scoped to KIND_FILE targets of a parent whose builder embeds owner-relative
+     * dependency media — quizzes and question banks (via the QTI writer) and
+     * discussions (via the forum builder). Other rich-content builders (pages,
+     * books, assignments) do not pass an owner directory to file_embedder, so a
+     * dependency they reference from a subfolder is not embedded; hiding it would
+     * drop it entirely, so those are left as downloadable orphans. The parent must
+     * be one that actually builds (not itself suppressed) — this covers both a
+     * placed activity and an unplaced-but-buildable one that course_builder builds
+     * from the orphan pass and which embeds the same media. A dependency that is
+     * itself placed as its own activity is left alone.
      *
      * @param array $resources The resources keyed by identifier.
      * @param array $placed Set of identifiers placed in the organisation tree.
@@ -361,7 +362,7 @@ class manifest_parser {
         foreach ($resources as $parentid => $parent) {
             if (
                 empty($parent->dependencies)
-                || empty($placed[$parentid])
+                || $parent->suppressed
                 || !in_array($parent->kind, $embeds, true)
             ) {
                 continue;

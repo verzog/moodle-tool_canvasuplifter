@@ -124,13 +124,14 @@ class link_rewriter {
                 return $matches[0];
             }
             [$absolute, $matched] = $hit;
-            // Preserve the historical filearea layout: a package-root or web_resources/
-            // hit stores under the reference's own decoded path (web_resources is a
-            // source-location convention, not part of the logical path). Only an
-            // owner-relative hit stores under the collapsed package path, so a ../ climb
-            // lands in a clean filearea location rather than a literal "../".
-            $storagepath = ($matched === $decoded || $matched === 'web_resources/' . $decoded)
-                ? $decoded : $matched;
+            // Choose the filearea storage path. A web_resources/ hit stores under the
+            // reference's own path (that prefix is a source-location detail, not part of
+            // the logical path); every other hit stores under the matched package path.
+            // Collapse any ./ or ../ segments so the filearea path never contains a "."
+            // or ".." component, which Moodle rejects (an in-package a/../b reference,
+            // or an owner-relative sibling climb, both resolve to a clean path here).
+            $storagepath = ($matched === 'web_resources/' . $decoded) ? $decoded : $matched;
+            $storagepath = self::normalize_path('', $storagepath) ?? $storagepath;
             [$filepath, $filename] = $this->split_path($storagepath);
             $key = $filepath . $filename;
             if (!isset($seen[$key])) {

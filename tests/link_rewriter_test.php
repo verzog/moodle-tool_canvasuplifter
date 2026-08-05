@@ -93,6 +93,29 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * A package-root $IMS-CC-FILEBASE$ reference whose path contains an in-package
+     * dot-segment (a/../b) resolves and is stored under the collapsed path, so the
+     * filearea path never contains a ".." Moodle would reject.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_collapses_in_package_dot_segments(): void {
+        $root = make_request_directory();
+        mkdir($root . '/a');
+        mkdir($root . '/b');
+        file_put_contents($root . '/b/dog.jpg', 'JPG');
+
+        $html = '<img src="$IMS-CC-FILEBASE$a/../b/dog.jpg">';
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertStringContainsString('@@PLUGINFILE@@/b/dog.jpg', $result['html']);
+        $this->assertStringNotContainsString('..', $result['html']);
+        $this->assertCount(1, $result['files']);
+        $this->assertSame('/b/', $result['files'][0]['filepath']);
+        $this->assertSame('dog.jpg', $result['files'][0]['filename']);
+    }
+
+    /**
      * A reference to a file that isn't in the package is left untouched.
      *
      * @return void

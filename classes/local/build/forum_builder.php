@@ -215,17 +215,21 @@ class forum_builder {
         foreach ($hrefs as $href) {
             // Attachment hrefs appear both package-root-relative (e.g. discussion/x.pdf)
             // and relative to the discussion folder (often a ../ climb into a sibling
-            // resource folder). Try the root-relative reading first, then resolve against
-            // the discussion folder, so both conventions import.
-            $absolute = safe_path::within($this->packageroot, $href);
+            // resource folder), and may be URL-encoded (My%20File.pdf). Decode first,
+            // then try the root-relative reading and fall back to the discussion folder.
+            $decoded = rawurldecode($href);
+            if (strpos($decoded, "\0") !== false) {
+                continue;
+            }
+            $absolute = safe_path::within($this->packageroot, $decoded);
             if ($absolute === null || !is_file($absolute)) {
-                $relative = link_rewriter::normalize_path($basedir, $href);
+                $relative = link_rewriter::normalize_path($basedir, $decoded);
                 $absolute = $relative !== null ? safe_path::within($this->packageroot, $relative) : null;
             }
             if ($absolute === null || !is_file($absolute)) {
                 continue;
             }
-            $filename = clean_param(basename($href), PARAM_FILE);
+            $filename = clean_param(basename($decoded), PARAM_FILE);
             if ($filename === '' || $fs->file_exists($contextid, 'mod_forum', 'attachment', $postid, '/', $filename)) {
                 continue;
             }
