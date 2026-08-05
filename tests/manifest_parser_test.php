@@ -158,6 +158,26 @@ XML;
     }
 
     /**
+     * A manifest truncated partway through its structure (after real child nodes)
+     * must also raise: recovery would otherwise hand back a silently partial
+     * course. libxml flags this as "Premature end of data", which a merely
+     * malformed-but-complete manifest never triggers.
+     *
+     * @return void
+     */
+    public function test_truncated_after_children_still_throws(): void {
+        $dir = make_request_directory();
+        file_put_contents(
+            $dir . '/imsmanifest.xml',
+            '<manifest xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+                . '<resources><resource identifier="R1" type="webcontent" href="a.html">'
+                . '<file href="a.html"/>'
+        );
+        $this->expectException(\RuntimeException::class);
+        (new manifest_parser($dir))->parse();
+    }
+
+    /**
      * An unreferenced page with no manifest title gets one from its HTML <title>.
      *
      * @return void

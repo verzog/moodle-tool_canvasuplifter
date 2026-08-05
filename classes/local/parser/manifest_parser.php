@@ -87,16 +87,27 @@ class manifest_parser {
         // LIBXML_NONET blocks any network access while parsing untrusted XML.
         $previous = libxml_use_internal_errors(true);
         $loaded = $dom->load($manifestpath, LIBXML_NONET);
+        $errors = libxml_get_errors();
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
-        // Recovery can turn genuinely broken input (e.g. a file truncated at the
-        // opening "<manifest") into a stub root with no content, which would
-        // otherwise import as an empty course. Require a recognisable <manifest>
-        // element that actually carries some structure, so real garbage still
-        // raises rather than appearing to succeed.
+        // A manifest truncated partway through its structure recovers to a partial
+        // tree, which would otherwise import as a silently incomplete course.
+        // libxml reports that as XML_ERR_TAG_NOT_FINISHED (code 77, "Premature end
+        // of data"); a localised malformed tag (Canvas's <filehref=...>) never
+        // does, so treat truncation as fatal while still recovering the latter.
+        $truncated = false;
+        foreach ($errors as $error) {
+            if ((int) $error->code === 77) {
+                $truncated = true;
+                break;
+            }
+        }
+        // Also require a recognisable <manifest> root that carries some structure,
+        // so a file truncated at the opening "<manifest" (a stub root with no
+        // content) raises rather than appearing to import as an empty course.
         $root = $dom->documentElement;
         if (
-            !$loaded || $root === null || $root->localName !== 'manifest'
+            !$loaded || $truncated || $root === null || $root->localName !== 'manifest'
             || $root->getElementsByTagName('*')->length === 0
         ) {
             throw new \RuntimeException('errorbadmanifestxml');
