@@ -54,10 +54,20 @@ class file_embedder {
      * @param string $filearea File area, e.g. "content" or "intro".
      * @param string $html The HTML to scan and rewrite.
      * @param int $itemid File area item id (default 0).
+     * @param string $ownerdir Package-relative folder of the resource carrying the HTML ('' to skip),
+     *        so media stored beside the owning resource (e.g. a discussion's inline image referenced
+     *        with a ../ climb into a sibling folder) resolves rather than being left unembedded.
      * @return string The rewritten HTML (unchanged if nothing was embedded).
      */
-    public function embed(int $contextid, string $component, string $filearea, string $html, int $itemid = 0): string {
-        $result = (new link_rewriter())->rewrite_files($html, $this->packageroot);
+    public function embed(
+        int $contextid,
+        string $component,
+        string $filearea,
+        string $html,
+        int $itemid = 0,
+        string $ownerdir = ''
+    ): string {
+        $result = (new link_rewriter())->rewrite_files($html, $this->packageroot, $ownerdir);
         if (empty($result['files'])) {
             return $html;
         }

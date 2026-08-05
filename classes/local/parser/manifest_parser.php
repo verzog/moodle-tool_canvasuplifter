@@ -204,6 +204,11 @@ class manifest_parser {
         // standalone resource. Only unplaced files are suppressed, so an explicitly
         // placed activity is never dropped.
         $this->suppress_embedded_page_assets($resources, $placed);
+        // A resource declared only as another (placed) resource's <dependency> is an
+        // embedded asset — question-stem images, discussion media — not a standalone
+        // download. Its media is embedded into the owning content at build time, so
+        // keep it off the orphan list rather than surfacing it in "Additional resources".
+        $this->suppress_dependency_assets($resources, $placed);
         // An asset folded into an HTML bundle is now hidden — but only when it
         // is an orphan. One the course also places as its own activity built
         // normally above and must survive, so suppress only the unplaced ones
@@ -326,6 +331,40 @@ class manifest_parser {
             $built = $this->built_file_payload($resourceitem);
             if ($built !== null && isset($embedded[$built])) {
                 $resourceitem->suppressed = true;
+            }
+        }
+    }
+
+    /**
+     * Suppress resources that exist only as another placed resource's Common
+     * Cartridge <dependency> — a quiz's image resource, a discussion's inline
+     * media/attachment. These are embedded into their owning content at build
+     * time (question stems, forum posts), so an unplaced dependency target must
+     * not also surface as a standalone file in "Additional resources".
+     *
+     * Scoped to KIND_FILE targets of a placed parent: a dependency of a dropped
+     * resource is left alone, and a resource the organisation also places as its
+     * own activity is already excluded from the orphan pass, so this only ever
+     * removes the embedded-asset leak.
+     *
+     * @param array $resources The resources keyed by identifier.
+     * @param array $placed Set of identifiers placed in the organisation tree.
+     * @return void
+     */
+    protected function suppress_dependency_assets(array $resources, array $placed): void {
+        foreach ($resources as $parentid => $parent) {
+            if (empty($parent->dependencies) || empty($placed[$parentid])) {
+                continue;
+            }
+            foreach ($parent->dependencies as $dependencyref) {
+                if (!isset($resources[$dependencyref]) || !empty($placed[$dependencyref])) {
+                    continue;
+                }
+                $dependency = $resources[$dependencyref];
+                if ($dependency->kind === item::KIND_FILE && !$dependency->suppressed) {
+                    $dependency->kind = item::KIND_UNKNOWN;
+                    $dependency->suppressed = true;
+                }
             }
         }
     }
@@ -545,6 +584,16 @@ class manifest_parser {
             foreach ($files as $file) {
                 if ($file instanceof DOMElement && $file->getAttribute('href') !== '') {
                     $modelitem->files[] = $file->getAttribute('href');
+                }
+            }
+
+            // Collect <dependency identifierref="..."> children. In Common Cartridge a
+            // dependency is an embedded asset of this resource (a quiz's image resource,
+            // a discussion's media) rather than a standalone activity; recording them lets
+            // the orphan pass keep an unplaced dependency target off the course page.
+            foreach ($resource->getElementsByTagNameNS('*', 'dependency') as $dependency) {
+                if ($dependency instanceof DOMElement && $dependency->getAttribute('identifierref') !== '') {
+                    $modelitem->dependencies[] = $dependency->getAttribute('identifierref');
                 }
             }
 

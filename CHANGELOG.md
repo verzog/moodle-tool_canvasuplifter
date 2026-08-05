@@ -5,6 +5,30 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.50.0] - 2026-08-05
+
+- **Embed quiz and discussion dependency media instead of leaking it as
+  downloads.** Canvas references media stored beside a question's or discussion's
+  own resource with `$IMS-CC-FILEBASE$name` (a bare name, not a package-root
+  path) or with a `../` climb into a sibling resource folder. Previously these
+  resolved only against the package root, so the media failed to embed *and* the
+  backing resource surfaced as a standalone "Additional resources" download
+  (e.g. `img1`, `smiling_dog`).
+  - `link_rewriter::resolve_filebase()` (and the question writer's FILEBASE
+    resolution) now fall back to the **owning resource's own folder**, collapsing
+    `./`/`../` within the package, so question stem/answer/feedback images and
+    discussion inline images embed into their content and forum attachments
+    written as `../…` import correctly.
+  - The manifest parser now reads Common Cartridge `<dependency>` declarations and
+    keeps an unplaced dependency target (an embedded asset of a placed quiz or
+    discussion) off the orphan list, so it no longer appears as a standalone file
+    activity.
+  - Extends the `cc_full_test` build test: the quiz's three images land in the
+    question file area and the discussion's inline image and attachment land on
+    the seeded forum post, with the two former leak resources gone (four file
+    resources built, not six). This is progress on the *embedded-media-heavy*
+    path-to-beta box.
+
 ## [0.49.0] - 2026-08-05
 
 - Add the `cc_full_test` end-to-end build fixture and test — the plugin's first
