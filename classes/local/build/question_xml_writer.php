@@ -394,9 +394,9 @@ class question_xml_writer {
         }
         // Canvas's $IMS-CC-FILEBASE$ token addresses the package's bundled files
         // (commonly under web_resources/); resolve it against the package root via
-        // link_rewriter, independent of the per-question image folder.
+        // link_rewriter, then fall back to the question's own resource folder.
         if (preg_match('~^' . link_rewriter::FILEBASE_TOKEN . '(.*)$~i', $value, $tm)) {
-            return $this->rewrite_filebase_ref($tm[1], $files);
+            return $this->rewrite_filebase_ref($tm[1], $imagedir, $files);
         }
         if (preg_match('~^(https?:|data:|mailto:|tel:|@@PLUGINFILE@@|#)~i', $value)) {
             return null;
@@ -416,20 +416,64 @@ class question_xml_writer {
 
     /**
      * Resolve a $IMS-CC-FILEBASE$ token reference (everything after the token)
-     * against the package root. Canvas commonly stores the file under
-     * web_resources/, so that location is tried as well.
+     * against the package root (Canvas commonly stores the file under
+     * web_resources/, so that location is tried as well), then fall back to the
+     * question's own resource folder — Canvas also exports QTI media alongside the
+     * assessment.xml and references it as $IMS-CC-FILEBASE$name, which does not sit
+     * at the package root.
      *
      * @param string $rest The path after the token (may carry ?query/#fragment).
+     * @param string $imagedir The question's resource folder, tried as a fallback.
      * @param array $files Collected files (modified in place).
      * @return string|null The rewritten @@PLUGINFILE@@ URL, or null to leave it alone.
      */
-    protected function rewrite_filebase_ref(string $rest, array &$files): ?string {
-        if ($this->filebase === null) {
+    protected function rewrite_filebase_ref(string $rest, string $imagedir, array &$files): ?string {
+        [$path, $suffix] = $this->split_suffix($rest);
+        $decoded = rawurldecode($path);
+        if ($decoded === '' || strpos($decoded, "\0") !== false) {
             return null;
         }
-        [$path, $suffix] = $this->split_suffix($rest);
-        $abs = link_rewriter::resolve_filebase($this->filebase, rawurldecode($path));
-        return $abs !== null ? $this->collect_file($abs, $this->filebase, $suffix, $files) : null;
+        if ($this->filebase !== null) {
+            // Resolve against the package root (and web_resources/), then the question's
+            // own resource folder, passed relative to the package root so link_rewriter
+            // collapses a ../ climb into a sibling dependency folder within the package
+            // (safe_join would reject such a climb as escaping the assessment directory).
+            $ownerdir = $this->package_relative_dir($imagedir);
+            $abs = link_rewriter::resolve_filebase($this->filebase, $decoded, $ownerdir);
+            if ($abs !== null) {
+                return $this->collect_file($abs, $this->filebase, $suffix, $files);
+            }
+            return null;
+        }
+        // No package root known: resolve directly under the question's image folder.
+        $abs = $this->safe_join($imagedir, $decoded);
+        if ($abs !== null && is_file($abs)) {
+            return $this->collect_file($abs, $imagedir, $suffix, $files);
+        }
+        return null;
+    }
+
+    /**
+     * The image folder expressed relative to the package root ($this->filebase), or ''
+     * when it is not inside the package root. Used to steer $IMS-CC-FILEBASE$ resolution
+     * to the question's own resource folder.
+     *
+     * @param string $imagedir Absolute path of the question's resource folder.
+     * @return string Package-relative folder, or ''.
+     */
+    protected function package_relative_dir(string $imagedir): string {
+        if ($this->filebase === null) {
+            return '';
+        }
+        $root = realpath($this->filebase);
+        $owner = realpath($imagedir);
+        if ($root === false || $owner === false) {
+            return '';
+        }
+        if ($owner !== $root && !str_starts_with($owner, $root . DIRECTORY_SEPARATOR)) {
+            return '';
+        }
+        return trim(str_replace('\\', '/', substr($owner, strlen($root))), '/');
     }
 
     /**

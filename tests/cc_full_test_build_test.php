@@ -52,11 +52,12 @@ final class cc_full_test_build_test extends \advanced_testcase {
     }
 
     /**
-     * The whole cartridge builds into the expected module mix: four learner
-     * placed file resources (kept distinct from two dependency-media files that
-     * currently leak as downloads), the two imported discussions as forums, two
+     * The whole cartridge builds into the expected module mix: the four learner
+     * placed file resources only, the two imported discussions as forums, two
      * external tools, two weblinks, the referenced quiz and its question bank.
-     * There are no pages in this cartridge.
+     * There are no pages in this cartridge, and the quiz/discussion dependency
+     * media is embedded into that content (see test_embedded_media_is_embedded)
+     * rather than surfaced as standalone downloads.
      *
      * @return void
      */
@@ -69,22 +70,15 @@ final class cc_full_test_build_test extends \advanced_testcase {
             $resourcenames[] = $cm->name;
         }
         sort($resourcenames);
-        // Four files are placed as activities by the cartridge's organization.
-        // The other two ('img1', 'smiling_dog') are dependency media for the quiz
-        // and the discussion whose real-world references (a parent-relative
-        // FILEBASE path and a root-relative name) resolve outside the content that
-        // owns them, so they currently surface as standalone downloads instead of
-        // embedding. Asserting the two groups separately keeps the learner-visible
-        // files pinned and makes that media leak visible: when embedded-media
-        // handling improves, the two dependency entries move into their owning
-        // content and this expectation updates deliberately rather than silently.
+        // Only the four files the cartridge's organization places as activities.
+        // The quiz's image dependency and the discussion's media are embedded into
+        // their owning content, so they must NOT also appear here as 'img1' /
+        // 'smiling_dog' downloads - that leak is what this pins against.
         $this->assertSame([
             'Assignment 1',
             'Assignment 2',
             'Learning Objectives',
             'Super exciting!',
-            'img1',
-            'smiling_dog',
         ], $resourcenames);
 
         // The two imported discussions build as general forums. Moodle's
@@ -117,11 +111,11 @@ final class cc_full_test_build_test extends \advanced_testcase {
     public function test_created_counts_and_only_broken_weblink_is_skipped(): void {
         [, $report] = $this->build_fixture();
 
-        // The file=6 count is four organization-placed files plus the two
-        // dependency-media files ('img1', 'smiling_dog') that currently surface as
-        // downloads; test_builds_the_expected_module_mix has the learner/leak split.
+        // The file=4 count is the organization-placed files only; the quiz and
+        // discussion dependency media is embedded into that content, not built as
+        // file activities (see test_embedded_media_is_embedded).
         $this->assertSame([
-            'file' => 6,
+            'file' => 4,
             'quiz' => 1,
             'url' => 2,
             'discussion' => 2,
@@ -149,5 +143,49 @@ final class cc_full_test_build_test extends \advanced_testcase {
         }
         // All 22 questions from the bank and the quiz are imported.
         $this->assertSame(22, $DB->count_records('question_bank_entries'));
+    }
+
+    /**
+     * The cartridge's dependency media embeds into the content that owns it: the
+     * quiz question's stem/answer/feedback images land in the question file area,
+     * and the discussion's inline image and attachment land on the seeded forum
+     * post - each referenced with a Canvas $IMS-CC-FILEBASE$ path or a ../ climb
+     * that resolves relative to the owning resource's folder rather than the
+     * package root. Nothing is silently dropped and nothing leaks as a download.
+     *
+     * @return void
+     */
+    public function test_embedded_media_is_embedded(): void {
+        global $DB;
+        $this->build_fixture();
+
+        // Quiz question media: img1/img2/img3.png (stem, answer, feedback) imported
+        // into the 'question' component rather than left as unresolved placeholders.
+        $questionfiles = $DB->get_fieldset_select(
+            'files',
+            'filename',
+            "component = :component AND filename <> '.' AND filename <> ''",
+            ['component' => 'question']
+        );
+        sort($questionfiles);
+        $this->assertSame(['img1.png', 'img2.png', 'img3.png'], array_values(array_unique($questionfiles)));
+
+        // Discussion media: the inline image embeds into the forum post body and
+        // the declared attachment imports as a real post attachment.
+        $postmedia = $DB->get_fieldset_select(
+            'files',
+            'filename',
+            "component = :component AND filearea = :filearea AND filename <> '.' AND filename <> ''",
+            ['component' => 'mod_forum', 'filearea' => 'post']
+        );
+        $this->assertSame(['smiling_dog.jpg'], array_values(array_unique($postmedia)));
+
+        $attachments = $DB->get_fieldset_select(
+            'files',
+            'filename',
+            "component = :component AND filearea = :filearea AND filename <> '.' AND filename <> ''",
+            ['component' => 'mod_forum', 'filearea' => 'attachment']
+        );
+        $this->assertSame(['angry_person.jpg'], array_values(array_unique($attachments)));
     }
 }

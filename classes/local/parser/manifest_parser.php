@@ -204,6 +204,11 @@ class manifest_parser {
         // standalone resource. Only unplaced files are suppressed, so an explicitly
         // placed activity is never dropped.
         $this->suppress_embedded_page_assets($resources, $placed);
+        // A resource declared only as another (placed) resource's <dependency> is an
+        // embedded asset — question-stem images, discussion media — not a standalone
+        // download. Its media is embedded into the owning content at build time, so
+        // keep it off the orphan list rather than surfacing it in "Additional resources".
+        $this->suppress_dependency_assets($resources, $placed);
         // An asset folded into an HTML bundle is now hidden — but only when it
         // is an orphan. One the course also places as its own activity built
         // normally above and must survive, so suppress only the unplaced ones
@@ -326,6 +331,51 @@ class manifest_parser {
             $built = $this->built_file_payload($resourceitem);
             if ($built !== null && isset($embedded[$built])) {
                 $resourceitem->suppressed = true;
+            }
+        }
+    }
+
+    /**
+     * Suppress resources that exist only as another placed resource's Common
+     * Cartridge <dependency> — a quiz's image resource, a discussion's inline
+     * media/attachment. These are embedded into their owning content at build
+     * time (question stems, forum posts), so an unplaced dependency target must
+     * not also surface as a standalone file in "Additional resources".
+     *
+     * Scoped to KIND_FILE targets of a parent whose builder embeds owner-relative
+     * dependency media — quizzes and question banks (via the QTI writer) and
+     * discussions (via the forum builder). Other rich-content builders (pages,
+     * books, assignments) do not pass an owner directory to file_embedder, so a
+     * dependency they reference from a subfolder is not embedded; hiding it would
+     * drop it entirely, so those are left as downloadable orphans. The parent must
+     * be one that actually builds (not itself suppressed) — this covers both a
+     * placed activity and an unplaced-but-buildable one that course_builder builds
+     * from the orphan pass and which embeds the same media. A dependency that is
+     * itself placed as its own activity is left alone.
+     *
+     * @param array $resources The resources keyed by identifier.
+     * @param array $placed Set of identifiers placed in the organisation tree.
+     * @return void
+     */
+    protected function suppress_dependency_assets(array $resources, array $placed): void {
+        $embeds = [item::KIND_QUIZ, item::KIND_QUESTIONBANK, item::KIND_DISCUSSION];
+        foreach ($resources as $parentid => $parent) {
+            if (
+                empty($parent->dependencies)
+                || $parent->suppressed
+                || !in_array($parent->kind, $embeds, true)
+            ) {
+                continue;
+            }
+            foreach ($parent->dependencies as $dependencyref) {
+                if (!isset($resources[$dependencyref]) || !empty($placed[$dependencyref])) {
+                    continue;
+                }
+                $dependency = $resources[$dependencyref];
+                if ($dependency->kind === item::KIND_FILE && !$dependency->suppressed) {
+                    $dependency->kind = item::KIND_UNKNOWN;
+                    $dependency->suppressed = true;
+                }
             }
         }
     }
@@ -545,6 +595,16 @@ class manifest_parser {
             foreach ($files as $file) {
                 if ($file instanceof DOMElement && $file->getAttribute('href') !== '') {
                     $modelitem->files[] = $file->getAttribute('href');
+                }
+            }
+
+            // Collect <dependency identifierref="..."> children. In Common Cartridge a
+            // dependency is an embedded asset of this resource (a quiz's image resource,
+            // a discussion's media) rather than a standalone activity; recording them lets
+            // the orphan pass keep an unplaced dependency target off the course page.
+            foreach ($resource->getElementsByTagNameNS('*', 'dependency') as $dependency) {
+                if ($dependency instanceof DOMElement && $dependency->getAttribute('identifierref') !== '') {
+                    $modelitem->dependencies[] = $dependency->getAttribute('identifierref');
                 }
             }
 

@@ -80,6 +80,12 @@ class item {
     /** @var string[] All file paths belonging to this resource. */
     public array $files = [];
 
+    /** @var string[] Identifiers of resources this one declares as a Common Cartridge dependency
+     * (embedded assets: question-stem images, discussion media). Their media is embedded into
+     * this resource's content at build time, so an unplaced dependency target is not surfaced
+     * as a standalone "Additional resources" download. */
+    public array $dependencies = [];
+
     /** @var bool Whether the item is published (visible to students) in Canvas. */
     public bool $isvisible = true;
 

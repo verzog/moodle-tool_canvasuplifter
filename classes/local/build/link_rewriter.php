@@ -47,17 +47,52 @@ class link_rewriter {
      *
      * @param string $packageroot Absolute package root.
      * @param string $relpath Decoded, root-relative reference path.
+     * @param string $ownerdir Package-relative folder of the resource that carries the reference
+     *        ('' to skip), tried as a fallback so Canvas media stored beside its owning
+     *        assessment.xml/discussion.xml — referenced as $IMS-CC-FILEBASE$name or with a ../
+     *        climb into a sibling resource folder — still resolves.
      * @return string|null Absolute path within the package, or null if not found.
      */
-    public static function resolve_filebase(string $packageroot, string $relpath): ?string {
+    public static function resolve_filebase(string $packageroot, string $relpath, string $ownerdir = ''): ?string {
+        $hit = self::locate_filebase($packageroot, $relpath, $ownerdir);
+        return $hit === null ? null : $hit[0];
+    }
+
+    /**
+     * Locate a $IMS-CC-FILEBASE$ reference, returning both the resolved absolute path
+     * and the package-relative path that matched (so the caller can store the file under
+     * a clean filearea path even when an owner-relative ../ climb produced the hit).
+     *
+     * @param string $packageroot Absolute package root.
+     * @param string $relpath Decoded, root-relative reference path.
+     * @param string $ownerdir Package-relative folder of the referencing resource ('' to skip).
+     * @return array|null [absolute path, matched package-relative path], or null if not found.
+     */
+    private static function locate_filebase(string $packageroot, string $relpath, string $ownerdir): ?array {
         $relpath = ltrim($relpath, '/');
         if ($relpath === '' || strpos($relpath, "\0") !== false) {
             return null;
         }
-        foreach ([$relpath, 'web_resources/' . $relpath] as $candidate) {
+        $candidates = [$relpath];
+        // Only try the web_resources/ convention for plain root-relative references: a
+        // ../ climb would collapse through web_resources/.. back to the package root,
+        // producing a spurious hit whose "/../" filearea path Moodle would reject.
+        $hasclimb = in_array('..', explode('/', $relpath), true);
+        if (!$hasclimb) {
+            $candidates[] = 'web_resources/' . $relpath;
+        }
+        // Fall back to the owning resource's own folder; normalize_path collapses the
+        // ./ and ../ segments (returning null if the reference escapes the package root).
+        if ($ownerdir !== '') {
+            $owned = self::normalize_path($ownerdir, $relpath);
+            if ($owned !== null && $owned !== '') {
+                $candidates[] = $owned;
+            }
+        }
+        foreach ($candidates as $candidate) {
             $absolute = safe_path::within($packageroot, $candidate);
             if ($absolute !== null && is_file($absolute)) {
-                return $absolute;
+                return [$absolute, $candidate];
             }
         }
         return null;
@@ -68,25 +103,36 @@ class link_rewriter {
      *
      * @param string $html The page HTML.
      * @param string $packageroot Absolute path to the extracted package root.
+     * @param string $ownerdir Package-relative folder of the resource carrying the HTML ('' to skip),
+     *        so media stored beside the owning resource (or reached with a ../ climb) still resolves.
      * @return array{html: string, files: array<int, array{package: string, filepath: string, filename: string}>}
      *         The rewritten HTML and the list of package files to import into the page's file area.
      */
-    public function rewrite_files(string $html, string $packageroot): array {
+    public function rewrite_files(string $html, string $packageroot, string $ownerdir = ''): array {
         $files = [];
         $seen = [];
         $pattern = '#' . self::FILEBASE_TOKEN . '([^"\'\s>)]*)#i';
-        $rewritten = preg_replace_callback($pattern, function ($matches) use ($packageroot, &$files, &$seen) {
+        $rewritten = preg_replace_callback($pattern, function ($matches) use ($packageroot, $ownerdir, &$files, &$seen) {
             $rawpath = preg_replace('/[?#].*$/', '', $matches[1]);
             $decoded = ltrim(rawurldecode((string) $rawpath), '/');
             if ($decoded === '') {
                 return $matches[0];
             }
-            $absolute = self::resolve_filebase($packageroot, $decoded);
-            if ($absolute === null) {
+            $hit = self::locate_filebase($packageroot, $decoded, $ownerdir);
+            if ($hit === null) {
                 // Cannot find the file; leave the placeholder untouched.
                 return $matches[0];
             }
-            [$filepath, $filename] = $this->split_path($decoded);
+            [$absolute, $matched] = $hit;
+            // Choose the filearea storage path. A web_resources/ hit stores under the
+            // reference's own path (that prefix is a source-location detail, not part of
+            // the logical path); every other hit stores under the matched package path.
+            // Collapse any ./ or ../ segments so the filearea path never contains a "."
+            // or ".." component, which Moodle rejects (an in-package a/../b reference,
+            // or an owner-relative sibling climb, both resolve to a clean path here).
+            $storagepath = ($matched === 'web_resources/' . $decoded) ? $decoded : $matched;
+            $storagepath = self::normalize_path('', $storagepath) ?? $storagepath;
+            [$filepath, $filename] = $this->split_path($storagepath);
             $key = $filepath . $filename;
             if (!isset($seen[$key])) {
                 $seen[$key] = true;

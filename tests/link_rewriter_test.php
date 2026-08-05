@@ -55,6 +55,67 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * An owner-relative $IMS-CC-FILEBASE$ reference - a bare name beside the owning
+     * resource, or a ../ climb into a sibling resource folder - resolves against the
+     * owner directory and stores under a clean (no "/../") filearea path, even when
+     * the package also has a web_resources/ directory whose ".." would otherwise
+     * collapse back to the root.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_resolves_owner_relative(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        mkdir($root . '/I_00003_R');
+        mkdir($root . '/I_media_R');
+        file_put_contents($root . '/I_00003_R/img1.png', 'PNG');
+        file_put_contents($root . '/I_media_R/dog.jpg', 'JPG');
+
+        $html = '<img src="$IMS-CC-FILEBASE$img1.png">'
+            . '<img src="$IMS-CC-FILEBASE$../I_media_R/dog.jpg">';
+
+        // Without the owner directory neither resolves (they are not at the root).
+        $bare = (new link_rewriter())->rewrite_files($html, $root);
+        $this->assertStringContainsString('IMS-CC-FILEBASE', $bare['html']);
+        $this->assertSame([], $bare['files']);
+
+        $result = (new link_rewriter())->rewrite_files($html, $root, 'I_00003_R');
+
+        // Each resolves under a clean filearea path derived from the owning folder;
+        // crucially neither the URL nor the stored path contains a "/../" segment.
+        $this->assertStringContainsString('@@PLUGINFILE@@/I_00003_R/img1.png', $result['html']);
+        $this->assertStringContainsString('@@PLUGINFILE@@/I_media_R/dog.jpg', $result['html']);
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $result['html']);
+        $this->assertStringNotContainsString('..', $result['html']);
+        $filepaths = array_column($result['files'], 'filepath');
+        $this->assertNotContains('/../I_media_R/', $filepaths);
+        $this->assertEqualsCanonicalizing(['/I_00003_R/', '/I_media_R/'], $filepaths);
+    }
+
+    /**
+     * A package-root $IMS-CC-FILEBASE$ reference whose path contains an in-package
+     * dot-segment (a/../b) resolves and is stored under the collapsed path, so the
+     * filearea path never contains a ".." Moodle would reject.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_collapses_in_package_dot_segments(): void {
+        $root = make_request_directory();
+        mkdir($root . '/a');
+        mkdir($root . '/b');
+        file_put_contents($root . '/b/dog.jpg', 'JPG');
+
+        $html = '<img src="$IMS-CC-FILEBASE$a/../b/dog.jpg">';
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertStringContainsString('@@PLUGINFILE@@/b/dog.jpg', $result['html']);
+        $this->assertStringNotContainsString('..', $result['html']);
+        $this->assertCount(1, $result['files']);
+        $this->assertSame('/b/', $result['files'][0]['filepath']);
+        $this->assertSame('dog.jpg', $result['files'][0]['filename']);
+    }
+
+    /**
      * A reference to a file that isn't in the package is left untouched.
      *
      * @return void

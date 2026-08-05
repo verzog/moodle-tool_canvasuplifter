@@ -184,17 +184,18 @@ class forum_builder {
             return (int) $discussionid;
         }
         $context = \context_module::instance($cmid);
+        $basedir = (string) ($topic['basedir'] ?? '');
 
         // Import prompt media (HTML only) into the first post and rewrite refs.
         if ($format === FORMAT_HTML) {
             $newmessage = (new file_embedder($this->packageroot))
-                ->embed($context->id, 'mod_forum', 'post', $message, $firstpostid);
+                ->embed($context->id, 'mod_forum', 'post', $message, $firstpostid, $basedir);
             if ($newmessage !== $message) {
                 $DB->set_field('forum_posts', 'message', $newmessage, ['id' => $firstpostid]);
             }
         }
 
-        $this->import_attachments($context->id, $firstpostid, (array) ($topic['attachments'] ?? []));
+        $this->import_attachments($context->id, $firstpostid, (array) ($topic['attachments'] ?? []), $basedir);
         return (int) $discussionid;
     }
 
@@ -203,19 +204,32 @@ class forum_builder {
      *
      * @param int $contextid The forum module context id.
      * @param int $postid The first post's id.
-     * @param string[] $hrefs Package-relative attachment paths.
+     * @param string[] $hrefs Attachment paths, relative to the discussion folder.
+     * @param string $basedir Package-relative folder of the discussion XML ('' at root).
      * @return void
      */
-    private function import_attachments(int $contextid, int $postid, array $hrefs): void {
+    private function import_attachments(int $contextid, int $postid, array $hrefs, string $basedir = ''): void {
         global $DB;
         $fs = get_file_storage();
         $stored = 0;
         foreach ($hrefs as $href) {
-            $absolute = safe_path::within($this->packageroot, $href);
+            // Attachment hrefs appear both package-root-relative (e.g. discussion/x.pdf)
+            // and relative to the discussion folder (often a ../ climb into a sibling
+            // resource folder), and may be URL-encoded (My%20File.pdf). Decode first,
+            // then try the root-relative reading and fall back to the discussion folder.
+            $decoded = rawurldecode($href);
+            if (strpos($decoded, "\0") !== false) {
+                continue;
+            }
+            $absolute = safe_path::within($this->packageroot, $decoded);
+            if ($absolute === null || !is_file($absolute)) {
+                $relative = link_rewriter::normalize_path($basedir, $decoded);
+                $absolute = $relative !== null ? safe_path::within($this->packageroot, $relative) : null;
+            }
             if ($absolute === null || !is_file($absolute)) {
                 continue;
             }
-            $filename = clean_param(basename($href), PARAM_FILE);
+            $filename = clean_param(basename($decoded), PARAM_FILE);
             if ($filename === '' || $fs->file_exists($contextid, 'mod_forum', 'attachment', $postid, '/', $filename)) {
                 continue;
             }
@@ -308,6 +322,11 @@ class forum_builder {
             }
             $parsed = $this->parse_topic((string) @file_get_contents($absolute));
             if ($parsed !== null) {
+                // The discussion's own folder: media and attachment hrefs (often
+                // written as ../ climbs into sibling resource folders) resolve
+                // relative to it, not the package root.
+                $basedir = trim(str_replace('\\', '/', dirname($relative)), '/');
+                $parsed['basedir'] = ($basedir === '' || $basedir === '.') ? '' : $basedir;
                 return $parsed;
             }
         }
