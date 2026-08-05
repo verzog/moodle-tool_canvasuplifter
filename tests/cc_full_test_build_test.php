@@ -117,9 +117,9 @@ final class cc_full_test_build_test extends \advanced_testcase {
     public function test_created_counts_and_only_broken_weblink_is_skipped(): void {
         [, $report] = $this->build_fixture();
 
-        // file=6 is four organization-placed files plus the two dependency-media
-        // files ('img1', 'smiling_dog') that currently surface as downloads; see
-        // test_builds_the_expected_module_mix for the learner-visible/leak split.
+        // The file=6 count is four organization-placed files plus the two
+        // dependency-media files ('img1', 'smiling_dog') that currently surface as
+        // downloads; test_builds_the_expected_module_mix has the learner/leak split.
         $this->assertSame([
             'file' => 6,
             'quiz' => 1,
