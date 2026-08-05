@@ -260,15 +260,34 @@ class qti_parser {
         $correct = $this->correct_idents($item);
         $feedback = $this->label_feedback_map($item);
         $numcorrect = max(1, count($correct));
+
+        // Which response_label idents actually exist among the choices?
+        $identset = [];
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_label') as $label) {
+            if ($label instanceof DOMElement && $label->getAttribute('ident') !== '') {
+                $identset[$label->getAttribute('ident')] = true;
+            }
+        }
         // A <varequal> may score a choice by its response_label ident OR by the
-        // choice's displayed value/text (e.g. <varequal>False</varequal> for a
-        // true/false item, as some IMS CC exporters emit). Keep a normalised copy
-        // of the scored values so the text form is matched as well as the ident.
+        // choice's displayed text (e.g. <varequal>False</varequal>, as some IMS CC
+        // exporters emit). Only treat a scored value as a text reference when it is
+        // NOT an existing ident, so a choice whose text merely coincides with
+        // another option's ident is never wrongly marked correct. The feedback map
+        // is keyed by the same scored value, so index the text-keyed feedback the
+        // same way to keep response-specific feedback on text-scored choices.
         $correcttext = [];
         foreach ($correct as $value) {
-            $normalised = $this->normalise_answer_value($value);
-            if ($normalised !== '') {
-                $correcttext[$normalised] = true;
+            if (!isset($identset[$value])) {
+                $normalised = $this->normalise_answer_value($value);
+                if ($normalised !== '') {
+                    $correcttext[$normalised] = true;
+                }
+            }
+        }
+        $feedbacktext = [];
+        foreach ($feedback as $key => $text) {
+            if (!isset($identset[$key])) {
+                $feedbacktext[$this->normalise_answer_value((string) $key)] = $text;
             }
         }
 
@@ -286,10 +305,11 @@ class qti_parser {
                     ? round(100 / $numcorrect, 5)
                     : 100.0;
             }
+            $labelfeedback = $feedback[$ident] ?? ($labeltext !== '' ? ($feedbacktext[$labeltext] ?? '') : '');
             $question->answers[] = [
                 'text' => $this->material_text($label),
                 'fraction' => $fraction,
-                'feedback' => $feedback[$ident] ?? '',
+                'feedback' => $labelfeedback,
             ];
         }
     }

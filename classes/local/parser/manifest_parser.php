@@ -76,19 +76,29 @@ class manifest_parser {
         }
 
         $dom = new DOMDocument();
+        // Recover from a locally-malformed manifest: Canvas ships packages whose
+        // unsupported/placeholder resources carry a broken tag (e.g. <filehref=...>),
+        // and libxml would otherwise reject the whole document — dropping the good
+        // resources with the bad. The DOMDocument::$recover property enables the
+        // same behaviour as the LIBXML_RECOVER flag but without depending on that
+        // constant being defined in every PHP/libxml build.
+        $dom->recover = true;
         // Suppress libxml warnings; we validate the structure ourselves below.
         // LIBXML_NONET blocks any network access while parsing untrusted XML.
-        // LIBXML_RECOVER keeps a locally-malformed manifest usable: Canvas ships
-        // packages whose unsupported/placeholder resources carry a broken tag
-        // (e.g. <filehref=...>), and libxml would otherwise reject the whole
-        // document — dropping the good resources with the bad. Recovery parses the
-        // valid remainder; the structure checks below still reject a manifest with
-        // no usable root, so genuine garbage is not silently accepted.
         $previous = libxml_use_internal_errors(true);
-        $loaded = $dom->load($manifestpath, LIBXML_NONET | LIBXML_RECOVER);
+        $loaded = $dom->load($manifestpath, LIBXML_NONET);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
-        if (!$loaded || $dom->documentElement === null) {
+        // Recovery can turn genuinely broken input (e.g. a file truncated at the
+        // opening "<manifest") into a stub root with no content, which would
+        // otherwise import as an empty course. Require a recognisable <manifest>
+        // element that actually carries some structure, so real garbage still
+        // raises rather than appearing to succeed.
+        $root = $dom->documentElement;
+        if (
+            !$loaded || $root === null || $root->localName !== 'manifest'
+            || $root->getElementsByTagName('*')->length === 0
+        ) {
             throw new \RuntimeException('errorbadmanifestxml');
         }
 

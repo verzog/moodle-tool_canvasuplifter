@@ -130,24 +130,59 @@ final class qti_parser_test extends \basic_testcase {
             . '<response_label ident="A1"><material><mattext>True</mattext></material></response_label>'
             . '<response_label ident="A2"><material><mattext>False</mattext></material></response_label>'
             . '</render_choice></response_lid></presentation>';
-        // The scored value is the option text "False", not the ident "A2".
+        // The scored value is the option text "False", not the ident "A2"; the
+        // per-response feedback is likewise keyed by the text.
         $resp = '<resprocessing><outcomes><decvar varname="SCORE" vartype="Decimal"/></outcomes>'
             . '<respcondition title="Correct"><conditionvar><varequal respident="RL">False</varequal></conditionvar>'
-            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition>'
+            . '<setvar action="Set" varname="SCORE">100</setvar>'
+            . '<displayfeedback feedbacktype="Response" linkrefid="False_fb"/></respcondition>'
             . '<respcondition><conditionvar><varequal respident="RL">True</varequal></conditionvar>'
             . '<setvar action="Set" varname="SCORE">0</setvar></respcondition></resprocessing>';
+        $fb = '<itemfeedback ident="False_fb"><material><mattext>Correct - it is blue</mattext></material></itemfeedback>';
 
-        $r = (new qti_parser())->parse($this->assessment($this->item('cc.true_false.v0p1', $pres, $resp)));
+        $r = (new qti_parser())->parse($this->assessment($this->item('cc.true_false.v0p1', $pres, $resp, $fb)));
 
         $q = $r['questions'][0];
         $this->assertSame(qti_question::TYPE_TRUEFALSE, $q->type);
         $this->assertTrue($q->is_importable(), 'the text-scored true/false should be importable');
-        $bytext = [];
+        $byanswer = [];
         foreach ($q->answers as $a) {
-            $bytext[trim($a['text'])] = $a['fraction'];
+            $byanswer[trim($a['text'])] = $a;
         }
-        $this->assertSame(100.0, $bytext['False']);
-        $this->assertSame(0.0, $bytext['True']);
+        $this->assertSame(100.0, $byanswer['False']['fraction']);
+        $this->assertSame(0.0, $byanswer['True']['fraction']);
+        // Feedback keyed by the scored text is preserved on the matched answer.
+        $this->assertSame('Correct - it is blue', $byanswer['False']['feedback']);
+    }
+
+    /**
+     * The text fallback must not fire for a scored value that is a real
+     * response_label ident: a normal multiple-choice item with correct ident "A"
+     * and a *different* option whose displayed text is "A" must keep only the
+     * ident-matched option correct, not both.
+     *
+     * @return void
+     */
+    public function test_text_fallback_does_not_fire_on_ident_collision(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">Pick the first</mattext></material>'
+            . '<response_lid ident="RL" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext>First option</mattext></material></response_label>'
+            . '<response_label ident="B"><material><mattext>A</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        // Correct answer is ident "A"; option B's *text* happens to be "A".
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="RL">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing>';
+
+        $r = (new qti_parser())->parse($this->assessment($this->item('cc.multiple_choice.v0p1', $pres, $resp)));
+
+        $byanswer = [];
+        foreach ($r['questions'][0]->answers as $a) {
+            $byanswer[trim($a['text'])] = $a['fraction'];
+        }
+        // Only the ident-"A" option ("First option") is correct; option B (text "A") is not.
+        $this->assertSame(100.0, $byanswer['First option']);
+        $this->assertSame(0.0, $byanswer['A']);
     }
 
     /**

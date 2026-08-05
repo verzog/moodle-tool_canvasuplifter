@@ -144,6 +144,20 @@ XML;
     }
 
     /**
+     * Recovery must not make a genuinely broken manifest look importable: a file
+     * truncated at the opening tag recovers to an empty stub root, which should
+     * still raise rather than parse as an empty course.
+     *
+     * @return void
+     */
+    public function test_truncated_manifest_still_throws(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/imsmanifest.xml', '<manifest');
+        $this->expectException(\RuntimeException::class);
+        (new manifest_parser($dir))->parse();
+    }
+
+    /**
      * An unreferenced page with no manifest title gets one from its HTML <title>.
      *
      * @return void
