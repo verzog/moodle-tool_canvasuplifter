@@ -342,18 +342,28 @@ class manifest_parser {
      * time (question stems, forum posts), so an unplaced dependency target must
      * not also surface as a standalone file in "Additional resources".
      *
-     * Scoped to KIND_FILE targets of a placed parent: a dependency of a dropped
-     * resource is left alone, and a resource the organisation also places as its
-     * own activity is already excluded from the orphan pass, so this only ever
-     * removes the embedded-asset leak.
+     * Scoped to KIND_FILE targets of a placed parent whose builder embeds
+     * owner-relative dependency media — quizzes and question banks (via the QTI
+     * writer) and discussions (via the forum builder). Other rich-content builders
+     * (pages, books, assignments) do not pass an owner directory to file_embedder,
+     * so a dependency they reference from a subfolder is not embedded; hiding it
+     * would drop it entirely, so those are left as downloadable orphans. A
+     * dependency of a dropped resource is left alone too, and a resource the
+     * organisation also places as its own activity is already excluded from the
+     * orphan pass, so this only ever removes the embedded-asset leak.
      *
      * @param array $resources The resources keyed by identifier.
      * @param array $placed Set of identifiers placed in the organisation tree.
      * @return void
      */
     protected function suppress_dependency_assets(array $resources, array $placed): void {
+        $embeds = [item::KIND_QUIZ, item::KIND_QUESTIONBANK, item::KIND_DISCUSSION];
         foreach ($resources as $parentid => $parent) {
-            if (empty($parent->dependencies) || empty($placed[$parentid])) {
+            if (
+                empty($parent->dependencies)
+                || empty($placed[$parentid])
+                || !in_array($parent->kind, $embeds, true)
+            ) {
                 continue;
             }
             foreach ($parent->dependencies as $dependencyref) {

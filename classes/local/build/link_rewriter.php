@@ -73,7 +73,14 @@ class link_rewriter {
         if ($relpath === '' || strpos($relpath, "\0") !== false) {
             return null;
         }
-        $candidates = [$relpath, 'web_resources/' . $relpath];
+        $candidates = [$relpath];
+        // Only try the web_resources/ convention for plain root-relative references: a
+        // ../ climb would collapse through web_resources/.. back to the package root,
+        // producing a spurious hit whose "/../" filearea path Moodle would reject.
+        $hasclimb = in_array('..', explode('/', $relpath), true);
+        if (!$hasclimb) {
+            $candidates[] = 'web_resources/' . $relpath;
+        }
         // Fall back to the owning resource's own folder; normalize_path collapses the
         // ./ and ../ segments (returning null if the reference escapes the package root).
         if ($ownerdir !== '') {

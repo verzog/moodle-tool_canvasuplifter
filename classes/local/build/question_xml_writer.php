@@ -434,16 +434,46 @@ class question_xml_writer {
             return null;
         }
         if ($this->filebase !== null) {
-            $abs = link_rewriter::resolve_filebase($this->filebase, $decoded);
+            // Resolve against the package root (and web_resources/), then the question's
+            // own resource folder, passed relative to the package root so link_rewriter
+            // collapses a ../ climb into a sibling dependency folder within the package
+            // (safe_join would reject such a climb as escaping the assessment directory).
+            $ownerdir = $this->package_relative_dir($imagedir);
+            $abs = link_rewriter::resolve_filebase($this->filebase, $decoded, $ownerdir);
             if ($abs !== null) {
                 return $this->collect_file($abs, $this->filebase, $suffix, $files);
             }
+            return null;
         }
+        // No package root known: resolve directly under the question's image folder.
         $abs = $this->safe_join($imagedir, $decoded);
         if ($abs !== null && is_file($abs)) {
             return $this->collect_file($abs, $imagedir, $suffix, $files);
         }
         return null;
+    }
+
+    /**
+     * The image folder expressed relative to the package root ($this->filebase), or ''
+     * when it is not inside the package root. Used to steer $IMS-CC-FILEBASE$ resolution
+     * to the question's own resource folder.
+     *
+     * @param string $imagedir Absolute path of the question's resource folder.
+     * @return string Package-relative folder, or ''.
+     */
+    protected function package_relative_dir(string $imagedir): string {
+        if ($this->filebase === null) {
+            return '';
+        }
+        $root = realpath($this->filebase);
+        $owner = realpath($imagedir);
+        if ($root === false || $owner === false) {
+            return '';
+        }
+        if ($owner !== $root && !str_starts_with($owner, $root . DIRECTORY_SEPARATOR)) {
+            return '';
+        }
+        return trim(str_replace('\\', '/', substr($owner, strlen($root))), '/');
     }
 
     /**
