@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dt:topic xmlns:dt="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">
+  <dt:title>The Psychology of Faces</dt:title>
+  <dt:text texttype="text/html">Your face is ugly. &lt;br/&gt; &lt;img src="$IMS-CC-FILEBASE$../I_media_R/smiling_dog.jpg"/&gt;</dt:text>
+  <dt:attachments>
+    <dt:attachment href="../I_00006_Media/angry_person.jpg"/>
+  </dt:attachments>
+</dt:topic>

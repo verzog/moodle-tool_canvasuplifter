@@ -1,0 +1,1377 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/profile/cc/ccv1p1/ccv1p1_qtiasiv1p2p1_v1p0.xsd">
+  <objectbank ident="QDB_1">
+    <qtimetadata>
+      <qtimetadatafield>
+        <fieldlabel>cc_profile</fieldlabel>
+        <fieldentry>cc.exam.v0p1</fieldentry>
+      </qtimetadatafield>
+      <qtimetadatafield>
+        <fieldlabel>qmd_assessmenttype</fieldlabel>
+        <fieldentry>Examination</fieldentry>
+      </qtimetadatafield>
+      <qtimetadatafield>
+        <fieldlabel>qmd_scoretype</fieldlabel>
+        <fieldentry>Percentage</fieldentry>
+      </qtimetadatafield>
+      <qtimetadatafield>
+        <fieldlabel>qmd_feedbackpermitted</fieldlabel>
+        <fieldentry>Yes</fieldentry>
+      </qtimetadatafield>
+      <qtimetadatafield>
+        <fieldlabel>qmd_hintspermitted</fieldlabel>
+        <fieldentry>Yes</fieldentry>
+      </qtimetadatafield>
+      <qtimetadatafield>
+        <fieldlabel>qmd_solutionspermitted</fieldlabel>
+        <fieldentry>Yes</fieldentry>
+      </qtimetadatafield>
+      <qtimetadatafield>
+        <fieldlabel>qmd_timelimit</fieldlabel>
+        <fieldentry>120</fieldentry>
+      </qtimetadatafield>
+      <qtimetadatafield>
+        <fieldlabel>cc_allow_late_submission</fieldlabel>
+        <fieldentry>Yes</fieldentry>
+      </qtimetadatafield>
+      <qtimetadatafield>
+        <fieldlabel>cc_maxattempts</fieldlabel>
+        <fieldentry>2</fieldentry>
+      </qtimetadatafield>
+    </qtimetadata>
+    <item ident="QUE_104045" title="Question 01">
+      <!-- start multiplechoice -->
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>cc_profile</fieldlabel>
+            <fieldentry>cc.multiple_choice.v0p1</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_question_category</fieldlabel>
+            <fieldentry>Chapter 01</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_weighting</fieldlabel>
+            <fieldentry>2</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext texttype="text/html">Which of the following best defines psychology?</mattext>
+        </material>
+        <response_lid ident="QUE_104045_RL" rcardinality="Single">
+          <render_choice>
+            <response_label ident="QUE_104045_A1">
+              <material>
+                <mattext texttype="text/html">the scientific study of behavior and mental processes</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104045_A2">
+              <material>
+                <mattext texttype="text/html">the science of mental and emotional disorder</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104045_A3">
+              <material>
+                <mattext texttype="text/html">the science of human and animal behavior</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104045_A4">
+              <material>
+                <mattext texttype="text/html">the study of actions and reactions</mattext>
+              </material>
+            </response_label>
+          </render_choice>
+        </response_lid>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+        </outcomes>
+        <respcondition continue="Yes">
+          <!-- note: general feedback is provided unconditionally -->
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>
+        </respcondition>
+        <respcondition title="Correct">
+          <conditionvar>
+            <varequal respident="QUE_104045_RL">QUE_104045_A1</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">100</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104045_A1_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104045_RL">QUE_104045_A2</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104045_A2_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104045_RL">QUE_104045_A3</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104045_A3_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104045_RL">QUE_104045_A4</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104045_A4_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+      </resprocessing>
+      <itemfeedback ident="QUE_104045_A1_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 1]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104045_A2_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 2]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104045_A3_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 3]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104045_A4_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 4]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="general_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[This is some general feedback]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="correct_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Congratulations! you got it right.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="incorrect_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[I am sorry, that is not correct.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+    </item>
+    <item ident="QUE_102010" title="Question 02">
+      <!--start trueorfalse-->
+      <itemmetadata>
+        <qtimetadata>
+          <!-- indicate this question fullfills the cc profile for true/false-->
+          <qtimetadatafield>
+            <fieldlabel>cc_profile</fieldlabel>
+            <fieldentry>cc.true_false.v0p1</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_weighting</fieldlabel>
+            <fieldentry>2</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext texttype="text/html">Sigmund Freud and Carl Jung both belong to the psychoanalytic school of psychology.</mattext>
+        </material>
+        <response_lid ident="response_1" rcardinality="Single">
+          <render_choice>
+            <response_label ident="true">
+              <material>
+                <mattext texttype="text/html">True</mattext>
+              </material>
+            </response_label>
+            <response_label ident="false">
+              <material>
+                <mattext texttype="text/html">False</mattext>
+              </material>
+            </response_label>
+          </render_choice>
+        </response_lid>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+        </outcomes>
+        <respcondition continue="Yes">
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>
+        </respcondition>
+        <respcondition title="Correct">
+          <conditionvar>
+            <varequal respident="response_1">false</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">100</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="response_1">true</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+      </resprocessing>
+      <itemfeedback ident="general_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[general feedback]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="correct_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[correct feedback]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="incorrect_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[incorrect feedback]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="hint">
+        <hint>
+          <hintmaterial>
+            <flow_mat>
+              <material>
+                <mattext texttype="text/html"><![CDATA[This is a hint]]></mattext>
+              </material>
+            </flow_mat>
+          </hintmaterial>
+        </hint>
+      </itemfeedback>
+    </item>
+    <item ident="QUE_104047" title="Question 03">
+      <!-- start multiplechoice -->
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>cc_profile</fieldlabel>
+            <fieldentry>cc.multiple_choice.v0p1</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_question_category</fieldlabel>
+            <fieldentry>Chapter 01</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext texttype="text/html">Which of the following is important in conducting survey research?</mattext>
+        </material>
+        <response_lid ident="QUE_104047_RL" rcardinality="Single">
+          <render_choice>
+            <response_label ident="QUE_104047_A1">
+              <material>
+                <mattext texttype="text/html">the dependent variable</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104047_A2">
+              <material>
+                <mattext texttype="text/html">ensuring random assignment</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104047_A3">
+              <material>
+                <mattext texttype="text/html">using a representative sample</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104047_A4">
+              <material>
+                <mattext texttype="text/html">a control group</mattext>
+              </material>
+            </response_label>
+          </render_choice>
+        </response_lid>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+        </outcomes>
+        <respcondition continue="Yes">
+          <!-- note: general feedback is provided unconditionally -->
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104047_RL">QUE_104047_A1</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104047_A1_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104047_RL">QUE_104047_A2</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104047_A2_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition title="Correct">
+          <conditionvar>
+            <varequal respident="QUE_104047_RL">QUE_104047_A3</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">100</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104047_A3_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104047_RL">QUE_104047_A4</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104047_A4_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+      </resprocessing>
+      <itemfeedback ident="QUE_104047_A1_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 1]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104047_A2_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 2]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104047_A3_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 3]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104047_A4_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 4]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="general_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[This is some general feedback]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="correct_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Congratulations! you got it right.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="incorrect_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[I am sorry, that is not correct.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+    </item>
+    <item ident="QUE_102011" title="Question 04">
+      <!--start fillintheblank-->
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>cc_profile</fieldlabel>
+            <fieldentry>cc.fib.v0p1</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_question_category</fieldlabel>
+            <fieldentry>Chapter 01</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_weighting</fieldlabel>
+            <fieldentry>2</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext texttype="text/html">An operant conditioning chamber (also referred to as a [_____]) is a laboratory apparatus used in experimental psychology to study animal cognition. </mattext>
+        </material>
+        <response_str ident="response_1">
+          <!--note: The rows attribute must be set to 1. 
+            The columns attribute may be set any positive integer but may be ignored.-->
+          <render_fib columns="30" maxchars="200" rows="1"/>
+        </response_str>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+        </outcomes>
+        <respcondition continue="Yes">
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>
+        </respcondition>
+        <respcondition title="Correct">
+          <conditionvar>
+            <varequal case="No" respident="response_1">Skinner Box</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">100</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+      </resprocessing>
+      <itemfeedback ident="general_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[general feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="incorrect_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[incorrect feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="correct_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[correct feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="hint">
+        <hint>
+          <hintmaterial>
+            <flow_mat>
+              <material>
+                <mattext texttype="text/html"><![CDATA[This is a hint]]></mattext>
+              </material>
+            </flow_mat>
+          </hintmaterial>
+        </hint>
+      </itemfeedback>
+    </item>
+    <item ident="QUE_104048" title="Question 05">
+      <!-- start multiplechoice -->
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>cc_profile</fieldlabel>
+            <fieldentry>cc.multiple_choice.v0p1</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_question_category</fieldlabel>
+            <fieldentry>Chapter 01</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext texttype="text/html">The early psychologists were interested in studying which of the following?</mattext>
+        </material>
+        <response_lid ident="QUE_104048_RL" rcardinality="Single">
+          <render_choice>
+            <response_label ident="QUE_104048_A1">
+              <material>
+                <mattext texttype="text/html">conscious experience</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104048_A2">
+              <material>
+                <mattext texttype="text/html">human and animal behavior</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104048_A3">
+              <material>
+                <mattext texttype="text/html">early experience and its effects on personality development</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104048_A4">
+              <material>
+                <mattext texttype="text/html">mental and emotional disorder</mattext>
+              </material>
+            </response_label>
+          </render_choice>
+        </response_lid>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+        </outcomes>
+        <respcondition continue="Yes">
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>
+        </respcondition>
+        <respcondition title="Correct">
+          <conditionvar>
+            <varequal respident="QUE_104048_RL">QUE_104048_A1</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">100</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104048_A1_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104048_RL">QUE_104048_A2</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104048_A2_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104048_RL">QUE_104048_A3</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104048_A3_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104048_RL">QUE_104048_A4</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104048_A4_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+      </resprocessing>
+      <itemfeedback ident="QUE_104048_A1_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 1]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104048_A2_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 2]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104048_A3_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 3]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104048_A4_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 4]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="general_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[This is some general feedback]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="correct_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Congratulations! you got it right.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="incorrect_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[I am sorry, that is not correct.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+    </item>
+    <item ident="QUE_102012" title="Question 06">
+      <!--start multipleresponse-->
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>cc_profile</fieldlabel>
+            <fieldentry>cc.multiple_response.v0p1</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_question_category</fieldlabel>
+            <fieldentry>Chapter 01</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_weighting</fieldlabel>
+            <fieldentry>2</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext texttype="text/html">Select all of the following that are schools of psychology.</mattext>
+        </material>
+        <response_lid ident="response_1" rcardinality="Multiple">
+          <render_choice shuffle="Yes">
+            <response_label ident="answer_1">
+              <material>
+                <mattext texttype="text/html">Behaviorism</mattext>
+              </material>
+            </response_label>
+            <response_label ident="answer_2">
+              <material>
+                <mattext texttype="text/html">Abstractionism</mattext>
+              </material>
+            </response_label>
+            <response_label ident="answer_3">
+              <material>
+                <mattext texttype="text/html">Functionalism</mattext>
+              </material>
+            </response_label>
+            <response_label ident="answer_4">
+              <material>
+                <mattext texttype="text/html">Structuralism</mattext>
+              </material>
+            </response_label>
+          </render_choice>
+        </response_lid>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+        </outcomes>
+        <!-- note: with multiple response only all or nothing scoring is supported. -->
+        <!-- first we have an unconditional general feedback with continue flag on for further processing -->
+        <respcondition continue="Yes">
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>
+        </respcondition>
+        <!-- Now we check for the complete correct answer. 
+          If we require the title "Correct" it would be easy to find. -->
+        <respcondition title="Correct">
+          <conditionvar>
+            <and>
+              <varequal case="Yes" respident="response_1">answer_1</varequal>
+              <not>
+                <varequal case="Yes" respident="response_1">answer_2</varequal>
+              </not>
+              <varequal case="Yes" respident="response_1">answer_3</varequal>
+              <varequal case="Yes" respident="response_1">answer_4</varequal>
+            </and>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">100</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal case="Yes" respident="response_1">answer_1</varequal>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="answer_1_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal case="Yes" respident="response_1">answer_2</varequal>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="answer_2_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal case="Yes" respident="response_1">answer_3</varequal>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="answer_3_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal case="Yes" respident="response_1">answer_4</varequal>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="answer_4_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+      </resprocessing>
+      <itemfeedback ident="general_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[general feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="correct_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Congratulations! you got it right.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="incorrect_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[I am sorry, that is not correct.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="answer_1_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[answer 1 feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="answer_2_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[answer 2 feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="answer_3_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[answer 1 feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="answer_4_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[answer 2 feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="hint">
+        <hint>
+          <hintmaterial>
+            <flow_mat>
+              <material>
+                <mattext texttype="text/html"><![CDATA[This is a hint]]></mattext>
+              </material>
+            </flow_mat>
+          </hintmaterial>
+        </hint>
+      </itemfeedback>
+    </item>
+    <item ident="QUE_102013" title="Question 07">
+      <!--start trueorfalse-->
+      <itemmetadata>
+        <qtimetadata>
+          <!-- indicate this question fullfills the cc profile for true/false-->
+          <qtimetadatafield>
+            <fieldlabel>cc_profile</fieldlabel>
+            <fieldentry>cc.true_false.v0p1</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_weighting</fieldlabel>
+            <fieldentry>2</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext texttype="text/html">Because there is a nearly 1:1 correlation between IQ and performance in school, it can be stated that students with a high IQ are more likely to perform well in school than those with lower IQs.</mattext>
+        </material>
+        <response_lid ident="response_1" rcardinality="Single">
+          <render_choice>
+            <response_label ident="true">
+              <material>
+                <mattext texttype="text/html">True</mattext>
+              </material>
+            </response_label>
+            <response_label ident="false">
+              <material>
+                <mattext texttype="text/html">False</mattext>
+              </material>
+            </response_label>
+          </render_choice>
+        </response_lid>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+        </outcomes>
+        <respcondition continue="Yes">
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>
+        </respcondition>
+        <respcondition title="Correct">
+          <conditionvar>
+            <varequal respident="response_1">true</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">100</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="response_1">false</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+      </resprocessing>
+      <itemfeedback ident="general_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[general feedback]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="correct_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[correct feedback]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="incorrect_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[incorrect feedback]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="hint">
+        <hint>
+          <hintmaterial>
+            <flow_mat>
+              <material>
+                <mattext texttype="text/html"><![CDATA[This is a hint]]></mattext>
+              </material>
+            </flow_mat>
+          </hintmaterial>
+        </hint>
+      </itemfeedback>
+    </item>
+    <item ident="QUE_102015" title="Question 08">
+      <!--start patternmatch-->
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>cc_profile</fieldlabel>
+            <fieldentry>cc.pattern_match.v0p1</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_question_category</fieldlabel>
+            <fieldentry>Chapter 01</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_weighting</fieldlabel>
+            <fieldentry>2</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext texttype="text/html">Maslow's  [_____] theory states that as humans meet basic needs, they seek to satisfy successively higher needs.</mattext>
+        </material>
+        <response_str ident="response_1">
+          <!-- note: The rows attribute defaults to 1 but may be set to any positive integer, 
+            although some systems may not be able to comply -->
+          <render_fib columns="30" maxchars="200" rows="1"/>
+        </response_str>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+        </outcomes>
+        <respcondition continue="Yes">
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>
+        </respcondition>
+        <respcondition title="Correct">
+          <conditionvar>
+            <!-- note: Pattern match questions may optionally be case sensitive by setting case="Yes", but the default is NOT case sensitive -->
+            <varequal case="Yes" respident="response_1">Hierarchy of Needs</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">100</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="answer_1_fb"/>
+          <!-- note: answers that are worth maxpoints should include correct feedback -->
+          <displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>
+        </respcondition>
+        <respcondition title="Correct">
+          <!-- note: to check if a string is contained anywhere in the response we use the varsubstring condition which again may or may not be case sensitive. -->
+          <conditionvar>
+            <varsubstring case="No" respident="response_1">hierarchy of needs</varsubstring>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">100</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="answer_2_fb"/>
+          <!-- note: answers that are worth maxpoints should include correct feedback -->
+          <displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+      </resprocessing>
+      <itemfeedback ident="general_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[general feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="incorrect_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[incorrect feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="correct_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[correct feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="answer_1_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[answer 1 feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="answer_2_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[answer 2 feedback ]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="hint">
+        <hint>
+          <hintmaterial>
+            <flow_mat>
+              <material>
+                <mattext texttype="text/html"><![CDATA[This is a hint]]></mattext>
+              </material>
+            </flow_mat>
+          </hintmaterial>
+        </hint>
+      </itemfeedback>
+    </item>
+    <item ident="QUE_102016" title="Question 09">
+      <!-- start essay -->
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>cc_profile</fieldlabel>
+            <fieldentry>cc.essay.v0p1</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_question_category</fieldlabel>
+            <fieldentry>Chapter 02</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_weighting</fieldlabel>
+            <fieldentry>25</fieldentry>
+          </qtimetadatafield>
+          <!-- note: because there is no automated scoring for essays, 
+            we use standard qmd metadata to indicate the item is manually scored -->
+          <qtimetadatafield>
+            <fieldlabel>qmd_scoringpermitted</fieldlabel>
+            <fieldentry>Yes</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>qmd_computerscored</fieldlabel>
+            <fieldentry>No</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext texttype="text/html">Studies of people with brain damage show that people will rationalize their behavior after it has occurred; making up reasons that they claim 'caused' the behavior. This has profound impllications for the concept of free will and the mind-body problem. Do we have any control over our actions or are we simply responding to stimuli and justifying our responses?</mattext>
+        </material>
+        <response_str ident="response_1">
+          <render_fib columns="60" rows="10"/>
+        </response_str>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+        </outcomes>
+        <respcondition>
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>
+          <displayfeedback feedbacktype="Solution" linkrefid="solution"/>
+        </respcondition>
+      </resprocessing>
+      <itemfeedback ident="general_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[
+              Customer relationship management is the overall process of building and maintaining profitable customer relationships by delivering superior customer value and satisfaction.  Said another way, it is about developing long-term, mutually beneficial relationships.  Modern marketers are going beyond designing strategies to attract new customers and create transactions with them.  They are using customer relationship management to retain current customers and build long-term relationships with them.  This new view is that marketing is the science and art of finding, growing and retaining profitable customers.
+              The key to building lasting customer relationships is to create superior customer value and satisfaction.  Customer perceived value is the difference between total customer value and total customer cost, whereas customer satisfaction is the extent to which a product's perceived performance matches a buyer's expectations.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="solution">
+        <solution>
+          <solutionmaterial>
+            <flow_mat>
+              <material>
+                <mattext texttype="text/html"><![CDATA[here is the sample solution]]></mattext>
+              </material>
+            </flow_mat>
+          </solutionmaterial>
+        </solution>
+      </itemfeedback>
+      <itemfeedback ident="hint">
+        <hint>
+          <hintmaterial>
+            <flow_mat>
+              <material>
+                <mattext texttype="text/html"><![CDATA[This is a hint]]></mattext>
+              </material>
+            </flow_mat>
+          </hintmaterial>
+        </hint>
+      </itemfeedback>
+    </item>
+    <item ident="QUE_104049" title="Question 10">
+      <!-- start multiplechoice -->
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>cc_profile</fieldlabel>
+            <fieldentry>cc.multiple_choice.v0p1</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_question_category</fieldlabel>
+            <fieldentry>Chapter 01</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext texttype="text/html">A psychologist practicing which specialty is most likely to study neurons and neurotransmitters? </mattext>
+        </material>
+        <response_lid ident="QUE_104049_RL" rcardinality="Single">
+          <render_choice>
+            <response_label ident="QUE_104049_A1">
+              <material>
+                <mattext texttype="text/html">physiological</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104049_A2">
+              <material>
+                <mattext texttype="text/html">cognitive</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104049_A3">
+              <material>
+                <mattext texttype="text/html">humanistic</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104049_A4">
+              <material>
+                <mattext texttype="text/html">eclectic</mattext>
+              </material>
+            </response_label>
+          </render_choice>
+        </response_lid>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+        </outcomes>
+        <respcondition continue="Yes">
+          <!-- note: general feedback is provided unconditionally -->
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104049_RL">QUE_104049_A1</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104049_A1_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104049_RL">QUE_104049_A2</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104049_A2_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104049_RL">QUE_104049_A3</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104049_A3_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition title="Correct">
+          <conditionvar>
+            <varequal respident="QUE_104049_RL">QUE_104049_A4</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">100</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104049_A4_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>
+        </respcondition>
+      </resprocessing>
+      <itemfeedback ident="QUE_104049_A1_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 1]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104049_A2_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 2]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104049_A3_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 3]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104049_A4_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 4]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="general_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[This is some general feedback]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="correct_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Congratulations! you got it right.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="incorrect_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[I am sorry, that is not correct.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+    </item>
+    <item ident="QUE_104051" title="Question 11">
+      <!-- start multiplechoice -->
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>cc_profile</fieldlabel>
+            <fieldentry>cc.multiple_choice.v0p1</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>cc_question_category</fieldlabel>
+            <fieldentry>Chapter 01</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
+      <presentation>
+        <material>
+          <mattext texttype="text/html">Dr. Lee does psychotherapy with disturbed children and adolescents. What type of psychologist is Dr. Lee most likely to be?</mattext>
+        </material>
+        <response_lid ident="QUE_104051_RL" rcardinality="Single">
+          <render_choice>
+            <response_label ident="QUE_104051_A1">
+              <material>
+                <mattext texttype="text/html">clinical</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104051_A2">
+              <material>
+                <mattext texttype="text/html">developmental</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104051_A3">
+              <material>
+                <mattext texttype="text/html">human factors</mattext>
+              </material>
+            </response_label>
+            <response_label ident="QUE_104051_A4">
+              <material>
+                <mattext texttype="text/html">school</mattext>
+              </material>
+            </response_label>
+          </render_choice>
+        </response_lid>
+      </presentation>
+      <resprocessing>
+        <outcomes>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+        </outcomes>
+        <respcondition continue="Yes">
+          <!-- note: general feedback is provided unconditionally -->
+          <conditionvar>
+            <other/>
+          </conditionvar>
+          <displayfeedback feedbacktype="Response" linkrefid="general_fb"/>
+        </respcondition>
+        <respcondition title="Correct">
+          <conditionvar>
+            <varequal respident="QUE_104051_RL">QUE_104051_A1</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">100</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104051_A1_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104051_RL">QUE_104051_A2</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104051_A2_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104051_RL">QUE_104051_A3</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104051_A3_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+        <respcondition>
+          <conditionvar>
+            <varequal respident="QUE_104051_RL">QUE_104051_A4</varequal>
+          </conditionvar>
+          <setvar action="Set" varname="SCORE">0</setvar>
+          <displayfeedback feedbacktype="Response" linkrefid="QUE_104051_A4_fb"/>
+          <displayfeedback feedbacktype="Response" linkrefid="incorrect_fb"/>
+        </respcondition>
+      </resprocessing>
+      <itemfeedback ident="QUE_104051_A1_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 1]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104051_A2_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 2]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104051_A3_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 3]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="QUE_104051_A4_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Feedback for 4]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="general_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[This is some general feedback]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="correct_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[Congratulations! you got it right.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+      <itemfeedback ident="incorrect_fb">
+        <flow_mat>
+          <material>
+            <mattext texttype="text/html"><![CDATA[I am sorry, that is not correct.]]></mattext>
+          </material>
+        </flow_mat>
+      </itemfeedback>
+    </item>
+  </objectbank>
+</questestinterop>
