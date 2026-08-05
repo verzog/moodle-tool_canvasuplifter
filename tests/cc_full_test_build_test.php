@@ -52,29 +52,58 @@ final class cc_full_test_build_test extends \advanced_testcase {
     }
 
     /**
-     * The whole cartridge builds into the expected module mix: 6 file resources,
-     * the two discussions as forums (alongside the course's own news forum), two
+     * The whole cartridge builds into the expected module mix: four learner
+     * placed file resources (kept distinct from two dependency-media files that
+     * currently leak as downloads), the two imported discussions as forums, two
      * external tools, two weblinks, the referenced quiz and its question bank.
      * There are no pages in this cartridge.
      *
      * @return void
      */
     public function test_builds_the_expected_module_mix(): void {
+        global $DB;
         [$modinfo] = $this->build_fixture();
 
-        $counts = [];
-        foreach (['page', 'resource', 'forum', 'lti', 'url', 'quiz', 'qbank'] as $mod) {
-            $counts[$mod] = count($modinfo->get_instances_of($mod));
+        $resourcenames = [];
+        foreach ($modinfo->get_instances_of('resource') as $cm) {
+            $resourcenames[] = $cm->name;
         }
+        sort($resourcenames);
+        // Four files are placed as activities by the cartridge's organization.
+        // The other two ('img1', 'smiling_dog') are dependency media for the quiz
+        // and the discussion whose real-world references (a parent-relative
+        // FILEBASE path and a root-relative name) resolve outside the content that
+        // owns them, so they currently surface as standalone downloads instead of
+        // embedding. Asserting the two groups separately keeps the learner-visible
+        // files pinned and makes that media leak visible: when embedded-media
+        // handling improves, the two dependency entries move into their owning
+        // content and this expectation updates deliberately rather than silently.
         $this->assertSame([
-            'page' => 0,
-            'resource' => 6,
-            'forum' => 3,
-            'lti' => 2,
-            'url' => 2,
-            'quiz' => 1,
-            'qbank' => 1,
-        ], $counts);
+            'Assignment 1',
+            'Assignment 2',
+            'Learning Objectives',
+            'Super exciting!',
+            'img1',
+            'smiling_dog',
+        ], $resourcenames);
+
+        // The two imported discussions build as general forums. Moodle's
+        // auto-created Announcements (type=news) forum is optional - a site whose
+        // course defaults disable announcements never creates it - so filter it
+        // out rather than counting it, keeping the assertion configuration-robust.
+        $importedforums = 0;
+        foreach ($modinfo->get_instances_of('forum') as $cm) {
+            if ($DB->get_field('forum', 'type', ['id' => $cm->instance]) !== 'news') {
+                $importedforums++;
+            }
+        }
+        $this->assertSame(2, $importedforums, 'two imported discussion forums');
+
+        $this->assertCount(0, $modinfo->get_instances_of('page'), 'no pages in this cartridge');
+        $this->assertCount(2, $modinfo->get_instances_of('lti'), 'two external tools');
+        $this->assertCount(2, $modinfo->get_instances_of('url'), 'two weblinks');
+        $this->assertCount(1, $modinfo->get_instances_of('quiz'), 'one quiz');
+        $this->assertCount(1, $modinfo->get_instances_of('qbank'), 'one question bank');
     }
 
     /**
@@ -88,6 +117,9 @@ final class cc_full_test_build_test extends \advanced_testcase {
     public function test_created_counts_and_only_broken_weblink_is_skipped(): void {
         [, $report] = $this->build_fixture();
 
+        // file=6 is four organization-placed files plus the two dependency-media
+        // files ('img1', 'smiling_dog') that currently surface as downloads; see
+        // test_builds_the_expected_module_mix for the learner-visible/leak split.
         $this->assertSame([
             'file' => 6,
             'quiz' => 1,
