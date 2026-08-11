@@ -171,13 +171,17 @@ class course_builder {
         // path) into object-reference tokens.
         $this->pathtoid = $this->build_pathtoid($coursemodel);
 
+        // One item-bank importer shared by the quiz and question-bank builders, so an
+        // item bank a New Quiz draws from is imported once whether it's reached from a
+        // linked quiz (quiz_builder) or an orphan quiz/bank (questionbank_builder).
+        $bankregistry = new item_bank_registry($this->packageroot, $this->mediareport);
         $builders = [
             item::KIND_PAGE => new page_builder($this->packageroot, $this->pathtoid, $this->mediareport),
             item::KIND_URL => new url_builder($this->packageroot),
             item::KIND_FILE => new file_builder($this->packageroot),
             item::KIND_ASSIGNMENT => new assign_builder($this->packageroot, $this->mediareport),
-            item::KIND_QUIZ => new quiz_builder($this->packageroot, $this->mediareport),
-            item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot, $this->mediareport),
+            item::KIND_QUIZ => new quiz_builder($this->packageroot, $this->mediareport, $bankregistry),
+            item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot, $this->mediareport, $bankregistry),
             item::KIND_DISCUSSION => new forum_builder($this->packageroot, $this->mediareport),
             item::KIND_SUBHEADER => new label_builder(),
             item::KIND_LTI => new lti_builder($this->packageroot, $this->mediareport),
@@ -291,7 +295,7 @@ class course_builder {
         $this->rewrite_assign_links((int) $course->id, $urlmap);
         $this->rewrite_quiz_links((int) $course->id, $urlmap);
         $this->rewrite_lti_links((int) $course->id, $urlmap);
-        $this->rewrite_question_links($this->imported_question_ids($builders), $urlmap);
+        $this->rewrite_question_links($this->imported_question_ids($builders, $bankregistry), $urlmap);
         $this->rewrite_outcome_links($outcomebuilder->createdids, $urlmap);
 
         $itemcount = count($coursemodel->all_items());
@@ -1150,17 +1154,20 @@ class course_builder {
      * builders during this build.
      *
      * @param array $builders The per-kind builder instances.
+     * @param item_bank_registry $bankregistry The shared item-bank importer.
      * @return array Imported question ids.
      */
-    private function imported_question_ids(array $builders): array {
-        $ids = [];
+    private function imported_question_ids(array $builders, item_bank_registry $bankregistry): array {
+        // Inline quiz/bank questions live on their builders; item-bank draws (shared
+        // across builders) live on the registry. Merge all three and de-duplicate.
+        $ids = $bankregistry->importedquestionids;
         foreach ([item::KIND_QUIZ, item::KIND_QUESTIONBANK] as $kind) {
             $builder = $builders[$kind] ?? null;
             if ($builder instanceof quiz_builder || $builder instanceof questionbank_builder) {
                 $ids = array_merge($ids, $builder->importedquestionids);
             }
         }
-        return $ids;
+        return array_values(array_unique($ids));
     }
 
     /**

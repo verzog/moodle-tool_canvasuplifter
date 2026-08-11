@@ -49,15 +49,24 @@ class questionbank_builder {
     /** @var media_report|null Shared collector for unresolved question media references. */
     private ?media_report $mediareport;
 
+    /** @var item_bank_registry Shared importer for the item banks an orphan New Quiz draws from. */
+    private item_bank_registry $bankregistry;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
      * @param media_report|null $mediareport Shared collector for unresolved media references (null to skip).
+     * @param item_bank_registry|null $bankregistry Shared item-bank importer; one is created when null.
      */
-    public function __construct(string $packageroot, ?media_report $mediareport = null) {
+    public function __construct(
+        string $packageroot,
+        ?media_report $mediareport = null,
+        ?item_bank_registry $bankregistry = null
+    ) {
         $this->packageroot = rtrim($packageroot, '/');
         $this->mediareport = $mediareport;
+        $this->bankregistry = $bankregistry ?? new item_bank_registry($this->packageroot, $this->mediareport);
     }
 
     /**
@@ -80,32 +89,28 @@ class questionbank_builder {
             $this->skipreason = 'no QTI assessment file found';
             return null;
         }
-        [$parsed, $supported, $importable] = $this->parse_qti($qtipath);
-        // Question media in a Common Cartridge assessment resolves relative to the
-        // quiz folder that holds the QTI.
-        $imagedir = dirname($qtipath);
-
-        // When the Common Cartridge assessment_qti.xml is an empty shell (Canvas
-        // routinely exports the questions only to its native dump), fall back to
-        // non_cc_assessments/<id>.xml.qti, exactly as quiz_builder does, so an
-        // orphan New-Quiz bank recovers its questions instead of being skipped.
-        // Only when the CC file yields nothing importable, so a bank that already
-        // converts is left untouched.
-        if (empty($importable)) {
-            $native = $this->locate_native_qti($modelitem, $qtipath);
-            if ($native !== null) {
-                [$nativeparsed, $nativesupported, $nativeimportable] = $this->parse_qti($native);
-                if (!empty($nativeimportable)) {
-                    $parsed = $nativeparsed;
-                    $supported = $nativesupported;
-                    $importable = $nativeimportable;
-                    // Native questions reference media under the package root.
-                    $imagedir = $this->packageroot;
-                }
-            }
-        }
+        // Parse the assessment, falling back to the native non_cc_assessments dump
+        // when the Common Cartridge file is an empty shell (exactly as quiz_builder
+        // does), and read any item-bank draws.
+        [$parsed, $supported, $importable, $imagedir, $selections] =
+            $this->resolve_assessment_source($modelitem, $qtipath);
         $questions = $parsed['questions'];
+
+        // A Canvas New Quiz that isn't linked from a module is routed here rather than
+        // to quiz_builder; it can draw its questions from a separate item bank via
+        // <selection_ordering>/<sourcebank_ref>. Import each referenced bank (once,
+        // shared) so those questions aren't dropped, even when the assessment carries
+        // no inline questions of its own.
+        $bankcmid = $this->import_bank_draws($course, $selections);
+
         if (empty($importable)) {
+            // No inline questions of our own. When a referenced bank resolved, that
+            // imported bank is the content this item represents, so point at it; only
+            // a New Quiz whose banks don't resolve at all (or a plain unconvertible
+            // assessment) is reported as a skip.
+            if ($bankcmid !== null) {
+                return $bankcmid;
+            }
             $this->skipreason = question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
             return null;
         }
@@ -156,6 +161,34 @@ class questionbank_builder {
         // internal Canvas links in their text once every activity exists.
         $this->importedquestionids = array_merge($this->importedquestionids, array_map('intval', $questionids));
         return $cmid;
+    }
+
+    /**
+     * Import the item banks a New Quiz draws from through the shared registry, so an
+     * orphan bank-backed quiz's questions aren't lost. Each referenced bank is imported
+     * once (shared across the whole build); an explicit zero-question draw is skipped.
+     *
+     * @param stdClass $course Course record.
+     * @param array $selections Parsed selections: each ['bank' => id, 'count' => n|null, 'points' => p|null].
+     * @return int|null The course module id of the first bank that resolved, or null when none did.
+     */
+    private function import_bank_draws(stdClass $course, array $selections): ?int {
+        $firstcmid = null;
+        foreach ($selections as $selection) {
+            if (($selection['count'] ?? null) !== null && (int) $selection['count'] < 1) {
+                // An authored empty draw imports no bank.
+                continue;
+            }
+            $bankid = (string) ($selection['bank'] ?? '');
+            if ($bankid === '') {
+                continue;
+            }
+            $bank = $this->bankregistry->import_bank($course, $bankid);
+            if ($bank !== null && $firstcmid === null) {
+                $firstcmid = $bank['cmid'];
+            }
+        }
+        return $firstcmid;
     }
 
     /**

@@ -48,6 +48,42 @@ trait qti_source_locator {
     }
 
     /**
+     * Resolve the assessment source a builder should evaluate: parse the Common
+     * Cartridge QTI, and when it yields nothing importable fall back to the native
+     * non_cc_assessments dump — adopting it when it has inline questions or its own
+     * item-bank draws, so a New Quiz whose real content (inline or bank-backed) lives
+     * only in the dump is recovered. Item-bank selections are taken only from a
+     * genuine assessment, so stray <selection> markup in malformed XML can't
+     * fabricate draws. The using class must expose a $packageroot property.
+     *
+     * @param item $modelitem The assessment item.
+     * @param string $qtipath Absolute path of the resolved Common Cartridge QTI file.
+     * @return array [parsed, supported, importable, imagedir, selections].
+     */
+    private function resolve_assessment_source(item $modelitem, string $qtipath): array {
+        [$parsed, $supported, $importable] = $this->parse_qti($qtipath);
+        // Common Cartridge question media resolves relative to the quiz folder.
+        $imagedir = dirname($qtipath);
+        if (empty($importable)) {
+            $native = $this->locate_native_qti($modelitem, $qtipath);
+            if ($native !== null) {
+                [$nativeparsed, $nativesupported, $nativeimportable] = $this->parse_qti($native);
+                $nativeselections = ($nativeparsed['hasassessment'] ?? false)
+                    ? ($nativeparsed['selections'] ?? []) : [];
+                if (!empty($nativeimportable) || !empty($nativeselections)) {
+                    $parsed = $nativeparsed;
+                    $supported = $nativesupported;
+                    $importable = $nativeimportable;
+                    // Native questions reference media under the package root.
+                    $imagedir = $this->packageroot;
+                }
+            }
+        }
+        $selections = ($parsed['hasassessment'] ?? false) ? ($parsed['selections'] ?? []) : [];
+        return [$parsed, $supported, $importable, $imagedir, $selections];
+    }
+
+    /**
      * Find the native Canvas question dump for an assessment, used when the Common
      * Cartridge assessment_qti.xml is an empty shell. Canvas writes the real
      * questions to non_cc_assessments/<resource-id>.xml.qti at the package root,

@@ -249,4 +249,148 @@ XML;
         $count = $DB->count_records('question_bank_entries', ['questioncategoryid' => $cat->id]);
         $this->assertSame(2, $count);
     }
+
+    /**
+     * An objectbank item bank holding two multiple-choice questions.
+     *
+     * @param string $title The bank_title.
+     * @return string
+     */
+    private function objectbank(string $title): string {
+        return '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="bank1"><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>bank_title</fieldlabel><fieldentry>' . $title . '</fieldentry>'
+            . '</qtimetadatafield></qtimetadata>'
+            . $this->nativemcitem() . $this->nativemcitem2()
+            . '</objectbank></questestinterop>';
+    }
+
+    /**
+     * A Canvas New Quiz shell that draws two questions from bank1 via a
+     * <selection_ordering>/<sourcebank_ref>, with the given assessment id/title.
+     *
+     * @param string $ident The assessment ident.
+     * @param string $title The assessment title.
+     * @return string
+     */
+    private function bankdrawshell(string $ident, string $title): string {
+        return '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="' . $ident . '" title="' . $title . '"><section ident="root">'
+            . '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+    }
+
+    /**
+     * Issue #144: a bank-backed New Quiz that isn't linked from any module is routed
+     * to questionbank_builder; it now resolves its <selection_ordering> draws and
+     * imports the referenced item bank instead of dropping the questions.
+     *
+     * @return void
+     */
+    public function test_orphan_new_quiz_imports_referenced_bank(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/gnq', 0777, true);
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        file_put_contents($dir . '/gnq/assessment_qti.xml', $this->bankdrawshell('gnq', 'Final Evaluation'));
+        file_put_contents($dir . '/non_cc_assessments/bank1.xml.qti', $this->objectbank('Question Pool'));
+        // The assessment resource is declared but not linked in any module (orphan).
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="gnq/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        // The referenced bank was imported (its two questions kept), not dropped,
+        // even though the orphan New Quiz carried no inline questions of its own.
+        $banks = $modinfo->get_instances_of('qbank');
+        $this->assertCount(1, $banks);
+        $bank = reset($banks);
+        $this->assertSame('Question Pool', $bank->get_name());
+        $this->assertEquals(0, $bank->sectionnum);
+        $context = \context_module::instance($bank->id);
+        $cat = question_get_default_category($context->id);
+        $this->assertSame(2, $DB->count_records('question_bank_entries', ['questioncategoryid' => $cat->id]));
+    }
+
+    /**
+     * Issue #144: a linked quiz (quiz_builder) and an orphan quiz (questionbank_builder)
+     * that both draw from the same item bank share one imported mod_qbank via the
+     * cross-builder registry, rather than importing it twice.
+     *
+     * @return void
+     */
+    public function test_shared_bank_imported_once_across_builders(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/q1', 0777, true);
+        mkdir($dir . '/q2', 0777, true);
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        file_put_contents($dir . '/q1/assessment_qti.xml', $this->bankdrawshell('q1', 'Linked Quiz'));
+        file_put_contents($dir . '/q2/assessment_qti.xml', $this->bankdrawshell('q2', 'Orphan Quiz'));
+        file_put_contents($dir . '/non_cc_assessments/bank1.xml.qti', $this->objectbank('Shared Pool'));
+        // Link q1 in the module; leave q2 declared but unlinked (orphan). Both draw
+        // from bank1.
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title>
+        <item identifier="i_q1" identifierref="r_q1"><title>Linked Quiz</title></item>
+      </item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_q1" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="q1/assessment_qti.xml"/>
+    </resource>
+    <resource identifier="r_q2" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="q2/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        // The linked assessment built a runnable quiz; the orphan built as a bank —
+        // but bank1 was imported once and shared, so there is a single mod_qbank.
+        $this->assertCount(1, $modinfo->get_instances_of('quiz'));
+        $qbanks = $modinfo->get_instances_of('qbank');
+        $this->assertCount(1, $qbanks);
+        $bank = reset($qbanks);
+        $this->assertSame('Shared Pool', $bank->get_name());
+    }
 }
