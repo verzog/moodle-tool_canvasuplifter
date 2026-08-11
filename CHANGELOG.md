@@ -5,6 +5,19 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.55.1] - 2026-08-12
+
+- **The analyse question-type matrix now follows New-Quiz item-bank draws** (issue #143).
+  A referenced New Quiz draws its questions from a separate item bank via
+  `<selection_ordering>`/`<sourcebank_ref>`; the preflight matrix previously read only
+  the quiz's own QTI (and its same-id native fallback), so a bank whose questions live
+  in `non_cc_assessments/<bank-id>.xml.qti` — not a manifest resource — was under-
+  reported, hiding unsupported bank question types from the analyse page. The report
+  now resolves each referenced bank once (shared across the quizzes that draw from it),
+  folds its question types into the matrix, and attributes any dropped types to the
+  bank's name. Orphan assessments build as banks and don't yet resolve selections, so
+  their draws stay excluded (tracked in #144).
+
 ## [0.55.0] - 2026-08-12
 
 - **New Quizzes backed by an item bank now import as working quizzes** (issue #140).

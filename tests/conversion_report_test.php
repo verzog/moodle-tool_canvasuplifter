@@ -501,6 +501,121 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * A referenced New Quiz that draws its questions from a separate item bank via
+     * <selection_ordering>/<sourcebank_ref> has the bank's question types folded
+     * into the matrix — including unsupported ones — because quiz_builder imports
+     * that bank. Without following the selection the CC shell counts nothing.
+     *
+     * @return void
+     */
+    public function test_matrix_follows_item_bank_selections(): void {
+        // A shell CC assessment drawing two questions from bank1 (one importable,
+        // one unsupported).
+        $dir = $this->write_bank_draw_package('2');
+
+        // The quiz only lists its CC file; the bank is reached through the selection.
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $quiz = new item('q1', 'New quiz engine');
+        $quiz->kind = item::KIND_QUIZ;
+        $quiz->files = ['a1/assessment_qti.xml'];
+        $section->add_item($quiz);
+        $course->add_section($section);
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        // Both bank questions are counted; without following the selection the CC
+        // shell would tally nothing (an empty matrix).
+        $this->assertSame(2, $matrix['total']);
+        $this->assertSame(1, $matrix['supported']);
+        $bylabel = [];
+        foreach ($matrix['rows'] as $row) {
+            $bylabel[$row['label']] = $row;
+        }
+        $this->assertSame('yes', $bylabel['multichoice']['status']);
+        // The unsupported bank question is surfaced and attributed to the bank name.
+        $this->assertArrayHasKey('cc.numeric.v0p1', $bylabel);
+        $this->assertSame('unsupported', $bylabel['cc.numeric.v0p1']['status']);
+        $this->assertSame('Shared bank', $bylabel['cc.numeric.v0p1']['sources'][0]['name']);
+
+        // The same quiz as an unreferenced orphan builds as a bank and does not yet
+        // resolve its selections, so its draw is not counted (empty matrix).
+        $orphancourse = new course_model();
+        $orphan = new item('q2', 'New quiz engine');
+        $orphan->kind = item::KIND_QUIZ;
+        $orphan->files = ['a1/assessment_qti.xml'];
+        $orphancourse->orphans[] = $orphan;
+        $this->assertSame([], (new conversion_report($orphancourse, $dir))->build()['questionmatrix']);
+    }
+
+    /**
+     * The matrix only follows an item-bank draw the build actually imports: an
+     * explicit zero-question draw (which quiz_builder skips), and a selection on a
+     * question-bank kind (questionbank_builder never resolves selections), are both
+     * ignored — the bank's types are not counted.
+     *
+     * @return void
+     */
+    public function test_matrix_ignores_untaken_bank_draws(): void {
+        // An explicit selection_number of 0 — quiz_builder skips it without importing.
+        $dir = $this->write_bank_draw_package('0');
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $quiz = new item('q1', 'New quiz engine');
+        $quiz->kind = item::KIND_QUIZ;
+        $quiz->files = ['a1/assessment_qti.xml'];
+        $section->add_item($quiz);
+        $course->add_section($section);
+        // Zero-draw is not followed and the shell has no inline questions → empty.
+        $this->assertSame([], (new conversion_report($course, $dir))->build()['questionmatrix']);
+
+        // A non-zero draw, but the assessment is a question bank (built through
+        // questionbank_builder, which never resolves selections) — also not followed.
+        $dir2 = $this->write_bank_draw_package('2');
+        $bankcourse = new course_model();
+        $banksection = new section_model('Week 1');
+        $bankitem = new item('q2', 'Question pool');
+        $bankitem->kind = item::KIND_QUESTIONBANK;
+        $bankitem->files = ['a1/assessment_qti.xml'];
+        $banksection->add_item($bankitem);
+        $bankcourse->add_section($banksection);
+        $this->assertSame([], (new conversion_report($bankcourse, $dir2))->build()['questionmatrix']);
+    }
+
+    /**
+     * Write a package with a shell CC assessment (a1/assessment_qti.xml) that draws
+     * from item bank bank1 via <selection_ordering>, and bank1 itself
+     * (non_cc_assessments/bank1.xml.qti) holding one importable and one unsupported
+     * question. The <selection_number> is caller-controlled.
+     *
+     * @param string $selnumber The selection_number value.
+     * @return string The package root directory.
+     */
+    private function write_bank_draw_package(string $selnumber): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        mkdir($dir . '/non_cc_assessments');
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="New quiz engine"><section ident="root">'
+            . '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>' . $selnumber . '</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/a1/assessment_qti.xml', $shell);
+        $bank = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="bank1"><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>bank_title</fieldlabel><fieldentry>Shared bank</fieldentry>'
+            . '</qtimetadatafield></qtimetadata>'
+            . $this->profileitem('cc.multiple_choice.v0p1', 'B')
+            . $this->unsupporteditem('cc.numeric.v0p1')
+            . '</objectbank></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/bank1.xml.qti', $bank);
+        return $dir;
+    }
+
+    /**
      * A referenced New Quiz whose native dump holds only unsupported questions
      * still surfaces them in the matrix (as unsupported rows) — these are the
      * quizzes most at risk of silent question loss, so the report must not fall
