@@ -624,13 +624,24 @@ class qti_parser {
             return;
         }
         $stem = $question->questiontext;
-        $blanks = $this->cloze_blank_answers($presentation);
+        $blanks = $this->cloze_blank_answers($item, $presentation);
         $text = $stem;
+        $complete = $blanks !== [];
         foreach ($blanks as $blankid => $accepted) {
-            if ($accepted === []) {
+            $marker = '[' . $blankid . ']';
+            // A blank we cannot place — it has no accepted answer, or its [id] marker
+            // is absent from the stem — would leave a silently truncated Cloze, so the
+            // whole item is left unsupported (reported by name) rather than importing a
+            // partial question with a blank dropped to literal text.
+            if ($accepted === [] || strpos($stem, $marker) === false) {
+                $complete = false;
                 continue;
             }
-            $text = str_replace('[' . $blankid . ']', $this->cloze_field($accepted), $text);
+            $text = str_replace($marker, $this->cloze_field($accepted), $text);
+        }
+        if (!$complete) {
+            $question->type = qti_question::TYPE_UNSUPPORTED;
+            return;
         }
         $question->questiontext = $text;
         // The name was derived from the raw stem, which for an untitled item still shows
@@ -647,17 +658,21 @@ class qti_parser {
 
     /**
      * Map each fill-in-multiple-blanks blank to its accepted answers. The blank id is
-     * the response_lid ident with the "response_" prefix removed; every listed
-     * response_label is an acceptable open-entry answer (Canvas enumerates each
-     * accepted spelling as a label, and the scoring respcondition may reference only
-     * one of them), so all are kept — mirroring how {@see fill_text_answers} treats a
-     * single blank. Each answer carries whether Canvas graded it as "contains" so the
-     * writer can widen it to a Moodle SHORTANSWER wildcard match.
+     * the response_lid ident with the "response_" prefix removed. An open-entry label
+     * (answer_type="openEntry") is always an acceptable free-text spelling, so all such
+     * labels are kept — mirroring how {@see fill_text_answers} treats a single blank
+     * (Canvas enumerates each spelling and the respcondition may reference only one).
+     * A non-open-entry (choice-form) label is a distractor unless a scoring condition
+     * marks it correct, so those are resolved through {@see correct_idents}. Each answer
+     * carries whether Canvas graded it as "contains" so the writer can widen it to a
+     * Moodle SHORTANSWER wildcard match.
      *
+     * @param DOMElement $item The item element.
      * @param DOMElement $presentation The presentation element.
      * @return array Map of blank id to a list of ['text' => string, 'contains' => bool].
      */
-    protected function cloze_blank_answers(DOMElement $presentation): array {
+    protected function cloze_blank_answers(DOMElement $item, DOMElement $presentation): array {
+        $correct = array_flip($this->correct_idents($item));
         $result = [];
         foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
             if (!($lid instanceof DOMElement) || $lid->getAttribute('ident') === '') {
@@ -668,6 +683,12 @@ class qti_parser {
             $seen = [];
             foreach ($lid->getElementsByTagNameNS('*', 'response_label') as $label) {
                 if (!($label instanceof DOMElement)) {
+                    continue;
+                }
+                // Keep open-entry spellings unconditionally; a choice-form label counts
+                // only when a scoring condition marks its ident correct (not a distractor).
+                $openentry = strcasecmp($label->getAttribute('answer_type'), 'openEntry') === 0;
+                if (!$openentry && !isset($correct[$label->getAttribute('ident')])) {
                     continue;
                 }
                 $text = trim($this->material_text($label));

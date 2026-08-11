@@ -845,6 +845,69 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A fill_in_multiple_blanks_question authored in choice form (labels are fixed
+     * choices with distractors rather than open-entry spellings) accepts only the
+     * label each blank's scoring condition marks correct — a distractor is not turned
+     * into a second correct answer.
+     *
+     * @return void
+     */
+    public function test_native_cloze_choice_form_excludes_distractors(): void {
+        $blank = function (string $id, string $c1, string $t1, string $c2, string $t2): string {
+            return '<response_lid ident="response_' . $id . '"><render_choice>'
+                . '<response_label ident="' . $c1 . '"><material><mattext texttype="text/plain">' . $t1
+                . '</mattext></material></response_label>'
+                . '<response_label ident="' . $c2 . '"><material><mattext texttype="text/plain">' . $t2
+                . '</mattext></material></response_label></render_choice></response_lid>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">Pick [b1] and [b2].</mattext></material>'
+            . $blank('b1', 'x1', 'Alpha', 'x2', 'Beta') . $blank('b2', 'y1', 'Gamma', 'y2', 'Delta')
+            . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">x1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">y2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="cf1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // Only the scored choice per blank; distractors Beta and Gamma are excluded.
+        $this->assertStringContainsString('{1:SHORTANSWER:=Alpha} and {1:SHORTANSWER:=Delta}', $q->questiontext);
+        $this->assertStringNotContainsString('Beta', $q->questiontext);
+        $this->assertStringNotContainsString('Gamma', $q->questiontext);
+    }
+
+    /**
+     * A multi-blank item where one blank cannot be placed — its [id] marker is absent
+     * from the stem — would import as a silently truncated Cloze, so it is left
+     * unsupported (dropped) rather than converted.
+     *
+     * @return void
+     */
+    public function test_native_cloze_unresolved_blank_is_unsupported(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">Only [b1] here.</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $item = '<item ident="ur1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with three free-text blanks (the shape
      * a real Canvas export uses: [blank] stem placeholders, response_lid per blank with
      * its accepted answers as response_labels, scored by varequal to the label idents).
