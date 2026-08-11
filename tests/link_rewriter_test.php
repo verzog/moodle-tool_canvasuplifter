@@ -192,6 +192,21 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * A missing rooted reference carrying '.'/'..' segments is normalised before
+     * keying, so /a/../shared/logo.png and /shared/logo.png are one missing asset.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_unresolved_normalises_rooted_dot_segments(): void {
+        $root = make_request_directory();
+        $climb = (new link_rewriter())->rewrite_files('<img src="$IMS-CC-FILEBASE$/a/../shared/logo.png">', $root);
+        $direct = (new link_rewriter())->rewrite_files('<img src="$IMS-CC-FILEBASE$/shared/logo.png">', $root);
+
+        $this->assertSame(['shared/logo.png'], $climb['unresolved']);
+        $this->assertSame(['shared/logo.png'], $direct['unresolved']);
+    }
+
+    /**
      * A resolvable reference reports no unresolved references.
      *
      * @return void

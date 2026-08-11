@@ -39,8 +39,9 @@ final class media_report_test extends \basic_testcase {
     }
 
     /**
-     * Distinct references are counted once each and listed sorted; duplicates
-     * (and blanks) collapse.
+     * Distinct references are counted once each and listed sorted; exact duplicates
+     * collapse and all-whitespace/empty references are skipped, but a real filename's
+     * own leading/trailing whitespace is preserved (a different file).
      *
      * @return void
      */
@@ -49,12 +50,14 @@ final class media_report_test extends \basic_testcase {
         $report->record('web_resources/logo.png');
         $report->record('content/handout.pdf');
         $report->record('web_resources/logo.png');
-        $report->record('  content/handout.pdf  ');
         $report->record('');
         $report->record('   ');
+        // A filename whose first character is a real (decoded) space is not the same
+        // file as "logo.png" and must not be trimmed into it.
+        $report->record(' logo.png');
 
-        $this->assertSame(2, $report->count());
-        $this->assertSame(['content/handout.pdf', 'web_resources/logo.png'], $report->references());
+        $this->assertSame(3, $report->count());
+        $this->assertSame([' logo.png', 'content/handout.pdf', 'web_resources/logo.png'], $report->references());
     }
 
     /**

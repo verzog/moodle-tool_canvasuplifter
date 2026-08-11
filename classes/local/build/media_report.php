@@ -48,8 +48,10 @@ class media_report {
      * @return void
      */
     public function record(string $reference): void {
-        $reference = trim($reference);
-        if ($reference === '') {
+        // Only skip an all-whitespace reference; keep any leading/trailing whitespace in a
+        // real filename (a decoded "%20logo.png" is a different file from "logo.png") so
+        // the reported path and the distinct count stay accurate.
+        if (trim($reference) === '') {
             return;
         }
         // A stale token can decode to invalid UTF-8 (e.g. a %FF byte). This set is

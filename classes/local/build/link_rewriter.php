@@ -279,10 +279,12 @@ class link_rewriter {
      * @return string The canonical report key.
      */
     public static function unresolved_key(string $decoded, string $ownerdir, bool $rooted): string {
-        if ($rooted || $ownerdir === '') {
-            return $decoded;
-        }
-        $normalised = self::normalize_path($ownerdir, $decoded);
+        // Collapse '.'/'..' segments so references that resolve to the same package
+        // file share one key: a rooted path against the package root, an owner-relative
+        // one against its owner folder. Fall back to the decoded path if it escapes the
+        // root (normalize_path returns null), so the reference is still reported.
+        $basedir = ($rooted || $ownerdir === '') ? '' : $ownerdir;
+        $normalised = self::normalize_path($basedir, $decoded);
         return $normalised !== null && $normalised !== '' ? $normalised : $decoded;
     }
 
