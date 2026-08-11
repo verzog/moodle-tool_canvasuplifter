@@ -18,12 +18,16 @@ quickly.
   (quiz and standalone question-bank stems, answers and feedback)**, and the build
   report gains a "Notes and warnings" line with the count plus a "Missing embedded
   assets" list of the exact reference paths, so an editor knows what to re-upload.
-- An unresolved reference is qualified with its owner directory (e.g.
-  `logo.png (in unit1)`), so the same bare name referenced from two folders is
-  reported as two distinct missing assets rather than collapsing to one; decoded
-  paths are scrubbed to valid UTF-8 so a stale token with invalid bytes can't blank
-  the persisted report; and when more than 50 distinct assets are missing the status
-  page states how many were not listed rather than silently truncating.
+- Each missing reference is keyed by its canonical package path: a root reference
+  (`$IMS-CC-FILEBASE$/path`) as-is, and an owner-relative one resolved against the
+  owning resource's folder (so `logo.png` in two folders stays `unit1/logo.png` vs
+  `unit2/logo.png`, while a `../shared/logo.png` climb from either collapses to the
+  one `shared/logo.png` it targets). Missing media for a quiz/bank whose questions
+  are all rejected — and which is then deleted — is dropped with it rather than
+  reported against the course. Decoded paths are scrubbed to valid UTF-8 so a stale
+  token with invalid bytes can't blank the persisted report, and when more than 50
+  distinct assets are missing the status page states how many were not listed rather
+  than silently truncating.
 - No change to the resolvable path (working embeds keep rewriting to
   `pluginfile.php`) and no attempt to fetch remote assets that aren't in the
   package. The unresolved-token branch is unchanged in behaviour — only reported.

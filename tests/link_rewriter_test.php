@@ -138,8 +138,9 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
-     * An unresolved owner-relative reference is qualified with the owner directory,
-     * so the same bare name referenced from two folders is not collapsed into one.
+     * An unresolved owner-relative reference is keyed by its path resolved against the
+     * owner directory, so the same bare name referenced from two folders stays two
+     * distinct missing assets (unit1/logo.png vs unit2/logo.png).
      *
      * @return void
      */
@@ -150,8 +151,26 @@ final class link_rewriter_test extends \advanced_testcase {
         $unit1 = (new link_rewriter())->rewrite_files($html, $root, 'unit1');
         $unit2 = (new link_rewriter())->rewrite_files($html, $root, 'unit2');
 
-        $this->assertSame(['logo.png (in unit1)'], $unit1['unresolved']);
-        $this->assertSame(['logo.png (in unit2)'], $unit2['unresolved']);
+        $this->assertSame(['unit1/logo.png'], $unit1['unresolved']);
+        $this->assertSame(['unit2/logo.png'], $unit2['unresolved']);
+    }
+
+    /**
+     * An owner-relative ../ climb that lands in a shared folder is normalised before
+     * keying, so the same target reached from two different owners collapses to one
+     * missing asset rather than inflating the count.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_unresolved_normalises_owner_climb(): void {
+        $root = make_request_directory();
+        $html = '<img src="$IMS-CC-FILEBASE$../shared/logo.png">';
+
+        $unit1 = (new link_rewriter())->rewrite_files($html, $root, 'unit1');
+        $unit2 = (new link_rewriter())->rewrite_files($html, $root, 'unit2');
+
+        $this->assertSame(['shared/logo.png'], $unit1['unresolved']);
+        $this->assertSame(['shared/logo.png'], $unit2['unresolved']);
     }
 
     /**

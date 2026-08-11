@@ -129,15 +129,9 @@ class link_rewriter {
             $hit = self::locate_filebase($packageroot, $decoded, $ownerdir);
             if ($hit === null) {
                 // Cannot find the file; leave the placeholder untouched and record the
-                // unresolved reference so the build report can surface it. Qualify an
-                // owner-relative reference with its owner directory, so the same bare name
-                // (e.g. "logo.png") referenced from two different resource folders is
-                // reported as two distinct missing assets; a root-relative reference is
-                // one asset no matter who points at it, so it is left unqualified to keep
-                // the count and the capped list accurate.
-                $ownerrelative = $ownerdir !== '' && !$rooted;
-                $label = $ownerrelative ? $decoded . ' (in ' . $ownerdir . ')' : $decoded;
-                $unresolved[$label] = true;
+                // unresolved reference so the build report can surface it, keyed by the
+                // canonical missing path.
+                $unresolved[self::unresolved_key($decoded, $ownerdir, $rooted)] = true;
                 return $matches[0];
             }
             [$absolute, $matched] = $hit;
@@ -267,6 +261,29 @@ class link_rewriter {
                 $tag[0]
             );
         }, $html) ?? $html;
+    }
+
+    /**
+     * The build-report key for an unresolved $IMS-CC-FILEBASE$ reference: the canonical
+     * missing package path. A root-relative reference ($IMS-CC-FILEBASE$/path) addresses
+     * the same file wherever it appears, so its decoded path is used as-is. An
+     * owner-relative reference (a bare name or a ../ climb) is resolved against its owner
+     * directory and the '.'/'..' segments collapsed, so "logo.png" in unit1 vs unit2
+     * stays two distinct assets while "../shared/logo.png" from either collapses to the
+     * one "shared/logo.png" it actually targets. Shared by the page rewriter and the
+     * question writer so both report the same key for the same missing file.
+     *
+     * @param string $decoded The decoded, leading-slash-stripped reference path.
+     * @param string $ownerdir Package-relative folder of the referencing resource ('' if unknown).
+     * @param bool $rooted Whether the original token was package-root-relative (leading slash).
+     * @return string The canonical report key.
+     */
+    public static function unresolved_key(string $decoded, string $ownerdir, bool $rooted): string {
+        if ($rooted || $ownerdir === '') {
+            return $decoded;
+        }
+        $normalised = self::normalize_path($ownerdir, $decoded);
+        return $normalised !== null && $normalised !== '' ? $normalised : $decoded;
     }
 
     /**

@@ -481,13 +481,9 @@ class question_xml_writer {
             return;
         }
         // Drop any leading slash so the path reads the same way link_rewriter records
-        // page misses ("content/x.png", not "/content/x.png").
-        $decoded = ltrim($decoded, '/');
-        // Owner-qualify only a genuinely owner-relative reference; a root-relative one is
-        // the same asset no matter which bank points at it (see link_rewriter).
-        $ownerrelative = $ownerdir !== '' && !$rooted;
-        $label = $ownerrelative ? $decoded . ' (in ' . $ownerdir . ')' : $decoded;
-        $this->mediareport->record($label);
+        // page misses ("content/x.png", not "/content/x.png"), then key it the same way
+        // (root reference used as-is, owner-relative resolved against the owner folder).
+        $this->mediareport->record(link_rewriter::unresolved_key(ltrim($decoded, '/'), $ownerdir, $rooted));
     }
 
     /**

@@ -63,6 +63,21 @@ class media_report {
     }
 
     /**
+     * Fold another report's references into this one. Used to promote a builder's
+     * provisional report into the shared build report only once the owning activity
+     * is confirmed kept, so media belonging to a rejected-and-deleted activity is not
+     * reported against a course that never received it.
+     *
+     * @param media_report $other The report whose references to absorb.
+     * @return void
+     */
+    public function merge(media_report $other): void {
+        foreach ($other->references() as $reference) {
+            $this->record($reference);
+        }
+    }
+
+    /**
      * The number of distinct unresolved references seen across the build.
      *
      * @return int

@@ -131,17 +131,24 @@ class questionbank_builder {
         $cmid = (int) $created->coursemodule;
 
         $context = \context_module::instance($cmid);
+        // Collect missing question media into a provisional report, merged into the
+        // shared build report only if this bank is kept, so a rejected-and-deleted
+        // import reports no phantom assets.
+        $localreport = $this->mediareport !== null ? new media_report() : null;
         $questionids = (new question_importer())
-            ->import($course, $context, $supported, $imagedir, $this->packageroot, $this->mediareport);
+            ->import($course, $context, $supported, $imagedir, $this->packageroot, $localreport);
         if (empty($questionids)) {
             // Nothing imported despite some questions looking convertible; don't
-            // leave an empty bank behind.
+            // leave an empty bank behind. Its provisional media is dropped with it.
             course_delete_module($cmid);
             $this->skipreason = sprintf(
                 "Moodle's importer rejected all %d convertible question(s)",
                 count($importable)
             );
             return null;
+        }
+        if ($this->mediareport !== null && $localreport !== null) {
+            $this->mediareport->merge($localreport);
         }
         // Record the imported questions so course_builder can resolve any
         // internal Canvas links in their text once every activity exists.
