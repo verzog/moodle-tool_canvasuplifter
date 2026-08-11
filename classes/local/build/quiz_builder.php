@@ -313,6 +313,11 @@ class quiz_builder {
                 $incomplete = true;
                 continue;
             }
+            if (!$bank['full']) {
+                // Some source questions in the bank couldn't be imported, so the pool
+                // Moodle draws from is smaller than Canvas's; flag the shortfall.
+                $incomplete = true;
+            }
             if (!array_key_exists($bankid, $remaining)) {
                 $remaining[$bankid] = $bank['count'];
             }
@@ -386,7 +391,7 @@ class quiz_builder {
      *
      * @param stdClass $course Course record.
      * @param string $bankid The Canvas sourcebank_ref (a package resource id).
-     * @return array|null ['category' => int, 'count' => int], or null when unavailable.
+     * @return array|null ['category' => int, 'count' => int, 'full' => bool], or null when unavailable.
      */
     private function import_bank(stdClass $course, string $bankid): ?array {
         global $CFG, $DB;
@@ -435,7 +440,15 @@ class quiz_builder {
         }
         $this->importedquestionids = array_merge($this->importedquestionids, array_map('intval', $questionids));
         $category = question_get_default_category($context->id, true);
-        $this->bankcategories[$bankid] = ['category' => (int) $category->id, 'count' => count($questionids)];
+        // The 'full' flag records whether every source question in the bank imported.
+        // When the bank holds unsupported types (or the importer rejects some), Moodle's
+        // pool is smaller than the one Canvas drew from, so a group sourcing this bank
+        // must be reported as incomplete even when it can still fill its requested count.
+        $this->bankcategories[$bankid] = [
+            'category' => (int) $category->id,
+            'count' => count($questionids),
+            'full' => count($questionids) === count($parsed['questions']),
+        ];
         return $this->bankcategories[$bankid];
     }
 

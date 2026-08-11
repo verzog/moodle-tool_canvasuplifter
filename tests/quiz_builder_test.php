@@ -1043,13 +1043,30 @@ XML;
     }
 
     /**
+     * One item-bank item of an unsupported Canvas type (ordering), keyed by ident, so
+     * a bank can carry a candidate that parses but cannot convert.
+     *
+     * @param string $ident The item ident.
+     * @return string
+     */
+    protected function bankorderingitem(string $ident): string {
+        return '<item ident="' . $ident . '" title="Q ' . $ident . '"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>ordering_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;div&gt;Order ' . $ident . '?&lt;/div&gt;</mattext>'
+            . '</material></presentation></item>';
+    }
+
+    /**
      * Write a package with a Canvas New Quiz that has no inline questions and instead
      * draws two of them from an item bank (non_cc_assessments/gbank1.xml.qti) via a
-     * <selection_ordering>/<sourcebank_ref>. The bank holds three MC questions.
+     * <selection_ordering>/<sourcebank_ref>. The bank holds three MC questions, plus
+     * any extra bank items passed (e.g. an unsupported candidate).
      *
+     * @param string $extrabankitems Extra <item> markup appended to the bank, or ''.
      * @return string Path to the package root.
      */
-    protected function build_fixture_bank_backed(): string {
+    protected function build_fixture_bank_backed(string $extrabankitems = ''): string {
         $dir = make_request_directory();
         mkdir($dir . '/gnewquiz', 0777, true);
         mkdir($dir . '/non_cc_assessments', 0777, true);
@@ -1075,6 +1092,7 @@ XML;
             . '<fieldlabel>bank_title</fieldlabel><fieldentry>Unfiled Questions</fieldentry>'
             . '</qtimetadatafield></qtimetadata>'
             . $this->bankmcitem('b1') . $this->bankmcitem('b2') . $this->bankmcitem('b3')
+            . $extrabankitems
             . '</objectbank></questestinterop>';
         file_put_contents($dir . '/non_cc_assessments/gbank1.xml.qti', $bank);
         $manifest = <<<'XML'
@@ -1144,6 +1162,38 @@ XML;
         // The build report notes the bank-draw rather than a placeholder warning.
         $this->assertStringContainsString('drawing random questions', implode("\n", $report['warnings']));
         $this->assertStringNotContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * When a referenced bank holds an unsupported candidate that cannot convert, the
+     * quiz still builds from the supported ones but is flagged as incomplete, because
+     * Moodle draws from a smaller pool than Canvas did.
+     *
+     * @return void
+     */
+    public function test_new_quiz_bank_partial_import_flags_incomplete(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        // The bank now carries a fourth candidate of an unsupported type; only the
+        // three MC questions import, so the pool (3) is smaller than the source (4).
+        $root = $this->build_fixture_bank_backed($this->bankorderingitem('b4'));
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        // Still a visible quiz built from what converted, drawing the requested two.
+        $this->assertEquals(1, (int) $quizcm->visible);
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
+        // Only the three supported questions imported into the bank.
+        $this->assertEquals(3, $DB->count_records('question', ['qtype' => 'multichoice']));
+        // The report flags the quiz as short of a group because a candidate was dropped.
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
     }
 
     /**
