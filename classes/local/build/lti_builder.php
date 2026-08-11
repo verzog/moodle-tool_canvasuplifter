@@ -42,6 +42,10 @@ class lti_builder {
     /** @var string|null Why the last build returned null, for course_builder's skip report. */
     public ?string $skipreason = null;
 
+    /** @var string|null Absolute path the last launch_instructions() read the intro HTML from,
+     * or null for inline instructions - the intro's owner directory is derived from it. */
+    private ?string $instructionssource = null;
+
     /**
      * Constructor.
      *
@@ -117,13 +121,38 @@ class lti_builder {
         // assign_builder), so a re-homed external-tool assignment's prompt renders.
         if (($cartridge['descriptionhtml'] ?? '') !== '') {
             $context = \context_module::instance((int) $created->coursemodule);
+            $ownerdir = $this->intro_owner_dir($modelitem, $this->instructionssource);
             $newintro = (new file_embedder($this->packageroot))
-                ->embed($context->id, 'mod_lti', 'intro', $moduleinfo->intro);
+                ->embed($context->id, 'mod_lti', 'intro', $moduleinfo->intro, 0, $ownerdir);
             if ($newintro !== $moduleinfo->intro) {
                 $DB->set_field('lti', 'intro', $newintro, ['id' => (int) $created->instance]);
             }
         }
         return (int) $created->coursemodule;
+    }
+
+    /**
+     * The package-relative folder the intro's instructions media resolves against
+     * - the folder of the file the instructions actually came from - so a
+     * $IMS-CC-FILEBASE$name reference, or a ../ climb into a sibling resource
+     * folder, embeds instead of being left as a broken placeholder.
+     *
+     * @param item $modelitem The LTI item.
+     * @param string|null $introsource Absolute path the instructions were read from, if any.
+     * @return string Package-relative folder ('' at the package root).
+     */
+    private function intro_owner_dir(item $modelitem, ?string $introsource): string {
+        if ($introsource !== null) {
+            return safe_path::package_dir($this->packageroot, $introsource);
+        }
+        // Inline instructions (CC 1.3 <text>): resolve against the profile file's
+        // folder recorded when the assignment was re-homed, else the resource's own.
+        if ($modelitem->launchdescriptiondir !== '') {
+            return $modelitem->launchdescriptiondir;
+        }
+        $source = $modelitem->href !== '' ? $modelitem->href : (string) ($modelitem->files[0] ?? '');
+        $dir = trim(str_replace('\\', '/', dirname($source)), '/');
+        return ($dir === '' || $dir === '.') ? '' : $dir;
     }
 
     /**
@@ -136,6 +165,9 @@ class lti_builder {
      * @return string Instructions HTML, or ''.
      */
     private function launch_instructions(item $modelitem): string {
+        // Reset the recorded source; an inline description resolves media against
+        // the resource's own folder, an HTML sibling against its own folder.
+        $this->instructionssource = null;
         if ($modelitem->launchdescription !== '') {
             return $modelitem->launchdescription;
         }
@@ -149,6 +181,7 @@ class lti_builder {
             }
             $absolute = safe_path::within($this->packageroot, (string) $relative);
             if ($absolute !== null && is_readable($absolute)) {
+                $this->instructionssource = $absolute;
                 return (string) @file_get_contents($absolute);
             }
         }

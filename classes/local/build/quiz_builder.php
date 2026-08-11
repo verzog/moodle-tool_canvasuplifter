@@ -171,10 +171,13 @@ class quiz_builder {
 
         $context = \context_module::instance($cmid);
         // Import any files the description embeds and rewrite the intro to
-        // pluginfile refs, mirroring assign_builder's handling.
+        // pluginfile refs, mirroring assign_builder's handling. The description
+        // comes from assessment_meta.xml, so its owner-relative media resolves
+        // against that file's own folder.
         if ($settings->description !== '') {
+            $introownerdir = $metapath !== null ? safe_path::package_dir($this->packageroot, $metapath) : '';
             $newintro = (new file_embedder($this->packageroot))
-                ->embed($context->id, 'mod_quiz', 'intro', $intro);
+                ->embed($context->id, 'mod_quiz', 'intro', $intro, 0, $introownerdir);
             if ($newintro !== $intro) {
                 $DB->set_field('quiz', 'intro', $newintro, ['id' => (int) $created->instance]);
             }

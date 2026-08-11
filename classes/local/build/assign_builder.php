@@ -89,10 +89,19 @@ class assign_builder {
         // any HTML sibling in the resource's file list: that sibling is
         // typically a handout or attachment, not the assignment prompt, and
         // letting it win drops the real instructions on the floor.
+        // Track the file the intro actually came from: media it embeds resolves
+        // relative to that file's own folder, which is not always the resource
+        // href's folder (a CC 1.3 profile's <text> lives in the settings XML; a
+        // flat assignment's prompt is a sibling HTML that may sit elsewhere).
+        $introsource = null;
         if ($settings->description !== '') {
             $intro = $settings->description;
+            $introsource = $settingspath;
+        } else if ($settingspath !== null) {
+            $introsource = $this->locate_description_html($modelitem, $settingspath);
+            $intro = $introsource !== null ? (string) @file_get_contents($introsource) : '';
         } else {
-            $intro = $settingspath !== null ? $this->description_html($modelitem, $settingspath) : '';
+            $intro = '';
         }
         $name = $modelitem->title !== '' ? $modelitem->title : ($settings->title !== '' ? $settings->title : 'Assignment');
 
@@ -103,13 +112,34 @@ class assign_builder {
         // Import description images/files and rewrite the intro to pluginfile refs.
         if ($intro !== '') {
             $context = \context_module::instance($cmid);
-            $newintro = (new file_embedder($this->packageroot))->embed($context->id, 'mod_assign', 'intro', $intro);
+            $newintro = (new file_embedder($this->packageroot))
+                ->embed($context->id, 'mod_assign', 'intro', $intro, 0, $this->intro_owner_dir($modelitem, $introsource));
             if ($newintro !== $intro) {
                 $DB->set_field('assign', 'intro', $newintro, ['id' => (int) $created->instance]);
             }
         }
 
         return $cmid;
+    }
+
+    /**
+     * The package-relative folder the assignment's instructions media resolves
+     * against - the folder of the file the intro actually came from - so a
+     * $IMS-CC-FILEBASE$name reference, or a ../ climb into a sibling resource
+     * folder, embeds instead of being left as a broken placeholder.
+     *
+     * @param item $modelitem The assignment item.
+     * @param string|null $introsource Absolute path the intro was read from, if any.
+     * @return string Package-relative folder ('' at the package root).
+     */
+    private function intro_owner_dir(item $modelitem, ?string $introsource): string {
+        if ($introsource !== null) {
+            return safe_path::package_dir($this->packageroot, $introsource);
+        }
+        // An inline CC 1.3 descriptor with no on-disk source: the resource's folder.
+        $source = $modelitem->href !== '' ? $modelitem->href : (string) ($modelitem->files[0] ?? '');
+        $dir = trim(str_replace('\\', '/', dirname($source)), '/');
+        return ($dir === '' || $dir === '.') ? '' : $dir;
     }
 
     /**
@@ -200,16 +230,18 @@ class assign_builder {
     }
 
     /**
-     * Read the assignment description HTML from the package.
+     * Locate the assignment description HTML file in the package.
      *
      * Prefers an HTML file in the resource's file list (other than the settings
-     * file), falling back to the href; returns '' when none is readable.
+     * file), falling back to the href; returns null when none is readable. The
+     * caller derives the intro's owner directory from this path so media the
+     * prompt embeds resolves against the folder the prompt itself lives in.
      *
      * @param item $modelitem The assignment item.
      * @param string $settingspath Absolute path of the settings file, to skip it.
-     * @return string Description HTML, or ''.
+     * @return string|null Absolute path of the description HTML, or null.
      */
-    private function description_html(item $modelitem, string $settingspath): string {
+    private function locate_description_html(item $modelitem, string $settingspath): ?string {
         $candidates = $modelitem->files;
         if ($modelitem->href !== '') {
             $candidates[] = $modelitem->href;
@@ -222,9 +254,9 @@ class assign_builder {
             if ($absolute === null || $absolute === $settingspath || !is_readable($absolute)) {
                 continue;
             }
-            return (string) @file_get_contents($absolute);
+            return $absolute;
         }
-        return '';
+        return null;
     }
 
     /**
