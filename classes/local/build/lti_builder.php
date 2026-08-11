@@ -145,7 +145,11 @@ class lti_builder {
         if ($introsource !== null) {
             return safe_path::package_dir($this->packageroot, $introsource);
         }
-        // Inline instructions (CC 1.3 <text>): the resource's own folder.
+        // Inline instructions (CC 1.3 <text>): resolve against the profile file's
+        // folder recorded when the assignment was re-homed, else the resource's own.
+        if ($modelitem->launchdescriptiondir !== '') {
+            return $modelitem->launchdescriptiondir;
+        }
         $source = $modelitem->href !== '' ? $modelitem->href : (string) ($modelitem->files[0] ?? '');
         $dir = trim(str_replace('\\', '/', dirname($source)), '/');
         return ($dir === '' || $dir === '.') ? '' : $dir;

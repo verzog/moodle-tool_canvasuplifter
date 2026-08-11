@@ -21,6 +21,7 @@ use DOMElement;
 use tool_canvasuplifter\local\build\ilias_cleaner;
 use tool_canvasuplifter\local\build\link_rewriter;
 use tool_canvasuplifter\local\build\page_payload;
+use tool_canvasuplifter\local\build\safe_path;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\section_model;
 use tool_canvasuplifter\local\model\item;
@@ -2291,6 +2292,11 @@ class manifest_parser {
                 // 1.3 profile carries it inline (<text>); a flat Canvas assignment
                 // keeps it in a sibling HTML that lti_builder reads at build time.
                 $resourceitem->launchdescription = $settings->description;
+                // Record the profile file's folder so media the inline instructions
+                // embed resolves against it, not the resource href (they can differ).
+                if ($absolute !== null) {
+                    $resourceitem->launchdescriptiondir = safe_path::package_dir($this->basedir, $absolute);
+                }
                 // An inline CC 1.3 profile may hold the title only in its <title>
                 // (no href/files slug to derive from, and lti_builder no longer
                 // parses inlinexml), so carry it over rather than letting the

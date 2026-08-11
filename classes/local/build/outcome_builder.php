@@ -127,10 +127,12 @@ class outcome_builder {
         // The description may embed package files via $IMS-CC-FILEBASE$ tokens.
         // grade_outcome::get_description() serves them from the system context's
         // grade/outcome file area keyed by the outcome id, so import them there
-        // and rewrite the tokens to @@PLUGINFILE@@ now that the id exists.
+        // and rewrite the tokens to @@PLUGINFILE@@ now that the id exists. Canvas
+        // ships outcomes in course_settings/learning_outcomes.xml, so owner-relative
+        // media resolves against that folder.
         $systemcontext = \context_system::instance();
         $rewritten = (new file_embedder($this->packageroot))
-            ->embed($systemcontext->id, 'grade', 'outcome', $model->description, (int) $id);
+            ->embed($systemcontext->id, 'grade', 'outcome', $model->description, (int) $id, 'course_settings');
         if ($rewritten !== $model->description) {
             $outcome->description = $rewritten;
             $outcome->update('tool_canvasuplifter');

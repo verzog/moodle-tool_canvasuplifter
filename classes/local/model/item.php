@@ -105,6 +105,10 @@ class item {
      *              flat Canvas assignment, whose instructions lti_builder reads from the sibling HTML. */
     public string $launchdescription = '';
 
+    /** @var string Package-relative folder of the profile/settings file $launchdescription was read from,
+     *              so its owner-relative media resolves against that folder rather than the resource href. */
+    public string $launchdescriptiondir = '';
+
     /** @var string For assignments: Canvas <assignment_group_identifierref>. */
     public string $gradegroupref = '';
 
