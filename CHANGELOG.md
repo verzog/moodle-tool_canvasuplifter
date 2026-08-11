@@ -5,6 +5,19 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.55.0] - 2026-08-12
+
+- **New Quizzes backed by an item bank now import as working quizzes** (issue #140).
+  A Canvas New Quiz stores no inline questions — it draws them from a separate item
+  bank via `<selection_ordering>`/`<sourcebank_ref>`, which previously made these
+  quizzes import as hidden placeholders even though the bank's questions ship in the
+  package. `qti_parser` now captures each selection (bank id, count, per-item points);
+  `quiz_builder` imports each referenced bank (`non_cc_assessments/<id>.xml.qti`) once
+  as a `mod_qbank` — shared across quizzes that reference it — and adds that many
+  random questions to the quiz (`mod_quiz\structure::add_random_questions`), capped at
+  the questions actually imported. If no referenced bank resolves to importable
+  questions the quiz still falls back to the hidden placeholder, so nothing regresses.
+
 ## [0.54.0] - 2026-08-11
 
 - **The build report now flags embedded assets the export referenced but did not

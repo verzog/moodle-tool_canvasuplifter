@@ -1021,4 +1021,115 @@ XML;
         sort($answers);
         $this->assertSame(['carpal', 'popliteal', 'prone'], $answers);
     }
+
+    /**
+     * One multiple-choice item for an item-bank <objectbank>, keyed by ident.
+     *
+     * @param string $ident The item ident.
+     * @return string
+     */
+    protected function bankmcitem(string $ident): string {
+        return '<item ident="' . $ident . '" title="Q ' . $ident . '"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_choice_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;div&gt;Question ' . $ident . '?&lt;/div&gt;</mattext>'
+            . '</material><response_lid ident="response1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="a"><material><mattext texttype="text/plain">Right</mattext></material></response_label>'
+            . '<response_label ident="b"><material><mattext texttype="text/plain">Wrong</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="response1">a</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
+     * Write a package with a Canvas New Quiz that has no inline questions and instead
+     * draws two of them from an item bank (non_cc_assessments/gbank1.xml.qti) via a
+     * <selection_ordering>/<sourcebank_ref>. The bank holds three MC questions.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_bank_backed(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/gnewquiz', 0777, true);
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        // The CC assessment carries no items, only a bank draw of two questions.
+        $qti = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnewquiz" title="Learning Expectations"><section ident="root_section">'
+            . '<section ident="grp" title="Group"><selection_ordering><selection>'
+            . '<sourcebank_ref>gbank1</sourcebank_ref><selection_number>2</selection_number>'
+            . '<selection_extension><points_per_item>1.0</points_per_item></selection_extension>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/gnewquiz/assessment_qti.xml', $qti);
+        $meta = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz identifier="gnewquiz" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Learning Expectations</title><allowed_attempts>1</allowed_attempts></quiz>';
+        file_put_contents($dir . '/gnewquiz/assessment_meta.xml', $meta);
+        // The referenced item bank holds three MC questions.
+        $bank = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="gbank1">'
+            . $this->bankmcitem('b1') . $this->bankmcitem('b2') . $this->bankmcitem('b3')
+            . '</objectbank></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/gbank1.xml.qti', $bank);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Learning Expectations</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">
+      <file href="gnewquiz/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A New Quiz backed by an item bank is populated with random questions drawn from
+     * that bank (imported as a mod_qbank) instead of being left a hidden placeholder.
+     *
+     * @return void
+     */
+    public function test_new_quiz_populated_from_item_bank(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_bank_backed();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        // A real, visible quiz — not a hidden placeholder.
+        $this->assertEquals(1, (int) $quizcm->visible);
+        $this->assertStringNotContainsString('hidden placeholders', implode("\n", $report['warnings']));
+
+        // Two random-question slots were added (the selection asked for 2).
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
+
+        // The bank itself was imported as a question bank holding all three questions.
+        $qbanks = $modinfo->get_instances_of('qbank');
+        $this->assertCount(1, $qbanks);
+
+        // The build report notes the bank-draw rather than a placeholder warning.
+        $this->assertStringContainsString('drawing random questions', implode("\n", $report['warnings']));
+    }
 }

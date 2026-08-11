@@ -1035,4 +1035,33 @@ final class qti_parser_test extends \basic_testcase {
         $this->assertFalse($r['hasassessment']);
         $this->assertSame(1, $r['unresolved']);
     }
+
+    /**
+     * A Canvas New Quiz that draws questions from an item bank is captured as a
+     * selection: the bank id, how many to draw and the per-question points. A plain
+     * assessment reports no selections.
+     *
+     * @return void
+     */
+    public function test_captures_item_bank_selections(): void {
+        $xml = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="q1" title="New Quiz"><section ident="root_section">'
+            . '<section ident="grp" title="Group"><selection_ordering><selection>'
+            . '<sourcebank_ref>gbank42</sourcebank_ref><selection_number>25</selection_number>'
+            . '<selection_extension><points_per_item>2.5</points_per_item></selection_extension>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        $r = (new qti_parser())->parse($xml);
+
+        $this->assertSame([], $r['questions']);
+        $this->assertTrue($r['hasassessment']);
+        $this->assertSame(
+            [['bank' => 'gbank42', 'count' => 25, 'points' => 2.5]],
+            $r['selections']
+        );
+
+        // A selection without a sourcebank_ref is not a bank draw and is ignored.
+        $this->assertSame([], (new qti_parser())->parse($this->assessment(''))['selections']);
+    }
 }

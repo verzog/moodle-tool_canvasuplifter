@@ -49,11 +49,18 @@ class qti_parser {
      * from a file the parser cannot read (malformed XML, or QTI 2.x/3.x), which
      * also yields no questions but is a conversion failure, not a shell.
      *
+     * The 'selections' list captures each <selection_ordering>/<selection> group a
+     * Canvas New Quiz uses to draw questions from a separate item bank rather than
+     * inlining them: the referenced bank id (sourcebank_ref), how many questions to
+     * draw (selection_number) and the per-question points. It lets the quiz builder
+     * populate such a quiz from the imported bank instead of leaving a placeholder.
+     *
      * @param string $xml The QTI assessment document.
-     * @return array{title: string, questions: array, unresolved: int, hasassessment: bool} Parsed assessment.
+     * @return array{title: string, questions: array, unresolved: int, hasassessment: bool, selections: array}
+     *         Parsed assessment.
      */
     public function parse(string $xml): array {
-        $result = ['title' => '', 'questions' => [], 'unresolved' => 0, 'hasassessment' => false];
+        $result = ['title' => '', 'questions' => [], 'unresolved' => 0, 'hasassessment' => false, 'selections' => []];
         if (trim($xml) === '') {
             return $result;
         }
@@ -90,7 +97,42 @@ class qti_parser {
             }
             $result['questions'][] = $this->build_question($itemnode);
         }
+
+        // Capture any item-bank draws (Canvas New Quizzes). A <selection> without a
+        // sourcebank_ref isn't a bank draw, so it's skipped.
+        foreach ($dom->getElementsByTagNameNS('*', 'selection') as $selnode) {
+            if (!($selnode instanceof DOMElement)) {
+                continue;
+            }
+            $bank = $this->descendant_text($selnode, 'sourcebank_ref');
+            if ($bank === '') {
+                continue;
+            }
+            $count = (int) $this->descendant_text($selnode, 'selection_number');
+            $points = $this->descendant_text($selnode, 'points_per_item');
+            $result['selections'][] = [
+                'bank' => $bank,
+                'count' => $count > 0 ? $count : 0,
+                'points' => $points !== '' ? (float) $points : null,
+            ];
+        }
         return $result;
+    }
+
+    /**
+     * The trimmed text of the first descendant element with the given local name,
+     * or '' when there is none. Namespace-agnostic, matching how the rest of the
+     * parser reads Canvas's mixed-namespace QTI.
+     *
+     * @param \DOMElement $node The element to search within.
+     * @param string $localname The element local name to find.
+     * @return string
+     */
+    private function descendant_text(\DOMElement $node, string $localname): string {
+        foreach ($node->getElementsByTagNameNS('*', $localname) as $child) {
+            return trim($child->textContent);
+        }
+        return '';
     }
 
     /**

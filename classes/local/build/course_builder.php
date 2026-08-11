@@ -323,6 +323,12 @@ class course_builder {
                 $quizbuilder->placeholdercount
             );
         }
+        // New Quizzes whose questions live in a Canvas item bank were populated by
+        // drawing random questions from the imported bank; note it so graders know
+        // those quizzes select from a bank rather than carrying fixed questions.
+        if ($quizbuilder instanceof quiz_builder && $quizbuilder->bankdrawcount > 0) {
+            $warnings[] = get_string('notequizbankdraw', 'tool_canvasuplifter', $quizbuilder->bankdrawcount);
+        }
         if ($gradelettercount > 0) {
             $warnings[] = get_string('notegradeletters', 'tool_canvasuplifter', $gradelettercount);
         }

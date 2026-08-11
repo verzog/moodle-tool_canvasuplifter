@@ -50,6 +50,12 @@ class quiz_builder {
     /** @var int[] Ids of every question imported across all build() calls, for the link-rewrite pass. */
     public array $importedquestionids = [];
 
+    /** @var int How many quizzes were populated by drawing from a Canvas item bank (New Quizzes). */
+    public int $bankdrawcount = 0;
+
+    /** @var array Canvas item-bank id => ['category' => int, 'count' => int] once imported (null if it failed), memoised. */
+    private array $bankcategories = [];
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -112,6 +118,13 @@ class quiz_builder {
         }
         $questions = $parsed['questions'];
 
+        // A Canvas New Quiz stores no inline questions: it draws them from a separate
+        // item bank via <selection_ordering>. When there is nothing to import inline but
+        // the assessment carries such bank draws, populate the quiz from those banks
+        // instead of leaving an empty placeholder.
+        $selections = $parsed['selections'] ?? [];
+        $hasbanks = empty($importable) && !empty($selections);
+
         // A placeholder is only justified for a genuine but empty Canvas shell:
         // a readable QTI 1.2 <assessment>/<section>, whether the section is empty
         // or holds bare item references to questions Canvas didn't export. The
@@ -125,7 +138,7 @@ class quiz_builder {
         // the file isn't a readable QTI 1.2 assessment at all (malformed, or QTI
         // 2.x/3.x). Masking such a conversion failure as a placeholder would
         // hide real data loss.
-        if (empty($importable) && !$isshell) {
+        if (empty($importable) && !$isshell && !$hasbanks) {
             $this->skipreason = question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
             return null;
         }
@@ -150,7 +163,7 @@ class quiz_builder {
         // build a hidden placeholder carrying the title and settings, with a note
         // asking a teacher to add the questions Canvas didn't export, so nothing
         // bar the absent questions is lost.
-        $isplaceholder = $isshell;
+        $isplaceholder = $isshell && !$hasbanks;
         $intro = $settings->description;
         if ($isplaceholder) {
             $this->placeholdercount++;
@@ -198,6 +211,22 @@ class quiz_builder {
             return $cmid;
         }
 
+        if ($hasbanks) {
+            // A New Quiz: draw its questions from the referenced item bank(s). If none
+            // resolve to importable questions, fall back to a hidden placeholder rather
+            // than leaving an empty quiz.
+            $quiz = $DB->get_record('quiz', ['id' => $created->instance], '*', MUST_EXIST);
+            $quiz->cmid = $cmid;
+            if ($this->populate_from_banks($course, $sectionnum, $quiz, $selections) === 0) {
+                $this->make_placeholder($cmid, (int) $created->instance);
+            } else {
+                $this->bankdrawcount++;
+                \mod_quiz\quiz_settings::create((int) $quiz->id)->get_grade_calculator()->recompute_quiz_sumgrades();
+            }
+            $this->promote_media($localreport);
+            return $cmid;
+        }
+
         $questionids = (new question_importer())
             ->import($course, $context, $supported, $imagedir, $this->packageroot, $localreport);
         if (empty($questionids)) {
@@ -237,6 +266,141 @@ class quiz_builder {
         if ($this->mediareport !== null && $localreport !== null) {
             $this->mediareport->merge($localreport);
         }
+    }
+
+    /**
+     * Add random questions to a New Quiz drawn from each referenced Canvas item bank.
+     * Each bank is imported once (as a mod_qbank) and shared across quizzes; the number
+     * drawn is capped at the questions actually imported so a slot always has a source.
+     *
+     * @param stdClass $course Course record.
+     * @param int $sectionnum Section the quiz lives in (where the bank is placed too).
+     * @param stdClass $quiz Quiz record (with cmid set).
+     * @param array $selections Parsed selections: each ['bank' => id, 'count' => n, 'points' => p|null].
+     * @return int Total random questions added across all banks.
+     */
+    private function populate_from_banks(stdClass $course, int $sectionnum, stdClass $quiz, array $selections): int {
+        $added = 0;
+        foreach ($selections as $selection) {
+            $bank = $this->import_bank($course, $sectionnum, (string) $selection['bank']);
+            if ($bank === null) {
+                continue;
+            }
+            $want = (int) $selection['count'] > 0 ? (int) $selection['count'] : $bank['count'];
+            $number = max(1, min($want, $bank['count']));
+            // Fresh structure per selection so it never draws on stale cached slots.
+            \mod_quiz\quiz_settings::create((int) $quiz->id)->get_structure()
+                ->add_random_questions(0, $number, $this->random_filter($bank['category']));
+            $added += $number;
+        }
+        return $added;
+    }
+
+    /**
+     * The question-bank filter condition selecting one category, in the shape
+     * mod_quiz\structure::add_random_questions() expects.
+     *
+     * @param int $categoryid The question category to draw from.
+     * @return array
+     */
+    private function random_filter(int $categoryid): array {
+        return [
+            'filter' => [
+                'category' => [
+                    'jointype' => \core_question\local\bank\condition::JOINTYPE_DEFAULT,
+                    'values' => [$categoryid],
+                    'filteroptions' => ['includesubcategories' => false],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * Import a Canvas item bank (non_cc_assessments/<id>.xml.qti) as a mod_qbank and
+     * return its default category id plus the number of questions imported. Memoised by
+     * bank id so a bank shared by several New Quizzes is imported once; a bank that can't
+     * be read or yields nothing importable memoises (and returns) null.
+     *
+     * @param stdClass $course Course record.
+     * @param int $sectionnum Section to place the bank in.
+     * @param string $bankid The Canvas sourcebank_ref (a package resource id).
+     * @return array|null ['category' => int, 'count' => int], or null when unavailable.
+     */
+    private function import_bank(stdClass $course, int $sectionnum, string $bankid): ?array {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        if (array_key_exists($bankid, $this->bankcategories)) {
+            return $this->bankcategories[$bankid];
+        }
+        $this->bankcategories[$bankid] = null;
+        $file = safe_path::within($this->packageroot, 'non_cc_assessments/' . $bankid . '.xml.qti');
+        if ($file === null || !is_readable($file)) {
+            return null;
+        }
+        [$parsed, $supported, $importable] = $this->parse_qti($file);
+        if (empty($importable)) {
+            return null;
+        }
+        $module = $DB->get_record('modules', ['name' => 'qbank']);
+        if (!$module) {
+            return null;
+        }
+        $moduleinfo = (object) [
+            'modulename' => 'qbank',
+            'module' => $module->id,
+            'course' => $course->id,
+            'section' => $sectionnum,
+            'visible' => 1,
+            'name' => $parsed['title'] !== '' ? $parsed['title'] : $this->default_bank_name(),
+            'intro' => '',
+            'introformat' => FORMAT_HTML,
+            'type' => \core_question\local\bank\question_bank_helper::TYPE_STANDARD,
+        ];
+        $created = add_moduleinfo($moduleinfo, $course);
+        $context = \context_module::instance((int) $created->coursemodule);
+        // Native bank questions reference media under the package root.
+        $localreport = $this->mediareport !== null ? new media_report() : null;
+        $questionids = (new question_importer())
+            ->import($course, $context, $supported, $this->packageroot, $this->packageroot, $localreport);
+        if (empty($questionids)) {
+            course_delete_module((int) $created->coursemodule);
+            return null;
+        }
+        if ($this->mediareport !== null && $localreport !== null) {
+            $this->mediareport->merge($localreport);
+        }
+        $this->importedquestionids = array_merge($this->importedquestionids, array_map('intval', $questionids));
+        $category = question_get_default_category($context->id, true);
+        $this->bankcategories[$bankid] = ['category' => (int) $category->id, 'count' => count($questionids)];
+        return $this->bankcategories[$bankid];
+    }
+
+    /**
+     * Turn an already-built quiz into a hidden placeholder (no bank resolved to
+     * importable questions), prepending the teacher note to its stored intro.
+     *
+     * @param int $cmid The quiz course module id.
+     * @param int $quizinstance The quiz instance id.
+     * @return void
+     */
+    private function make_placeholder(int $cmid, int $quizinstance): void {
+        global $DB;
+        $this->placeholdercount++;
+        set_coursemodule_visible($cmid, 0);
+        // Prepend the teacher note to whatever intro is stored now (already rewritten to
+        // pluginfile refs by the embedder), so the embedded media survives.
+        $current = (string) $DB->get_field('quiz', 'intro', ['id' => $quizinstance]);
+        $note = get_string('quizplaceholderintro', 'tool_canvasuplifter');
+        $DB->set_field('quiz', 'intro', $note . $current, ['id' => $quizinstance]);
+    }
+
+    /**
+     * The default name for an imported item bank when Canvas exported it untitled.
+     *
+     * @return string
+     */
+    private function default_bank_name(): string {
+        return get_string('quizbankname', 'tool_canvasuplifter');
     }
 
     /**

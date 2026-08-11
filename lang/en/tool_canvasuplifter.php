@@ -119,6 +119,8 @@ $string['notecanvasboilerplate'] = 'Dropped {$a} Canvas platform item(s) with no
     . 'links to Canvas\'s documentation, and leftover ANGEL migration objects).';
 $string['notegradeletters'] = 'Imported {$a} letter-grade boundaries from the Canvas grading scheme as this '
     . 'course\'s grade letters.';
+$string['notequizbankdraw'] = 'Populated {$a} New Quiz(zes) by drawing random questions from their Canvas item '
+    . 'bank(s); each such quiz selects its questions from the imported bank rather than carrying a fixed set.';
 $string['noteoutcomesimported'] = 'Imported {$a} Canvas learning outcome(s) as course grade outcomes, each with a '
     . 'scale built from its mastery ratings. Outcomes stay hidden until the site\'s "Enable outcomes" advanced '
     . 'setting is turned on.';
@@ -182,6 +184,7 @@ $string['qtype_multianswer'] = 'Multiple response';
 $string['qtype_multichoice'] = 'Multiple choice';
 $string['qtype_shortanswer'] = 'Fill in the blank / short answer';
 $string['qtype_truefalse'] = 'True/false';
+$string['quizbankname'] = 'Imported question bank';
 $string['quizfrombank'] = 'Also build a runnable quiz from each standalone question bank';
 $string['quizfrombank_help'] = 'Standalone assessments (not linked anywhere in the Canvas course) import as reusable question banks. Tick this to also create a runnable quiz from each one, placed in the "Additional resources" section. Quizzes linked within the course are always built as quizzes regardless of this setting.';
 $string['quizplaceholderintro'] = '<div class="alert alert-warning">This quiz was imported from Canvas '
