@@ -123,8 +123,13 @@ class link_rewriter {
             $hit = self::locate_filebase($packageroot, $decoded, $ownerdir);
             if ($hit === null) {
                 // Cannot find the file; leave the placeholder untouched and record the
-                // unresolved reference so the build report can surface the count.
-                $unresolved[$decoded] = true;
+                // unresolved reference so the build report can surface it. Qualify the
+                // reference with its owner directory when there is one, so the same bare
+                // name (e.g. "logo.png") referenced from two different resource folders
+                // is reported as two distinct missing assets rather than collapsing into
+                // one ambiguous entry with a wrong count.
+                $label = $ownerdir === '' ? $decoded : $decoded . ' (in ' . $ownerdir . ')';
+                $unresolved[$label] = true;
                 return $matches[0];
             }
             [$absolute, $matched] = $hit;

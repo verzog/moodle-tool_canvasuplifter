@@ -56,4 +56,23 @@ final class media_report_test extends \basic_testcase {
         $this->assertSame(2, $report->count());
         $this->assertSame(['content/handout.pdf', 'web_resources/logo.png'], $report->references());
     }
+
+    /**
+     * A reference carrying invalid UTF-8 bytes (a stale %FF token decodes to one) is
+     * scrubbed to valid UTF-8, so the stored set can always be json_encode()d into the
+     * build report rather than blanking it.
+     *
+     * @return void
+     */
+    public function test_scrubs_invalid_utf8(): void {
+        $report = new media_report();
+        $report->record("bad\xFF.png");
+
+        $this->assertSame(1, $report->count());
+        foreach ($report->references() as $ref) {
+            $this->assertTrue(mb_check_encoding($ref, 'UTF-8'));
+        }
+        // The scrubbed set survives JSON encoding (the persisted-report path).
+        $this->assertNotFalse(json_encode($report->references()));
+    }
 }

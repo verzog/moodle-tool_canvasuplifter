@@ -138,6 +138,23 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * An unresolved owner-relative reference is qualified with the owner directory,
+     * so the same bare name referenced from two folders is not collapsed into one.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_unresolved_keeps_owner_context(): void {
+        $root = make_request_directory();
+        $html = '<img src="$IMS-CC-FILEBASE$logo.png">';
+
+        $unit1 = (new link_rewriter())->rewrite_files($html, $root, 'unit1');
+        $unit2 = (new link_rewriter())->rewrite_files($html, $root, 'unit2');
+
+        $this->assertSame(['logo.png (in unit1)'], $unit1['unresolved']);
+        $this->assertSame(['logo.png (in unit2)'], $unit2['unresolved']);
+    }
+
+    /**
      * A resolvable reference reports no unresolved references.
      *
      * @return void

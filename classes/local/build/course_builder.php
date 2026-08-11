@@ -177,7 +177,7 @@ class course_builder {
             item::KIND_FILE => new file_builder($this->packageroot),
             item::KIND_ASSIGNMENT => new assign_builder($this->packageroot, $this->mediareport),
             item::KIND_QUIZ => new quiz_builder($this->packageroot, $this->mediareport),
-            item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot),
+            item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot, $this->mediareport),
             item::KIND_DISCUSSION => new forum_builder($this->packageroot, $this->mediareport),
             item::KIND_SUBHEADER => new label_builder(),
             item::KIND_LTI => new lti_builder($this->packageroot, $this->mediareport),
@@ -373,6 +373,7 @@ class course_builder {
             'skippedcounts' => $skippedcounts,
             'skipreasons' => array_slice($skipreasons, 0, 50),
             'unresolvedmedia' => array_slice($unresolvedmedia, 0, 50),
+            'unresolvedmediacount' => count($unresolvedmedia),
             'extraquizzes' => $extraquizzes,
             'warnings' => $warnings,
         ];

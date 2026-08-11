@@ -52,6 +52,13 @@ class media_report {
         if ($reference === '') {
             return;
         }
+        // A stale token can decode to invalid UTF-8 (e.g. a %FF byte). This set is
+        // later json_encode()d into the persisted build report, and json_encode()
+        // returns false on malformed UTF-8, which would blank the whole report; drop
+        // the offending bytes so a broken reference can never sink the status page.
+        if (!mb_check_encoding($reference, 'UTF-8')) {
+            $reference = mb_convert_encoding($reference, 'UTF-8', 'UTF-8');
+        }
         $this->unresolved[$reference] = true;
     }
 

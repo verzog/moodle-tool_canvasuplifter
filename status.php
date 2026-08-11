@@ -153,6 +153,16 @@ if ($job->status === job_manager::STATUS_DONE && $job->kind === job_manager::KIN
     if (!empty($report['unresolvedmedia'])) {
         echo $OUTPUT->heading(get_string('unresolvedmediaheading', 'tool_canvasuplifter'), 4);
         echo html_writer::alist(array_map('s', $report['unresolvedmedia']));
+        // The stored list is capped; if the build saw more, say so rather than
+        // letting the shown subset read as the complete set of missing assets.
+        $shown = count($report['unresolvedmedia']);
+        $total = (int) ($report['unresolvedmediacount'] ?? $shown);
+        if ($total > $shown) {
+            echo html_writer::tag(
+                'p',
+                get_string('unresolvedmediatruncated', 'tool_canvasuplifter', $total - $shown)
+            );
+        }
     }
 
     echo $OUTPUT->single_button(

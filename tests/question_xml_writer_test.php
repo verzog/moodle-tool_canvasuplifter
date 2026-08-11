@@ -325,6 +325,27 @@ final class question_xml_writer_test extends \advanced_testcase {
     }
 
     /**
+     * A $IMS-CC-FILEBASE$ reference in a question stem whose target is not in the
+     * package is left untouched and recorded in the shared media report, so broken
+     * question media is counted in the build report the same as broken page media.
+     *
+     * @return void
+     */
+    public function test_missing_question_media_is_recorded(): void {
+        $root = make_request_directory();
+        $q = $this->choice();
+        $q->questiontext = '<p>See <img src="$IMS-CC-FILEBASE$/missing/fig.jpg"></p>';
+
+        $report = new \tool_canvasuplifter\local\build\media_report();
+        $imagedir = make_request_directory();
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $imagedir, $root, $report);
+
+        // The unresolvable token is left untouched and surfaced in the report.
+        $this->assertStringContainsString('IMS-CC-FILEBASE', $xml);
+        $this->assertSame(['missing/fig.jpg'], $report->references());
+    }
+
+    /**
      * Bundled video/audio is inlined like images; external embeds and in-page
      * anchors are left untouched.
      *

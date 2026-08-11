@@ -44,13 +44,18 @@ class questionbank_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var media_report|null Shared collector for unresolved question media references. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param media_report|null $mediareport Shared collector for unresolved media references (null to skip).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -126,7 +131,8 @@ class questionbank_builder {
         $cmid = (int) $created->coursemodule;
 
         $context = \context_module::instance($cmid);
-        $questionids = (new question_importer())->import($course, $context, $supported, $imagedir, $this->packageroot);
+        $questionids = (new question_importer())
+            ->import($course, $context, $supported, $imagedir, $this->packageroot, $this->mediareport);
         if (empty($questionids)) {
             // Nothing imported despite some questions looking convertible; don't
             // leave an empty bank behind.

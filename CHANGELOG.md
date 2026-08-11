@@ -14,9 +14,16 @@ quickly.
   leaves the reference untouched (it never fabricates or drops a reference), but
   the outcome is no longer silent: a shared `media_report` collects every
   unresolved reference across all rich-text builders (page, book, lesson, assign,
-  quiz, forum/discussion, LTI and outcome intros), and the build report gains a
-  "Notes and warnings" line with the count plus a "Missing embedded assets" list
-  of the exact reference paths, so an editor knows what to re-upload.
+  quiz, forum/discussion, LTI and outcome intros) **and the question-import path
+  (quiz and standalone question-bank stems, answers and feedback)**, and the build
+  report gains a "Notes and warnings" line with the count plus a "Missing embedded
+  assets" list of the exact reference paths, so an editor knows what to re-upload.
+- An unresolved reference is qualified with its owner directory (e.g.
+  `logo.png (in unit1)`), so the same bare name referenced from two folders is
+  reported as two distinct missing assets rather than collapsing to one; decoded
+  paths are scrubbed to valid UTF-8 so a stale token with invalid bytes can't blank
+  the persisted report; and when more than 50 distinct assets are missing the status
+  page states how many were not listed rather than silently truncating.
 - No change to the resolvable path (working embeds keep rewriting to
   `pluginfile.php`) and no attempt to fetch remote assets that aren't in the
   package. The unresolved-token branch is unchanged in behaviour — only reported.

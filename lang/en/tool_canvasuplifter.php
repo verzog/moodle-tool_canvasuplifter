@@ -228,6 +228,7 @@ $string['trustedsourcewarning'] = 'Only import Common Cartridge packages from a 
     . 'so a package from an untrusted source could contain active content that runs for anyone viewing the course.';
 $string['unknownheading'] = 'Unclassified resource types (debug)';
 $string['unresolvedmediaheading'] = 'Missing embedded assets';
+$string['unresolvedmediatruncated'] = '... and {$a} more not listed here.';
 $string['untitledsection'] = 'Untitled section';
 $string['uploaded'] = 'File uploaded';
 $string['uploadnotfinished'] = 'Upload did not finish!';
