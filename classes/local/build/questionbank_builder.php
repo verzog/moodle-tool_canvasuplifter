@@ -120,22 +120,21 @@ class questionbank_builder {
         $this->lastbankdraws = $importedbanks;
 
         if (empty($importable)) {
-            // No inline questions of our own to build a standalone bank from. When a
-            // referenced bank resolved the questions are safe in that shared bank, so
-            // report an honest note rather than a data-loss skip; a New Quiz whose banks
-            // don't resolve at all (or a plain unconvertible assessment) is a real skip.
-            $this->skipreason = $importedbanks > 0
+            // Nothing of our own converts to a standalone bank. The item is only truly
+            // "handled via shared banks" when it carried NO inline questions of its own
+            // (a pure <selection_ordering> shell) and its draws resolved: then its
+            // questions are safe in the shared bank and it is not a data-loss skip, so
+            // the caller counts it created. If it had inline questions that were all
+            // unconvertible (unsupported, or rejected below), those would be lost, so keep
+            // an honest unconvertible skip even when banks resolved — never mark it handled.
+            $bankonly = empty($questions) && $importedbanks > 0;
+            $this->lasthandledviabank = $bankonly;
+            $this->skipreason = $bankonly
                 ? sprintf(
                     'questions imported into %d shared item bank(s); no standalone bank built for this New Quiz',
                     $importedbanks
                 )
                 : question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
-            // This item carried no inline questions of its own, so when its draws
-            // resolved into shared banks it is genuinely handled, not a failed build:
-            // the caller counts it created rather than skipped. A failed inline import
-            // below (questions of our own that Moodle rejects) is a real failure and
-            // never sets this, so its skip reason is kept.
-            $this->lasthandledviabank = $importedbanks > 0;
             return null;
         }
 
@@ -229,11 +228,13 @@ class questionbank_builder {
             if (!array_key_exists($bankid, $remaining)) {
                 $remaining[$bankid] = (int) $bank['count'];
             }
-            // A missing selection_number draws the whole bank and can't exceed it; an
-            // explicit count is checked against what's left of the pool, so a draw of 5
-            // from a two-question bank — or repeated draws that together outrun it — is
-            // flagged short even when every source question imported (full === true).
-            $want = ($selection['count'] ?? null) === null ? $remaining[$bankid] : (int) $selection['count'];
+            // A missing selection_number requests the whole bank (its full count, like
+            // quiz_builder::populate_from_banks); an explicit count requests that many.
+            // Either way the request is charged against what's left of the pool, so a draw
+            // of 5 from a two-question bank — or repeated groups that together outrun it,
+            // including two draw-all groups — is flagged short even when every source
+            // question imported (full === true).
+            $want = ($selection['count'] ?? null) === null ? (int) $bank['count'] : (int) $selection['count'];
             if ($want > $remaining[$bankid]) {
                 $incomplete = true;
             }

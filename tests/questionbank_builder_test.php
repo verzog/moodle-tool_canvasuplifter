@@ -251,6 +251,20 @@ XML;
     }
 
     /**
+     * A native Canvas item of an unsupported type (ordering_question), which parses into
+     * the model as a question but never becomes importable.
+     *
+     * @return string
+     */
+    private function unsupporteditem(): string {
+        return '<item ident="uq1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>ordering_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;p&gt;Order these&lt;/p&gt;</mattext></material>'
+            . '</presentation></item>';
+    }
+
+    /**
      * An objectbank item bank holding two multiple-choice questions.
      *
      * @param string $title The bank_title.
@@ -292,54 +306,23 @@ XML;
      * @return string Path to the package root.
      */
     private function write_orphan_bank_package(int $selnumber = 2): string {
-        $dir = make_request_directory();
-        mkdir($dir . '/gnq', 0777, true);
-        mkdir($dir . '/non_cc_assessments', 0777, true);
-        file_put_contents($dir . '/gnq/assessment_qti.xml', $this->bankdrawshell('gnq', 'Final Evaluation', $selnumber));
-        file_put_contents($dir . '/non_cc_assessments/bank1.xml.qti', $this->objectbank('Question Pool'));
-        $manifest = <<<'XML'
-<?xml version="1.0" encoding="UTF-8"?>
-<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
-  <organizations>
-    <organization identifier="org1">
-      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
-    </organization>
-  </organizations>
-  <resources>
-    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
-      <file href="gnq/assessment_qti.xml"/>
-    </resource>
-  </resources>
-</manifest>
-XML;
-        file_put_contents($dir . '/imsmanifest.xml', $manifest);
-        return $dir;
+        return $this->write_orphan_shell_package($this->bankdrawshell('gnq', 'Final Evaluation', $selnumber));
     }
 
     /**
-     * Write a package with an orphan New Quiz whose draws are short: it references
-     * bank1 (a two-question objectbank, present) and missingbank (absent from the
-     * package). Optional extra resources/files let a caller declare a second orphan
-     * after the quiz.
+     * Write a package with a single unlinked (orphan) New Quiz whose assessment is the
+     * given shell, alongside bank1 (a two-question objectbank titled "Question Pool").
+     * Optional extra resources/files let a caller declare a second orphan after the quiz.
      *
+     * @param string $shell The assessment_qti.xml contents for the orphan quiz.
      * @param string $extraresources Extra manifest <resource> XML appended after the quiz.
      * @param array $extrafiles Map of package-relative path to file contents to also write.
      * @return string Path to the package root.
      */
-    private function write_incomplete_orphan_bank_package(string $extraresources = '', array $extrafiles = []): string {
+    private function write_orphan_shell_package(string $shell, string $extraresources = '', array $extrafiles = []): string {
         $dir = make_request_directory();
         mkdir($dir . '/gnq', 0777, true);
         mkdir($dir . '/non_cc_assessments', 0777, true);
-        $shell = '<?xml version="1.0" encoding="utf-8"?>'
-            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
-            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
-            . '<section ident="g1"><selection_ordering><selection>'
-            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>2</selection_number>'
-            . '</selection></selection_ordering></section>'
-            . '<section ident="g2"><selection_ordering><selection>'
-            . '<sourcebank_ref>missingbank</sourcebank_ref><selection_number>2</selection_number>'
-            . '</selection></selection_ordering></section>'
-            . '</section></assessment></questestinterop>';
         file_put_contents($dir . '/gnq/assessment_qti.xml', $shell);
         file_put_contents($dir . '/non_cc_assessments/bank1.xml.qti', $this->objectbank('Question Pool'));
         foreach ($extrafiles as $path => $content) {
@@ -356,6 +339,32 @@ XML;
             . '</resources></manifest>';
         file_put_contents($dir . '/imsmanifest.xml', $manifest);
         return $dir;
+    }
+
+    /**
+     * Write a package with an orphan New Quiz whose draws are short: it references
+     * bank1 (a two-question objectbank, present) and missingbank (absent from the
+     * package). Optional extra resources/files let a caller declare a second orphan
+     * after the quiz.
+     *
+     * @param string $extraresources Extra manifest <resource> XML appended after the quiz.
+     * @param array $extrafiles Map of package-relative path to file contents to also write.
+     * @return string Path to the package root.
+     */
+    private function write_incomplete_orphan_bank_package(string $extraresources = '', array $extrafiles = []): string {
+        // The quiz draws from bank1 (present, written by the shared writer) and
+        // missingbank (never written, so it can't resolve).
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
+            . '<section ident="g1"><selection_ordering><selection>'
+            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '<section ident="g2"><selection_ordering><selection>'
+            . '<sourcebank_ref>missingbank</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        return $this->write_orphan_shell_package($shell, $extraresources, $extrafiles);
     }
 
     /**
@@ -608,5 +617,82 @@ XML;
         $this->assertCount(1, $modinfo->get_instances_of('qbank'));
         // ...but the over-sized draw (5 > 2) is flagged as short.
         $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * Issue #144 review: an orphan New Quiz that draws the whole bank twice (two groups
+     * both omitting selection_number) can't satisfy the second group from a bank the
+     * first already drained, so it must still be reported incomplete even though the bank
+     * imported fully.
+     *
+     * @return void
+     */
+    public function test_orphan_repeated_draw_all_groups_warn(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        // Two <selection> groups reference bank1 and both omit selection_number, so each
+        // asks for the whole (two-question) bank; the second can't be filled.
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
+            . '<section ident="g1"><selection_ordering><selection>'
+            . '<sourcebank_ref>bank1</sourcebank_ref>'
+            . '</selection></selection_ordering></section>'
+            . '<section ident="g2"><selection_ordering><selection>'
+            . '<sourcebank_ref>bank1</sourcebank_ref>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        $dir = $this->write_orphan_shell_package($shell);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $this->assertCount(1, $modinfo->get_instances_of('qbank'));
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * Issue #144 review: an orphan New Quiz that has bank draws plus inline questions of
+     * its own that are all unconvertible (unsupported) must not be marked handled-via-bank
+     * — those inline questions would be lost silently. The item keeps its unconvertible
+     * skip reason and is counted skipped, even though the referenced bank imported.
+     *
+     * @return void
+     */
+    public function test_unconvertible_inline_questions_not_masked_by_bank(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        // The quiz draws two questions from bank1 and also carries one inline question of
+        // an unsupported type (its own content, which cannot convert).
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
+            . '<section ident="g1"><selection_ordering><selection>'
+            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . $this->unsupporteditem()
+            . '</section></assessment></questestinterop>';
+        $dir = $this->write_orphan_shell_package($shell);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        // The referenced bank was still imported as a side effect...
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $this->assertCount(1, $modinfo->get_instances_of('qbank'));
+        // ...but the item is NOT masked as created: its unconvertible inline question
+        // keeps it in the skipped tally with an honest skip reason.
+        $this->assertSame(0, $report['createdcounts']['quiz'] ?? 0);
+        $this->assertSame(1, $report['skippedcounts']['quiz'] ?? 0);
+        $this->assertNotEmpty($report['skipreasons']);
     }
 }
