@@ -1086,6 +1086,47 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * Scientific-notation endpoints are expanded to plain decimals (no float
+     * round-trip), so both an exact exponent value and an exponent-form range keep
+     * full precision instead of collapsing to zero.
+     *
+     * @return void
+     */
+    public function test_native_numerical_scientific_notation_is_expanded(): void {
+        $exact = (new qti_parser())->parse($this->assessment(
+            $this->numerical_item('<or><varequal respident="response1">1.5e-9</varequal></or>')
+        ))['questions'][0];
+        $this->assertSame('0.0000000015', $exact->answers[0]['text']);
+        $this->assertSame('0', $exact->answers[0]['tolerance']);
+
+        $range = (new qti_parser())->parse($this->assessment($this->numerical_item(
+            '<and><vargte respident="response1">1e-9</vargte><varlte respident="response1">3e-9</varlte></and>'
+        )))['questions'][0];
+        $this->assertSame('0.000000002', $range->answers[0]['text']);
+        $this->assertSame('0.000000001', $range->answers[0]['tolerance']);
+    }
+
+    /**
+     * Range endpoints too large for the safe integer mantissa fall back to float
+     * arithmetic rather than overflowing PHP_INT_MAX and throwing, so one oversized
+     * numerical question never aborts the whole import.
+     *
+     * @return void
+     */
+    public function test_native_numerical_oversized_range_does_not_error(): void {
+        $item = $this->numerical_item(
+            '<and><vargte respident="response1">100000000000000000</vargte>'
+            . '<varlte respident="response1">300000000000000000</varlte></and>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertTrue($q->is_importable());
+        $this->assertTrue(is_numeric($q->answers[0]['text']));
+    }
+
+    /**
      * Answer-specific feedback linked from a numerical scoring condition via
      * <displayfeedback> is carried onto the imported answer.
      *

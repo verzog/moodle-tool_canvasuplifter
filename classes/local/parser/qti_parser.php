@@ -483,11 +483,35 @@ class qti_parser {
             if ($node instanceof DOMElement && !$this->within($node, 'not')) {
                 $text = trim($node->textContent);
                 if (is_numeric($text)) {
-                    return $text;
+                    return $this->normalise_decimal($text);
                 }
             }
         }
         return null;
+    }
+
+    /**
+     * Expand a scientific-notation number (e.g. 1.5e-9) to a plain decimal string,
+     * without a float round-trip, so exact values and range arithmetic keep full
+     * precision. A number that is already plain decimal is returned unchanged.
+     *
+     * @param string $number The numeric string.
+     * @return string
+     */
+    protected function normalise_decimal(string $number): string {
+        if (!preg_match('/^([+-]?)(\d*)(?:\.(\d*))?[eE]([+-]?\d+)$/', $number, $m)) {
+            return $number;
+        }
+        $digits = $m[2] . ($m[3] ?? '');
+        $point = strlen($m[2]) + (int) $m[4];
+        if ($point <= 0) {
+            $result = '0.' . str_repeat('0', -$point) . $digits;
+        } else if ($point >= strlen($digits)) {
+            $result = $digits . str_repeat('0', $point - strlen($digits));
+        } else {
+            $result = substr($digits, 0, $point) . '.' . substr($digits, $point);
+        }
+        return ($m[1] === '-' ? '-' : '') . ($result === '' ? '0' : $result);
     }
 
     /**
@@ -549,7 +573,10 @@ class qti_parser {
         if ($digits === '') {
             return 0;
         }
-        if (strlen($digits) > 18) {
+        // Cap at 17 digits so the range midpoint's (mini + maxi) * 5 (up to ~10^18)
+        // stays within PHP_INT_MAX rather than silently becoming a float; wider values
+        // (absurd for a quiz answer) drop to the float fallback.
+        if (strlen($digits) > 17) {
             return null;
         }
         return $negative ? -(int) $digits : (int) $digits;
