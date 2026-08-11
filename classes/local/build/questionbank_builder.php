@@ -121,13 +121,14 @@ class questionbank_builder {
 
         if (empty($importable)) {
             // Nothing of our own converts to a standalone bank. The item is only truly
-            // "handled via shared banks" when it carried NO inline questions of its own
-            // (a pure <selection_ordering> shell) and its draws resolved: then its
-            // questions are safe in the shared bank and it is not a data-loss skip, so
-            // the caller counts it created. If it had inline questions that were all
-            // unconvertible (unsupported, or rejected below), those would be lost, so keep
-            // an honest unconvertible skip even when banks resolved — never mark it handled.
-            $bankonly = empty($questions) && $importedbanks > 0;
+            // "handled via shared banks" when it carried NO inline questions of its own —
+            // no parsed questions AND no bare item references whose bodies Canvas didn't
+            // export (tracked in 'unresolved', not $questions) — and its draws resolved:
+            // then its questions are safe in the shared bank and it is not a data-loss
+            // skip, so the caller counts it created. If it had inline questions that were
+            // unconvertible, unsupported, or unresolved, those would be lost, so keep an
+            // honest skip even when banks resolved — never mark it handled.
+            $bankonly = empty($questions) && (int) ($parsed['unresolved'] ?? 0) === 0 && $importedbanks > 0;
             $this->lasthandledviabank = $bankonly;
             $this->skipreason = $bankonly
                 ? sprintf(

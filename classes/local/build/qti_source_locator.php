@@ -64,32 +64,37 @@ trait qti_source_locator {
         [$parsed, $supported, $importable] = $this->parse_qti($qtipath);
         // Common Cartridge question media resolves relative to the quiz folder.
         $imagedir = dirname($qtipath);
-        if (empty($importable)) {
+        $selections = ($parsed['hasassessment'] ?? false) ? ($parsed['selections'] ?? []) : [];
+
+        // The native non_cc_assessments dump can supply the real inline questions when the
+        // CC file is an empty shell (Canvas exports them only there) and/or the item-bank
+        // draws (Canvas often stores <selection_ordering> only in the dump). Inspect it
+        // whenever the CC parse is missing either — including when the CC questions convert
+        // cleanly but carry no draws of their own, so bank-backed content isn't dropped.
+        if (empty($importable) || empty($selections)) {
             $native = $this->locate_native_qti($modelitem, $qtipath);
             if ($native !== null) {
                 [$nativeparsed, $nativesupported, $nativeimportable] = $this->parse_qti($native);
                 $nativeselections = ($nativeparsed['hasassessment'] ?? false)
                     ? ($nativeparsed['selections'] ?? []) : [];
-                if (!empty($nativeimportable)) {
-                    // The real questions live in the native dump (the CC shell was empty);
-                    // adopt it wholesale. Native questions reference media at the package root.
+                if (empty($importable) && !empty($nativeimportable)) {
+                    // The real questions live in the native dump (the CC shell was empty), so
+                    // adopt it wholesale, including its draws. Native questions reference media
+                    // under the package root. Keep any CC draws when the dump has none.
                     $parsed = $nativeparsed;
                     $supported = $nativesupported;
                     $importable = $nativeimportable;
                     $imagedir = $this->packageroot;
-                } else if (!empty($nativeselections)) {
-                    // The native dump carries only item-bank draws. Take those draws, but
-                    // never discard inline questions the CC parse already found: replacing
-                    // the CC parse with the questionless native one would hide unconvertible
-                    // inline questions, making a genuine partial conversion look like a pure
-                    // bank-backed shell. Keep the CC parse (its questions and their skip) and
-                    // graft the native selections onto it.
-                    $parsed['selections'] = $nativeselections;
-                    $parsed['hasassessment'] = true;
+                    $selections = !empty($nativeselections) ? $nativeselections : $selections;
+                } else if (empty($selections) && !empty($nativeselections)) {
+                    // Take the item-bank draws from the native dump, but keep the CC parse (its
+                    // questions — importable or not — and their media base): swapping in the
+                    // questionless native parse would hide unconvertible inline questions and
+                    // drop bank draws that belong to a quiz whose inline questions convert.
+                    $selections = $nativeselections;
                 }
             }
         }
-        $selections = ($parsed['hasassessment'] ?? false) ? ($parsed['selections'] ?? []) : [];
         return [$parsed, $supported, $importable, $imagedir, $selections];
     }
 

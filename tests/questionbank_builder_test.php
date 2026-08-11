@@ -706,30 +706,9 @@ XML;
      * @return void
      */
     public function test_native_selection_fallback_keeps_cc_inline_failures(): void {
-        global $CFG;
-        require_once($CFG->libdir . '/questionlib.php');
-        $this->resetAfterTest(true);
-        $this->setAdminUser();
-
         // The CC assessment carries one inline unsupported question and no draws of its
         // own; the native dump for the same id carries only a bank draw (no questions).
-        $ccshell = '<?xml version="1.0" encoding="utf-8"?>'
-            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
-            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
-            . $this->unsupporteditem()
-            . '</section></assessment></questestinterop>';
-        $nativeshell = '<?xml version="1.0" encoding="utf-8"?>'
-            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
-            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
-            . '<section ident="grp"><selection_ordering><selection>'
-            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>2</selection_number>'
-            . '</selection></selection_ordering></section>'
-            . '</section></assessment></questestinterop>';
-        $dir = $this->write_orphan_shell_package($ccshell, '', ['non_cc_assessments/gnq.xml.qti' => $nativeshell]);
-
-        $category = $this->getDataGenerator()->create_category();
-        $coursemodel = (new manifest_parser($dir))->parse();
-        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $report = $this->build_cc_plus_native_draw($this->unsupporteditem());
 
         // The native dump's bank draw was still imported as a side effect...
         $modinfo = get_fast_modinfo($report['courseid']);
@@ -739,5 +718,83 @@ XML;
         $this->assertSame(0, $report['createdcounts']['quiz'] ?? 0);
         $this->assertSame(1, $report['skippedcounts']['quiz'] ?? 0);
         $this->assertNotEmpty($report['skipreasons']);
+    }
+
+    /**
+     * Issue #144 review: an orphan New Quiz whose Common Cartridge QTI holds convertible
+     * inline questions but whose item-bank draws live only in the native dump must still
+     * import those draws. The native dump has to be inspected for selections even when the
+     * CC questions convert; otherwise every referenced bank question is silently omitted.
+     *
+     * @return void
+     */
+    public function test_native_selections_imported_when_cc_questions_convert(): void {
+        // The CC assessment carries two convertible inline questions and no draws; the
+        // native dump for the same id carries only a bank1 draw.
+        $report = $this->build_cc_plus_native_draw($this->mcitem() . $this->fibitem());
+
+        // Two banks exist: the item's own inline bank (its convertible CC questions) and
+        // the referenced item bank drawn from the native dump — the draw wasn't dropped.
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $banks = $modinfo->get_instances_of('qbank');
+        $this->assertCount(2, $banks);
+        $names = array_map(fn($b) => $b->get_name(), $banks);
+        $this->assertContains('Final Evaluation', $names);
+        $this->assertContains('Question Pool', $names);
+    }
+
+    /**
+     * Issue #144 review: an orphan New Quiz whose Common Cartridge QTI lists bare item
+     * references (questions Canvas didn't export the bodies of) plus native bank draws
+     * must not be marked handled-via-bank. Bare references are tracked in the parser's
+     * unresolved count rather than the questions array, so the missing content still has
+     * to be reported as skipped rather than silently absorbed by the bank import.
+     *
+     * @return void
+     */
+    public function test_unresolved_references_not_masked_by_bank(): void {
+        // The CC assessment lists one bare item reference (no body) and no draws of its own.
+        $report = $this->build_cc_plus_native_draw('<item ident="missingq"/>');
+
+        // The native dump's bank draw was still imported...
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $this->assertCount(1, $modinfo->get_instances_of('qbank'));
+        // ...but the bare reference isn't masked: the item is counted skipped and its
+        // missing content is reported.
+        $this->assertSame(0, $report['createdcounts']['quiz'] ?? 0);
+        $this->assertSame(1, $report['skippedcounts']['quiz'] ?? 0);
+        $this->assertStringContainsString('not present in the package', implode("\n", $report['skipreasons']));
+    }
+
+    /**
+     * Build an orphan New Quiz whose Common Cartridge assessment holds the given item
+     * body and whose native dump (gnq.xml.qti) carries only a bank1 draw, then run the
+     * course builder. Shared by the native-fallback tests.
+     *
+     * @param string $ccbody The <item>/section markup for the CC assessment's root section.
+     * @return array The build report.
+     */
+    private function build_cc_plus_native_draw(string $ccbody): array {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $wrap = fn($body) => '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
+            . $body . '</section></assessment></questestinterop>';
+        $nativedraw = '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>';
+        $dir = $this->write_orphan_shell_package(
+            $wrap($ccbody),
+            '',
+            ['non_cc_assessments/gnq.xml.qti' => $wrap($nativedraw)]
+        );
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        return (new course_builder($category->id, $dir))->build($coursemodel);
     }
 }
