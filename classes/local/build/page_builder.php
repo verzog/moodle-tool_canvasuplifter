@@ -95,6 +95,11 @@ class page_builder {
         // A no-op for non-ILIAS HTML.
         $content = ilias_cleaner::clean($content);
 
+        // The page's own folder within the package: media it references with a bare
+        // $IMS-CC-FILEBASE$name or a ../ climb into a sibling resource folder resolves
+        // relative to this, not the package root.
+        $basedir = page_payload::basedir($this->packageroot, $modelitem);
+
         // For bundle-promoted pages, rewrite relative <link>/<script>/<img>
         // references to @@PLUGINFILE@@ before the page is stored, so the saved
         // HTML already points at the eventual pluginfile URLs.
@@ -109,7 +114,6 @@ class page_builder {
         // bundle rewriting so a page's own assets (already @@PLUGINFILE@@) are
         // left alone, and only when a path map was supplied.
         if (!empty($this->pathtoid)) {
-            $basedir = page_payload::basedir($this->packageroot, $modelitem);
             $content = (new link_rewriter())->rewrite_relative_links($content, $basedir, $this->pathtoid);
         }
 
@@ -141,7 +145,7 @@ class page_builder {
 
         // Import any files the page embeds and rewrite the references so they
         // resolve through pluginfile.php instead of 404ing.
-        $this->embed_files($cmid, (int) $created->instance, $content);
+        $this->embed_files($cmid, (int) $created->instance, $content, $basedir);
 
         // Import bundle siblings (CSS/JS/images referenced by relative URL).
         if (!empty($bundleassets)) {
@@ -159,13 +163,15 @@ class page_builder {
      * @param int $cmid Course module id of the new page.
      * @param int $instanceid The page instance id.
      * @param string $content The original page HTML.
+     * @param string $ownerdir Package-relative folder of the page's source HTML ('' at root).
      * @return void
      */
-    private function embed_files(int $cmid, int $instanceid, string $content): void {
+    private function embed_files(int $cmid, int $instanceid, string $content, string $ownerdir = ''): void {
         global $DB;
 
         $context = \context_module::instance($cmid);
-        $newcontent = (new file_embedder($this->packageroot))->embed($context->id, 'mod_page', 'content', $content);
+        $newcontent = (new file_embedder($this->packageroot))
+            ->embed($context->id, 'mod_page', 'content', $content, 0, $ownerdir);
         if ($newcontent !== $content) {
             $DB->set_field('page', 'content', $newcontent, ['id' => $instanceid]);
         }

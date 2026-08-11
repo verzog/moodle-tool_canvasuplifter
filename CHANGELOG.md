@@ -5,6 +5,21 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.51.0] - 2026-08-05
+
+- **Extend owner-relative media embedding to the page, book and lesson
+  builders.** 0.50.0 taught the quiz and discussion builders to resolve
+  `$IMS-CC-FILEBASE$` media against the owning resource's own folder; the
+  page/book/lesson builders now pass the same owner directory (each page's
+  source folder) to `file_embedder`, so a page that references an image with a
+  bare name or a `../` climb into a sibling resource folder embeds it into the
+  page/chapter/lesson-page content instead of leaving a broken placeholder.
+- The parser's embedded-page-asset suppression (`collect_embedded_files`) now
+  resolves the same way, so media a page embeds owner-relative is recognised and
+  kept off the "Additional resources" orphan list rather than surfacing as a
+  duplicate standalone download. This lets dependency suppression cover
+  page-referenced media too, closing the follow-up left open in 0.50.0.
+
 ## [0.50.0] - 2026-08-05
 
 - **Embed quiz and discussion dependency media instead of leaking it as
