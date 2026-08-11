@@ -100,18 +100,23 @@ class questionbank_builder {
         // to quiz_builder; it can draw its questions from a separate item bank via
         // <selection_ordering>/<sourcebank_ref>. Import each referenced bank (once,
         // shared) so those questions aren't dropped, even when the assessment carries
-        // no inline questions of its own.
-        $bankcmid = $this->import_bank_draws($course, $selections);
+        // no inline questions of its own. The imported bank is shared infrastructure —
+        // it isn't this item's own module, so it's never returned as the build result
+        // (which would mis-key its link/visibility to the quiz item) nor deleted with a
+        // failed inline import below; it simply survives, holding the drawn questions.
+        $importedbanks = $this->import_bank_draws($course, $selections);
 
         if (empty($importable)) {
-            // No inline questions of our own. When a referenced bank resolved, that
-            // imported bank is the content this item represents, so point at it; only
-            // a New Quiz whose banks don't resolve at all (or a plain unconvertible
-            // assessment) is reported as a skip.
-            if ($bankcmid !== null) {
-                return $bankcmid;
-            }
-            $this->skipreason = question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
+            // No inline questions of our own to build a standalone bank from. When a
+            // referenced bank resolved the questions are safe in that shared bank, so
+            // report an honest note rather than a data-loss skip; a New Quiz whose banks
+            // don't resolve at all (or a plain unconvertible assessment) is a real skip.
+            $this->skipreason = $importedbanks > 0
+                ? sprintf(
+                    'questions imported into %d shared item bank(s); no standalone bank built for this New Quiz',
+                    $importedbanks
+                )
+                : question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
             return null;
         }
 
@@ -166,29 +171,30 @@ class questionbank_builder {
     /**
      * Import the item banks a New Quiz draws from through the shared registry, so an
      * orphan bank-backed quiz's questions aren't lost. Each referenced bank is imported
-     * once (shared across the whole build); an explicit zero-question draw is skipped.
+     * once (shared across the whole build) as its own always-visible mod_qbank; an
+     * explicit zero-question draw imports nothing. This is a side effect — the imported
+     * banks are shared and are not this item's own module.
      *
      * @param stdClass $course Course record.
      * @param array $selections Parsed selections: each ['bank' => id, 'count' => n|null, 'points' => p|null].
-     * @return int|null The course module id of the first bank that resolved, or null when none did.
+     * @return int The number of distinct referenced banks that resolved to an import.
      */
-    private function import_bank_draws(stdClass $course, array $selections): ?int {
-        $firstcmid = null;
+    private function import_bank_draws(stdClass $course, array $selections): int {
+        $imported = [];
         foreach ($selections as $selection) {
             if (($selection['count'] ?? null) !== null && (int) $selection['count'] < 1) {
                 // An authored empty draw imports no bank.
                 continue;
             }
             $bankid = (string) ($selection['bank'] ?? '');
-            if ($bankid === '') {
+            if ($bankid === '' || isset($imported[$bankid])) {
                 continue;
             }
-            $bank = $this->bankregistry->import_bank($course, $bankid);
-            if ($bank !== null && $firstcmid === null) {
-                $firstcmid = $bank['cmid'];
+            if ($this->bankregistry->import_bank($course, $bankid) !== null) {
+                $imported[$bankid] = true;
             }
         }
-        return $firstcmid;
+        return count($imported);
     }
 
     /**

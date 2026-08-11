@@ -382,15 +382,23 @@ XML;
 
         $category = $this->getDataGenerator()->create_category();
         $coursemodel = (new manifest_parser($dir))->parse();
+        // Mark the orphan quiz unpublished: it references the same bank as the
+        // published linked quiz, so the shared bank must not inherit its hidden state.
+        foreach ($coursemodel->orphans as $orphan) {
+            $orphan->isvisible = false;
+        }
         $report = (new course_builder($category->id, $dir))->build($coursemodel);
 
         $modinfo = get_fast_modinfo($report['courseid']);
-        // The linked assessment built a runnable quiz; the orphan built as a bank —
-        // but bank1 was imported once and shared, so there is a single mod_qbank.
+        // The linked assessment built a runnable quiz; the orphan resolved to the same
+        // bank — imported once and shared — so there is a single mod_qbank.
         $this->assertCount(1, $modinfo->get_instances_of('quiz'));
         $qbanks = $modinfo->get_instances_of('qbank');
         $this->assertCount(1, $qbanks);
         $bank = reset($qbanks);
         $this->assertSame('Shared Pool', $bank->get_name());
+        // The shared bank stays visible; the unpublished orphan didn't hide it (the
+        // registry bank is shared infrastructure, never keyed to the orphan quiz item).
+        $this->assertEquals(1, (int) $bank->visible);
     }
 }
