@@ -46,13 +46,18 @@ class forum_builder {
      */
     public ?string $linkurl = null;
 
+    /** @var media_report|null Shared collector for unresolved media references. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param media_report|null $mediareport Shared collector for unresolved media references (null to skip).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -188,7 +193,7 @@ class forum_builder {
 
         // Import prompt media (HTML only) into the first post and rewrite refs.
         if ($format === FORMAT_HTML) {
-            $newmessage = (new file_embedder($this->packageroot))
+            $newmessage = (new file_embedder($this->packageroot, $this->mediareport))
                 ->embed($context->id, 'mod_forum', 'post', $message, $firstpostid, $basedir);
             if ($newmessage !== $message) {
                 $DB->set_field('forum_posts', 'message', $newmessage, ['id' => $firstpostid]);

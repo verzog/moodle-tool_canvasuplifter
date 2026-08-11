@@ -105,14 +105,16 @@ class link_rewriter {
      * @param string $packageroot Absolute path to the extracted package root.
      * @param string $ownerdir Package-relative folder of the resource carrying the HTML ('' to skip),
      *        so media stored beside the owning resource (or reached with a ../ climb) still resolves.
-     * @return array{html: string, files: array<int, array{package: string, filepath: string, filename: string}>}
-     *         The rewritten HTML and the list of package files to import into the page's file area.
+     * @return array{html: string, files: array, unresolved: array}
+     *         The rewritten HTML, the list of package files to import into the page's file area, and
+     *         the decoded reference paths whose target file was absent from the package (left untouched).
      */
     public function rewrite_files(string $html, string $packageroot, string $ownerdir = ''): array {
         $files = [];
         $seen = [];
+        $unresolved = [];
         $pattern = '#' . self::FILEBASE_TOKEN . '([^"\'\s>)]*)#i';
-        $rewritten = preg_replace_callback($pattern, function ($matches) use ($packageroot, $ownerdir, &$files, &$seen) {
+        $callback = function ($matches) use ($packageroot, $ownerdir, &$files, &$seen, &$unresolved) {
             $rawpath = preg_replace('/[?#].*$/', '', $matches[1]);
             $decoded = ltrim(rawurldecode((string) $rawpath), '/');
             if ($decoded === '') {
@@ -120,7 +122,9 @@ class link_rewriter {
             }
             $hit = self::locate_filebase($packageroot, $decoded, $ownerdir);
             if ($hit === null) {
-                // Cannot find the file; leave the placeholder untouched.
+                // Cannot find the file; leave the placeholder untouched and record the
+                // unresolved reference so the build report can surface the count.
+                $unresolved[$decoded] = true;
                 return $matches[0];
             }
             [$absolute, $matched] = $hit;
@@ -139,9 +143,10 @@ class link_rewriter {
                 $files[] = ['package' => $absolute, 'filepath' => $filepath, 'filename' => $filename];
             }
             return $this->pluginfile_url($filepath, $filename);
-        }, $html);
+        };
+        $rewritten = preg_replace_callback($pattern, $callback, $html);
 
-        return ['html' => $rewritten ?? $html, 'files' => $files];
+        return ['html' => $rewritten ?? $html, 'files' => $files, 'unresolved' => array_keys($unresolved)];
     }
 
     /**

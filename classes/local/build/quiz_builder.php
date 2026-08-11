@@ -53,13 +53,18 @@ class quiz_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var media_report|null Shared collector for unresolved media references. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param media_report|null $mediareport Shared collector for unresolved media references (null to skip).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -176,7 +181,7 @@ class quiz_builder {
         // against that file's own folder.
         if ($settings->description !== '') {
             $introownerdir = $metapath !== null ? safe_path::package_dir($this->packageroot, $metapath) : '';
-            $newintro = (new file_embedder($this->packageroot))
+            $newintro = (new file_embedder($this->packageroot, $this->mediareport))
                 ->embed($context->id, 'mod_quiz', 'intro', $intro, 0, $introownerdir);
             if ($newintro !== $intro) {
                 $DB->set_field('quiz', 'intro', $newintro, ['id' => (int) $created->instance]);

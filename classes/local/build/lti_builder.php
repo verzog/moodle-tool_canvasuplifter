@@ -46,13 +46,18 @@ class lti_builder {
      * or null for inline instructions - the intro's owner directory is derived from it. */
     private ?string $instructionssource = null;
 
+    /** @var media_report|null Shared collector for unresolved media references. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param media_report|null $mediareport Shared collector for unresolved media references (null to skip).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -122,7 +127,7 @@ class lti_builder {
         if (($cartridge['descriptionhtml'] ?? '') !== '') {
             $context = \context_module::instance((int) $created->coursemodule);
             $ownerdir = $this->intro_owner_dir($modelitem, $this->instructionssource);
-            $newintro = (new file_embedder($this->packageroot))
+            $newintro = (new file_embedder($this->packageroot, $this->mediareport))
                 ->embed($context->id, 'mod_lti', 'intro', $moduleinfo->intro, 0, $ownerdir);
             if ($newintro !== $moduleinfo->intro) {
                 $DB->set_field('lti', 'intro', $newintro, ['id' => (int) $created->instance]);

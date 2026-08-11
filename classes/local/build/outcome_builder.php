@@ -57,13 +57,18 @@ class outcome_builder {
     /** @var array Next suffix to try per base shortname, so duplicates don't re-probe from 1. */
     private array $nextsuffix = [];
 
+    /** @var media_report|null Shared collector for unresolved media references. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param media_report|null $mediareport Shared collector for unresolved media references (null to skip).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -131,7 +136,7 @@ class outcome_builder {
         // ships outcomes in course_settings/learning_outcomes.xml, so owner-relative
         // media resolves against that folder.
         $systemcontext = \context_system::instance();
-        $rewritten = (new file_embedder($this->packageroot))
+        $rewritten = (new file_embedder($this->packageroot, $this->mediareport))
             ->embed($systemcontext->id, 'grade', 'outcome', $model->description, (int) $id, 'course_settings');
         if ($rewritten !== $model->description) {
             $outcome->description = $rewritten;

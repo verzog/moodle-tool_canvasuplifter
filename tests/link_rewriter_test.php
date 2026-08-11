@@ -116,18 +116,41 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
-     * A reference to a file that isn't in the package is left untouched.
+     * A reference to a file that isn't in the package is left untouched and
+     * reported as unresolved (deduplicated by decoded path) so the build report
+     * can surface it.
      *
      * @return void
      */
     public function test_rewrite_files_leaves_unresolved(): void {
         $root = make_request_directory();
-        $html = '<img src="$IMS-CC-FILEBASE$/missing.png">';
+        // The same missing asset referenced twice (once URL-encoded) plus a second
+        // distinct missing asset: two distinct unresolved references.
+        $html = '<img src="$IMS-CC-FILEBASE$/missing.png">'
+            . '<img src="%24IMS-CC-FILEBASE%24/missing.png">'
+            . '<a href="$IMS-CC-FILEBASE$/docs/handout.pdf">doc</a>';
 
         $result = (new link_rewriter())->rewrite_files($html, $root);
 
         $this->assertSame($html, $result['html']);
         $this->assertSame([], $result['files']);
+        $this->assertEqualsCanonicalizing(['missing.png', 'docs/handout.pdf'], $result['unresolved']);
+    }
+
+    /**
+     * A resolvable reference reports no unresolved references.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_resolvable_has_no_unresolved(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/logo.png', 'PNG');
+        $html = '<img src="$IMS-CC-FILEBASE$/logo.png">';
+
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertSame([], $result['unresolved']);
     }
 
     /**

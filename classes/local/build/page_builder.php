@@ -38,15 +38,20 @@ class page_builder {
     /** @var array<string, string> Package-relative path => resource identifier, for relative-link rewriting. */
     private array $pathtoid;
 
+    /** @var media_report|null Shared collector for unresolved media references. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
      * @param array $pathtoid Map of package-relative path to resource identifier (for cross-resource links).
+     * @param media_report|null $mediareport Shared collector for unresolved media references (null to skip).
      */
-    public function __construct(string $packageroot, array $pathtoid = []) {
+    public function __construct(string $packageroot, array $pathtoid = [], ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
         $this->pathtoid = $pathtoid;
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -170,7 +175,7 @@ class page_builder {
         global $DB;
 
         $context = \context_module::instance($cmid);
-        $newcontent = (new file_embedder($this->packageroot))
+        $newcontent = (new file_embedder($this->packageroot, $this->mediareport))
             ->embed($context->id, 'mod_page', 'content', $content, 0, $ownerdir);
         if ($newcontent !== $content) {
             $DB->set_field('page', 'content', $newcontent, ['id' => $instanceid]);

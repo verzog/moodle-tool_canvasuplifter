@@ -39,13 +39,18 @@ class assign_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var media_report|null Shared collector for unresolved media references. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param media_report|null $mediareport Shared collector for unresolved media references (null to skip).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -112,7 +117,7 @@ class assign_builder {
         // Import description images/files and rewrite the intro to pluginfile refs.
         if ($intro !== '') {
             $context = \context_module::instance($cmid);
-            $newintro = (new file_embedder($this->packageroot))
+            $newintro = (new file_embedder($this->packageroot, $this->mediareport))
                 ->embed($context->id, 'mod_assign', 'intro', $intro, 0, $this->intro_owner_dir($modelitem, $introsource));
             if ($newintro !== $intro) {
                 $DB->set_field('assign', 'intro', $newintro, ['id' => (int) $created->instance]);

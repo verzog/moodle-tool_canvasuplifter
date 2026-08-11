@@ -84,6 +84,9 @@ class course_builder {
     /** @var array<string, string> Package-relative path => identifier, for resolving relative cross-resource links. */
     private array $pathtoid = [];
 
+    /** @var media_report Shared collector for embedded-media references absent from the package (per build). */
+    private media_report $mediareport;
+
     /**
      * Constructor.
      *
@@ -150,9 +153,13 @@ class course_builder {
         $this->gradecategoryids = $this->create_grade_categories($course, $coursemodel);
         // Install the Canvas letter-grade scheme, if the course carries one.
         $gradelettercount = $this->create_grade_letters($course, $coursemodel);
+        // Shared across every builder that embeds rich-text HTML, so references to
+        // package files absent from the export (e.g. a stale cross-course image)
+        // are tallied once and surfaced in the build report rather than left silent.
+        $this->mediareport = new media_report();
         // Import Canvas learning outcomes as course grade outcomes. Non-destructive
         // and hidden until the site's "Enable outcomes" advanced setting is on.
-        $outcomebuilder = new outcome_builder($this->packageroot);
+        $outcomebuilder = new outcome_builder($this->packageroot, $this->mediareport);
         $outcomecount = $outcomebuilder->build($course);
         // Hold the rubric library so attach_rubric() can look up by Canvas id
         // when each assignment is built.
@@ -165,15 +172,15 @@ class course_builder {
         $this->pathtoid = $this->build_pathtoid($coursemodel);
 
         $builders = [
-            item::KIND_PAGE => new page_builder($this->packageroot, $this->pathtoid),
+            item::KIND_PAGE => new page_builder($this->packageroot, $this->pathtoid, $this->mediareport),
             item::KIND_URL => new url_builder($this->packageroot),
             item::KIND_FILE => new file_builder($this->packageroot),
-            item::KIND_ASSIGNMENT => new assign_builder($this->packageroot),
-            item::KIND_QUIZ => new quiz_builder($this->packageroot),
+            item::KIND_ASSIGNMENT => new assign_builder($this->packageroot, $this->mediareport),
+            item::KIND_QUIZ => new quiz_builder($this->packageroot, $this->mediareport),
             item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot),
-            item::KIND_DISCUSSION => new forum_builder($this->packageroot),
+            item::KIND_DISCUSSION => new forum_builder($this->packageroot, $this->mediareport),
             item::KIND_SUBHEADER => new label_builder(),
-            item::KIND_LTI => new lti_builder($this->packageroot),
+            item::KIND_LTI => new lti_builder($this->packageroot, $this->mediareport),
         ];
 
         $createdcounts = [];
@@ -348,6 +355,13 @@ class course_builder {
         if ($unlinkedrubrics > 0) {
             $warnings[] = get_string('noterubricsunlinked', 'tool_canvasuplifter', $unlinkedrubrics);
         }
+        // Embedded media the export referenced but did not ship (e.g. a stale
+        // cross-course image) is left as-is rather than fabricated or dropped;
+        // flag the count so an editor knows some inline assets need re-uploading.
+        $unresolvedmedia = $this->mediareport->references();
+        if (!empty($unresolvedmedia)) {
+            $warnings[] = get_string('warnunresolvedmedia', 'tool_canvasuplifter', count($unresolvedmedia));
+        }
 
         return [
             'courseid' => (int) $course->id,
@@ -358,6 +372,7 @@ class course_builder {
             'skipped' => $skippedtotal,
             'skippedcounts' => $skippedcounts,
             'skipreasons' => array_slice($skipreasons, 0, 50),
+            'unresolvedmedia' => array_slice($unresolvedmedia, 0, 50),
             'extraquizzes' => $extraquizzes,
             'warnings' => $warnings,
         ];
@@ -519,9 +534,9 @@ class course_builder {
         if (!$this->groupbuilderinit) {
             $this->groupbuilderinit = true;
             if ($this->pagegrouping === 'book') {
-                $this->groupbuilder = new book_builder($this->packageroot, $this->pathtoid);
+                $this->groupbuilder = new book_builder($this->packageroot, $this->pathtoid, $this->mediareport);
             } else if ($this->pagegrouping === 'lesson') {
-                $this->groupbuilder = new lesson_builder($this->packageroot, $this->pathtoid);
+                $this->groupbuilder = new lesson_builder($this->packageroot, $this->pathtoid, $this->mediareport);
             }
         }
         return $this->groupbuilder;

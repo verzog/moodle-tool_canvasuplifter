@@ -5,6 +5,22 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.54.0] - 2026-08-11
+
+- **The build report now flags embedded assets the export referenced but did not
+  ship** (issue #111). When page or activity content points at a file via an
+  `$IMS-CC-FILEBASE$` token whose target is absent from the package — typically a
+  stale cross-course image copied from a master course — `link_rewriter` still
+  leaves the reference untouched (it never fabricates or drops a reference), but
+  the outcome is no longer silent: a shared `media_report` collects every
+  unresolved reference across all rich-text builders (page, book, lesson, assign,
+  quiz, forum/discussion, LTI and outcome intros), and the build report gains a
+  "Notes and warnings" line with the count plus a "Missing embedded assets" list
+  of the exact reference paths, so an editor knows what to re-upload.
+- No change to the resolvable path (working embeds keep rewriting to
+  `pluginfile.php`) and no attempt to fetch remote assets that aren't in the
+  package. The unresolved-token branch is unchanged in behaviour — only reported.
+
 ## [0.53.0] - 2026-08-11
 
 - **Owner-relative media embedding now covers the assignment, LTI, quiz and
