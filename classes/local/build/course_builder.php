@@ -267,6 +267,7 @@ class course_builder {
                     continue;
                 }
                 $modelitem = $segment['item'];
+                $skipmark = count($skipreasons);
                 $cmid = $this->build_one(
                     $course,
                     $orphansection,
@@ -277,25 +278,40 @@ class course_builder {
                     $skipreasons,
                     false
                 );
-                $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
-                // A pure bank-backed orphan New Quiz builds no bank of its own (cmid
-                // null) but resolves its <selection_ordering> draws; those counts let the
-                // toggle still build its runnable quiz and let us warn on short draws.
+                // Only an orphan New Quiz is routed through questionbank_builder, so only
+                // it carries fresh <selection_ordering> bank-draw state; reading that
+                // state for any other orphan kind would reuse the previous quiz's stale
+                // flags and over-count short draws. A pure bank-backed orphan builds no
+                // bank of its own (cmid null) but still resolves its draws, which lets the
+                // toggle build its runnable quiz and lets us warn on a short draw.
+                $isquizorphan = $modelitem->kind === item::KIND_QUIZ;
                 $qbb = $builders[item::KIND_QUESTIONBANK] ?? null;
-                $bankdraws = $qbb instanceof questionbank_builder ? $qbb->lastbankdraws : 0;
-                $bankincomplete = $qbb instanceof questionbank_builder ? $qbb->lastbankincomplete : false;
+                $hasbankstate = $isquizorphan && $qbb instanceof questionbank_builder;
+                $bankdraws = $hasbankstate ? $qbb->lastbankdraws : 0;
+                $bankincomplete = $hasbankstate ? $qbb->lastbankincomplete : false;
                 // With the toggle on, a standalone assessment built above as a reusable
                 // question bank — or one that only draws from item banks — also gets a
                 // runnable quiz here.
                 $standalone = false;
-                if (
-                    $this->quizfrombank && $modelitem->kind === item::KIND_QUIZ
-                    && ($cmid !== null || $bankdraws > 0)
-                ) {
+                if ($this->quizfrombank && $isquizorphan && ($cmid !== null || $bankdraws > 0)) {
                     $standalone = $this->build_standalone_quiz($course, $orphansection, $modelitem, $builders, $urlmap);
                     if ($standalone) {
                         $extraquizzes++;
                     }
+                }
+                // A bank-backed orphan that built no module of its own is still handled,
+                // not a failed build: its questions were imported into a shared bank and
+                // the toggle may have added a runnable quiz. Count it as created and drop
+                // the provisional skip note build_one recorded, so the report doesn't list
+                // it among the unconvertible/skipped items.
+                $handledviabank = $cmid === null && $isquizorphan && ($standalone || $bankdraws > 0);
+                if ($handledviabank) {
+                    $skipreasons = array_slice($skipreasons, 0, $skipmark);
+                }
+                if ($cmid !== null || $handledviabank) {
+                    $createdcounts[$modelitem->kind] = ($createdcounts[$modelitem->kind] ?? 0) + 1;
+                } else {
+                    $skippedcounts[$modelitem->kind] = ($skippedcounts[$modelitem->kind] ?? 0) + 1;
                 }
                 // When no runnable quiz was built to carry these draws (quiz_builder
                 // counts its own short draws), an orphan whose bank was missing or only
