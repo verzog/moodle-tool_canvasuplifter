@@ -1107,23 +1107,39 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
-     * Range endpoints too large for the safe integer mantissa fall back to float
-     * arithmetic rather than overflowing PHP_INT_MAX and throwing, so one oversized
-     * numerical question never aborts the whole import.
+     * A range far beyond 64-bit integer range keeps full precision through the
+     * decimal-string arithmetic (no float truncation, no overflow).
      *
      * @return void
      */
-    public function test_native_numerical_oversized_range_does_not_error(): void {
+    public function test_native_numerical_large_range_is_exact(): void {
         $item = $this->numerical_item(
-            '<and><vargte respident="response1">100000000000000000</vargte>'
-            . '<varlte respident="response1">300000000000000000</varlte></and>'
+            '<and><vargte respident="response1">100000000000000001</vargte>'
+            . '<varlte respident="response1">100000000000000003</varlte></and>'
         );
 
         $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
 
         $this->assertCount(1, $q->answers);
-        $this->assertTrue($q->is_importable());
-        $this->assertTrue(is_numeric($q->answers[0]['text']));
+        $this->assertSame('100000000000000002', $q->answers[0]['text']);
+        $this->assertSame('1', $q->answers[0]['tolerance']);
+    }
+
+    /**
+     * A numerical answer with an absurd exponent (which would otherwise pad on a huge
+     * string) is skipped rather than exhausting memory, so one malformed answer never
+     * crashes the import.
+     *
+     * @return void
+     */
+    public function test_native_numerical_extreme_exponent_is_skipped(): void {
+        $item = $this->numerical_item('<or><varequal respident="response1">1e-9999999999</varequal></or>');
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_NUMERICAL, $q->type);
+        $this->assertSame([], $q->answers);
+        $this->assertFalse($q->is_importable());
     }
 
     /**

@@ -483,7 +483,10 @@ class qti_parser {
             if ($node instanceof DOMElement && !$this->within($node, 'not')) {
                 $text = trim($node->textContent);
                 if (is_numeric($text)) {
-                    return $this->normalise_decimal($text);
+                    $value = $this->normalise_decimal($text);
+                    if ($value !== null) {
+                        return $value;
+                    }
                 }
             }
         }
@@ -493,17 +496,25 @@ class qti_parser {
     /**
      * Expand a scientific-notation number (e.g. 1.5e-9) to a plain decimal string,
      * without a float round-trip, so exact values and range arithmetic keep full
-     * precision. A number that is already plain decimal is returned unchanged.
+     * precision. A plain-decimal number is returned unchanged; an exponent so extreme
+     * that expansion would allocate a huge string is rejected (null, so the answer is
+     * skipped) rather than exhausting memory.
      *
      * @param string $number The numeric string.
-     * @return string
+     * @return string|null
      */
-    protected function normalise_decimal(string $number): string {
+    protected function normalise_decimal(string $number): ?string {
         if (!preg_match('/^([+-]?)(\d*)(?:\.(\d*))?[eE]([+-]?\d+)$/', $number, $m)) {
             return $number;
         }
         $digits = $m[2] . ($m[3] ?? '');
         $point = strlen($m[2]) + (int) $m[4];
+        // Reject an exponent that would pad on more zeros than any real quiz answer
+        // needs, before str_repeat allocates them.
+        $zeros = $point <= 0 ? -$point : max(0, $point - strlen($digits));
+        if ($zeros > 64) {
+            return null;
+        }
         if ($point <= 0) {
             $result = '0.' . str_repeat('0', -$point) . $digits;
         } else if ($point >= strlen($digits)) {
@@ -516,30 +527,18 @@ class qti_parser {
 
     /**
      * Convert a Canvas [min, max] accepted range into a Moodle numerical answer: the
-     * midpoint value and the half-width tolerance. Computed with exact integer decimal
-     * arithmetic (no float round-trip, no bcmath) so precise endpoints are preserved;
-     * an endpoint too large or exponent-formatted for integer math falls back to a
-     * float computation at the endpoints' precision.
+     * midpoint value and the half-width tolerance, computed with exact decimal-string
+     * arithmetic (no float, no bcmath, no integer-size limit) so whatever precision the
+     * endpoints carry is preserved.
      *
      * @param string $min The lower bound (vargte), a decimal string.
      * @param string $max The upper bound (varlte), a decimal string.
      * @return array Two-element list [value, tolerance].
      */
     protected function range_answer(string $min, string $max): array {
-        $decimals = max($this->decimal_places($min), $this->decimal_places($max));
-        $mini = $this->to_scaled_int($min, $decimals);
-        $maxi = $this->to_scaled_int($max, $decimals);
-        if ($mini === null || $maxi === null) {
-            $mid = number_format(((float) $min + (float) $max) / 2, $decimals + 1, '.', '');
-            $tol = number_format(abs((float) $max - (float) $min) / 2, $decimals + 1, '.', '');
-            return [$this->trim_decimal($mid), $this->trim_decimal($tol)];
-        }
-        // The value is mantissa / 10^decimals; halving adds at most one decimal place,
-        // so (mantissa * 5) at scale decimals+1 is the exact midpoint/half-width.
-        return [
-            $this->trim_decimal($this->format_scaled(($mini + $maxi) * 5, $decimals + 1)),
-            $this->trim_decimal($this->format_scaled(abs($maxi - $mini) * 5, $decimals + 1)),
-        ];
+        $mid = $this->trim_decimal($this->dec_half($this->dec_add($min, $max)));
+        $tol = $this->trim_decimal(ltrim($this->dec_half($this->dec_add($max, $this->dec_negate($min))), '-'));
+        return [$mid, $tol];
     }
 
     /**
@@ -554,49 +553,160 @@ class qti_parser {
     }
 
     /**
-     * Parse a plain decimal string into an integer mantissa scaled to the given number
-     * of decimal places, or null when it carries an exponent or exceeds 64-bit integer
-     * range (so the caller can fall back to float arithmetic).
+     * Negate a decimal string (a zero value is returned unchanged).
      *
      * @param string $number The decimal string.
-     * @param int $decimals The scale to express the mantissa at.
-     * @return int|null
+     * @return string
      */
-    protected function to_scaled_int(string $number, int $decimals): ?int {
-        if (!preg_match('/^[+-]?\d*(\.\d*)?$/', $number)) {
-            return null;
+    protected function dec_negate(string $number): string {
+        if (ltrim($number, '-+0.') === '') {
+            return $number;
         }
-        $negative = $number[0] === '-';
-        $parts = explode('.', ltrim($number, '+-'), 2);
-        $frac = str_pad(substr($parts[1] ?? '', 0, $decimals), $decimals, '0');
-        $digits = ltrim(($parts[0] === '' ? '0' : $parts[0]) . $frac, '0');
-        if ($digits === '') {
-            return 0;
-        }
-        // Cap at 17 digits so the range midpoint's (mini + maxi) * 5 (up to ~10^18)
-        // stays within PHP_INT_MAX rather than silently becoming a float; wider values
-        // (absurd for a quiz answer) drop to the float fallback.
-        if (strlen($digits) > 17) {
-            return null;
-        }
-        return $negative ? -(int) $digits : (int) $digits;
+        return $number[0] === '-' ? substr($number, 1) : '-' . $number;
     }
 
     /**
-     * Render an integer mantissa at the given decimal scale as a plain decimal string.
+     * Add two signed decimal strings exactly, returning a plain decimal string.
      *
-     * @param int $mantissa The scaled integer value.
-     * @param int $scale The number of decimal places it is expressed at.
+     * @param string $a The first addend.
+     * @param string $b The second addend.
      * @return string
      */
-    protected function format_scaled(int $mantissa, int $scale): string {
-        $sign = $mantissa < 0 ? '-' : '';
-        $digits = (string) abs($mantissa);
+    protected function dec_add(string $a, string $b): string {
+        $nega = $a[0] === '-';
+        $negb = $b[0] === '-';
+        $a = ltrim($a, '+-');
+        $b = ltrim($b, '+-');
+        $scale = max($this->decimal_places($a), $this->decimal_places($b));
+        $ma = str_replace('.', '', $a) . str_repeat('0', $scale - $this->decimal_places($a));
+        $mb = str_replace('.', '', $b) . str_repeat('0', $scale - $this->decimal_places($b));
+        if ($nega === $negb) {
+            $mag = $this->str_add($ma, $mb);
+            $neg = $nega;
+        } else {
+            $cmp = $this->str_cmp($ma, $mb);
+            if ($cmp === 0) {
+                return '0';
+            }
+            $mag = $cmp > 0 ? $this->str_sub($ma, $mb) : $this->str_sub($mb, $ma);
+            $neg = $cmp > 0 ? $nega : $negb;
+        }
+        $out = $this->place_point($mag, $scale);
+        return ($neg && ltrim($out, '0.') !== '' ? '-' : '') . $out;
+    }
+
+    /**
+     * Halve a signed decimal string exactly (the result gains at most one decimal place).
+     *
+     * @param string $number The decimal string.
+     * @return string
+     */
+    protected function dec_half(string $number): string {
+        $neg = $number[0] === '-';
+        $number = ltrim($number, '+-');
+        $scale = $this->decimal_places($number);
+        $digits = str_replace('.', '', $number);
+        $quotient = '';
+        $rem = 0;
+        for ($i = 0, $len = strlen($digits); $i < $len; $i++) {
+            $cur = $rem * 10 + (int) $digits[$i];
+            $quotient .= intdiv($cur, 2);
+            $rem = $cur % 2;
+        }
+        if ($rem === 1) {
+            $quotient .= '5';
+            $scale++;
+        }
+        $out = $this->place_point($quotient, $scale);
+        return ($neg && ltrim($out, '0.') !== '' ? '-' : '') . $out;
+    }
+
+    /**
+     * Place a decimal point $scale digits from the right of an unsigned integer digit
+     * string, normalising leading zeros.
+     *
+     * @param string $digits The unsigned integer digit string.
+     * @param int $scale The number of digits that fall after the point.
+     * @return string
+     */
+    protected function place_point(string $digits, int $scale): string {
+        $digits = ltrim($digits, '0');
+        if ($digits === '') {
+            $digits = '0';
+        }
         if ($scale === 0) {
-            return $sign . $digits;
+            return $digits;
         }
         $digits = str_pad($digits, $scale + 1, '0', STR_PAD_LEFT);
-        return $sign . substr($digits, 0, -$scale) . '.' . substr($digits, -$scale);
+        return substr($digits, 0, -$scale) . '.' . substr($digits, -$scale);
+    }
+
+    /**
+     * Add two unsigned integer digit strings.
+     *
+     * @param string $a The first addend.
+     * @param string $b The second addend.
+     * @return string
+     */
+    protected function str_add(string $a, string $b): string {
+        $a = strrev($a);
+        $b = strrev($b);
+        $la = strlen($a);
+        $lb = strlen($b);
+        $carry = 0;
+        $out = '';
+        for ($i = 0, $len = max($la, $lb); $i < $len; $i++) {
+            $sum = ($i < $la ? (int) $a[$i] : 0) + ($i < $lb ? (int) $b[$i] : 0) + $carry;
+            $out .= $sum % 10;
+            $carry = intdiv($sum, 10);
+        }
+        if ($carry > 0) {
+            $out .= $carry;
+        }
+        return strrev($out);
+    }
+
+    /**
+     * Subtract unsigned integer digit string $b from $a, which must be >= $b.
+     *
+     * @param string $a The minuend (>= $b).
+     * @param string $b The subtrahend.
+     * @return string
+     */
+    protected function str_sub(string $a, string $b): string {
+        $a = strrev($a);
+        $b = strrev($b);
+        $lb = strlen($b);
+        $borrow = 0;
+        $out = '';
+        for ($i = 0, $len = strlen($a); $i < $len; $i++) {
+            $diff = (int) $a[$i] - ($i < $lb ? (int) $b[$i] : 0) - $borrow;
+            if ($diff < 0) {
+                $diff += 10;
+                $borrow = 1;
+            } else {
+                $borrow = 0;
+            }
+            $out .= $diff;
+        }
+        $result = ltrim(strrev($out), '0');
+        return $result === '' ? '0' : $result;
+    }
+
+    /**
+     * Compare two unsigned integer digit strings: -1, 0 or 1.
+     *
+     * @param string $a The first operand.
+     * @param string $b The second operand.
+     * @return int
+     */
+    protected function str_cmp(string $a, string $b): int {
+        $a = ltrim($a, '0');
+        $b = ltrim($b, '0');
+        if (strlen($a) !== strlen($b)) {
+            return strlen($a) <=> strlen($b);
+        }
+        return strcmp($a, $b) <=> 0;
     }
 
     /**
