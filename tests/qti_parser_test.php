@@ -1280,6 +1280,46 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * Canvas writes exponentiation with a caret (a^2); Moodle spells it **, so the
+     * translated formula uses ** and the question stays importable.
+     *
+     * @return void
+     */
+    public function test_native_calculated_translates_caret_exponent(): void {
+        $calc = '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places="0"><formula>a^2+b</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var>'
+            . '<var name="b" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><var name="b">3</var><answer>7</answer></var_set>'
+            . '</var_sets>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame('{a}**2+{b}', $q->formula);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A calculated formula using a function Moodle's calculated grammar does not accept
+     * (here factorial) would be rejected by qformat_xml and roll back the whole bank, so
+     * the question is treated as not importable and dropped instead.
+     *
+     * @return void
+     */
+    public function test_native_calculated_rejects_unsupported_formula(): void {
+        $calc = '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places="0"><formula>factorial(a)</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><answer>2</answer></var_set></var_sets>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CALCULATED, $q->type);
+        $this->assertSame('factorial({a})', $q->formula);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
      * A calculated question that carries no generated value rows cannot build a
      * variant, so it stays a calculated question but is not importable.
      *

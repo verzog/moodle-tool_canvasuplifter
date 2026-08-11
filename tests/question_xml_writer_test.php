@@ -226,7 +226,7 @@ final class question_xml_writer_test extends \advanced_testcase {
         $q->formula = '{a}+{b}';
         $q->answertolerance = '0';
         $q->tolerancekind = 'absolute';
-        $q->answerdecimals = 0;
+        $q->answerdecimals = -1;
         $q->variables = [
             ['name' => 'a', 'min' => '1', 'max' => '3', 'decimals' => 0],
             ['name' => 'b', 'min' => '1', 'max' => '3', 'decimals' => 0],
@@ -262,6 +262,33 @@ final class question_xml_writer_test extends \advanced_testcase {
                 $item->getElementsByTagName('value')->item(0)->textContent;
         }
         $this->assertSame(['1' => '2', '2' => '1'], $values);
+    }
+
+    /**
+     * When Canvas fixed the answer's decimal places, the emitted formula is wrapped in
+     * round(…, N) so Moodle grades against the same rounded value Canvas graded against,
+     * rather than its own full-precision evaluation.
+     *
+     * @return void
+     */
+    public function test_writes_calculated_rounds_result(): void {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_CALCULATED;
+        $q->name = 'Third';
+        $q->questiontext = '<p>What is {a}/3?</p>';
+        $q->formula = '{a}/3';
+        $q->answertolerance = '0';
+        $q->tolerancekind = 'absolute';
+        $q->answerdecimals = 2;
+        $q->variables = [['name' => 'a', 'min' => '1', 'max' => '3', 'decimals' => 0]];
+        $q->datarows = [['a' => '1']];
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+        $answer = $dom->getElementsByTagName('answer')->item(0);
+        $this->assertSame('round({a}/3, 2)', $answer->getElementsByTagName('text')->item(0)->textContent);
     }
 
     /**

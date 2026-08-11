@@ -183,11 +183,55 @@ class qti_question {
         if ($this->type === self::TYPE_CALCULATED) {
             // Moodle calculated needs a formula, at least one variable to define a
             // dataset from, and at least one generated data row to build a variant
-            // with; anything thinner cannot produce a graded question.
-            return trim($this->formula) !== '' && $this->variables !== [] && $this->datarows !== [];
+            // with; anything thinner cannot produce a graded question. The formula
+            // must also use only syntax Moodle's calculated grammar accepts, or
+            // qformat_xml rejects it and rolls back the whole imported bank — so a
+            // formula with an unsupported operator or function is dropped instead.
+            return trim($this->formula) !== '' && $this->variables !== [] && $this->datarows !== []
+                && $this->calculated_formula_is_supported();
         }
         // Multichoice and multianswer import as Moodle multichoice; both need at
         // least two answers.
         return $nonempty >= 2;
+    }
+
+    /**
+     * The functions Moodle's calculated question grammar accepts in a formula
+     * (mirrors qtype_calculated's validator). A formula naming any other function is
+     * rejected on import, so a calculated question that uses one is treated as not
+     * importable.
+     */
+    private const CALCULATED_FUNCTIONS = [
+        'pi', 'abs', 'acos', 'acosh', 'asin', 'asinh', 'atan', 'atanh', 'bindec', 'ceil',
+        'cos', 'cosh', 'decbin', 'decoct', 'deg2rad', 'exp', 'expm1', 'floor', 'is_finite',
+        'is_infinite', 'is_nan', 'log10', 'log1p', 'octdec', 'rad2deg', 'sin', 'sinh', 'sqrt',
+        'tan', 'tanh', 'log', 'round', 'atan2', 'fmod', 'pow', 'min', 'max',
+    ];
+
+    /**
+     * Whether this calculated question's formula uses only operators and functions
+     * Moodle's calculated grammar accepts. Any wildcard is a number for the purposes
+     * of the check; every bare identifier must be a supported function name, and only
+     * safe operator/number characters may remain once identifiers are removed. Kept
+     * conservative so an unsupported formula is dropped (skipped) rather than rolling
+     * back the whole imported bank.
+     *
+     * @return bool
+     */
+    private function calculated_formula_is_supported(): bool {
+        // Treat each {wildcard} as a number so only genuine functions remain as words.
+        $formula = (string) preg_replace('/\{[^}]*\}/', '1', $this->formula);
+        if (preg_match_all('/[A-Za-z_][A-Za-z0-9_]*/', $formula, $matches)) {
+            foreach ($matches[0] as $identifier) {
+                if (!in_array(strtolower($identifier), self::CALCULATED_FUNCTIONS, true)) {
+                    return false;
+                }
+            }
+        }
+        // Once identifiers are stripped, only numbers and safe math operators may be
+        // left (** for exponent is two of the safe '*'). Anything else — a caret, a
+        // bitwise or comparison operator — means Moodle would reject the formula.
+        $operators = (string) preg_replace('/[A-Za-z_][A-Za-z0-9_]*/', '', $formula);
+        return preg_match('~[^0-9.,+\-*/%()eE\s]~', $operators) === 0;
     }
 }

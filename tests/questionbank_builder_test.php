@@ -377,9 +377,11 @@ XML;
         $this->assertCount(1, $calculated);
         $calculatedid = (int) reset($calculated)->id;
 
-        // The formula answer carries the {var} wildcards.
+        // The formula answer carries the {var} wildcards, with Canvas's caret
+        // exponent translated to ** and the result rounded to the fixed decimal
+        // places — and Moodle's qformat_xml accepted it (no rollback).
         $answer = $DB->get_record('question_answers', ['question' => $calculatedid]);
-        $this->assertSame('{a}+{b}', $answer->answer);
+        $this->assertSame('round({a}**2+{b}, 2)', $answer->answer);
         // Two dataset definitions (a, b) were created for this question and wired to it.
         $datasets = $DB->get_records_sql(
             "SELECT qdd.id, qdd.name
@@ -395,7 +397,8 @@ XML;
 
     /**
      * A native Canvas calculated_question over two variables (a, b) with formula
-     * "a+b" and two pre-generated value rows.
+     * "a^2+b" (a caret exponent, to exercise the ** translation), a fixed two-decimal
+     * rounding and two pre-generated value rows.
      *
      * @return string
      */
@@ -411,10 +414,10 @@ XML;
             . '</material></presentation>'
             . '<itemproc_extension><calculated>'
             . '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
-            . '<formulas decimal_places="0"><formula>a+b</formula></formulas>'
+            . '<formulas decimal_places="2"><formula>a^2+b</formula></formulas>'
             . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var>'
             . '<var name="b" scale="0"><min>1</min><max>3</max></var></vars>'
-            . '<var_sets><var_set ident="s1"><var name="a">2</var><var name="b">3</var><answer>5</answer></var_set>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><var name="b">3</var><answer>7</answer></var_set>'
             . '<var_set ident="s2"><var name="a">1</var><var name="b">1</var><answer>2</answer></var_set>'
             . '</var_sets></calculated></itemproc_extension></item>';
     }

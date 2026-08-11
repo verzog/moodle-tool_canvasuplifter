@@ -288,13 +288,21 @@ class question_xml_writer {
     protected function calculated_xml(qti_question $q): string {
         [$tolerance, $tolerancetype] = $this->calculated_tolerance($q);
         $decimals = $q->answerdecimals >= 0 ? $q->answerdecimals : 2;
+        // Canvas rounds the generated answer to its decimal-places setting and grades
+        // against that rounded value, whereas Moodle grades against its own full-precision
+        // evaluation of the formula. With a zero tolerance the two disagree on any
+        // non-terminating result, so when Canvas fixed the decimal places, round the
+        // formula to the same precision — correctanswerlength alone only affects display.
+        $formula = $q->answerdecimals >= 0
+            ? 'round(' . $q->formula . ', ' . $q->answerdecimals . ')'
+            : $q->formula;
         $out = "    <synchronize>0</synchronize>\n    <single>true</single>\n";
         $out .= "    <answernumbering>abc</answernumbering>\n    <shuffleanswers>false</shuffleanswers>\n";
         $out .= "    <correctfeedback format=\"html\"><text></text></correctfeedback>\n";
         $out .= "    <partiallycorrectfeedback format=\"html\"><text></text></partiallycorrectfeedback>\n";
         $out .= "    <incorrectfeedback format=\"html\"><text></text></incorrectfeedback>\n";
         $out .= "    <answer fraction=\"100\">\n";
-        $out .= "      <text>" . $this->cdata($q->formula) . "</text>\n";
+        $out .= "      <text>" . $this->cdata($formula) . "</text>\n";
         $out .= "      <tolerance>" . htmlspecialchars($tolerance, ENT_XML1) . "</tolerance>\n";
         $out .= "      <tolerancetype>$tolerancetype</tolerancetype>\n";
         $out .= "      <correctanswerformat>1</correctanswerformat>\n";

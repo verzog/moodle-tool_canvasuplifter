@@ -489,7 +489,13 @@ class qti_parser {
 
         $formulanode = $this->descendant($calc, 'formula');
         $rawformula = $formulanode !== null ? trim($formulanode->textContent) : '';
-        $question->formula = $this->templatise_formula($rawformula, $names);
+        // Canvas writes exponentiation with a caret (a^2), but Moodle's calculated
+        // grammar treats ^ as a (rejected) bitwise operator and spells exponents **,
+        // so translate it — otherwise qformat_xml rejects the formula and rolls back
+        // the whole imported bank. Both are right-associative with the same precedence,
+        // so the swap is faithful.
+        $formula = str_replace('^', '**', $this->templatise_formula($rawformula, $names));
+        $question->formula = $formula;
         $question->questiontext = $this->templatise_prompt($question->questiontext, $names);
 
         $tolerance = $this->descendant($calc, 'answer_tolerance');
