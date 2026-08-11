@@ -43,6 +43,12 @@ class questionbank_builder {
     /** @var int[] Ids of every question imported across all build() calls, for the link-rewrite pass. */
     public array $importedquestionids = [];
 
+    /** @var int How many referenced item banks the last build() resolved (for the quiz-from-bank toggle). */
+    public int $lastbankdraws = 0;
+
+    /** @var bool Whether the last build()'s bank draws were missing or partially imported. */
+    public bool $lastbankincomplete = false;
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -83,6 +89,8 @@ class questionbank_builder {
         require_once($CFG->dirroot . '/course/modlib.php');
 
         $this->skipreason = null;
+        $this->lastbankdraws = 0;
+        $this->lastbankincomplete = false;
 
         $qtipath = $this->locate_qti($modelitem);
         if ($qtipath === null) {
@@ -105,6 +113,7 @@ class questionbank_builder {
         // (which would mis-key its link/visibility to the quiz item) nor deleted with a
         // failed inline import below; it simply survives, holding the drawn questions.
         $importedbanks = $this->import_bank_draws($course, $selections);
+        $this->lastbankdraws = $importedbanks;
 
         if (empty($importable)) {
             // No inline questions of our own to build a standalone bank from. When a
@@ -173,7 +182,9 @@ class questionbank_builder {
      * orphan bank-backed quiz's questions aren't lost. Each referenced bank is imported
      * once (shared across the whole build) as its own always-visible mod_qbank; an
      * explicit zero-question draw imports nothing. This is a side effect — the imported
-     * banks are shared and are not this item's own module.
+     * banks are shared and are not this item's own module. Sets $lastbankincomplete when
+     * a referenced bank is missing or only partially imported, so a caller that doesn't
+     * hand the quiz to quiz_builder can still warn that a draw is short.
      *
      * @param stdClass $course Course record.
      * @param array $selections Parsed selections: each ['bank' => id, 'count' => n|null, 'points' => p|null].
@@ -181,6 +192,7 @@ class questionbank_builder {
      */
     private function import_bank_draws(stdClass $course, array $selections): int {
         $imported = [];
+        $incomplete = false;
         foreach ($selections as $selection) {
             if (($selection['count'] ?? null) !== null && (int) $selection['count'] < 1) {
                 // An authored empty draw imports no bank.
@@ -190,10 +202,19 @@ class questionbank_builder {
             if ($bankid === '' || isset($imported[$bankid])) {
                 continue;
             }
-            if ($this->bankregistry->import_bank($course, $bankid) !== null) {
-                $imported[$bankid] = true;
+            $bank = $this->bankregistry->import_bank($course, $bankid);
+            if ($bank === null) {
+                // The referenced bank couldn't be read or held nothing importable.
+                $incomplete = true;
+                continue;
             }
+            if (!$bank['full']) {
+                // Unsupported/unresolved candidates shrank the imported pool.
+                $incomplete = true;
+            }
+            $imported[$bankid] = true;
         }
+        $this->lastbankincomplete = $incomplete;
         return count($imported);
     }
 

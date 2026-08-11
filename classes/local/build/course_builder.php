@@ -194,6 +194,7 @@ class course_builder {
         $builtpagecmids = [];   // Course module ids of pages, for the link pass.
         $rewritetargets = [];   // Grouped book/lesson content rows, for the link pass.
         $extraquizzes = 0;      // Runnable quizzes built from standalone banks (toggle).
+        $orphanbankincomplete = 0;  // Orphan bank-backed quizzes short a draw (no runnable quiz built).
         $totalitems = max(1, count($coursemodel->all_items()));
         $processed = 0;
 
@@ -277,12 +278,30 @@ class course_builder {
                     false
                 );
                 $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
-                // With the toggle on, a standalone assessment built above as a
-                // reusable question bank also gets a runnable quiz here.
-                if ($this->quizfrombank && $cmid !== null && $modelitem->kind === item::KIND_QUIZ) {
-                    if ($this->build_standalone_quiz($course, $orphansection, $modelitem, $builders, $urlmap)) {
+                // A pure bank-backed orphan New Quiz builds no bank of its own (cmid
+                // null) but resolves its <selection_ordering> draws; those counts let the
+                // toggle still build its runnable quiz and let us warn on short draws.
+                $qbb = $builders[item::KIND_QUESTIONBANK] ?? null;
+                $bankdraws = $qbb instanceof questionbank_builder ? $qbb->lastbankdraws : 0;
+                $bankincomplete = $qbb instanceof questionbank_builder ? $qbb->lastbankincomplete : false;
+                // With the toggle on, a standalone assessment built above as a reusable
+                // question bank — or one that only draws from item banks — also gets a
+                // runnable quiz here.
+                $standalone = false;
+                if (
+                    $this->quizfrombank && $modelitem->kind === item::KIND_QUIZ
+                    && ($cmid !== null || $bankdraws > 0)
+                ) {
+                    $standalone = $this->build_standalone_quiz($course, $orphansection, $modelitem, $builders, $urlmap);
+                    if ($standalone) {
                         $extraquizzes++;
                     }
+                }
+                // When no runnable quiz was built to carry these draws (quiz_builder
+                // counts its own short draws), an orphan whose bank was missing or only
+                // partially imported still needs the incomplete-bank warning.
+                if (!$standalone && $bankincomplete) {
+                    $orphanbankincomplete++;
                 }
                 $this->report_item_progress(++$processed, $totalitems, $modelitem->kind);
             }
@@ -333,8 +352,13 @@ class course_builder {
         if ($quizbuilder instanceof quiz_builder && $quizbuilder->bankdrawcount > 0) {
             $warnings[] = get_string('notequizbankdraw', 'tool_canvasuplifter', $quizbuilder->bankdrawcount);
         }
-        if ($quizbuilder instanceof quiz_builder && $quizbuilder->bankincompletecount > 0) {
-            $warnings[] = get_string('warnquizbankincomplete', 'tool_canvasuplifter', $quizbuilder->bankincompletecount);
+        // Quizzes short a bank group: those quiz_builder built (linked, or a runnable
+        // quiz from an orphan bank) plus orphan bank-backed quizzes with no runnable
+        // quiz whose draw was missing/partial.
+        $bankincomplete = ($quizbuilder instanceof quiz_builder ? $quizbuilder->bankincompletecount : 0)
+            + $orphanbankincomplete;
+        if ($bankincomplete > 0) {
+            $warnings[] = get_string('warnquizbankincomplete', 'tool_canvasuplifter', $bankincomplete);
         }
         if ($gradelettercount > 0) {
             $warnings[] = get_string('notegradeletters', 'tool_canvasuplifter', $gradelettercount);

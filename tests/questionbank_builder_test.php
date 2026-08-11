@@ -284,24 +284,17 @@ XML;
     }
 
     /**
-     * Issue #144: a bank-backed New Quiz that isn't linked from any module is routed
-     * to questionbank_builder; it now resolves its <selection_ordering> draws and
-     * imports the referenced item bank instead of dropping the questions.
+     * Write a package with a single unlinked (orphan) New Quiz that only draws two
+     * questions from bank1 (a two-question objectbank titled "Question Pool").
      *
-     * @return void
+     * @return string Path to the package root.
      */
-    public function test_orphan_new_quiz_imports_referenced_bank(): void {
-        global $CFG, $DB;
-        require_once($CFG->libdir . '/questionlib.php');
-        $this->resetAfterTest(true);
-        $this->setAdminUser();
-
+    private function write_orphan_bank_package(): string {
         $dir = make_request_directory();
         mkdir($dir . '/gnq', 0777, true);
         mkdir($dir . '/non_cc_assessments', 0777, true);
         file_put_contents($dir . '/gnq/assessment_qti.xml', $this->bankdrawshell('gnq', 'Final Evaluation'));
         file_put_contents($dir . '/non_cc_assessments/bank1.xml.qti', $this->objectbank('Question Pool'));
-        // The assessment resource is declared but not linked in any module (orphan).
         $manifest = <<<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
@@ -318,6 +311,23 @@ XML;
 </manifest>
 XML;
         file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * Issue #144: a bank-backed New Quiz that isn't linked from any module is routed
+     * to questionbank_builder; it now resolves its <selection_ordering> draws and
+     * imports the referenced item bank instead of dropping the questions.
+     *
+     * @return void
+     */
+    public function test_orphan_new_quiz_imports_referenced_bank(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = $this->write_orphan_bank_package();
 
         $category = $this->getDataGenerator()->create_category();
         $coursemodel = (new manifest_parser($dir))->parse();
@@ -400,5 +410,94 @@ XML;
         // The shared bank stays visible; the unpublished orphan didn't hide it (the
         // registry bank is shared infrastructure, never keyed to the orphan quiz item).
         $this->assertEquals(1, (int) $bank->visible);
+    }
+
+    /**
+     * Issue #144: with the quiz-from-bank toggle on, a pure bank-backed orphan New Quiz
+     * (no inline questions, only <selection_ordering> draws) still gets a runnable quiz
+     * drawing from the shared bank — the toggle isn't limited to orphans that built a
+     * bank of their own.
+     *
+     * @return void
+     */
+    public function test_orphan_bank_backed_quiz_gets_runnable_quiz_with_toggle(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = $this->write_orphan_bank_package();
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // Build with the quiz-from-bank toggle enabled (5th constructor argument).
+        $report = (new course_builder($category->id, $dir, null, 0, true))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        // A runnable quiz was built (drawing two random questions from the shared bank),
+        // alongside the imported bank.
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $this->assertCount(1, $modinfo->get_instances_of('qbank'));
+        $quiz = reset($quizzes);
+        $this->assertSame(2, $DB->count_records('quiz_slots', ['quizid' => $quiz->instance]));
+        $this->assertGreaterThanOrEqual(1, $report['extraquizzes'] ?? 0);
+    }
+
+    /**
+     * Issue #144: an orphan New Quiz whose draws are short — a referenced bank absent
+     * from the package while another resolves — is flagged with the incomplete-bank
+     * warning even when no runnable quiz is built for it.
+     *
+     * @return void
+     */
+    public function test_orphan_bank_backed_incomplete_draw_warns(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/gnq', 0777, true);
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        // The quiz draws from bank1 (present) and missingbank (absent from the package).
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
+            . '<section ident="g1"><selection_ordering><selection>'
+            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '<section ident="g2"><selection_ordering><selection>'
+            . '<sourcebank_ref>missingbank</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/gnq/assessment_qti.xml', $shell);
+        file_put_contents($dir . '/non_cc_assessments/bank1.xml.qti', $this->objectbank('Question Pool'));
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="gnq/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        // The present bank's questions were still imported (not lost)...
+        $this->assertCount(1, $modinfo->get_instances_of('qbank'));
+        // ...and the short draw (missingbank) is flagged with the incomplete warning.
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
     }
 }
