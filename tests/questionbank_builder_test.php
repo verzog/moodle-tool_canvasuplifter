@@ -695,4 +695,49 @@ XML;
         $this->assertSame(1, $report['skippedcounts']['quiz'] ?? 0);
         $this->assertNotEmpty($report['skipreasons']);
     }
+
+    /**
+     * Issue #144 review: when the Common Cartridge QTI holds unconvertible inline
+     * questions and the native dump for the same assessment holds only bank draws, the
+     * native fallback must not discard the CC inline questions. Adopting the questionless
+     * native parse wholesale would make the orphan look like a pure bank-backed shell and
+     * silently drop the inline questions; the CC conversion failure has to be preserved.
+     *
+     * @return void
+     */
+    public function test_native_selection_fallback_keeps_cc_inline_failures(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        // The CC assessment carries one inline unsupported question and no draws of its
+        // own; the native dump for the same id carries only a bank draw (no questions).
+        $ccshell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
+            . $this->unsupporteditem()
+            . '</section></assessment></questestinterop>';
+        $nativeshell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
+            . '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        $dir = $this->write_orphan_shell_package($ccshell, '', ['non_cc_assessments/gnq.xml.qti' => $nativeshell]);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        // The native dump's bank draw was still imported as a side effect...
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $this->assertCount(1, $modinfo->get_instances_of('qbank'));
+        // ...but the CC inline question isn't masked away: the item is counted skipped
+        // with an honest skip reason rather than silently marked handled-via-bank.
+        $this->assertSame(0, $report['createdcounts']['quiz'] ?? 0);
+        $this->assertSame(1, $report['skippedcounts']['quiz'] ?? 0);
+        $this->assertNotEmpty($report['skipreasons']);
+    }
 }

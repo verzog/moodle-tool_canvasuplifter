@@ -70,12 +70,22 @@ trait qti_source_locator {
                 [$nativeparsed, $nativesupported, $nativeimportable] = $this->parse_qti($native);
                 $nativeselections = ($nativeparsed['hasassessment'] ?? false)
                     ? ($nativeparsed['selections'] ?? []) : [];
-                if (!empty($nativeimportable) || !empty($nativeselections)) {
+                if (!empty($nativeimportable)) {
+                    // The real questions live in the native dump (the CC shell was empty);
+                    // adopt it wholesale. Native questions reference media at the package root.
                     $parsed = $nativeparsed;
                     $supported = $nativesupported;
                     $importable = $nativeimportable;
-                    // Native questions reference media under the package root.
                     $imagedir = $this->packageroot;
+                } else if (!empty($nativeselections)) {
+                    // The native dump carries only item-bank draws. Take those draws, but
+                    // never discard inline questions the CC parse already found: replacing
+                    // the CC parse with the questionless native one would hide unconvertible
+                    // inline questions, making a genuine partial conversion look like a pure
+                    // bank-backed shell. Keep the CC parse (its questions and their skip) and
+                    // graft the native selections onto it.
+                    $parsed['selections'] = $nativeselections;
+                    $parsed['hasassessment'] = true;
                 }
             }
         }
