@@ -118,12 +118,27 @@ class lti_builder {
         if (($cartridge['descriptionhtml'] ?? '') !== '') {
             $context = \context_module::instance((int) $created->coursemodule);
             $newintro = (new file_embedder($this->packageroot))
-                ->embed($context->id, 'mod_lti', 'intro', $moduleinfo->intro);
+                ->embed($context->id, 'mod_lti', 'intro', $moduleinfo->intro, 0, $this->owner_dir($modelitem));
             if ($newintro !== $moduleinfo->intro) {
                 $DB->set_field('lti', 'intro', $newintro, ['id' => (int) $created->instance]);
             }
         }
         return (int) $created->coursemodule;
+    }
+
+    /**
+     * The package-relative folder the intro's instructions media resolves against
+     * - the tool resource's own folder - so a $IMS-CC-FILEBASE$name reference, or a
+     * ../ climb into a sibling resource folder, embeds instead of being left as a
+     * broken placeholder.
+     *
+     * @param item $modelitem The LTI item.
+     * @return string Package-relative folder ('' at the package root).
+     */
+    private function owner_dir(item $modelitem): string {
+        $source = $modelitem->href !== '' ? $modelitem->href : (string) ($modelitem->files[0] ?? '');
+        $dir = trim(str_replace('\\', '/', dirname($source)), '/');
+        return ($dir === '' || $dir === '.') ? '' : $dir;
     }
 
     /**

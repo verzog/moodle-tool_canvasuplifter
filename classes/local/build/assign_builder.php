@@ -103,13 +103,29 @@ class assign_builder {
         // Import description images/files and rewrite the intro to pluginfile refs.
         if ($intro !== '') {
             $context = \context_module::instance($cmid);
-            $newintro = (new file_embedder($this->packageroot))->embed($context->id, 'mod_assign', 'intro', $intro);
+            $newintro = (new file_embedder($this->packageroot))
+                ->embed($context->id, 'mod_assign', 'intro', $intro, 0, $this->owner_dir($modelitem));
             if ($newintro !== $intro) {
                 $DB->set_field('assign', 'intro', $newintro, ['id' => (int) $created->instance]);
             }
         }
 
         return $cmid;
+    }
+
+    /**
+     * The package-relative folder the assignment's instructions media resolves
+     * against - the assignment resource's own folder - so a $IMS-CC-FILEBASE$name
+     * reference, or a ../ climb into a sibling resource folder, embeds instead of
+     * being left as a broken placeholder.
+     *
+     * @param item $modelitem The assignment item.
+     * @return string Package-relative folder ('' at the package root).
+     */
+    private function owner_dir(item $modelitem): string {
+        $source = $modelitem->href !== '' ? $modelitem->href : (string) ($modelitem->files[0] ?? '');
+        $dir = trim(str_replace('\\', '/', dirname($source)), '/');
+        return ($dir === '' || $dir === '.') ? '' : $dir;
     }
 
     /**

@@ -5,6 +5,21 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.53.0] - 2026-08-11
+
+- **Owner-relative media embedding now covers the assignment and LTI intro
+  builders** — the last two rich-text builders that still resolved
+  `$IMS-CC-FILEBASE$` only against the package root. `assign_builder` and
+  `lti_builder` now pass the resource's own folder to `file_embedder`, so an
+  assignment's instructions (and a re-homed external-tool assignment's LTI intro)
+  embed media referenced by a bare name or a `../` climb into a sibling resource
+  folder instead of leaving a broken placeholder. Every rich-text builder
+  (page/book/lesson/quiz/discussion/assignment/LTI) now resolves owner-relative.
+- Dependency suppression is deliberately **not** extended to assignments/LTI:
+  assignment resources routinely ship downloadable handout attachments as
+  dependencies that are not embedded in the intro, so suppressing them would hide
+  a wanted file; they stay available as "Additional resources" instead.
+
 ## [0.52.0] - 2026-08-11
 
 - Regression coverage for grouped-page owner-relative media embedding. 0.51.0

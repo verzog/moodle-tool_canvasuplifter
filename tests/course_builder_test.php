@@ -919,6 +919,131 @@ XML;
     }
 
     /**
+     * A CC 1.3 assignment whose instructions reference media in a sibling resource
+     * folder with an owner-relative $IMS-CC-FILEBASE$ climb embeds that media into
+     * the assignment's intro file area, resolved relative to the assignment's own
+     * folder rather than the package root.
+     *
+     * @return void
+     */
+    public function test_assignment_intro_embeds_owner_relative_media(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        mkdir($dir . '/media');
+        file_put_contents(
+            $dir . '/media/diagram.png',
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+        );
+        // The assignment XML lives under a1/ and reaches the sibling media/ folder
+        // with a ../ climb - resolvable only relative to the assignment's folder.
+        file_put_contents(
+            $dir . '/a1/assignment.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment identifier="ia1" xmlns="http://www.imsglobal.org/xsd/imscc_extensions/assignment">'
+            . '<title>Lab</title>'
+            . '<text texttype="text/html"><![CDATA[<p>See <img src="$IMS-CC-FILEBASE$../media/diagram.png"></p>]]></text>'
+            . '<gradable points_possible="5">true</gradable>'
+            . '<submission_formats><format type="html"/></submission_formats>'
+            . '</assignment>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"><item identifier="m1"><title>Week 1</title>
+    <item identifier="i_assign" identifierref="r_assign"><title>Lab</title></item>
+  </item></item></organization></organizations>
+  <resources>
+    <resource identifier="r_assign" type="assignment_xmlv1p0" href="a1/assignment.xml">
+      <file href="a1/assignment.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $assigns = get_fast_modinfo($report['courseid'])->get_instances_of('assign');
+        $this->assertCount(1, $assigns);
+        $assigncm = reset($assigns);
+        $assign = $DB->get_record('assign', ['id' => $assigncm->instance], '*', MUST_EXIST);
+        $this->assertStringContainsString('@@PLUGINFILE@@/media/diagram.png', $assign->intro);
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $assign->intro);
+
+        $fs = get_file_storage();
+        $context = \context_module::instance($assigncm->id);
+        $this->assertTrue($fs->file_exists($context->id, 'mod_assign', 'intro', 0, '/media/', 'diagram.png'));
+    }
+
+    /**
+     * An external-tool assignment re-homed to a hidden mod_lti placeholder embeds
+     * its instructions' owner-relative $IMS-CC-FILEBASE$ media into the LTI intro
+     * file area, resolved relative to the tool resource's own folder.
+     *
+     * @return void
+     */
+    public function test_lti_intro_embeds_owner_relative_media(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        mkdir($dir . '/media');
+        file_put_contents(
+            $dir . '/media/diagram.png',
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+        );
+        file_put_contents(
+            $dir . '/a1/assignment.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment xmlns="http://www.imsglobal.org/xsd/imscc_extensions/assignment" identifier="ia1">'
+            . '<title>Tool Task</title>'
+            . '<text texttype="text/html"><![CDATA[<p>Do <img src="$IMS-CC-FILEBASE$../media/diagram.png"></p>]]></text>'
+            . '<submission_formats><format type="external_tool"/></submission_formats>'
+            . '<extensions><assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<external_tool_url>https://tool.example.com/launch</external_tool_url>'
+            . '</assignment></extensions>'
+            . '</assignment>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"><item identifier="m1"><title>Week 1</title>
+    <item identifier="i_lti" identifierref="r_lti"><title>Tool Task</title></item>
+  </item></item></organization></organizations>
+  <resources>
+    <resource identifier="r_lti" type="assignment_xmlv1p0" href="a1/assignment.xml">
+      <file href="a1/assignment.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $report = (new course_builder($category->id, $dir))->build((new manifest_parser($dir))->parse());
+
+        $ltis = get_fast_modinfo($report['courseid'])->get_instances_of('lti');
+        $this->assertCount(1, $ltis);
+        $lticm = reset($ltis);
+        $this->assertSame(0, (int) $lticm->visible, 'external-tool placeholder imports hidden');
+        $lti = $DB->get_record('lti', ['id' => $lticm->instance], '*', MUST_EXIST);
+        $this->assertStringContainsString('@@PLUGINFILE@@/media/diagram.png', $lti->intro);
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $lti->intro);
+
+        $fs = get_file_storage();
+        $context = \context_module::instance($lticm->id);
+        $this->assertTrue($fs->file_exists($context->id, 'mod_lti', 'intro', 0, '/media/', 'diagram.png'));
+    }
+
+    /**
      * A CC 1.3 IMS Assignment profile embedded inline inside <resource>
      * (no <file> child) builds end-to-end: the captured inline descriptor
      * lands on item::inlinexml and assign_builder consumes it directly so
