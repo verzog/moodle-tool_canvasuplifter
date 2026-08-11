@@ -492,11 +492,13 @@ class conversion_report {
         if ($this->packageroot === null) {
             return [];
         }
-        // Collect every (question, source-name) pair the build would import, then
-        // tally by type. The source is the assessment (or item bank) name graders
-        // will see, so a dropped question is attributed where they can find it.
-        $pairs = [];
-        $bankids = [];             // Unique item-bank ids referenced by a built quiz.
+        // Tally counters as each assessment/bank is parsed, so a large package's
+        // parsed question objects are released before the next file is read rather
+        // than all being held until a final pass.
+        $acc = ['supported' => [], 'incomplete' => [], 'unsupported' => [],
+            'incompletesources' => [], 'unsupportedsources' => []];
+        $total = 0;
+        $bankids = [];             // Unique item-bank ids a built quiz draws from.
         // Walk orphans then section items (matching all_items() order) but keep the
         // referenced flag: an orphan quiz builds as a named bank, and only a
         // referenced quiz (quiz_builder) resolves its item-bank draws.
@@ -513,27 +515,30 @@ class conversion_report {
             if (!in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
                 continue;
             }
-            // Both builders fall back to the native non_cc_assessments dump when the
-            // Common Cartridge QTI is an empty shell: a referenced quiz through
-            // quiz_builder, an orphan quiz/bank through questionbank_builder (#127).
-            $parsed = $this->assessment_parse($modelitem, true);
-            // A referenced New Quiz can draw questions from a separate item bank via
-            // <selection_ordering>/<sourcebank_ref>; quiz_builder imports each bank,
-            // so its questions are part of what builds. Orphan assessments build as
-            // banks and don't (yet) resolve selections, so their draws are excluded.
-            if ($referenced) {
+            // Only a referenced quiz takes the quiz_builder path, which alone adopts
+            // the native dump for a pure bank draw and resolves <selection_ordering>.
+            // An orphan quiz or any question bank builds through questionbank_builder,
+            // which does neither, so parse it that way to match what the build evaluates.
+            $quizpath = $referenced && $modelitem->kind === item::KIND_QUIZ;
+            $parsed = $this->assessment_parse($modelitem, true, $quizpath);
+            // quiz_builder imports each item bank a New Quiz draws from — but only from
+            // a genuine assessment (hasassessment), and never an explicit zero-question
+            // group (which it skips without importing). Orphan draws build through
+            // questionbank_builder, which doesn't resolve selections (tracked in #144),
+            // so they're excluded here.
+            if ($quizpath && !empty($parsed['hasassessment'])) {
                 foreach ($parsed['selections'] ?? [] as $selection) {
+                    $count = $selection['count'] ?? null;
+                    if ($count !== null && (int) $count < 1) {
+                        continue;
+                    }
                     if (($selection['bank'] ?? '') !== '') {
                         $bankids[(string) $selection['bank']] = true;
                     }
                 }
             }
-            if (empty($parsed['questions'])) {
-                continue;
-            }
-            $assessment = $this->display_title($modelitem, $referenced);
-            foreach ($parsed['questions'] as $question) {
-                $pairs[] = [$question, $assessment];
+            if (!empty($parsed['questions'])) {
+                $total += $this->tally_batch($acc, $parsed['questions'], $this->display_title($modelitem, $referenced));
             }
         }
         // Each referenced item bank is imported once by the build (shared across the
@@ -541,48 +546,57 @@ class conversion_report {
         // its own name.
         foreach (array_keys($bankids) as $bankid) {
             [$questions, $bankname] = $this->bank_questions($bankid);
-            foreach ($questions as $question) {
-                $pairs[] = [$question, $bankname];
-            }
+            $total += $this->tally_batch($acc, $questions, $bankname);
         }
-        return $this->tally_matrix($pairs);
+        return $this->finalize_matrix($acc, $total);
     }
 
     /**
-     * Tally a list of [qti_question, source-name] pairs into the question-type
-     * matrix: importable types are counted by Moodle question type; the rest are
-     * split into 'incomplete' (a supported type missing data Moodle needs) and
-     * 'unsupported' (by Canvas cc_profile), each carrying the source assessments
-     * their dropped questions came from.
+     * Fold one assessment's (or bank's) parsed questions into the running matrix
+     * counters: importable types by Moodle question type; the rest split into
+     * 'incomplete' (a supported type missing data Moodle needs) and 'unsupported'
+     * (by Canvas cc_profile), each recording the source name for its dropped rows.
      *
-     * @param array $pairs List of [qti_question, string source-name].
-     * @return array Empty, or {total:int, supported:int, rows: array}.
+     * @param array $acc Running counters, modified in place.
+     * @param array $questions Parsed qti_question objects for one source.
+     * @param string $source The assessment/bank name graders will see.
+     * @return int The number of questions tallied.
      */
-    private function tally_matrix(array $pairs): array {
-        $supported = [];           // Importable, keyed by Moodle question type.
-        $incomplete = [];          // Supported type Moodle would reject, keyed by type.
-        $unsupported = [];         // Unrecognised, keyed by Canvas cc_profile.
-        $incompletesources = [];   // Type -> [assessment name -> count] for dropped questions.
-        $unsupportedsources = [];  // Profile -> [assessment name -> count] for dropped questions.
-        $total = 0;
-        foreach ($pairs as [$question, $assessment]) {
-            $total++;
+    private function tally_batch(array &$acc, array $questions, string $source): int {
+        foreach ($questions as $question) {
             if ($question->is_importable()) {
-                $supported[$question->type] = ($supported[$question->type] ?? 0) + 1;
+                $acc['supported'][$question->type] = ($acc['supported'][$question->type] ?? 0) + 1;
             } else if ($question->type === qti_question::TYPE_UNSUPPORTED) {
                 $label = $question->profile !== '' ? $question->profile : '(unknown)';
-                $unsupported[$label] = ($unsupported[$label] ?? 0) + 1;
-                $unsupportedsources[$label][$assessment] = ($unsupportedsources[$label][$assessment] ?? 0) + 1;
+                $acc['unsupported'][$label] = ($acc['unsupported'][$label] ?? 0) + 1;
+                $acc['unsupportedsources'][$label][$source] = ($acc['unsupportedsources'][$label][$source] ?? 0) + 1;
             } else {
                 // A recognised type that Moodle can't actually save (e.g. a
                 // choice question with fewer than two answers).
-                $incomplete[$question->type] = ($incomplete[$question->type] ?? 0) + 1;
-                $incompletesources[$question->type][$assessment] = ($incompletesources[$question->type][$assessment] ?? 0) + 1;
+                $type = $question->type;
+                $acc['incomplete'][$type] = ($acc['incomplete'][$type] ?? 0) + 1;
+                $acc['incompletesources'][$type][$source] = ($acc['incompletesources'][$type][$source] ?? 0) + 1;
             }
         }
+        return count($questions);
+    }
+
+    /**
+     * Turn the accumulated matrix counters into ordered rows: supported types first
+     * (question-type order), then incomplete, then unsupported (most-affected first),
+     * the latter two carrying their source assessments.
+     *
+     * @param array $acc The accumulated counters from tally_batch().
+     * @param int $total Total questions tallied.
+     * @return array Empty, or {total:int, supported:int, rows: array}.
+     */
+    private function finalize_matrix(array $acc, int $total): array {
         if ($total === 0) {
             return [];
         }
+        $supported = $acc['supported'];
+        $incomplete = $acc['incomplete'];
+        $unsupported = $acc['unsupported'];
         ksort($supported);
         ksort($incomplete);
         arsort($unsupported);
@@ -594,11 +608,11 @@ class conversion_report {
         }
         foreach ($incomplete as $type => $count) {
             $rows[] = ['label' => $type, 'count' => $count, 'supported' => false, 'status' => 'incomplete',
-                'sources' => $this->format_sources($incompletesources[$type] ?? [])];
+                'sources' => $this->format_sources($acc['incompletesources'][$type] ?? [])];
         }
         foreach ($unsupported as $profile => $count) {
             $rows[] = ['label' => $profile, 'count' => $count, 'supported' => false, 'status' => 'unsupported',
-                'sources' => $this->format_sources($unsupportedsources[$profile] ?? [])];
+                'sources' => $this->format_sources($acc['unsupportedsources'][$profile] ?? [])];
         }
         return ['total' => $total, 'supported' => $supportedtotal, 'rows' => $rows];
     }
@@ -840,38 +854,42 @@ class conversion_report {
      * @return array The parsed qti_question objects (empty when none resolve).
      */
     protected function assessment_questions(item $modelitem, bool $nativefallback): array {
-        return $this->assessment_parse($modelitem, $nativefallback)['questions'];
+        return $this->assessment_parse($modelitem, $nativefallback, false)['questions'];
     }
 
     /**
      * The parsed assessment the build would evaluate — the Common Cartridge QTI, or
      * its native non_cc_assessments dump when the CC file is a shell — returning the
      * full parse (questions, selections, hasassessment) so callers can read the
-     * item-bank draws as well as the questions. Mirrors quiz_builder's adoption
-     * rule so the analyse view matches what the build imports.
+     * item-bank draws as well as the questions. Mirrors the adoption rule of the
+     * builder that would run, so the analyse view matches what the build imports.
      *
      * @param item $modelitem The quiz/question-bank item.
      * @param bool $nativefallback Whether to fall back to the native dump.
+     * @param bool $quizpath Whether the build takes the quiz_builder path (a referenced
+     *                       quiz), which alone adopts the native dump for a pure bank
+     *                       draw; false for the questionbank_builder (orphan/bank) path.
      * @return array The chosen parse (empty questions/selections when none resolve).
      */
-    protected function assessment_parse(item $modelitem, bool $nativefallback): array {
+    protected function assessment_parse(item $modelitem, bool $nativefallback, bool $quizpath = false): array {
         $empty = ['title' => '', 'questions' => [], 'unresolved' => 0, 'hasassessment' => false, 'selections' => []];
         $path = $this->resolve_qti($modelitem);
         if ($path === null) {
             return $empty;
         }
         $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
-        // Mirror quiz_builder: fall back to the native dump when the CC file has
+        // Mirror the builders: fall back to the native dump when the CC file has
         // no *importable* questions (not merely no questions) — a shell may carry
         // unconvertible items while the real, importable ones live in the dump.
         if ($nativefallback && !$this->any_importable($parsed['questions'])) {
             $native = $this->resolve_native_qti($modelitem, $path);
             if ($native !== null) {
                 $nativeparsed = (new qti_parser())->parse((string) @file_get_contents($native));
-                // Adopt the native dump when it carries importable questions or its
-                // own item-bank selections (matching quiz_builder), so a New Quiz
-                // whose real content — inline or bank draws — lives in the dump shows.
-                $nativeselections = !empty($nativeparsed['hasassessment'])
+                // Both builders adopt the native dump when it has importable questions.
+                // Only quiz_builder also adopts it for a pure item-bank draw, so limit
+                // selection-only adoption to the quiz path; questionbank_builder keeps
+                // the CC parse (and its own unsupported rows) when the dump has neither.
+                $nativeselections = ($quizpath && !empty($nativeparsed['hasassessment']))
                     ? ($nativeparsed['selections'] ?? []) : [];
                 if ($this->any_importable($nativeparsed['questions']) || !empty($nativeselections)) {
                     return $nativeparsed;
