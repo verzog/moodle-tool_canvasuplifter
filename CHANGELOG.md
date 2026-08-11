@@ -5,6 +5,19 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.56.0] - 2026-08-12
+
+- **Orphan (unlinked) New Quizzes backed by an item bank no longer lose their questions**
+  (issue #144). A New Quiz not linked from any Canvas module is built as a question bank
+  by `questionbank_builder`, which previously ignored the quiz's
+  `<selection_ordering>`/`<sourcebank_ref>` draws and dropped the referenced bank's
+  questions. Item-bank imports now go through a shared **`item_bank_registry`** used by
+  both the quiz and question-bank builders, so a bank is imported once (as a section-0
+  `mod_qbank`) whether it's reached from a linked quiz or an orphan one, and a bank shared
+  by several quizzes — or by a linked quiz and an orphan quiz — is **de-duplicated** into a
+  single import rather than copied. The shared native-dump/selection resolution used by
+  both builders moved into the `qti_source_locator` trait.
+
 ## [0.55.1] - 2026-08-12
 
 - **The analyse question-type matrix now follows New-Quiz item-bank draws** (issue #143).

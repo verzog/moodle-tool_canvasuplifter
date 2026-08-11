@@ -171,13 +171,17 @@ class course_builder {
         // path) into object-reference tokens.
         $this->pathtoid = $this->build_pathtoid($coursemodel);
 
+        // One item-bank importer shared by the quiz and question-bank builders, so an
+        // item bank a New Quiz draws from is imported once whether it's reached from a
+        // linked quiz (quiz_builder) or an orphan quiz/bank (questionbank_builder).
+        $bankregistry = new item_bank_registry($this->packageroot, $this->mediareport);
         $builders = [
             item::KIND_PAGE => new page_builder($this->packageroot, $this->pathtoid, $this->mediareport),
             item::KIND_URL => new url_builder($this->packageroot),
             item::KIND_FILE => new file_builder($this->packageroot),
             item::KIND_ASSIGNMENT => new assign_builder($this->packageroot, $this->mediareport),
-            item::KIND_QUIZ => new quiz_builder($this->packageroot, $this->mediareport),
-            item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot, $this->mediareport),
+            item::KIND_QUIZ => new quiz_builder($this->packageroot, $this->mediareport, $bankregistry),
+            item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot, $this->mediareport, $bankregistry),
             item::KIND_DISCUSSION => new forum_builder($this->packageroot, $this->mediareport),
             item::KIND_SUBHEADER => new label_builder(),
             item::KIND_LTI => new lti_builder($this->packageroot, $this->mediareport),
@@ -190,6 +194,7 @@ class course_builder {
         $builtpagecmids = [];   // Course module ids of pages, for the link pass.
         $rewritetargets = [];   // Grouped book/lesson content rows, for the link pass.
         $extraquizzes = 0;      // Runnable quizzes built from standalone banks (toggle).
+        $orphanbankincomplete = 0;  // Orphan bank-backed quizzes short a draw (no runnable quiz built).
         $totalitems = max(1, count($coursemodel->all_items()));
         $processed = 0;
 
@@ -262,6 +267,7 @@ class course_builder {
                     continue;
                 }
                 $modelitem = $segment['item'];
+                $skipmark = count($skipreasons);
                 $cmid = $this->build_one(
                     $course,
                     $orphansection,
@@ -272,13 +278,52 @@ class course_builder {
                     $skipreasons,
                     false
                 );
-                $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
-                // With the toggle on, a standalone assessment built above as a
-                // reusable question bank also gets a runnable quiz here.
-                if ($this->quizfrombank && $cmid !== null && $modelitem->kind === item::KIND_QUIZ) {
-                    if ($this->build_standalone_quiz($course, $orphansection, $modelitem, $builders, $urlmap)) {
+                // Only an orphan New Quiz is routed through questionbank_builder, so only
+                // it carries fresh <selection_ordering> bank-draw state; reading that
+                // state for any other orphan kind would reuse the previous quiz's stale
+                // flags and over-count short draws. A pure bank-backed orphan builds no
+                // bank of its own (cmid null) but still resolves its draws, which lets the
+                // toggle build its runnable quiz and lets us warn on a short draw.
+                $isquizorphan = $modelitem->kind === item::KIND_QUIZ;
+                $qbb = $builders[item::KIND_QUESTIONBANK] ?? null;
+                $hasbankstate = $isquizorphan && $qbb instanceof questionbank_builder;
+                $bankincomplete = $hasbankstate ? $qbb->lastbankincomplete : false;
+                $bankselections = $hasbankstate ? $qbb->lastbankselections : 0;
+                // With the toggle on, a standalone assessment built above as a reusable
+                // question bank — or one that only draws from item banks — also gets a
+                // runnable quiz here. Run the quiz builder whenever the assessment authored
+                // any bank draws, even if none resolved: quiz_builder preserves a
+                // bank-backed quiz whose banks are all missing as a hidden placeholder
+                // (title/settings kept), matching how a linked such quiz is handled.
+                $standalone = false;
+                if ($this->quizfrombank && $isquizorphan && ($cmid !== null || $bankselections > 0)) {
+                    $standalone = $this->build_standalone_quiz($course, $orphansection, $modelitem, $builders, $urlmap);
+                    if ($standalone) {
                         $extraquizzes++;
                     }
+                }
+                // A bank-backed orphan that built no module of its own is still handled,
+                // not a failed build, only when it had no inline questions of its own and
+                // its questions were imported into shared banks (questionbank_builder flags
+                // this via lasthandledviabank). Count that as created and drop the
+                // provisional skip note, so the report doesn't list it among the
+                // unconvertible/skipped items. A null from a failed inline import (its own
+                // questions rejected) is NOT flagged, so its skip reason is preserved even
+                // when the item also drew from a bank.
+                $handledviabank = $cmid === null && $hasbankstate && $qbb->lasthandledviabank;
+                if ($handledviabank) {
+                    $skipreasons = array_slice($skipreasons, 0, $skipmark);
+                }
+                if ($cmid !== null || $handledviabank) {
+                    $createdcounts[$modelitem->kind] = ($createdcounts[$modelitem->kind] ?? 0) + 1;
+                } else {
+                    $skippedcounts[$modelitem->kind] = ($skippedcounts[$modelitem->kind] ?? 0) + 1;
+                }
+                // When no runnable quiz was built to carry these draws (quiz_builder
+                // counts its own short draws), an orphan whose bank was missing or only
+                // partially imported still needs the incomplete-bank warning.
+                if (!$standalone && $bankincomplete) {
+                    $orphanbankincomplete++;
                 }
                 $this->report_item_progress(++$processed, $totalitems, $modelitem->kind);
             }
@@ -291,7 +336,7 @@ class course_builder {
         $this->rewrite_assign_links((int) $course->id, $urlmap);
         $this->rewrite_quiz_links((int) $course->id, $urlmap);
         $this->rewrite_lti_links((int) $course->id, $urlmap);
-        $this->rewrite_question_links($this->imported_question_ids($builders), $urlmap);
+        $this->rewrite_question_links($this->imported_question_ids($builders, $bankregistry), $urlmap);
         $this->rewrite_outcome_links($outcomebuilder->createdids, $urlmap);
 
         $itemcount = count($coursemodel->all_items());
@@ -329,8 +374,13 @@ class course_builder {
         if ($quizbuilder instanceof quiz_builder && $quizbuilder->bankdrawcount > 0) {
             $warnings[] = get_string('notequizbankdraw', 'tool_canvasuplifter', $quizbuilder->bankdrawcount);
         }
-        if ($quizbuilder instanceof quiz_builder && $quizbuilder->bankincompletecount > 0) {
-            $warnings[] = get_string('warnquizbankincomplete', 'tool_canvasuplifter', $quizbuilder->bankincompletecount);
+        // Quizzes short a bank group: those quiz_builder built (linked, or a runnable
+        // quiz from an orphan bank) plus orphan bank-backed quizzes with no runnable
+        // quiz whose draw was missing/partial.
+        $bankincomplete = ($quizbuilder instanceof quiz_builder ? $quizbuilder->bankincompletecount : 0)
+            + $orphanbankincomplete;
+        if ($bankincomplete > 0) {
+            $warnings[] = get_string('warnquizbankincomplete', 'tool_canvasuplifter', $bankincomplete);
         }
         if ($gradelettercount > 0) {
             $warnings[] = get_string('notegradeletters', 'tool_canvasuplifter', $gradelettercount);
@@ -1150,17 +1200,20 @@ class course_builder {
      * builders during this build.
      *
      * @param array $builders The per-kind builder instances.
+     * @param item_bank_registry $bankregistry The shared item-bank importer.
      * @return array Imported question ids.
      */
-    private function imported_question_ids(array $builders): array {
-        $ids = [];
+    private function imported_question_ids(array $builders, item_bank_registry $bankregistry): array {
+        // Inline quiz/bank questions live on their builders; item-bank draws (shared
+        // across builders) live on the registry. Merge all three and de-duplicate.
+        $ids = $bankregistry->importedquestionids;
         foreach ([item::KIND_QUIZ, item::KIND_QUESTIONBANK] as $kind) {
             $builder = $builders[$kind] ?? null;
             if ($builder instanceof quiz_builder || $builder instanceof questionbank_builder) {
                 $ids = array_merge($ids, $builder->importedquestionids);
             }
         }
-        return $ids;
+        return array_values(array_unique($ids));
     }
 
     /**

@@ -43,21 +43,42 @@ class questionbank_builder {
     /** @var int[] Ids of every question imported across all build() calls, for the link-rewrite pass. */
     public array $importedquestionids = [];
 
+    /** @var int How many referenced item banks the last build() resolved (for the quiz-from-bank toggle). */
+    public int $lastbankdraws = 0;
+
+    /** @var bool Whether the last build()'s bank draws were missing or partially imported. */
+    public bool $lastbankincomplete = false;
+
+    /** @var bool Whether the last build() returned null purely because its questions live in shared banks. */
+    public bool $lasthandledviabank = false;
+
+    /** @var int How many item-bank draws the last build()'s assessment authored (resolved or not). */
+    public int $lastbankselections = 0;
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
     /** @var media_report|null Shared collector for unresolved question media references. */
     private ?media_report $mediareport;
 
+    /** @var item_bank_registry Shared importer for the item banks an orphan New Quiz draws from. */
+    private item_bank_registry $bankregistry;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
      * @param media_report|null $mediareport Shared collector for unresolved media references (null to skip).
+     * @param item_bank_registry|null $bankregistry Shared item-bank importer; one is created when null.
      */
-    public function __construct(string $packageroot, ?media_report $mediareport = null) {
+    public function __construct(
+        string $packageroot,
+        ?media_report $mediareport = null,
+        ?item_bank_registry $bankregistry = null
+    ) {
         $this->packageroot = rtrim($packageroot, '/');
         $this->mediareport = $mediareport;
+        $this->bankregistry = $bankregistry ?? new item_bank_registry($this->packageroot, $this->mediareport);
     }
 
     /**
@@ -74,39 +95,51 @@ class questionbank_builder {
         require_once($CFG->dirroot . '/course/modlib.php');
 
         $this->skipreason = null;
+        $this->lastbankdraws = 0;
+        $this->lastbankincomplete = false;
+        $this->lasthandledviabank = false;
+        $this->lastbankselections = 0;
 
         $qtipath = $this->locate_qti($modelitem);
         if ($qtipath === null) {
             $this->skipreason = 'no QTI assessment file found';
             return null;
         }
-        [$parsed, $supported, $importable] = $this->parse_qti($qtipath);
-        // Question media in a Common Cartridge assessment resolves relative to the
-        // quiz folder that holds the QTI.
-        $imagedir = dirname($qtipath);
-
-        // When the Common Cartridge assessment_qti.xml is an empty shell (Canvas
-        // routinely exports the questions only to its native dump), fall back to
-        // non_cc_assessments/<id>.xml.qti, exactly as quiz_builder does, so an
-        // orphan New-Quiz bank recovers its questions instead of being skipped.
-        // Only when the CC file yields nothing importable, so a bank that already
-        // converts is left untouched.
-        if (empty($importable)) {
-            $native = $this->locate_native_qti($modelitem, $qtipath);
-            if ($native !== null) {
-                [$nativeparsed, $nativesupported, $nativeimportable] = $this->parse_qti($native);
-                if (!empty($nativeimportable)) {
-                    $parsed = $nativeparsed;
-                    $supported = $nativesupported;
-                    $importable = $nativeimportable;
-                    // Native questions reference media under the package root.
-                    $imagedir = $this->packageroot;
-                }
-            }
-        }
+        // Parse the assessment, falling back to the native non_cc_assessments dump
+        // when the Common Cartridge file is an empty shell (exactly as quiz_builder
+        // does), and read any item-bank draws.
+        [$parsed, $supported, $importable, $imagedir, $selections] =
+            $this->resolve_assessment_source($modelitem, $qtipath);
         $questions = $parsed['questions'];
+
+        // A Canvas New Quiz that isn't linked from a module is routed here rather than
+        // to quiz_builder; it can draw its questions from a separate item bank via
+        // <selection_ordering>/<sourcebank_ref>. Import each referenced bank (once,
+        // shared) so those questions aren't dropped, even when the assessment carries
+        // no inline questions of its own. The imported bank is shared infrastructure —
+        // it isn't this item's own module, so it's never returned as the build result
+        // (which would mis-key its link/visibility to the quiz item) nor deleted with a
+        // failed inline import below; it simply survives, holding the drawn questions.
+        $importedbanks = $this->import_bank_draws($course, $selections);
+        $this->lastbankdraws = $importedbanks;
+
         if (empty($importable)) {
-            $this->skipreason = question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
+            // Nothing of our own converts to a standalone bank. The item is only truly
+            // "handled via shared banks" when it carried NO inline questions of its own —
+            // no parsed questions AND no bare item references whose bodies Canvas didn't
+            // export (tracked in 'unresolved', not $questions) — and its draws resolved:
+            // then its questions are safe in the shared bank and it is not a data-loss
+            // skip, so the caller counts it created. If it had inline questions that were
+            // unconvertible, unsupported, or unresolved, those would be lost, so keep an
+            // honest skip even when banks resolved — never mark it handled.
+            $bankonly = empty($questions) && (int) ($parsed['unresolved'] ?? 0) === 0 && $importedbanks > 0;
+            $this->lasthandledviabank = $bankonly;
+            $this->skipreason = $bankonly
+                ? sprintf(
+                    'questions imported into %d shared item bank(s); no standalone bank built for this New Quiz',
+                    $importedbanks
+                )
+                : question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
             return null;
         }
 
@@ -156,6 +189,68 @@ class questionbank_builder {
         // internal Canvas links in their text once every activity exists.
         $this->importedquestionids = array_merge($this->importedquestionids, array_map('intval', $questionids));
         return $cmid;
+    }
+
+    /**
+     * Import the item banks a New Quiz draws from through the shared registry, so an
+     * orphan bank-backed quiz's questions aren't lost. Each referenced bank is imported
+     * once (shared across the whole build) as its own always-visible mod_qbank; an
+     * explicit zero-question draw imports nothing. This is a side effect — the imported
+     * banks are shared and are not this item's own module. Sets $lastbankincomplete when
+     * a referenced bank is missing, only partially imported, or asked for more questions
+     * than it holds (a single over-sized draw, or repeated draws that together outrun the
+     * pool), so a caller that doesn't hand the quiz to quiz_builder can still warn that a
+     * draw is short — mirroring quiz_builder::populate_from_banks().
+     *
+     * @param stdClass $course Course record.
+     * @param array $selections Parsed selections: each ['bank' => id, 'count' => n|null, 'points' => p|null].
+     * @return int The number of distinct referenced banks that resolved to an import.
+     */
+    private function import_bank_draws(stdClass $course, array $selections): int {
+        // Record how many draws the assessment authored (each has a sourcebank_ref),
+        // resolved or not, so a caller can still build quiz_builder's hidden placeholder
+        // for a bank-backed quiz whose banks are all missing.
+        $this->lastbankselections = count($selections);
+        $imported = [];
+        $remaining = [];
+        $incomplete = false;
+        foreach ($selections as $selection) {
+            if (($selection['count'] ?? null) !== null && (int) $selection['count'] < 1) {
+                // An authored empty draw imports no bank.
+                continue;
+            }
+            $bankid = (string) ($selection['bank'] ?? '');
+            if ($bankid === '') {
+                continue;
+            }
+            $bank = $this->bankregistry->import_bank($course, $bankid);
+            if ($bank === null) {
+                // The referenced bank couldn't be read or held nothing importable.
+                $incomplete = true;
+                continue;
+            }
+            if (!$bank['full']) {
+                // Unsupported/unresolved candidates shrank the imported pool.
+                $incomplete = true;
+            }
+            $imported[$bankid] = true;
+            if (!array_key_exists($bankid, $remaining)) {
+                $remaining[$bankid] = (int) $bank['count'];
+            }
+            // A missing selection_number requests the whole bank (its full count, like
+            // quiz_builder::populate_from_banks); an explicit count requests that many.
+            // Either way the request is charged against what's left of the pool, so a draw
+            // of 5 from a two-question bank — or repeated groups that together outrun it,
+            // including two draw-all groups — is flagged short even when every source
+            // question imported (full === true).
+            $want = ($selection['count'] ?? null) === null ? (int) $bank['count'] : (int) $selection['count'];
+            if ($want > $remaining[$bankid]) {
+                $incomplete = true;
+            }
+            $remaining[$bankid] = max(0, $remaining[$bankid] - $want);
+        }
+        $this->lastbankincomplete = $incomplete;
+        return count($imported);
     }
 
     /**
