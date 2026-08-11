@@ -116,19 +116,27 @@ class link_rewriter {
         $pattern = '#' . self::FILEBASE_TOKEN . '([^"\'\s>)]*)#i';
         $callback = function ($matches) use ($packageroot, $ownerdir, &$files, &$seen, &$unresolved) {
             $rawpath = preg_replace('/[?#].*$/', '', $matches[1]);
-            $decoded = ltrim(rawurldecode((string) $rawpath), '/');
+            $decodedraw = rawurldecode((string) $rawpath);
+            // A leading slash marks a package-root reference ($IMS-CC-FILEBASE$/path),
+            // which addresses the same file regardless of who references it; a token with
+            // no leading slash (a bare "name" or a "../" climb) resolves relative to the
+            // owning resource's folder.
+            $rooted = str_starts_with($decodedraw, '/');
+            $decoded = ltrim($decodedraw, '/');
             if ($decoded === '') {
                 return $matches[0];
             }
             $hit = self::locate_filebase($packageroot, $decoded, $ownerdir);
             if ($hit === null) {
                 // Cannot find the file; leave the placeholder untouched and record the
-                // unresolved reference so the build report can surface it. Qualify the
-                // reference with its owner directory when there is one, so the same bare
-                // name (e.g. "logo.png") referenced from two different resource folders
-                // is reported as two distinct missing assets rather than collapsing into
-                // one ambiguous entry with a wrong count.
-                $label = $ownerdir === '' ? $decoded : $decoded . ' (in ' . $ownerdir . ')';
+                // unresolved reference so the build report can surface it. Qualify an
+                // owner-relative reference with its owner directory, so the same bare name
+                // (e.g. "logo.png") referenced from two different resource folders is
+                // reported as two distinct missing assets; a root-relative reference is
+                // one asset no matter who points at it, so it is left unqualified to keep
+                // the count and the capped list accurate.
+                $ownerrelative = $ownerdir !== '' && !$rooted;
+                $label = $ownerrelative ? $decoded . ' (in ' . $ownerdir . ')' : $decoded;
                 $unresolved[$label] = true;
                 return $matches[0];
             }

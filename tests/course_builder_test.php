@@ -297,9 +297,9 @@ XML;
         $coursemodel = (new manifest_parser($dir))->parse();
         $report = (new course_builder($category->id, $dir))->build($coursemodel);
 
-        // Only the missing asset is listed (owner-qualified with the page's folder);
-        // the present one resolved.
-        $this->assertSame(['content/enforced1/CC BY logo.png (in wiki_content)'], $report['unresolvedmedia']);
+        // Only the missing asset is listed; a package-root reference ($IMS-CC-FILEBASE$/…)
+        // is owner-independent, so it is recorded unqualified. The present one resolved.
+        $this->assertSame(['content/enforced1/CC BY logo.png'], $report['unresolvedmedia']);
         $this->assertSame(1, $report['unresolvedmediacount']);
         $expectedwarning = get_string('warnunresolvedmedia', 'tool_canvasuplifter', 1);
         $this->assertContains($expectedwarning, $report['warnings']);

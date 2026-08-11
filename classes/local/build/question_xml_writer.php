@@ -451,8 +451,10 @@ class question_xml_writer {
             }
             // A question stem/answer/feedback referenced a package file that isn't in
             // the export; record it (owner-qualified, matching the page path) so the
-            // build report counts broken question media, not just broken page media.
-            $this->record_unresolved($decoded, $ownerdir);
+            // build report counts broken question media, not just broken page media. A
+            // leading slash marks a package-root reference, owner-independent like the
+            // page path.
+            $this->record_unresolved($decoded, $ownerdir, str_starts_with($decoded, '/'));
             return null;
         }
         // No package root known: resolve directly under the question's image folder.
@@ -471,16 +473,20 @@ class question_xml_writer {
      *
      * @param string $decoded The decoded reference path that could not be resolved.
      * @param string $ownerdir The question's package-relative resource folder ('' if unknown).
+     * @param bool $rooted Whether the reference was package-root-relative (owner-independent).
      * @return void
      */
-    protected function record_unresolved(string $decoded, string $ownerdir): void {
+    protected function record_unresolved(string $decoded, string $ownerdir, bool $rooted): void {
         if ($this->mediareport === null) {
             return;
         }
         // Drop any leading slash so the path reads the same way link_rewriter records
         // page misses ("content/x.png", not "/content/x.png").
         $decoded = ltrim($decoded, '/');
-        $label = $ownerdir === '' ? $decoded : $decoded . ' (in ' . $ownerdir . ')';
+        // Owner-qualify only a genuinely owner-relative reference; a root-relative one is
+        // the same asset no matter which bank points at it (see link_rewriter).
+        $ownerrelative = $ownerdir !== '' && !$rooted;
+        $label = $ownerrelative ? $decoded . ' (in ' . $ownerdir . ')' : $decoded;
         $this->mediareport->record($label);
     }
 

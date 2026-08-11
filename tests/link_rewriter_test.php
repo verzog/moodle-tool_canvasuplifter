@@ -155,6 +155,24 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * A package-root reference ($IMS-CC-FILEBASE$/path) is the same asset wherever it
+     * is referenced from, so it is recorded unqualified even with an owner directory -
+     * two owners referencing it must not inflate the missing-asset count.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_unresolved_root_reference_is_owner_independent(): void {
+        $root = make_request_directory();
+        $html = '<img src="$IMS-CC-FILEBASE$/shared/logo.png">';
+
+        $unit1 = (new link_rewriter())->rewrite_files($html, $root, 'unit1');
+        $unit2 = (new link_rewriter())->rewrite_files($html, $root, 'unit2');
+
+        $this->assertSame(['shared/logo.png'], $unit1['unresolved']);
+        $this->assertSame(['shared/logo.png'], $unit2['unresolved']);
+    }
+
+    /**
      * A resolvable reference reports no unresolved references.
      *
      * @return void

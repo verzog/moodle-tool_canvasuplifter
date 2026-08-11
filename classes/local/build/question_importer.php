@@ -115,7 +115,13 @@ class question_importer {
         $category = question_get_default_category($context->id, true);
         $contexts = new \core_question\local\bank\question_edit_contexts($context);
 
-        $xml = (new question_xml_writer())->to_moodle_xml($questions, $category->name, $imagedir, $filebase, $mediareport);
+        // Collect any missing question media into a provisional report and fold it into
+        // the shared build report only if the import actually stores questions below. If
+        // qformat_xml rejects the batch, quiz_builder/questionbank_builder delete the
+        // empty module and count it skipped — reporting broken assets for content that
+        // never landed in the course would be misleading.
+        $localreport = $mediareport !== null ? new media_report() : null;
+        $xml = (new question_xml_writer())->to_moodle_xml($questions, $category->name, $imagedir, $filebase, $localreport);
         $dir = make_request_directory();
         $file = $dir . '/questions.xml';
         file_put_contents($file, $xml);
@@ -147,6 +153,13 @@ class question_importer {
         foreach ($qformat->questionids as $id) {
             if ($DB->record_exists('question', ['id' => $id])) {
                 $ids[] = (int) $id;
+            }
+        }
+        // Only now that questions are confirmed stored, promote their missing-media
+        // references into the shared build report; a rejected batch leaves nothing behind.
+        if ($mediareport !== null && $localreport !== null && !empty($ids)) {
+            foreach ($localreport->references() as $reference) {
+                $mediareport->record($reference);
             }
         }
         return $ids;
