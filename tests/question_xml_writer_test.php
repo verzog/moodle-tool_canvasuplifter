@@ -176,6 +176,42 @@ final class question_xml_writer_test extends \advanced_testcase {
     }
 
     /**
+     * A numerical question is emitted as type "numerical" with each answer's
+     * value, fraction and tolerance, and none of the choice/short-answer
+     * scaffolding.
+     *
+     * @return void
+     */
+    public function test_writes_numerical(): void {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_NUMERICAL;
+        $q->name = 'Num';
+        $q->questiontext = '<p>The answer?</p>';
+        $q->answers = [
+            ['text' => '42', 'fraction' => 100.0, 'tolerance' => '0.5', 'feedback' => 'Close enough'],
+        ];
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], '$course$/Imported/Bank');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml), 'output should be well-formed XML');
+
+        $types = [];
+        foreach ($dom->getElementsByTagName('question') as $node) {
+            $types[] = $node->getAttribute('type');
+        }
+        $this->assertSame(['category', 'numerical'], $types);
+
+        $answer = $dom->getElementsByTagName('answer')->item(0);
+        $this->assertSame('100', $answer->getAttribute('fraction'));
+        $this->assertSame('42', $answer->getElementsByTagName('text')->item(0)->textContent);
+        $this->assertSame('0.5', $answer->getElementsByTagName('tolerance')->item(0)->textContent);
+
+        $this->assertStringNotContainsString('<single>', $xml);
+        $this->assertStringNotContainsString('<usecase>', $xml);
+    }
+
+    /**
      * When the source options carry no 'true'/'false' labels, the writer falls
      * back to position (first option is the true side) and still scores the
      * correct one.

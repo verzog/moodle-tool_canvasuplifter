@@ -963,25 +963,294 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
-     * A recognised-but-unconvertible Canvas type (e.g. numerical_question) is
+     * A recognised-but-unconvertible Canvas type (e.g. file_upload_question) is
      * left UNSUPPORTED and reported by its Canvas type name, rather than being
      * coerced into a wrong Moodle type by the cardinality fallback.
      *
      * @return void
      */
-    public function test_native_numerical_stays_unsupported_but_named(): void {
-        $item = '<item ident="n1" title="How many"><itemmetadata><qtimetadata>'
-            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>numerical_question</fieldentry>'
+    public function test_native_unconvertible_type_stays_unsupported_but_named(): void {
+        $item = '<item ident="f1" title="Upload"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>file_upload_question</fieldentry>'
             . '</qtimetadatafield></qtimetadata></itemmetadata>'
-            . '<presentation><material><mattext>How many bones?</mattext></material>'
-            . '<response_str ident="r1"><render_fib/></response_str></presentation>'
+            . '<presentation><material><mattext>Upload your work</mattext></material></presentation>'
             . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes></resprocessing></item>';
 
         $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
 
         $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
-        $this->assertSame('numerical_question', $q->profile);
+        $this->assertSame('file_upload_question', $q->profile);
         $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * A Canvas numerical_question with an exact <varequal> answer becomes a Moodle
+     * numerical question with a zero-tolerance answer.
+     *
+     * @return void
+     */
+    public function test_native_numerical_exact_answer_converts(): void {
+        $item = $this->numerical_item(
+            '<or><varequal respident="response1">42</varequal></or>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_NUMERICAL, $q->type);
+        $this->assertSame('numerical_question', $q->profile);
+        $this->assertTrue($q->is_importable());
+        $this->assertCount(1, $q->answers);
+        $this->assertSame('42', $q->answers[0]['text']);
+        $this->assertSame('0', $q->answers[0]['tolerance']);
+        $this->assertSame(100.0, $q->answers[0]['fraction']);
+    }
+
+    /**
+     * A Canvas numerical_question whose accepted answer is a <vargte>/<varlte>
+     * range becomes a numerical answer of the midpoint with a half-width tolerance,
+     * and the equivalent <varequal> in the same <or> does not double the answer.
+     *
+     * @return void
+     */
+    public function test_native_numerical_range_answer_converts(): void {
+        $item = $this->numerical_item(
+            '<or><varequal respident="response1">42</varequal>'
+            . '<and><vargte respident="response1">41.5</vargte>'
+            . '<varlte respident="response1">42.5</varlte></and></or>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_NUMERICAL, $q->type);
+        $this->assertCount(1, $q->answers);
+        $this->assertSame('42', $q->answers[0]['text']);
+        $this->assertSame('0.5', $q->answers[0]['tolerance']);
+    }
+
+    /**
+     * A numerical_question with no scoring condition (Canvas exported no answer)
+     * stays a numerical question but is not importable, so it is dropped rather
+     * than saved as an unanswerable question.
+     *
+     * @return void
+     */
+    public function test_native_numerical_without_answer_is_unimportable(): void {
+        $item = '<item ident="n0" title="How many"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>numerical_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>How many bones?</mattext></material>'
+            . '<response_str ident="response1"><render_fib fibtype="Decimal"/></response_str></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes></resprocessing></item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_NUMERICAL, $q->type);
+        $this->assertSame([], $q->answers);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * A numerical question whose exact answer has more than eight decimal places is
+     * preserved verbatim, not truncated by a float round-trip (which would change the
+     * accepted value and grade the question wrongly).
+     *
+     * @return void
+     */
+    public function test_native_numerical_preserves_exact_precision(): void {
+        $item = $this->numerical_item('<or><varequal respident="response1">0.000000001</varequal></or>');
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertSame('0.000000001', $q->answers[0]['text']);
+        $this->assertSame('0', $q->answers[0]['tolerance']);
+    }
+
+    /**
+     * A high-precision <vargte>/<varlte> range keeps its exact midpoint and half-width
+     * (computed without float truncation).
+     *
+     * @return void
+     */
+    public function test_native_numerical_range_precision_is_exact(): void {
+        $item = $this->numerical_item(
+            '<and><vargte respident="response1">0.12345</vargte>'
+            . '<varlte respident="response1">0.12347</varlte></and>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertSame('0.12346', $q->answers[0]['text']);
+        $this->assertSame('0.00001', $q->answers[0]['tolerance']);
+    }
+
+    /**
+     * Scientific-notation endpoints are expanded to plain decimals (no float
+     * round-trip), so both an exact exponent value and an exponent-form range keep
+     * full precision instead of collapsing to zero.
+     *
+     * @return void
+     */
+    public function test_native_numerical_scientific_notation_is_expanded(): void {
+        $exact = (new qti_parser())->parse($this->assessment(
+            $this->numerical_item('<or><varequal respident="response1">1.5e-9</varequal></or>')
+        ))['questions'][0];
+        $this->assertSame('0.0000000015', $exact->answers[0]['text']);
+        $this->assertSame('0', $exact->answers[0]['tolerance']);
+
+        $range = (new qti_parser())->parse($this->assessment($this->numerical_item(
+            '<and><vargte respident="response1">1e-9</vargte><varlte respident="response1">3e-9</varlte></and>'
+        )))['questions'][0];
+        $this->assertSame('0.000000002', $range->answers[0]['text']);
+        $this->assertSame('0.000000001', $range->answers[0]['tolerance']);
+
+        // A small exponent well beyond a few dozen places is still cheap to expand and
+        // must be kept, not rejected as if it were an abusive value.
+        $tiny = (new qti_parser())->parse($this->assessment(
+            $this->numerical_item('<or><varequal respident="response1">1e-66</varequal></or>')
+        ))['questions'][0];
+        $this->assertSame('0.' . str_repeat('0', 65) . '1', $tiny->answers[0]['text']);
+        $this->assertTrue($tiny->is_importable());
+    }
+
+    /**
+     * A range far beyond 64-bit integer range keeps full precision through the
+     * decimal-string arithmetic (no float truncation, no overflow).
+     *
+     * @return void
+     */
+    public function test_native_numerical_large_range_is_exact(): void {
+        $item = $this->numerical_item(
+            '<and><vargte respident="response1">100000000000000001</vargte>'
+            . '<varlte respident="response1">100000000000000003</varlte></and>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertSame('100000000000000002', $q->answers[0]['text']);
+        $this->assertSame('1', $q->answers[0]['tolerance']);
+    }
+
+    /**
+     * A numerical answer with an absurd exponent (which would otherwise pad on a huge
+     * string) is skipped rather than exhausting memory, so one malformed answer never
+     * crashes the import.
+     *
+     * @return void
+     */
+    public function test_native_numerical_extreme_exponent_is_skipped(): void {
+        $item = $this->numerical_item('<or><varequal respident="response1">1e-9999999999</varequal></or>');
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_NUMERICAL, $q->type);
+        $this->assertSame([], $q->answers);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * Answer-specific feedback linked from a numerical scoring condition via
+     * <displayfeedback> is carried onto the imported answer.
+     *
+     * @return void
+     */
+    public function test_native_numerical_answer_feedback_preserved(): void {
+        $item = $this->numerical_item(
+            '<or><varequal respident="response1">42</varequal></or>',
+            '<displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>',
+            '<itemfeedback ident="correct_fb"><flow_mat><material>'
+            . '<mattext texttype="text/html">Spot on</mattext></material></flow_mat></itemfeedback>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertStringContainsString('Spot on', $q->answers[0]['feedback']);
+    }
+
+    /**
+     * A numerical item scored against a non-100 SCORE maximum still awards full credit:
+     * the condition's score is scaled onto Moodle's 0–100 fraction by the declared max.
+     *
+     * @return void
+     */
+    public function test_native_numerical_scales_score_by_outcome_max(): void {
+        $item = '<item ident="n1" title="Answer"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>numerical_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>The answer?</mattext></material></presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="1" minvalue="0" varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar>'
+            . '<or><varequal respident="response1">42</varequal></or>'
+            . '</conditionvar><setvar action="Set" varname="SCORE">1</setvar></respcondition></resprocessing></item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertSame(100.0, $q->answers[0]['fraction']);
+    }
+
+    /**
+     * An <or> that offers a distinct exact value alongside a range keeps both accepted
+     * answers, rather than dropping the exact alternative in favour of the range.
+     *
+     * @return void
+     */
+    public function test_native_numerical_keeps_distinct_or_alternatives(): void {
+        $item = $this->numerical_item(
+            '<or><varequal respident="response1">10</varequal>'
+            . '<and><vargte respident="response1">20</vargte>'
+            . '<varlte respident="response1">30</varlte></and></or>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $answers = array_map(fn($a) => $a['text'] . '±' . $a['tolerance'], $q->answers);
+        $this->assertContains('25±5', $answers);
+        $this->assertContains('10±0', $answers);
+        $this->assertCount(2, $q->answers);
+    }
+
+    /**
+     * An inverted range (lower bound above upper) can never match, so it is skipped
+     * rather than turned into a valid accepted interval.
+     *
+     * @return void
+     */
+    public function test_native_numerical_inverted_range_is_skipped(): void {
+        $item = $this->numerical_item(
+            '<and><vargte respident="response1">10</vargte><varlte respident="response1">4</varlte></and>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame([], $q->answers);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * Build a native Canvas numerical_question item whose scoring respcondition
+     * carries the given conditionvar markup, and optionally a feedback link plus the
+     * matching itemfeedback block.
+     *
+     * @param string $conditionvar The <or>/<varequal>/<vargte>… markup.
+     * @param string $displayfeedback Optional <displayfeedback> element for the condition.
+     * @param string $itemfeedback Optional <itemfeedback> block for the item.
+     * @return string
+     */
+    private function numerical_item(string $conditionvar, string $displayfeedback = '', string $itemfeedback = ''): string {
+        return '<item ident="n1" title="Answer"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>numerical_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>The answer?</mattext></material>'
+            . '<response_str ident="response1" rcardinality="Single"><render_fib fibtype="Decimal">'
+            . '<response_label ident="answer1"/></render_fib></response_str></presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar>' . $conditionvar . '</conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar>' . $displayfeedback . '</respcondition>'
+            . '</resprocessing>' . $itemfeedback . '</item>';
     }
 
     /**

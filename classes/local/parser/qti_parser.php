@@ -199,6 +199,9 @@ class qti_parser {
             case qti_question::TYPE_MATCHING:
                 $this->fill_matching($item, $presentation, $question);
                 break;
+            case qti_question::TYPE_NUMERICAL:
+                $this->fill_numerical_answers($item, $question);
+                break;
             case qti_question::TYPE_ESSAY:
             default:
                 break;
@@ -248,6 +251,8 @@ class qti_parser {
                 return qti_question::TYPE_TRUEFALSE;
             case 'short_answer_question':
                 return qti_question::TYPE_SHORTANSWER;
+            case 'numerical_question':
+                return qti_question::TYPE_NUMERICAL;
             case 'essay_question':
                 return qti_question::TYPE_ESSAY;
             case 'text_only_question':
@@ -366,6 +371,415 @@ class qti_parser {
                 'feedback' => $labelfeedback,
             ];
         }
+    }
+
+    /**
+     * Populate the answer(s) for a Canvas numerical question.
+     *
+     * Canvas exports each accepted value as a scoring <respcondition>: an exact
+     * <varequal>V</varequal>, or a range as <and><vargte>MIN</vargte>
+     * <varlte>MAX</varlte></and> (routinely both forms inside one <or>, describing
+     * the same value). A range maps to a Moodle numerical answer of its midpoint
+     * with a tolerance of half its width; an exact value carries a zero tolerance.
+     * Each condition's positive SCORE becomes the answer fraction, and the <or>'s
+     * two equivalent forms collapse to a single answer.
+     *
+     * @param DOMElement $item The item element.
+     * @param qti_question $question The question being built (modified in place).
+     * @return void
+     */
+    protected function fill_numerical_answers(DOMElement $item, qti_question $question): void {
+        $resprocessing = $this->first_child_element($item, 'resprocessing');
+        if ($resprocessing === null) {
+            return;
+        }
+        $scoremax = $this->score_max($resprocessing);
+        $seen = [];
+        foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
+            if (!($cond instanceof DOMElement)) {
+                continue;
+            }
+            $score = $this->condition_score($cond);
+            if ($score <= 0) {
+                continue;
+            }
+            // Scale the raw SCORE onto Moodle's 0–100 fraction using the outcome's
+            // declared maximum, so an item scored out of, say, 1 still awards full credit.
+            $fraction = min(100.0, max(0.0, $score / $scoremax * 100.0));
+            $feedback = $this->condition_feedback($item, $cond);
+            foreach ($this->numerical_answers($cond) as [$value, $tolerance]) {
+                $key = $value . '/' . $tolerance;
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $question->answers[] = [
+                    'text' => $value,
+                    'fraction' => $fraction,
+                    'tolerance' => $tolerance,
+                    'feedback' => $feedback,
+                ];
+            }
+        }
+    }
+
+    /**
+     * The declared maximum of the SCORE outcome variable in a resprocessing block,
+     * used to scale a condition's raw SCORE onto Moodle's 0–100 answer fraction.
+     * Defaults to 100 when unspecified or not positive.
+     *
+     * @param DOMElement $resprocessing The resprocessing element.
+     * @return float
+     */
+    protected function score_max(DOMElement $resprocessing): float {
+        foreach ($resprocessing->getElementsByTagNameNS('*', 'decvar') as $decvar) {
+            if ($decvar instanceof DOMElement && strtoupper($decvar->getAttribute('varname')) === 'SCORE') {
+                $max = (float) $decvar->getAttribute('maxvalue');
+                return $max > 0 ? $max : 100.0;
+            }
+        }
+        return 100.0;
+    }
+
+    /**
+     * The answer-specific feedback a scoring respcondition links via
+     * <displayfeedback linkrefid="…">, resolved to the matching <itemfeedback>
+     * body, or '' when the condition carries no feedback link.
+     *
+     * @param DOMElement $item The item element.
+     * @param DOMElement $cond The respcondition element.
+     * @return string
+     */
+    protected function condition_feedback(DOMElement $item, DOMElement $cond): string {
+        $df = $cond->getElementsByTagNameNS('*', 'displayfeedback');
+        if ($df->length === 0 || !($df->item(0) instanceof DOMElement)) {
+            return '';
+        }
+        $ref = $df->item(0)->getAttribute('linkrefid');
+        if ($ref === '') {
+            return '';
+        }
+        foreach ($item->getElementsByTagNameNS('*', 'itemfeedback') as $fb) {
+            if ($fb instanceof DOMElement && $fb->getAttribute('ident') === $ref) {
+                return $this->material_text($fb);
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Read the accepted numerical answers from a scoring respcondition as a list of
+     * [value, tolerance] pairs (plain decimal strings). A <vargte>/<varlte> pair is a
+     * range (midpoint + half-width); a bare <varequal> is an exact value with a zero
+     * tolerance, preserved verbatim. An <or> that lists a range together with an exact
+     * value inside it collapses to one answer (Canvas emits both as equivalent forms),
+     * but a distinct exact alternative is kept as its own answer. An inverted range
+     * (lower bound above upper) can never match in QTI, so it is skipped rather than
+     * turned into a valid interval.
+     *
+     * @param DOMElement $cond The respcondition element.
+     * @return array A list of two-element [value, tolerance] lists (possibly empty).
+     */
+    protected function numerical_answers(DOMElement $cond): array {
+        $answers = [];
+        $gte = $this->condition_value($cond, 'vargte');
+        $lte = $this->condition_value($cond, 'varlte');
+        $hasrange = $gte !== null && $lte !== null && $this->dec_cmp($gte, $lte) <= 0;
+        if ($hasrange) {
+            $answers[] = $this->range_answer($gte, $lte);
+        }
+        foreach ($this->condition_values($cond, 'varequal') as $eq) {
+            // Drop an exact value the range already covers, but keep a distinct one.
+            if ($hasrange && $this->dec_cmp($gte, $eq) <= 0 && $this->dec_cmp($eq, $lte) <= 0) {
+                continue;
+            }
+            $answers[] = [$eq, '0'];
+        }
+        return $answers;
+    }
+
+    /**
+     * The value of the first non-negated named response test in a respcondition, as
+     * the verbatim numeric source string, or null when absent or non-numeric.
+     *
+     * @param DOMElement $cond The respcondition element.
+     * @param string $localname The test element name (varequal/vargte/varlte).
+     * @return string|null
+     */
+    protected function condition_value(DOMElement $cond, string $localname): ?string {
+        return $this->condition_values($cond, $localname)[0] ?? null;
+    }
+
+    /**
+     * The values of all non-negated named response tests of a kind in a respcondition,
+     * each as a plain decimal string (scientific notation expanded), skipping any that
+     * are non-numeric or carry an unexpandable exponent.
+     *
+     * @param DOMElement $cond The respcondition element.
+     * @param string $localname The test element name (varequal/vargte/varlte).
+     * @return array The values in document order.
+     */
+    protected function condition_values(DOMElement $cond, string $localname): array {
+        $values = [];
+        foreach ($cond->getElementsByTagNameNS('*', $localname) as $node) {
+            if ($node instanceof DOMElement && !$this->within($node, 'not')) {
+                $text = trim($node->textContent);
+                if (is_numeric($text)) {
+                    $value = $this->normalise_decimal($text);
+                    if ($value !== null) {
+                        $values[] = $value;
+                    }
+                }
+            }
+        }
+        return $values;
+    }
+
+    /**
+     * Compare two signed decimal strings: -1 if a < b, 0 if equal, 1 if a > b.
+     *
+     * @param string $a The first value.
+     * @param string $b The second value.
+     * @return int
+     */
+    protected function dec_cmp(string $a, string $b): int {
+        $diff = $this->dec_add($a, $this->dec_negate($b));
+        if ($this->trim_decimal(ltrim($diff, '-')) === '0') {
+            return 0;
+        }
+        return $diff[0] === '-' ? -1 : 1;
+    }
+
+    /**
+     * Expand a scientific-notation number (e.g. 1.5e-9) to a plain decimal string,
+     * without a float round-trip, so exact values and range arithmetic keep full
+     * precision. A plain-decimal number is returned unchanged; an exponent so extreme
+     * that expansion would allocate a huge string is rejected (null, so the answer is
+     * skipped) rather than exhausting memory.
+     *
+     * @param string $number The numeric string.
+     * @return string|null
+     */
+    protected function normalise_decimal(string $number): ?string {
+        if (!preg_match('/^([+-]?)(\d*)(?:\.(\d*))?[eE]([+-]?\d+)$/', $number, $m)) {
+            return $number;
+        }
+        $digits = $m[2] . ($m[3] ?? '');
+        $point = strlen($m[2]) + (int) $m[4];
+        // Reject only an exponent whose expansion would allocate an unreasonably large
+        // string (a malformed or hostile 1e-9999999999), while still admitting any
+        // genuine high-precision answer; the bound is a resource guard, not a precision
+        // limit, so it is generous.
+        $zeros = $point <= 0 ? -$point : max(0, $point - strlen($digits));
+        if ($zeros > 100000) {
+            return null;
+        }
+        if ($point <= 0) {
+            $result = '0.' . str_repeat('0', -$point) . $digits;
+        } else if ($point >= strlen($digits)) {
+            $result = $digits . str_repeat('0', $point - strlen($digits));
+        } else {
+            $result = substr($digits, 0, $point) . '.' . substr($digits, $point);
+        }
+        return ($m[1] === '-' ? '-' : '') . ($result === '' ? '0' : $result);
+    }
+
+    /**
+     * Convert a Canvas [min, max] accepted range into a Moodle numerical answer: the
+     * midpoint value and the half-width tolerance, computed with exact decimal-string
+     * arithmetic (no float, no bcmath, no integer-size limit) so whatever precision the
+     * endpoints carry is preserved.
+     *
+     * @param string $min The lower bound (vargte), a decimal string.
+     * @param string $max The upper bound (varlte), a decimal string.
+     * @return array Two-element list [value, tolerance].
+     */
+    protected function range_answer(string $min, string $max): array {
+        $mid = $this->trim_decimal($this->dec_half($this->dec_add($min, $max)));
+        $tol = $this->trim_decimal(ltrim($this->dec_half($this->dec_add($max, $this->dec_negate($min))), '-'));
+        return [$mid, $tol];
+    }
+
+    /**
+     * The number of fractional digits in a decimal string (0 when it has no point).
+     *
+     * @param string $number The decimal string.
+     * @return int
+     */
+    protected function decimal_places(string $number): int {
+        $dot = strpos($number, '.');
+        return $dot === false ? 0 : strlen(substr($number, $dot + 1));
+    }
+
+    /**
+     * Negate a decimal string (a zero value is returned unchanged).
+     *
+     * @param string $number The decimal string.
+     * @return string
+     */
+    protected function dec_negate(string $number): string {
+        if (ltrim($number, '-+0.') === '') {
+            return $number;
+        }
+        return $number[0] === '-' ? substr($number, 1) : '-' . $number;
+    }
+
+    /**
+     * Add two signed decimal strings exactly, returning a plain decimal string.
+     *
+     * @param string $a The first addend.
+     * @param string $b The second addend.
+     * @return string
+     */
+    protected function dec_add(string $a, string $b): string {
+        $nega = $a[0] === '-';
+        $negb = $b[0] === '-';
+        $a = ltrim($a, '+-');
+        $b = ltrim($b, '+-');
+        $scale = max($this->decimal_places($a), $this->decimal_places($b));
+        $ma = str_replace('.', '', $a) . str_repeat('0', $scale - $this->decimal_places($a));
+        $mb = str_replace('.', '', $b) . str_repeat('0', $scale - $this->decimal_places($b));
+        if ($nega === $negb) {
+            $mag = $this->str_add($ma, $mb);
+            $neg = $nega;
+        } else {
+            $cmp = $this->str_cmp($ma, $mb);
+            if ($cmp === 0) {
+                return '0';
+            }
+            $mag = $cmp > 0 ? $this->str_sub($ma, $mb) : $this->str_sub($mb, $ma);
+            $neg = $cmp > 0 ? $nega : $negb;
+        }
+        $out = $this->place_point($mag, $scale);
+        return ($neg && ltrim($out, '0.') !== '' ? '-' : '') . $out;
+    }
+
+    /**
+     * Halve a signed decimal string exactly (the result gains at most one decimal place).
+     *
+     * @param string $number The decimal string.
+     * @return string
+     */
+    protected function dec_half(string $number): string {
+        $neg = $number[0] === '-';
+        $number = ltrim($number, '+-');
+        $scale = $this->decimal_places($number);
+        $digits = str_replace('.', '', $number);
+        $quotient = '';
+        $rem = 0;
+        for ($i = 0, $len = strlen($digits); $i < $len; $i++) {
+            $cur = $rem * 10 + (int) $digits[$i];
+            $quotient .= intdiv($cur, 2);
+            $rem = $cur % 2;
+        }
+        if ($rem === 1) {
+            $quotient .= '5';
+            $scale++;
+        }
+        $out = $this->place_point($quotient, $scale);
+        return ($neg && ltrim($out, '0.') !== '' ? '-' : '') . $out;
+    }
+
+    /**
+     * Place a decimal point $scale digits from the right of an unsigned integer digit
+     * string, normalising leading zeros.
+     *
+     * @param string $digits The unsigned integer digit string.
+     * @param int $scale The number of digits that fall after the point.
+     * @return string
+     */
+    protected function place_point(string $digits, int $scale): string {
+        $digits = ltrim($digits, '0');
+        if ($digits === '') {
+            $digits = '0';
+        }
+        if ($scale === 0) {
+            return $digits;
+        }
+        $digits = str_pad($digits, $scale + 1, '0', STR_PAD_LEFT);
+        return substr($digits, 0, -$scale) . '.' . substr($digits, -$scale);
+    }
+
+    /**
+     * Add two unsigned integer digit strings.
+     *
+     * @param string $a The first addend.
+     * @param string $b The second addend.
+     * @return string
+     */
+    protected function str_add(string $a, string $b): string {
+        $a = strrev($a);
+        $b = strrev($b);
+        $la = strlen($a);
+        $lb = strlen($b);
+        $carry = 0;
+        $out = '';
+        for ($i = 0, $len = max($la, $lb); $i < $len; $i++) {
+            $sum = ($i < $la ? (int) $a[$i] : 0) + ($i < $lb ? (int) $b[$i] : 0) + $carry;
+            $out .= $sum % 10;
+            $carry = intdiv($sum, 10);
+        }
+        if ($carry > 0) {
+            $out .= $carry;
+        }
+        return strrev($out);
+    }
+
+    /**
+     * Subtract unsigned integer digit string $b from $a, which must be >= $b.
+     *
+     * @param string $a The minuend (>= $b).
+     * @param string $b The subtrahend.
+     * @return string
+     */
+    protected function str_sub(string $a, string $b): string {
+        $a = strrev($a);
+        $b = strrev($b);
+        $lb = strlen($b);
+        $borrow = 0;
+        $out = '';
+        for ($i = 0, $len = strlen($a); $i < $len; $i++) {
+            $diff = (int) $a[$i] - ($i < $lb ? (int) $b[$i] : 0) - $borrow;
+            if ($diff < 0) {
+                $diff += 10;
+                $borrow = 1;
+            } else {
+                $borrow = 0;
+            }
+            $out .= $diff;
+        }
+        $result = ltrim(strrev($out), '0');
+        return $result === '' ? '0' : $result;
+    }
+
+    /**
+     * Compare two unsigned integer digit strings: -1, 0 or 1.
+     *
+     * @param string $a The first operand.
+     * @param string $b The second operand.
+     * @return int
+     */
+    protected function str_cmp(string $a, string $b): int {
+        $a = ltrim($a, '0');
+        $b = ltrim($b, '0');
+        if (strlen($a) !== strlen($b)) {
+            return strlen($a) <=> strlen($b);
+        }
+        return strcmp($a, $b) <=> 0;
+    }
+
+    /**
+     * Drop a decimal string's trailing zeros (and a bare trailing point), normalising
+     * an all-zero or empty result to '0'.
+     *
+     * @param string $number The decimal string.
+     * @return string
+     */
+    protected function trim_decimal(string $number): string {
+        if (strpos($number, '.') !== false) {
+            $number = rtrim(rtrim($number, '0'), '.');
+        }
+        return $number === '' || $number === '-' || $number === '-0' ? '0' : $number;
     }
 
     /**

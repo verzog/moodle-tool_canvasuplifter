@@ -251,6 +251,94 @@ XML;
     }
 
     /**
+     * Phase 8: a Canvas numerical_question is imported end-to-end as a real Moodle
+     * numerical question — Moodle's own qformat_xml accepts the emitted XML — with the
+     * range answer's midpoint value and half-width tolerance.
+     *
+     * @return void
+     */
+    public function test_build_imports_numerical_question(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Numeric Quiz"><section ident="s1">'
+            . $this->mcitem() . $this->numericalitem()
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/a1/qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/a1/qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $banks = $modinfo->get_instances_of('qbank');
+        $this->assertCount(1, $banks);
+        $bank = reset($banks);
+        $context = \context_module::instance($bank->id);
+        $cat = question_get_default_category($context->id);
+
+        // The numerical question was created with the numerical qtype (Moodle's
+        // importer accepted our XML), and its answer/tolerance survived the round trip.
+        $sql = "SELECT q.id, q.qtype
+                  FROM {question} q
+                  JOIN {question_versions} qv ON qv.questionid = q.id
+                  JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                 WHERE qbe.questioncategoryid = ? AND q.qtype = ?";
+        $numerical = $DB->get_records_sql($sql, [$cat->id, 'numerical']);
+        $this->assertCount(1, $numerical);
+        $numericalid = (int) reset($numerical)->id;
+
+        $answer = $DB->get_record('question_answers', ['question' => $numericalid]);
+        $this->assertEquals(42, (float) $answer->answer);
+        $this->assertEquals(1.0, (float) $answer->fraction);
+        $tolerance = $DB->get_field('question_numerical', 'tolerance', ['answer' => $answer->id]);
+        $this->assertEquals(0.5, (float) $tolerance);
+    }
+
+    /**
+     * A native Canvas numerical_question item whose accepted answer is the range
+     * [41.5, 42.5] (midpoint 42, tolerance 0.5).
+     *
+     * @return string
+     */
+    private function numericalitem(): string {
+        return '<item ident="num1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>numerical_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;p&gt;6 times 7?&lt;/p&gt;</mattext></material>'
+            . '<response_str ident="response1" rcardinality="Single"><render_fib fibtype="Decimal">'
+            . '<response_label ident="answer1"/></render_fib></response_str></presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><or>'
+            . '<varequal respident="response1">42</varequal>'
+            . '<and><vargte respident="response1">41.5</vargte><varlte respident="response1">42.5</varlte></and>'
+            . '</or></conditionvar><setvar action="Set" varname="SCORE">100</setvar></respcondition>'
+            . '</resprocessing></item>';
+    }
+
+    /**
      * A native Canvas item of an unsupported type (ordering_question), which parses into
      * the model as a question but never becomes importable.
      *
