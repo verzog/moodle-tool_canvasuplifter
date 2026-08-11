@@ -109,6 +109,9 @@ class book_builder {
             }
             // Strip ILIAS viewer chrome (no-op for non-ILIAS HTML) before storing.
             $html = ilias_cleaner::clean($html);
+            // The chapter's own folder within the package: media it references with a
+            // bare $IMS-CC-FILEBASE$name or a ../ climb resolves relative to this.
+            $basedir = page_payload::basedir($this->packageroot, $page);
             // Rewrite relative refs to a folded bundle's sibling assets (eXe /
             // ILIAS CSS, JS, images) to @@PLUGINFILE@@ before storing; the files
             // themselves are imported into the chapter file area below. Runs
@@ -123,7 +126,6 @@ class book_builder {
             // second link pass. Done per chapter so each resolves against its
             // own source directory.
             if (!empty($this->pathtoid)) {
-                $basedir = page_payload::basedir($this->packageroot, $page);
                 $html = (new link_rewriter())->rewrite_relative_links($html, $basedir, $this->pathtoid);
             }
             // Wrap so the plugin stylesheet (scoped to this class) can style the
@@ -145,7 +147,7 @@ class book_builder {
 
             // Import any files the page embeds into this chapter's file area and
             // rewrite the references so they resolve through pluginfile.php.
-            $newhtml = $embedder->embed($context->id, 'mod_book', 'chapter', $html, $chapterid);
+            $newhtml = $embedder->embed($context->id, 'mod_book', 'chapter', $html, $chapterid, $basedir);
             if ($newhtml !== $html) {
                 $DB->set_field('book_chapters', 'content', $newhtml, ['id' => $chapterid]);
             }

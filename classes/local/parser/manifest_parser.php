@@ -20,6 +20,7 @@ use DOMDocument;
 use DOMElement;
 use tool_canvasuplifter\local\build\ilias_cleaner;
 use tool_canvasuplifter\local\build\link_rewriter;
+use tool_canvasuplifter\local\build\page_payload;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\section_model;
 use tool_canvasuplifter\local\model\item;
@@ -408,7 +409,12 @@ class manifest_parser {
             if ($html === null) {
                 continue;
             }
-            foreach ($rewriter->rewrite_files($html, $this->basedir)['files'] as $file) {
+            // Resolve $IMS-CC-FILEBASE$ references the same way the page/book/lesson
+            // builders now do — including the page's own folder as an owner-relative
+            // fallback — so media a page embeds with a bare name or a ../ sibling
+            // climb is recognised here and kept off the standalone-download orphan list.
+            $ownerdir = page_payload::basedir($this->basedir, $resourceitem);
+            foreach ($rewriter->rewrite_files($html, $this->basedir, $ownerdir)['files'] as $file) {
                 $embedded[$file['package']] = true;
             }
         }

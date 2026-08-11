@@ -180,6 +180,77 @@ XML;
     }
 
     /**
+     * A page that references media in a sibling resource folder with an
+     * owner-relative $IMS-CC-FILEBASE$ climb embeds that media into the page's own
+     * content file area (resolved relative to the page's folder, not the package
+     * root), and the backing resource is not also surfaced as a standalone file
+     * in "Additional resources".
+     *
+     * @return void
+     */
+    public function test_page_embeds_owner_relative_media_without_leaking(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        mkdir($dir . '/media');
+        file_put_contents($dir . '/media/diagram.png', 'PNG');
+        // The page lives under wiki_content/ (so it builds as a mod_page) and
+        // references the image in the sibling media/ folder via a ../ climb -
+        // resolvable only relative to the page's own folder.
+        file_put_contents(
+            $dir . '/wiki_content/lesson1.html',
+            '<p><img src="$IMS-CC-FILEBASE$../media/diagram.png"></p>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i1" identifierref="r_lesson"><title>Lesson 1</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_lesson" type="webcontent" href="wiki_content/lesson1.html">
+      <file href="wiki_content/lesson1.html"/>
+      <dependency identifierref="r_diagram"/>
+    </resource>
+    <resource identifier="r_diagram" type="webcontent" href="media/diagram.png">
+      <file href="media/diagram.png"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The page built and embedded the sibling image.
+        $pages = $modinfo->get_instances_of('page');
+        $this->assertCount(1, $pages);
+        $pagecm = reset($pages);
+        $page = $DB->get_record('page', ['id' => $pagecm->instance]);
+        $this->assertStringContainsString('@@PLUGINFILE@@/media/diagram.png', $page->content);
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $page->content);
+
+        $fs = get_file_storage();
+        $context = \context_module::instance($pagecm->id);
+        $this->assertTrue($fs->file_exists($context->id, 'mod_page', 'content', 0, '/media/', 'diagram.png'));
+
+        // The image resource is not also built as a standalone file activity.
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
+    }
+
+    /**
      * An outcome description carrying a Canvas internal-link token is rewritten
      * to the real activity URL in the same second pass as pages, even though the
      * outcome is created before the URL map is complete.

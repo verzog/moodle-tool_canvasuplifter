@@ -114,6 +114,9 @@ class lesson_builder {
             }
             // Strip ILIAS viewer chrome (no-op for non-ILIAS HTML) before storing.
             $html = ilias_cleaner::clean($html);
+            // The page's own folder within the package: media it references with a
+            // bare $IMS-CC-FILEBASE$name or a ../ climb resolves relative to this.
+            $basedir = page_payload::basedir($this->packageroot, $page);
             // Rewrite relative refs to a folded bundle's sibling assets (eXe /
             // ILIAS CSS, JS, images) to @@PLUGINFILE@@ before storing; the files
             // themselves are imported into the page file area below. Runs before
@@ -128,7 +131,6 @@ class lesson_builder {
             // second link pass. Done per page so each resolves against its own
             // source directory.
             if (!empty($this->pathtoid)) {
-                $basedir = page_payload::basedir($this->packageroot, $page);
                 $html = (new link_rewriter())->rewrite_relative_links($html, $basedir, $this->pathtoid);
             }
             // Wrap so the plugin stylesheet (scoped to this class) can style the
@@ -154,7 +156,7 @@ class lesson_builder {
             ];
             $pageid = (int) $DB->insert_record('lesson_pages', $record);
 
-            $newhtml = $embedder->embed($context->id, 'mod_lesson', 'page_contents', $html, $pageid);
+            $newhtml = $embedder->embed($context->id, 'mod_lesson', 'page_contents', $html, $pageid, $basedir);
             if ($newhtml !== $html) {
                 $DB->set_field('lesson_pages', 'contents', $newhtml, ['id' => $pageid]);
             }
