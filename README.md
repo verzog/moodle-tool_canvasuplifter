@@ -143,7 +143,9 @@ Background on how Canvas ships quizzes — and why some arrive without questions
   parses as zero questions, so down-convert it to **QTI 1.2** before importing.
 - **Question types that convert:** multiple choice (`render_choice`), true/false,
   fill-in-the-blank / short answer (`render_fib` / string matching), multiple
-  answers, and essay. Other interaction types are reported and skipped.
+  answers, matching, numerical (`numerical_question` — exact or `vargte`/`varlte`
+  range, mapped to a Moodle numerical answer with tolerance), and essay. Other
+  interaction types are reported and skipped.
 - **"Referenced but not present" quizzes:** when a quiz draws its questions from a
   randomised group or an external question pool/bank instead of hard-coding them
   inside the `<section>`, Canvas may export only the shell — a bare

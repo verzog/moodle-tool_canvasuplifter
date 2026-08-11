@@ -83,11 +83,15 @@ class question_xml_writer {
         if ($q->type === qti_question::TYPE_UNSUPPORTED) {
             return '';
         }
-        $mtype = $q->type === qti_question::TYPE_SHORTANSWER ? 'shortanswer'
-            : ($q->type === qti_question::TYPE_ESSAY ? 'essay'
-            : ($q->type === qti_question::TYPE_MATCHING ? 'matching'
-            : ($q->type === qti_question::TYPE_DESCRIPTION ? 'description'
-            : ($q->type === qti_question::TYPE_TRUEFALSE ? 'truefalse' : 'multichoice'))));
+        $mtype = match ($q->type) {
+            qti_question::TYPE_SHORTANSWER => 'shortanswer',
+            qti_question::TYPE_ESSAY => 'essay',
+            qti_question::TYPE_MATCHING => 'matching',
+            qti_question::TYPE_DESCRIPTION => 'description',
+            qti_question::TYPE_TRUEFALSE => 'truefalse',
+            qti_question::TYPE_NUMERICAL => 'numerical',
+            default => 'multichoice',
+        };
 
         $body = "  <question type=\"$mtype\">\n";
         $body .= "    <name><text>" . htmlspecialchars($this->plain($q->name), ENT_XML1) . "</text></name>\n";
@@ -116,6 +120,9 @@ class question_xml_writer {
                 break;
             case 'truefalse':
                 $body .= $this->truefalse_xml($q, $imagedir);
+                break;
+            case 'numerical':
+                $body .= $this->numerical_xml($q, $imagedir);
                 break;
             default:
                 $body .= "    <single>" . ($q->type === qti_question::TYPE_MULTIANSWER ? 'false' : 'true') . "</single>\n";
@@ -237,6 +244,31 @@ class question_xml_writer {
         return "    <answer fraction=\"" . ($correct ? '100' : '0') . "\" format=\"moodle_auto_format\">\n"
             . "      <text>$label</text>\n"
             . "      " . $this->htmlblock('feedback', $feedback, $imagedir) . "\n    </answer>\n";
+    }
+
+    /**
+     * Render the numerical answers: each accepted value with its tolerance and
+     * per-answer feedback. Canvas numerical questions carry no units, so the units
+     * block is omitted and Moodle's numerical unit defaults apply.
+     *
+     * @param qti_question $q The question.
+     * @param string|null $imagedir Image resolution folder, or null.
+     * @return string
+     */
+    protected function numerical_xml(qti_question $q, ?string $imagedir): string {
+        $out = '';
+        foreach ($q->answers as $answer) {
+            $fraction = rtrim(rtrim(number_format((float) $answer['fraction'], 5, '.', ''), '0'), '.');
+            $fraction = $fraction === '' ? '0' : $fraction;
+            $tolerance = trim((string) ($answer['tolerance'] ?? '0'));
+            $tolerance = $tolerance === '' ? '0' : $tolerance;
+            $out .= "    <answer fraction=\"$fraction\" format=\"moodle_auto_format\">\n";
+            $out .= "      <text>" . $this->cdata((string) ($answer['text'] ?? '')) . "</text>\n";
+            $out .= "      " . $this->htmlblock('feedback', $answer['feedback'] ?? '', $imagedir) . "\n";
+            $out .= "      <tolerance>" . htmlspecialchars($tolerance, ENT_XML1) . "</tolerance>\n";
+            $out .= "    </answer>\n";
+        }
+        return $out;
     }
 
     /**

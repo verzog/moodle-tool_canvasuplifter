@@ -199,6 +199,9 @@ class qti_parser {
             case qti_question::TYPE_MATCHING:
                 $this->fill_matching($item, $presentation, $question);
                 break;
+            case qti_question::TYPE_NUMERICAL:
+                $this->fill_numerical_answers($item, $question);
+                break;
             case qti_question::TYPE_ESSAY:
             default:
                 break;
@@ -248,6 +251,8 @@ class qti_parser {
                 return qti_question::TYPE_TRUEFALSE;
             case 'short_answer_question':
                 return qti_question::TYPE_SHORTANSWER;
+            case 'numerical_question':
+                return qti_question::TYPE_NUMERICAL;
             case 'essay_question':
                 return qti_question::TYPE_ESSAY;
             case 'text_only_question':
@@ -366,6 +371,108 @@ class qti_parser {
                 'feedback' => $labelfeedback,
             ];
         }
+    }
+
+    /**
+     * Populate the answer(s) for a Canvas numerical question.
+     *
+     * Canvas exports each accepted value as a scoring <respcondition>: an exact
+     * <varequal>V</varequal>, or a range as <and><vargte>MIN</vargte>
+     * <varlte>MAX</varlte></and> (routinely both forms inside one <or>, describing
+     * the same value). A range maps to a Moodle numerical answer of its midpoint
+     * with a tolerance of half its width; an exact value carries a zero tolerance.
+     * Each condition's positive SCORE becomes the answer fraction, and the <or>'s
+     * two equivalent forms collapse to a single answer.
+     *
+     * @param DOMElement $item The item element.
+     * @param qti_question $question The question being built (modified in place).
+     * @return void
+     */
+    protected function fill_numerical_answers(DOMElement $item, qti_question $question): void {
+        $resprocessing = $this->first_child_element($item, 'resprocessing');
+        if ($resprocessing === null) {
+            return;
+        }
+        $seen = [];
+        foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
+            if (!($cond instanceof DOMElement)) {
+                continue;
+            }
+            $score = $this->condition_score($cond);
+            if ($score <= 0) {
+                continue;
+            }
+            $answer = $this->numerical_answer($cond);
+            if ($answer === null) {
+                continue;
+            }
+            [$value, $tolerance] = $answer;
+            $key = $value . '/' . $tolerance;
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $question->answers[] = [
+                'text' => $value,
+                'fraction' => min(100.0, max(0.0, $score)),
+                'tolerance' => $tolerance,
+                'feedback' => '',
+            ];
+        }
+    }
+
+    /**
+     * Read one numerical answer from a scoring respcondition as a [value, tolerance]
+     * pair (plain decimal strings), or null when it carries no numeric answer. A
+     * <vargte>/<varlte> pair is a range (midpoint + half-width); a bare <varequal>
+     * is an exact value with a zero tolerance.
+     *
+     * @param DOMElement $cond The respcondition element.
+     * @return array|null Two-element list [value, tolerance], or null.
+     */
+    protected function numerical_answer(DOMElement $cond): ?array {
+        $gte = $this->condition_number($cond, 'vargte');
+        $lte = $this->condition_number($cond, 'varlte');
+        if ($gte !== null && $lte !== null) {
+            return [$this->format_number(($gte + $lte) / 2), $this->format_number(abs($lte - $gte) / 2)];
+        }
+        $eq = $this->condition_number($cond, 'varequal');
+        if ($eq !== null) {
+            return [$this->format_number($eq), '0'];
+        }
+        return null;
+    }
+
+    /**
+     * The numeric value of the first non-negated named response test in a
+     * respcondition, or null when absent or non-numeric.
+     *
+     * @param DOMElement $cond The respcondition element.
+     * @param string $localname The test element name (varequal/vargte/varlte).
+     * @return float|null
+     */
+    protected function condition_number(DOMElement $cond, string $localname): ?float {
+        foreach ($cond->getElementsByTagNameNS('*', $localname) as $node) {
+            if ($node instanceof DOMElement && !$this->within($node, 'not')) {
+                $text = trim($node->textContent);
+                if (is_numeric($text)) {
+                    return (float) $text;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Format a float as a plain decimal string (no scientific notation, no trailing
+     * zeros) so Moodle's numerical importer reads the value and tolerance verbatim.
+     *
+     * @param float $value The number.
+     * @return string
+     */
+    protected function format_number(float $value): string {
+        $text = rtrim(rtrim(number_format($value, 8, '.', ''), '0'), '.');
+        return $text === '' || $text === '-0' ? '0' : $text;
     }
 
     /**

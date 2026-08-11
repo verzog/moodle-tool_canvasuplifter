@@ -963,25 +963,109 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
-     * A recognised-but-unconvertible Canvas type (e.g. numerical_question) is
+     * A recognised-but-unconvertible Canvas type (e.g. file_upload_question) is
      * left UNSUPPORTED and reported by its Canvas type name, rather than being
      * coerced into a wrong Moodle type by the cardinality fallback.
      *
      * @return void
      */
-    public function test_native_numerical_stays_unsupported_but_named(): void {
-        $item = '<item ident="n1" title="How many"><itemmetadata><qtimetadata>'
-            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>numerical_question</fieldentry>'
+    public function test_native_unconvertible_type_stays_unsupported_but_named(): void {
+        $item = '<item ident="f1" title="Upload"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>file_upload_question</fieldentry>'
             . '</qtimetadatafield></qtimetadata></itemmetadata>'
-            . '<presentation><material><mattext>How many bones?</mattext></material>'
-            . '<response_str ident="r1"><render_fib/></response_str></presentation>'
+            . '<presentation><material><mattext>Upload your work</mattext></material></presentation>'
             . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes></resprocessing></item>';
 
         $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
 
         $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
-        $this->assertSame('numerical_question', $q->profile);
+        $this->assertSame('file_upload_question', $q->profile);
         $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * A Canvas numerical_question with an exact <varequal> answer becomes a Moodle
+     * numerical question with a zero-tolerance answer.
+     *
+     * @return void
+     */
+    public function test_native_numerical_exact_answer_converts(): void {
+        $item = $this->numerical_item(
+            '<or><varequal respident="response1">42</varequal></or>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_NUMERICAL, $q->type);
+        $this->assertSame('numerical_question', $q->profile);
+        $this->assertTrue($q->is_importable());
+        $this->assertCount(1, $q->answers);
+        $this->assertSame('42', $q->answers[0]['text']);
+        $this->assertSame('0', $q->answers[0]['tolerance']);
+        $this->assertSame(100.0, $q->answers[0]['fraction']);
+    }
+
+    /**
+     * A Canvas numerical_question whose accepted answer is a <vargte>/<varlte>
+     * range becomes a numerical answer of the midpoint with a half-width tolerance,
+     * and the equivalent <varequal> in the same <or> does not double the answer.
+     *
+     * @return void
+     */
+    public function test_native_numerical_range_answer_converts(): void {
+        $item = $this->numerical_item(
+            '<or><varequal respident="response1">42</varequal>'
+            . '<and><vargte respident="response1">41.5</vargte>'
+            . '<varlte respident="response1">42.5</varlte></and></or>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_NUMERICAL, $q->type);
+        $this->assertCount(1, $q->answers);
+        $this->assertSame('42', $q->answers[0]['text']);
+        $this->assertSame('0.5', $q->answers[0]['tolerance']);
+    }
+
+    /**
+     * A numerical_question with no scoring condition (Canvas exported no answer)
+     * stays a numerical question but is not importable, so it is dropped rather
+     * than saved as an unanswerable question.
+     *
+     * @return void
+     */
+    public function test_native_numerical_without_answer_is_unimportable(): void {
+        $item = '<item ident="n0" title="How many"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>numerical_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>How many bones?</mattext></material>'
+            . '<response_str ident="response1"><render_fib fibtype="Decimal"/></response_str></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes></resprocessing></item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_NUMERICAL, $q->type);
+        $this->assertSame([], $q->answers);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * Build a native Canvas numerical_question item whose scoring respcondition
+     * carries the given conditionvar markup.
+     *
+     * @param string $conditionvar The <or>/<varequal>/<vargte>… markup.
+     * @return string
+     */
+    private function numerical_item(string $conditionvar): string {
+        return '<item ident="n1" title="Answer"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>numerical_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>The answer?</mattext></material>'
+            . '<response_str ident="response1" rcardinality="Single"><render_fib fibtype="Decimal">'
+            . '<response_label ident="answer1"/></render_fib></response_str></presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar>' . $conditionvar . '</conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
     }
 
     /**

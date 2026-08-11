@@ -39,6 +39,8 @@ class qti_question {
     public const TYPE_ESSAY = 'essay';
     /** Matching (Canvas matching_question) -> Moodle match. */
     public const TYPE_MATCHING = 'matching';
+    /** Numerical (Canvas numerical_question) -> Moodle numerical. */
+    public const TYPE_NUMERICAL = 'numerical';
     /** Text-only stimulus item (Canvas text_only_question) -> Moodle description. */
     public const TYPE_DESCRIPTION = 'description';
     /** Recognised QTI item we can't yet convert. */
@@ -138,6 +140,18 @@ class qti_question {
                 }
             }
             return count($this->answers) >= 2 && $positives >= 1;
+        }
+        if ($this->type === self::TYPE_NUMERICAL) {
+            // Moodle numerical needs at least one answer whose text is a number (or
+            // the '*' accept-any wildcard); a condition the parser couldn't read a
+            // value from is dropped rather than imported as an unanswerable question.
+            foreach ($this->answers as $answer) {
+                $text = trim((string) ($answer['text'] ?? ''));
+                if ($text === '*' || is_numeric($text)) {
+                    return true;
+                }
+            }
+            return false;
         }
         // Multichoice and multianswer import as Moodle multichoice; both need at
         // least two answers.

@@ -5,6 +5,17 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.57.0] - 2026-08-12
+
+- **Numerical questions now convert** (roadmap Phase 8). A Canvas `numerical_question`
+  is imported as a Moodle numerical question rather than being reported as unsupported.
+  Canvas exports each accepted value as a scoring `<respcondition>` — an exact
+  `<varequal>` or a `<vargte>`/`<varlte>` range — which maps to a numerical answer of the
+  value (zero tolerance) or of the range midpoint with a half-width tolerance; the two
+  equivalent forms Canvas emits inside one `<or>` collapse to a single answer. Verified
+  end-to-end through Moodle's own `qformat_xml` importer. The analyse question-type matrix
+  now counts numerical as a supported type.
+
 ## [0.56.0] - 2026-08-12
 
 - **Orphan (unlinked) New Quizzes backed by an item bank no longer lose their questions**
