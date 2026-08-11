@@ -416,47 +416,74 @@ class qti_parser {
                 'text' => $value,
                 'fraction' => min(100.0, max(0.0, $score)),
                 'tolerance' => $tolerance,
-                'feedback' => '',
+                'feedback' => $this->condition_feedback($item, $cond),
             ];
         }
+    }
+
+    /**
+     * The answer-specific feedback a scoring respcondition links via
+     * <displayfeedback linkrefid="…">, resolved to the matching <itemfeedback>
+     * body, or '' when the condition carries no feedback link.
+     *
+     * @param DOMElement $item The item element.
+     * @param DOMElement $cond The respcondition element.
+     * @return string
+     */
+    protected function condition_feedback(DOMElement $item, DOMElement $cond): string {
+        $df = $cond->getElementsByTagNameNS('*', 'displayfeedback');
+        if ($df->length === 0 || !($df->item(0) instanceof DOMElement)) {
+            return '';
+        }
+        $ref = $df->item(0)->getAttribute('linkrefid');
+        if ($ref === '') {
+            return '';
+        }
+        foreach ($item->getElementsByTagNameNS('*', 'itemfeedback') as $fb) {
+            if ($fb instanceof DOMElement && $fb->getAttribute('ident') === $ref) {
+                return $this->material_text($fb);
+            }
+        }
+        return '';
     }
 
     /**
      * Read one numerical answer from a scoring respcondition as a [value, tolerance]
      * pair (plain decimal strings), or null when it carries no numeric answer. A
      * <vargte>/<varlte> pair is a range (midpoint + half-width); a bare <varequal>
-     * is an exact value with a zero tolerance.
+     * is an exact value with a zero tolerance, preserved verbatim so no precision is
+     * lost.
      *
      * @param DOMElement $cond The respcondition element.
      * @return array|null Two-element list [value, tolerance], or null.
      */
     protected function numerical_answer(DOMElement $cond): ?array {
-        $gte = $this->condition_number($cond, 'vargte');
-        $lte = $this->condition_number($cond, 'varlte');
+        $gte = $this->condition_value($cond, 'vargte');
+        $lte = $this->condition_value($cond, 'varlte');
         if ($gte !== null && $lte !== null) {
-            return [$this->format_number(($gte + $lte) / 2), $this->format_number(abs($lte - $gte) / 2)];
+            return $this->range_answer($gte, $lte);
         }
-        $eq = $this->condition_number($cond, 'varequal');
+        $eq = $this->condition_value($cond, 'varequal');
         if ($eq !== null) {
-            return [$this->format_number($eq), '0'];
+            return [$eq, '0'];
         }
         return null;
     }
 
     /**
-     * The numeric value of the first non-negated named response test in a
-     * respcondition, or null when absent or non-numeric.
+     * The value of the first non-negated named response test in a respcondition, as
+     * the verbatim numeric source string, or null when absent or non-numeric.
      *
      * @param DOMElement $cond The respcondition element.
      * @param string $localname The test element name (varequal/vargte/varlte).
-     * @return float|null
+     * @return string|null
      */
-    protected function condition_number(DOMElement $cond, string $localname): ?float {
+    protected function condition_value(DOMElement $cond, string $localname): ?string {
         foreach ($cond->getElementsByTagNameNS('*', $localname) as $node) {
             if ($node instanceof DOMElement && !$this->within($node, 'not')) {
                 $text = trim($node->textContent);
                 if (is_numeric($text)) {
-                    return (float) $text;
+                    return $text;
                 }
             }
         }
@@ -464,15 +491,99 @@ class qti_parser {
     }
 
     /**
-     * Format a float as a plain decimal string (no scientific notation, no trailing
-     * zeros) so Moodle's numerical importer reads the value and tolerance verbatim.
+     * Convert a Canvas [min, max] accepted range into a Moodle numerical answer: the
+     * midpoint value and the half-width tolerance. Computed with exact integer decimal
+     * arithmetic (no float round-trip, no bcmath) so precise endpoints are preserved;
+     * an endpoint too large or exponent-formatted for integer math falls back to a
+     * float computation at the endpoints' precision.
      *
-     * @param float $value The number.
+     * @param string $min The lower bound (vargte), a decimal string.
+     * @param string $max The upper bound (varlte), a decimal string.
+     * @return array Two-element list [value, tolerance].
+     */
+    protected function range_answer(string $min, string $max): array {
+        $decimals = max($this->decimal_places($min), $this->decimal_places($max));
+        $mini = $this->to_scaled_int($min, $decimals);
+        $maxi = $this->to_scaled_int($max, $decimals);
+        if ($mini === null || $maxi === null) {
+            $mid = number_format(((float) $min + (float) $max) / 2, $decimals + 1, '.', '');
+            $tol = number_format(abs((float) $max - (float) $min) / 2, $decimals + 1, '.', '');
+            return [$this->trim_decimal($mid), $this->trim_decimal($tol)];
+        }
+        // The value is mantissa / 10^decimals; halving adds at most one decimal place,
+        // so (mantissa * 5) at scale decimals+1 is the exact midpoint/half-width.
+        return [
+            $this->trim_decimal($this->format_scaled(($mini + $maxi) * 5, $decimals + 1)),
+            $this->trim_decimal($this->format_scaled(abs($maxi - $mini) * 5, $decimals + 1)),
+        ];
+    }
+
+    /**
+     * The number of fractional digits in a decimal string (0 when it has no point).
+     *
+     * @param string $number The decimal string.
+     * @return int
+     */
+    protected function decimal_places(string $number): int {
+        $dot = strpos($number, '.');
+        return $dot === false ? 0 : strlen(substr($number, $dot + 1));
+    }
+
+    /**
+     * Parse a plain decimal string into an integer mantissa scaled to the given number
+     * of decimal places, or null when it carries an exponent or exceeds 64-bit integer
+     * range (so the caller can fall back to float arithmetic).
+     *
+     * @param string $number The decimal string.
+     * @param int $decimals The scale to express the mantissa at.
+     * @return int|null
+     */
+    protected function to_scaled_int(string $number, int $decimals): ?int {
+        if (!preg_match('/^[+-]?\d*(\.\d*)?$/', $number)) {
+            return null;
+        }
+        $negative = $number[0] === '-';
+        $parts = explode('.', ltrim($number, '+-'), 2);
+        $frac = str_pad(substr($parts[1] ?? '', 0, $decimals), $decimals, '0');
+        $digits = ltrim(($parts[0] === '' ? '0' : $parts[0]) . $frac, '0');
+        if ($digits === '') {
+            return 0;
+        }
+        if (strlen($digits) > 18) {
+            return null;
+        }
+        return $negative ? -(int) $digits : (int) $digits;
+    }
+
+    /**
+     * Render an integer mantissa at the given decimal scale as a plain decimal string.
+     *
+     * @param int $mantissa The scaled integer value.
+     * @param int $scale The number of decimal places it is expressed at.
      * @return string
      */
-    protected function format_number(float $value): string {
-        $text = rtrim(rtrim(number_format($value, 8, '.', ''), '0'), '.');
-        return $text === '' || $text === '-0' ? '0' : $text;
+    protected function format_scaled(int $mantissa, int $scale): string {
+        $sign = $mantissa < 0 ? '-' : '';
+        $digits = (string) abs($mantissa);
+        if ($scale === 0) {
+            return $sign . $digits;
+        }
+        $digits = str_pad($digits, $scale + 1, '0', STR_PAD_LEFT);
+        return $sign . substr($digits, 0, -$scale) . '.' . substr($digits, -$scale);
+    }
+
+    /**
+     * Drop a decimal string's trailing zeros (and a bare trailing point), normalising
+     * an all-zero or empty result to '0'.
+     *
+     * @param string $number The decimal string.
+     * @return string
+     */
+    protected function trim_decimal(string $number): string {
+        if (strpos($number, '.') !== false) {
+            $number = rtrim(rtrim($number, '0'), '.');
+        }
+        return $number === '' || $number === '-' || $number === '-0' ? '0' : $number;
     }
 
     /**

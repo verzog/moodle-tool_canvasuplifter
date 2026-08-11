@@ -1050,13 +1050,72 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A numerical question whose exact answer has more than eight decimal places is
+     * preserved verbatim, not truncated by a float round-trip (which would change the
+     * accepted value and grade the question wrongly).
+     *
+     * @return void
+     */
+    public function test_native_numerical_preserves_exact_precision(): void {
+        $item = $this->numerical_item('<or><varequal respident="response1">0.000000001</varequal></or>');
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertSame('0.000000001', $q->answers[0]['text']);
+        $this->assertSame('0', $q->answers[0]['tolerance']);
+    }
+
+    /**
+     * A high-precision <vargte>/<varlte> range keeps its exact midpoint and half-width
+     * (computed without float truncation).
+     *
+     * @return void
+     */
+    public function test_native_numerical_range_precision_is_exact(): void {
+        $item = $this->numerical_item(
+            '<and><vargte respident="response1">0.12345</vargte>'
+            . '<varlte respident="response1">0.12347</varlte></and>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertSame('0.12346', $q->answers[0]['text']);
+        $this->assertSame('0.00001', $q->answers[0]['tolerance']);
+    }
+
+    /**
+     * Answer-specific feedback linked from a numerical scoring condition via
+     * <displayfeedback> is carried onto the imported answer.
+     *
+     * @return void
+     */
+    public function test_native_numerical_answer_feedback_preserved(): void {
+        $item = $this->numerical_item(
+            '<or><varequal respident="response1">42</varequal></or>',
+            '<displayfeedback feedbacktype="Response" linkrefid="correct_fb"/>',
+            '<itemfeedback ident="correct_fb"><flow_mat><material>'
+            . '<mattext texttype="text/html">Spot on</mattext></material></flow_mat></itemfeedback>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertStringContainsString('Spot on', $q->answers[0]['feedback']);
+    }
+
+    /**
      * Build a native Canvas numerical_question item whose scoring respcondition
-     * carries the given conditionvar markup.
+     * carries the given conditionvar markup, and optionally a feedback link plus the
+     * matching itemfeedback block.
      *
      * @param string $conditionvar The <or>/<varequal>/<vargte>… markup.
+     * @param string $displayfeedback Optional <displayfeedback> element for the condition.
+     * @param string $itemfeedback Optional <itemfeedback> block for the item.
      * @return string
      */
-    private function numerical_item(string $conditionvar): string {
+    private function numerical_item(string $conditionvar, string $displayfeedback = '', string $itemfeedback = ''): string {
         return '<item ident="n1" title="Answer"><itemmetadata><qtimetadata>'
             . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>numerical_question</fieldentry>'
             . '</qtimetadatafield></qtimetadata></itemmetadata>'
@@ -1065,7 +1124,8 @@ final class qti_parser_test extends \basic_testcase {
             . '<response_label ident="answer1"/></render_fib></response_str></presentation>'
             . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE"/></outcomes>'
             . '<respcondition continue="No"><conditionvar>' . $conditionvar . '</conditionvar>'
-            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+            . '<setvar action="Set" varname="SCORE">100</setvar>' . $displayfeedback . '</respcondition>'
+            . '</resprocessing>' . $itemfeedback . '</item>';
     }
 
     /**
