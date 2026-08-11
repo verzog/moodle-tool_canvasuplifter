@@ -287,13 +287,16 @@ class course_builder {
                 $isquizorphan = $modelitem->kind === item::KIND_QUIZ;
                 $qbb = $builders[item::KIND_QUESTIONBANK] ?? null;
                 $hasbankstate = $isquizorphan && $qbb instanceof questionbank_builder;
-                $bankdraws = $hasbankstate ? $qbb->lastbankdraws : 0;
                 $bankincomplete = $hasbankstate ? $qbb->lastbankincomplete : false;
+                $bankselections = $hasbankstate ? $qbb->lastbankselections : 0;
                 // With the toggle on, a standalone assessment built above as a reusable
                 // question bank — or one that only draws from item banks — also gets a
-                // runnable quiz here.
+                // runnable quiz here. Run the quiz builder whenever the assessment authored
+                // any bank draws, even if none resolved: quiz_builder preserves a
+                // bank-backed quiz whose banks are all missing as a hidden placeholder
+                // (title/settings kept), matching how a linked such quiz is handled.
                 $standalone = false;
-                if ($this->quizfrombank && $isquizorphan && ($cmid !== null || $bankdraws > 0)) {
+                if ($this->quizfrombank && $isquizorphan && ($cmid !== null || $bankselections > 0)) {
                     $standalone = $this->build_standalone_quiz($course, $orphansection, $modelitem, $builders, $urlmap);
                     if ($standalone) {
                         $extraquizzes++;

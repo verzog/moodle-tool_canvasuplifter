@@ -767,6 +767,45 @@ XML;
     }
 
     /**
+     * Issue #144 review: with the quiz-from-bank toggle on, an orphan New Quiz whose bank
+     * draws all reference missing banks still gets a hidden placeholder quiz (preserving
+     * its title/settings), exactly as a linked such quiz would — the toggle isn't limited
+     * to draws that resolved.
+     *
+     * @return void
+     */
+    public function test_orphan_all_unresolved_bank_builds_placeholder_with_toggle(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        // The orphan draws only from missingbank, which is never written to the package.
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
+            . '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>missingbank</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        $dir = $this->write_orphan_shell_package($shell);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // Build with the quiz-from-bank toggle enabled (5th constructor argument).
+        $report = (new course_builder($category->id, $dir, null, 0, true))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        // A hidden placeholder quiz preserves the assessment; no bank resolved so no qbank.
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $this->assertEquals(0, (int) reset($quizzes)->visible);
+        $this->assertCount(0, $modinfo->get_instances_of('qbank'));
+        $this->assertGreaterThanOrEqual(1, $report['extraquizzes'] ?? 0);
+        $this->assertStringContainsString('hidden placeholders', implode("\n", $report['warnings']));
+    }
+
+    /**
      * Build an orphan New Quiz whose Common Cartridge assessment holds the given item
      * body and whose native dump (gnq.xml.qti) carries only a bank1 draw, then run the
      * course builder. Shared by the native-fallback tests.

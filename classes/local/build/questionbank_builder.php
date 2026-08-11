@@ -52,6 +52,9 @@ class questionbank_builder {
     /** @var bool Whether the last build() returned null purely because its questions live in shared banks. */
     public bool $lasthandledviabank = false;
 
+    /** @var int How many item-bank draws the last build()'s assessment authored (resolved or not). */
+    public int $lastbankselections = 0;
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -95,6 +98,7 @@ class questionbank_builder {
         $this->lastbankdraws = 0;
         $this->lastbankincomplete = false;
         $this->lasthandledviabank = false;
+        $this->lastbankselections = 0;
 
         $qtipath = $this->locate_qti($modelitem);
         if ($qtipath === null) {
@@ -203,6 +207,10 @@ class questionbank_builder {
      * @return int The number of distinct referenced banks that resolved to an import.
      */
     private function import_bank_draws(stdClass $course, array $selections): int {
+        // Record how many draws the assessment authored (each has a sourcebank_ref),
+        // resolved or not, so a caller can still build quiz_builder's hidden placeholder
+        // for a bank-backed quiz whose banks are all missing.
+        $this->lastbankselections = count($selections);
         $imported = [];
         $remaining = [];
         $incomplete = false;
