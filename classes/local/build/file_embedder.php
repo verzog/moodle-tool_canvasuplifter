@@ -34,13 +34,20 @@ class file_embedder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var media_report|null Shared collector for unresolved media references, or null to not track. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param media_report|null $mediareport Shared collector into which references to package
+     *        files absent from the export are recorded, so the build report can surface them
+     *        (null to skip tracking).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -68,6 +75,14 @@ class file_embedder {
         string $ownerdir = ''
     ): string {
         $result = (new link_rewriter())->rewrite_files($html, $this->packageroot, $ownerdir);
+        // Record references to files absent from the package before returning, so a
+        // fragment whose only tokens are unresolvable is still counted (its 'files'
+        // list is empty, but the broken references matter to the build report).
+        if ($this->mediareport !== null) {
+            foreach ($result['unresolved'] as $reference) {
+                $this->mediareport->record($reference);
+            }
+        }
         if (empty($result['files'])) {
             return $html;
         }

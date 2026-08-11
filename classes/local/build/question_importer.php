@@ -87,6 +87,7 @@ class question_importer {
      * @param array $questions Supported {@see \tool_canvasuplifter\local\model\qti_question} objects.
      * @param string $imagedir Folder for resolving relative question images.
      * @param string|null $filebase Package root for resolving $IMS-CC-FILEBASE$ image tokens.
+     * @param media_report|null $mediareport Shared collector for question media absent from the package.
      * @return array The ids of the questions created, in import order.
      */
     public function import(
@@ -94,7 +95,8 @@ class question_importer {
         \context $context,
         array $questions,
         string $imagedir,
-        ?string $filebase = null
+        ?string $filebase = null,
+        ?media_report $mediareport = null
     ): array {
         global $CFG, $DB;
         require_once($CFG->libdir . '/questionlib.php');
@@ -113,7 +115,12 @@ class question_importer {
         $category = question_get_default_category($context->id, true);
         $contexts = new \core_question\local\bank\question_edit_contexts($context);
 
-        $xml = (new question_xml_writer())->to_moodle_xml($questions, $category->name, $imagedir, $filebase);
+        // Missing question media is recorded into the caller's report. The quiz/bank
+        // builders pass a provisional report they only merge into the shared build
+        // report once the activity is kept, so a rejected-and-deleted import reports
+        // nothing; keeping that decision in the builder also covers the intro media the
+        // builder embeds before calling here.
+        $xml = (new question_xml_writer())->to_moodle_xml($questions, $category->name, $imagedir, $filebase, $mediareport);
         $dir = make_request_directory();
         $file = $dir . '/questions.xml';
         file_put_contents($file, $xml);

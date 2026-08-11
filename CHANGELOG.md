@@ -5,6 +5,33 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.54.0] - 2026-08-11
+
+- **The build report now flags embedded assets the export referenced but did not
+  ship** (issue #111). When page or activity content points at a file via an
+  `$IMS-CC-FILEBASE$` token whose target is absent from the package — typically a
+  stale cross-course image copied from a master course — `link_rewriter` still
+  leaves the reference untouched (it never fabricates or drops a reference), but
+  the outcome is no longer silent: a shared `media_report` collects every
+  unresolved reference across all rich-text builders (page, book, lesson, assign,
+  quiz, forum/discussion, LTI and outcome intros) **and the question-import path
+  (quiz and standalone question-bank stems, answers and feedback)**, and the build
+  report gains a "Notes and warnings" line with the count plus a "Missing embedded
+  assets" list of the exact reference paths, so an editor knows what to re-upload.
+- Each missing reference is keyed by its canonical package path: a root reference
+  (`$IMS-CC-FILEBASE$/path`) as-is, and an owner-relative one resolved against the
+  owning resource's folder (so `logo.png` in two folders stays `unit1/logo.png` vs
+  `unit2/logo.png`, while a `../shared/logo.png` climb from either collapses to the
+  one `shared/logo.png` it targets). Missing media for a quiz/bank whose questions
+  are all rejected — and which is then deleted — is dropped with it rather than
+  reported against the course. Decoded paths are scrubbed to valid UTF-8 so a stale
+  token with invalid bytes can't blank the persisted report, and when more than 50
+  distinct assets are missing the status page states how many were not listed rather
+  than silently truncating.
+- No change to the resolvable path (working embeds keep rewriting to
+  `pluginfile.php`) and no attempt to fetch remote assets that aren't in the
+  package. The unresolved-token branch is unchanged in behaviour — only reported.
+
 ## [0.53.0] - 2026-08-11
 
 - **Owner-relative media embedding now covers the assignment, LTI, quiz and

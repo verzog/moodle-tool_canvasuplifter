@@ -105,22 +105,33 @@ class link_rewriter {
      * @param string $packageroot Absolute path to the extracted package root.
      * @param string $ownerdir Package-relative folder of the resource carrying the HTML ('' to skip),
      *        so media stored beside the owning resource (or reached with a ../ climb) still resolves.
-     * @return array{html: string, files: array<int, array{package: string, filepath: string, filename: string}>}
-     *         The rewritten HTML and the list of package files to import into the page's file area.
+     * @return array{html: string, files: array, unresolved: array}
+     *         The rewritten HTML, the list of package files to import into the page's file area, and
+     *         the decoded reference paths whose target file was absent from the package (left untouched).
      */
     public function rewrite_files(string $html, string $packageroot, string $ownerdir = ''): array {
         $files = [];
         $seen = [];
+        $unresolved = [];
         $pattern = '#' . self::FILEBASE_TOKEN . '([^"\'\s>)]*)#i';
-        $rewritten = preg_replace_callback($pattern, function ($matches) use ($packageroot, $ownerdir, &$files, &$seen) {
+        $callback = function ($matches) use ($packageroot, $ownerdir, &$files, &$seen, &$unresolved) {
             $rawpath = preg_replace('/[?#].*$/', '', $matches[1]);
-            $decoded = ltrim(rawurldecode((string) $rawpath), '/');
+            $decodedraw = rawurldecode((string) $rawpath);
+            // A leading slash marks a package-root reference ($IMS-CC-FILEBASE$/path),
+            // which addresses the same file regardless of who references it; a token with
+            // no leading slash (a bare "name" or a "../" climb) resolves relative to the
+            // owning resource's folder.
+            $rooted = str_starts_with($decodedraw, '/');
+            $decoded = ltrim($decodedraw, '/');
             if ($decoded === '') {
                 return $matches[0];
             }
             $hit = self::locate_filebase($packageroot, $decoded, $ownerdir);
             if ($hit === null) {
-                // Cannot find the file; leave the placeholder untouched.
+                // Cannot find the file; leave the placeholder untouched and record the
+                // unresolved reference so the build report can surface it, keyed by the
+                // canonical missing path.
+                $unresolved[self::unresolved_key($decoded, $ownerdir, $rooted)] = true;
                 return $matches[0];
             }
             [$absolute, $matched] = $hit;
@@ -139,9 +150,10 @@ class link_rewriter {
                 $files[] = ['package' => $absolute, 'filepath' => $filepath, 'filename' => $filename];
             }
             return $this->pluginfile_url($filepath, $filename);
-        }, $html);
+        };
+        $rewritten = preg_replace_callback($pattern, $callback, $html);
 
-        return ['html' => $rewritten ?? $html, 'files' => $files];
+        return ['html' => $rewritten ?? $html, 'files' => $files, 'unresolved' => array_keys($unresolved)];
     }
 
     /**
@@ -249,6 +261,31 @@ class link_rewriter {
                 $tag[0]
             );
         }, $html) ?? $html;
+    }
+
+    /**
+     * The build-report key for an unresolved $IMS-CC-FILEBASE$ reference: the canonical
+     * missing package path. A root-relative reference ($IMS-CC-FILEBASE$/path) addresses
+     * the same file wherever it appears, so its decoded path is used as-is. An
+     * owner-relative reference (a bare name or a ../ climb) is resolved against its owner
+     * directory and the '.'/'..' segments collapsed, so "logo.png" in unit1 vs unit2
+     * stays two distinct assets while "../shared/logo.png" from either collapses to the
+     * one "shared/logo.png" it actually targets. Shared by the page rewriter and the
+     * question writer so both report the same key for the same missing file.
+     *
+     * @param string $decoded The decoded, leading-slash-stripped reference path.
+     * @param string $ownerdir Package-relative folder of the referencing resource ('' if unknown).
+     * @param bool $rooted Whether the original token was package-root-relative (leading slash).
+     * @return string The canonical report key.
+     */
+    public static function unresolved_key(string $decoded, string $ownerdir, bool $rooted): string {
+        // Collapse '.'/'..' segments so references that resolve to the same package
+        // file share one key: a rooted path against the package root, an owner-relative
+        // one against its owner folder. Fall back to the decoded path if it escapes the
+        // root (normalize_path returns null), so the reference is still reported.
+        $basedir = ($rooted || $ownerdir === '') ? '' : $ownerdir;
+        $normalised = self::normalize_path($basedir, $decoded);
+        return $normalised !== null && $normalised !== '' ? $normalised : $decoded;
     }
 
     /**

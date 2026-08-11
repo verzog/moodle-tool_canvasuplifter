@@ -53,13 +53,18 @@ class quiz_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var media_report|null Shared collector for unresolved media references. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param media_report|null $mediareport Shared collector for unresolved media references (null to skip).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -170,13 +175,17 @@ class quiz_builder {
         $cmid = (int) $created->coursemodule;
 
         $context = \context_module::instance($cmid);
+        // Collect any missing intro/question media into a provisional report; it is only
+        // merged into the shared build report if this quiz survives (below), so a quiz
+        // whose questions are all rejected and then deleted reports no phantom assets.
+        $localreport = $this->mediareport !== null ? new media_report() : null;
         // Import any files the description embeds and rewrite the intro to
         // pluginfile refs, mirroring assign_builder's handling. The description
         // comes from assessment_meta.xml, so its owner-relative media resolves
         // against that file's own folder.
         if ($settings->description !== '') {
             $introownerdir = $metapath !== null ? safe_path::package_dir($this->packageroot, $metapath) : '';
-            $newintro = (new file_embedder($this->packageroot))
+            $newintro = (new file_embedder($this->packageroot, $localreport))
                 ->embed($context->id, 'mod_quiz', 'intro', $intro, 0, $introownerdir);
             if ($newintro !== $intro) {
                 $DB->set_field('quiz', 'intro', $newintro, ['id' => (int) $created->instance]);
@@ -185,13 +194,15 @@ class quiz_builder {
 
         if ($isplaceholder) {
             // No questions to import; leave the hidden placeholder for a teacher.
+            $this->promote_media($localreport);
             return $cmid;
         }
 
-        $questionids = (new question_importer())->import($course, $context, $supported, $imagedir, $this->packageroot);
+        $questionids = (new question_importer())
+            ->import($course, $context, $supported, $imagedir, $this->packageroot, $localreport);
         if (empty($questionids)) {
             // Nothing imported despite some questions looking convertible; don't
-            // leave an empty quiz behind.
+            // leave an empty quiz behind. Its provisional media is dropped with it.
             course_delete_module($cmid);
             $this->skipreason = sprintf(
                 "Moodle's importer rejected all %d convertible question(s)",
@@ -211,7 +222,21 @@ class quiz_builder {
             quiz_add_quiz_question((int) $questionid, $quiz);
         }
         \mod_quiz\quiz_settings::create((int) $quiz->id)->get_grade_calculator()->recompute_quiz_sumgrades();
+        $this->promote_media($localreport);
         return $cmid;
+    }
+
+    /**
+     * Merge a kept quiz's provisional missing-media report into the shared build
+     * report. A no-op when media tracking is off or nothing was collected.
+     *
+     * @param media_report|null $localreport The quiz's provisional report, or null.
+     * @return void
+     */
+    private function promote_media(?media_report $localreport): void {
+        if ($this->mediareport !== null && $localreport !== null) {
+            $this->mediareport->merge($localreport);
+        }
     }
 
     /**

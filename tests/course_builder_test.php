@@ -251,6 +251,69 @@ XML;
     }
 
     /**
+     * A page that references an embedded asset absent from the package (e.g. a
+     * stale cross-course image) leaves the reference untouched but records it, so
+     * the build report carries a warning and the list of missing references.
+     *
+     * @return void
+     */
+    public function test_build_reports_unresolved_embedded_media(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/web_resources');
+        file_put_contents($dir . '/web_resources/logo.png', 'PNG');
+        mkdir($dir . '/wiki_content');
+        // The page references one present asset and one that was never shipped.
+        file_put_contents(
+            $dir . '/wiki_content/page.html',
+            '<p><img src="$IMS-CC-FILEBASE$/logo.png"></p>'
+            . '<p><img src="$IMS-CC-FILEBASE$/content/enforced1/CC%20BY%20logo.png"></p>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i1" identifierref="r_page"><title>Page</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_page" type="webcontent" href="wiki_content/page.html">
+      <file href="wiki_content/page.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        // Only the missing asset is listed; a package-root reference ($IMS-CC-FILEBASE$/…)
+        // is owner-independent, so it is recorded unqualified. The present one resolved.
+        $this->assertSame(['content/enforced1/CC BY logo.png'], $report['unresolvedmedia']);
+        $this->assertSame(1, $report['unresolvedmediacount']);
+        $expectedwarning = get_string('warnunresolvedmedia', 'tool_canvasuplifter', 1);
+        $this->assertContains($expectedwarning, $report['warnings']);
+
+        // The present asset was embedded; the missing token is left untouched.
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $pages = $modinfo->get_instances_of('page');
+        $pagecm = reset($pages);
+        $page = $DB->get_record('page', ['id' => $pagecm->instance]);
+        $this->assertStringContainsString('@@PLUGINFILE@@/logo.png', $page->content);
+        $this->assertStringContainsString('$IMS-CC-FILEBASE$/content/enforced1/CC%20BY%20logo.png', $page->content);
+    }
+
+    /**
      * An outcome description carrying a Canvas internal-link token is rewritten
      * to the real activity URL in the same second pass as pages, even though the
      * outcome is created before the URL map is complete.

@@ -44,13 +44,18 @@ class questionbank_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var media_report|null Shared collector for unresolved question media references. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param media_report|null $mediareport Shared collector for unresolved media references (null to skip).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -126,16 +131,24 @@ class questionbank_builder {
         $cmid = (int) $created->coursemodule;
 
         $context = \context_module::instance($cmid);
-        $questionids = (new question_importer())->import($course, $context, $supported, $imagedir, $this->packageroot);
+        // Collect missing question media into a provisional report, merged into the
+        // shared build report only if this bank is kept, so a rejected-and-deleted
+        // import reports no phantom assets.
+        $localreport = $this->mediareport !== null ? new media_report() : null;
+        $questionids = (new question_importer())
+            ->import($course, $context, $supported, $imagedir, $this->packageroot, $localreport);
         if (empty($questionids)) {
             // Nothing imported despite some questions looking convertible; don't
-            // leave an empty bank behind.
+            // leave an empty bank behind. Its provisional media is dropped with it.
             course_delete_module($cmid);
             $this->skipreason = sprintf(
                 "Moodle's importer rejected all %d convertible question(s)",
                 count($importable)
             );
             return null;
+        }
+        if ($this->mediareport !== null && $localreport !== null) {
+            $this->mediareport->merge($localreport);
         }
         // Record the imported questions so course_builder can resolve any
         // internal Canvas links in their text once every activity exists.

@@ -116,18 +116,110 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
-     * A reference to a file that isn't in the package is left untouched.
+     * A reference to a file that isn't in the package is left untouched and
+     * reported as unresolved (deduplicated by decoded path) so the build report
+     * can surface it.
      *
      * @return void
      */
     public function test_rewrite_files_leaves_unresolved(): void {
         $root = make_request_directory();
-        $html = '<img src="$IMS-CC-FILEBASE$/missing.png">';
+        // The same missing asset referenced twice (once URL-encoded) plus a second
+        // distinct missing asset: two distinct unresolved references.
+        $html = '<img src="$IMS-CC-FILEBASE$/missing.png">'
+            . '<img src="%24IMS-CC-FILEBASE%24/missing.png">'
+            . '<a href="$IMS-CC-FILEBASE$/docs/handout.pdf">doc</a>';
 
         $result = (new link_rewriter())->rewrite_files($html, $root);
 
         $this->assertSame($html, $result['html']);
         $this->assertSame([], $result['files']);
+        $this->assertEqualsCanonicalizing(['missing.png', 'docs/handout.pdf'], $result['unresolved']);
+    }
+
+    /**
+     * An unresolved owner-relative reference is keyed by its path resolved against the
+     * owner directory, so the same bare name referenced from two folders stays two
+     * distinct missing assets (unit1/logo.png vs unit2/logo.png).
+     *
+     * @return void
+     */
+    public function test_rewrite_files_unresolved_keeps_owner_context(): void {
+        $root = make_request_directory();
+        $html = '<img src="$IMS-CC-FILEBASE$logo.png">';
+
+        $unit1 = (new link_rewriter())->rewrite_files($html, $root, 'unit1');
+        $unit2 = (new link_rewriter())->rewrite_files($html, $root, 'unit2');
+
+        $this->assertSame(['unit1/logo.png'], $unit1['unresolved']);
+        $this->assertSame(['unit2/logo.png'], $unit2['unresolved']);
+    }
+
+    /**
+     * An owner-relative ../ climb that lands in a shared folder is normalised before
+     * keying, so the same target reached from two different owners collapses to one
+     * missing asset rather than inflating the count.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_unresolved_normalises_owner_climb(): void {
+        $root = make_request_directory();
+        $html = '<img src="$IMS-CC-FILEBASE$../shared/logo.png">';
+
+        $unit1 = (new link_rewriter())->rewrite_files($html, $root, 'unit1');
+        $unit2 = (new link_rewriter())->rewrite_files($html, $root, 'unit2');
+
+        $this->assertSame(['shared/logo.png'], $unit1['unresolved']);
+        $this->assertSame(['shared/logo.png'], $unit2['unresolved']);
+    }
+
+    /**
+     * A package-root reference ($IMS-CC-FILEBASE$/path) is the same asset wherever it
+     * is referenced from, so it is recorded unqualified even with an owner directory -
+     * two owners referencing it must not inflate the missing-asset count.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_unresolved_root_reference_is_owner_independent(): void {
+        $root = make_request_directory();
+        $html = '<img src="$IMS-CC-FILEBASE$/shared/logo.png">';
+
+        $unit1 = (new link_rewriter())->rewrite_files($html, $root, 'unit1');
+        $unit2 = (new link_rewriter())->rewrite_files($html, $root, 'unit2');
+
+        $this->assertSame(['shared/logo.png'], $unit1['unresolved']);
+        $this->assertSame(['shared/logo.png'], $unit2['unresolved']);
+    }
+
+    /**
+     * A missing rooted reference carrying '.'/'..' segments is normalised before
+     * keying, so /a/../shared/logo.png and /shared/logo.png are one missing asset.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_unresolved_normalises_rooted_dot_segments(): void {
+        $root = make_request_directory();
+        $climb = (new link_rewriter())->rewrite_files('<img src="$IMS-CC-FILEBASE$/a/../shared/logo.png">', $root);
+        $direct = (new link_rewriter())->rewrite_files('<img src="$IMS-CC-FILEBASE$/shared/logo.png">', $root);
+
+        $this->assertSame(['shared/logo.png'], $climb['unresolved']);
+        $this->assertSame(['shared/logo.png'], $direct['unresolved']);
+    }
+
+    /**
+     * A resolvable reference reports no unresolved references.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_resolvable_has_no_unresolved(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/logo.png', 'PNG');
+        $html = '<img src="$IMS-CC-FILEBASE$/logo.png">';
+
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertSame([], $result['unresolved']);
     }
 
     /**

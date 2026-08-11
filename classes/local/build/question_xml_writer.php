@@ -37,6 +37,9 @@ class question_xml_writer {
     /** @var string|null Package root for resolving $IMS-CC-FILEBASE$ tokens, set per render. */
     private ?string $filebase = null;
 
+    /** @var media_report|null Shared collector for question media absent from the package, set per render. */
+    private ?media_report $mediareport = null;
+
     /**
      * Render questions as a Moodle XML document.
      *
@@ -44,15 +47,18 @@ class question_xml_writer {
      * @param string $category Question category path, e.g. "$course$/Imported/Quiz".
      * @param string|null $imagedir Absolute folder to resolve relative images, or null to skip.
      * @param string|null $filebase Absolute package root for resolving $IMS-CC-FILEBASE$ tokens.
+     * @param media_report|null $mediareport Shared collector for question media absent from the package.
      * @return string Moodle XML.
      */
     public function to_moodle_xml(
         array $questions,
         string $category,
         ?string $imagedir = null,
-        ?string $filebase = null
+        ?string $filebase = null,
+        ?media_report $mediareport = null
     ): string {
         $this->filebase = $filebase !== null ? rtrim($filebase, '/') : null;
+        $this->mediareport = $mediareport;
         $out = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<quiz>\n";
         $out .= "  <question type=\"category\">\n    <category><text>"
             . htmlspecialchars($category, ENT_XML1) . "</text></category>\n  </question>\n";
@@ -443,6 +449,12 @@ class question_xml_writer {
             if ($abs !== null) {
                 return $this->collect_file($abs, $this->filebase, $suffix, $files);
             }
+            // A question stem/answer/feedback referenced a package file that isn't in
+            // the export; record it (owner-qualified, matching the page path) so the
+            // build report counts broken question media, not just broken page media. A
+            // leading slash marks a package-root reference, owner-independent like the
+            // page path.
+            $this->record_unresolved($decoded, $ownerdir, str_starts_with($decoded, '/'));
             return null;
         }
         // No package root known: resolve directly under the question's image folder.
@@ -451,6 +463,27 @@ class question_xml_writer {
             return $this->collect_file($abs, $imagedir, $suffix, $files);
         }
         return null;
+    }
+
+    /**
+     * Record an unresolved $IMS-CC-FILEBASE$ question reference into the shared media
+     * report, qualified with its owner directory so the same bare name referenced from
+     * two question banks is not collapsed. Mirrors {@see link_rewriter}'s page labels so
+     * page and question misses read the same way in the build report.
+     *
+     * @param string $decoded The decoded reference path that could not be resolved.
+     * @param string $ownerdir The question's package-relative resource folder ('' if unknown).
+     * @param bool $rooted Whether the reference was package-root-relative (owner-independent).
+     * @return void
+     */
+    protected function record_unresolved(string $decoded, string $ownerdir, bool $rooted): void {
+        if ($this->mediareport === null) {
+            return;
+        }
+        // Drop any leading slash so the path reads the same way link_rewriter records
+        // page misses ("content/x.png", not "/content/x.png"), then key it the same way
+        // (root reference used as-is, owner-relative resolved against the owner folder).
+        $this->mediareport->record(link_rewriter::unresolved_key(ltrim($decoded, '/'), $ownerdir, $rooted));
     }
 
     /**

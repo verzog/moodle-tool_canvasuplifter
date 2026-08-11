@@ -227,6 +227,8 @@ $string['trustedsourcewarning'] = 'Only import Common Cartridge packages from a 
     . 'Imported page and description HTML is stored and shown as authored (Moodle does not re-clean it), '
     . 'so a package from an untrusted source could contain active content that runs for anyone viewing the course.';
 $string['unknownheading'] = 'Unclassified resource types (debug)';
+$string['unresolvedmediaheading'] = 'Missing embedded assets';
+$string['unresolvedmediatruncated'] = '... and {$a} more not listed here.';
 $string['untitledsection'] = 'Untitled section';
 $string['uploaded'] = 'File uploaded';
 $string['uploadnotfinished'] = 'Upload did not finish!';
@@ -249,3 +251,6 @@ $string['warnreportobsolete'] = 'Some resources are Flash (.swf) or other obsole
 $string['warnreportquiz'] = 'Quiz questions depend on type support; check the question-type matrix.';
 $string['warnreportquizfrombank'] = 'Some assessments are not linked anywhere in the course, so they import as reusable question banks only. To also create a runnable quiz from each, tick "Also build a runnable quiz from each standalone question bank" before building.';
 $string['warnreportunclassified'] = 'Some resources could not be classified and will be skipped.';
+$string['warnunresolvedmedia'] = '{$a} embedded asset(s) referenced in page or activity content are not present in '
+    . 'the package (for example a stale cross-course image copied from another course), so those references were '
+    . 'left as-is and will show as broken. See the list below and re-upload the files if the content needs them.';
