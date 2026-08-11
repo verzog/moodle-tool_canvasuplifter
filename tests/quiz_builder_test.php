@@ -1053,13 +1053,14 @@ XML;
         $dir = make_request_directory();
         mkdir($dir . '/gnewquiz', 0777, true);
         mkdir($dir . '/non_cc_assessments', 0777, true);
-        // The CC assessment carries no items, only a bank draw of two questions.
+        // The CC assessment carries no items, only a bank draw of two questions worth
+        // 2.5 points each.
         $qti = '<?xml version="1.0"?>'
             . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
             . '<assessment ident="gnewquiz" title="Learning Expectations"><section ident="root_section">'
             . '<section ident="grp" title="Group"><selection_ordering><selection>'
             . '<sourcebank_ref>gbank1</sourcebank_ref><selection_number>2</selection_number>'
-            . '<selection_extension><points_per_item>1.0</points_per_item></selection_extension>'
+            . '<selection_extension><points_per_item>2.5</points_per_item></selection_extension>'
             . '</selection></selection_ordering></section>'
             . '</section></assessment></questestinterop>';
         file_put_contents($dir . '/gnewquiz/assessment_qti.xml', $qti);
@@ -1067,10 +1068,12 @@ XML;
             . '<quiz identifier="gnewquiz" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
             . '<title>Learning Expectations</title><allowed_attempts>1</allowed_attempts></quiz>';
         file_put_contents($dir . '/gnewquiz/assessment_meta.xml', $meta);
-        // The referenced item bank holds three MC questions.
+        // The referenced item bank holds three MC questions and carries a bank title.
         $bank = '<?xml version="1.0" encoding="UTF-8"?>'
             . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
-            . '<objectbank ident="gbank1">'
+            . '<objectbank ident="gbank1"><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>bank_title</fieldlabel><fieldentry>Unfiled Questions</fieldentry>'
+            . '</qtimetadatafield></qtimetadata>'
             . $this->bankmcitem('b1') . $this->bankmcitem('b2') . $this->bankmcitem('b3')
             . '</objectbank></questestinterop>';
         file_put_contents($dir . '/non_cc_assessments/gbank1.xml.qti', $bank);
@@ -1122,14 +1125,84 @@ XML;
         $this->assertEquals(1, (int) $quizcm->visible);
         $this->assertStringNotContainsString('hidden placeholders', implode("\n", $report['warnings']));
 
-        // Two random-question slots were added (the selection asked for 2).
-        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
+        // Two random-question slots were added (the selection asked for 2), each with
+        // the Canvas per-item points (2.5) as its max mark.
+        $slots = $DB->get_records('quiz_slots', ['quizid' => $quizcm->instance]);
+        $this->assertCount(2, $slots);
+        foreach ($slots as $slot) {
+            $this->assertEquals(2.5, (float) $slot->maxmark);
+        }
 
-        // The bank itself was imported as a question bank holding all three questions.
+        // The bank was imported as a question bank, kept in section 0 and named from
+        // its bank_title.
         $qbanks = $modinfo->get_instances_of('qbank');
         $this->assertCount(1, $qbanks);
+        $qbankcm = reset($qbanks);
+        $this->assertSame('Unfiled Questions', $qbankcm->get_name());
+        $this->assertEquals(0, $qbankcm->sectionnum);
 
         // The build report notes the bank-draw rather than a placeholder warning.
         $this->assertStringContainsString('drawing random questions', implode("\n", $report['warnings']));
+        $this->assertStringNotContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * A New Quiz that mixes an inline question with a bank draw keeps the inline
+     * question and adds the bank draw; when a referenced bank is absent the quiz is
+     * still built from what resolved and the report flags it as missing a group.
+     *
+     * @return void
+     */
+    public function test_new_quiz_mixes_inline_and_reports_missing_bank(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/gnewquiz', 0777, true);
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        // One inline MC question plus a draw of 2 from a bank that is NOT shipped.
+        $inline = '<item ident="inline1" title="Inline"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_choice_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;div&gt;Inline?&lt;/div&gt;</mattext></material>'
+            . '<response_lid ident="response1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="a"><material><mattext texttype="text/plain">Right</mattext></material></response_label>'
+            . '<response_label ident="b"><material><mattext texttype="text/plain">Wrong</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="response1">a</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+        $qti = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnewquiz" title="Mixed"><section ident="root_section">'
+            . $inline
+            . '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>gmissing</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/gnewquiz/assessment_qti.xml', $qti);
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Mixed</title></item></item>'
+            . '</item></organization></organizations>'
+            . '<resources><resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">'
+            . '<file href="gnewquiz/assessment_qti.xml"/></resource></resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $quizcm = reset($quizzes);
+        // The inline question was kept even though a bank draw was also present.
+        $this->assertEquals(1, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
+        // The missing bank is surfaced as an incomplete-group warning.
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
     }
 }

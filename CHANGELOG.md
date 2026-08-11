@@ -13,10 +13,16 @@ quickly.
   quizzes import as hidden placeholders even though the bank's questions ship in the
   package. `qti_parser` now captures each selection (bank id, count, per-item points);
   `quiz_builder` imports each referenced bank (`non_cc_assessments/<id>.xml.qti`) once
-  as a `mod_qbank` — shared across quizzes that reference it — and adds that many
-  random questions to the quiz (`mod_quiz\structure::add_random_questions`), capped at
-  the questions actually imported. If no referenced bank resolves to importable
-  questions the quiz still falls back to the hidden placeholder, so nothing regresses.
+  as a section-0 `mod_qbank` — shared across quizzes that reference it, named from the
+  bank's `bank_title` — and adds that many random questions to the quiz
+  (`mod_quiz\structure::add_random_questions`), applying each selection's
+  `points_per_item` as the slot max mark. Draws are capped per bank cumulatively across
+  all groups, bank draws are accepted only from a valid QTI assessment, and a quiz can
+  mix inline questions with bank groups. A quiz missing a group (a referenced bank
+  absent or short of questions) is flagged in the build report; a New Quiz whose banks
+  don't resolve at all still falls back to the hidden placeholder, so nothing regresses.
+  The shared QTI-source helpers (`parse_qti`, `locate_native_qti`) now live in a
+  `qti_source_locator` trait used by both the quiz and question-bank builders.
 
 ## [0.54.0] - 2026-08-11
 

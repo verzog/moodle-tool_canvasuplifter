@@ -329,6 +329,9 @@ class course_builder {
         if ($quizbuilder instanceof quiz_builder && $quizbuilder->bankdrawcount > 0) {
             $warnings[] = get_string('notequizbankdraw', 'tool_canvasuplifter', $quizbuilder->bankdrawcount);
         }
+        if ($quizbuilder instanceof quiz_builder && $quizbuilder->bankincompletecount > 0) {
+            $warnings[] = get_string('warnquizbankincomplete', 'tool_canvasuplifter', $quizbuilder->bankincompletecount);
+        }
         if ($gradelettercount > 0) {
             $warnings[] = get_string('notegradeletters', 'tool_canvasuplifter', $gradelettercount);
         }

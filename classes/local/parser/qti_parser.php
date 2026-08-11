@@ -81,6 +81,15 @@ class qti_parser {
             // / assessmentSection), so neither matches here.
             $result['hasassessment'] = $dom->getElementsByTagNameNS('*', 'section')->length > 0;
         }
+        // A native item bank is rooted at <objectbank> and carries its name in a
+        // bank_title metadata field rather than a title attribute; use it so each
+        // imported bank keeps its Canvas name.
+        if ($result['title'] === '') {
+            $banks = $dom->getElementsByTagNameNS('*', 'objectbank');
+            if ($banks->length > 0 && $banks->item(0) instanceof DOMElement) {
+                $result['title'] = $this->metadata_field($banks->item(0), 'bank_title');
+            }
+        }
 
         foreach ($dom->getElementsByTagNameNS('*', 'item') as $itemnode) {
             if (!($itemnode instanceof DOMElement)) {

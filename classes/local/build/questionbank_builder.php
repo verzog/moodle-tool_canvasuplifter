@@ -35,6 +35,8 @@ use tool_canvasuplifter\local\parser\qti_parser;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class questionbank_builder {
+    use qti_source_locator;
+
     /** @var string|null Why the last build() returned null, for the skip report. */
     public ?string $skipreason = null;
 
@@ -154,60 +156,6 @@ class questionbank_builder {
         // internal Canvas links in their text once every activity exists.
         $this->importedquestionids = array_merge($this->importedquestionids, array_map('intval', $questionids));
         return $cmid;
-    }
-
-    /**
-     * Parse a QTI file into [parsed, supported, importable] the same way
-     * quiz_builder does, so the CC file and the native dump are handled uniformly.
-     *
-     * @param string $path Absolute path to the QTI file.
-     * @return array [parsed array, supported questions, importable questions].
-     */
-    private function parse_qti(string $path): array {
-        $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
-        $supported = array_filter($parsed['questions'], fn($q) => $q->type !== qti_question::TYPE_UNSUPPORTED);
-        $importable = array_filter($supported, fn($q) => $q->is_importable());
-        return [$parsed, $supported, $importable];
-    }
-
-    /**
-     * Find the native Canvas question dump for this bank, used when the Common
-     * Cartridge assessment_qti.xml is an empty shell. Canvas writes the real
-     * questions to non_cc_assessments/<resource-id>.xml.qti at the package root,
-     * keyed by the same id as the assessment's CC folder. Prefer an explicit
-     * non_cc_assessments entry on the item's file list, then fall back to deriving
-     * the id from the resolved QTI folder. Never return the file already parsed.
-     *
-     * @param item $modelitem The bank item.
-     * @param string $qtipath Absolute path of the resolved CC QTI file.
-     * @return string|null Absolute path within the package, or null.
-     */
-    private function locate_native_qti(item $modelitem, string $qtipath): ?string {
-        $already = realpath($qtipath);
-        foreach ($modelitem->files as $relative) {
-            if (!preg_match('~(^|/)non_cc_assessments/[^/]+\.xml\.qti$~i', $relative)) {
-                continue;
-            }
-            $absolute = safe_path::within($this->packageroot, $relative);
-            if ($absolute !== null && is_readable($absolute) && realpath($absolute) !== $already) {
-                return $absolute;
-            }
-        }
-        // Canvas keys the native dump by the assessment id, which is the CC folder
-        // name for a foldered QTI but the resource identifier when the QTI sits at
-        // the package root (where basename(dirname()) yields the extraction dir,
-        // not the id). Try both.
-        $ids = [basename(dirname($qtipath)), $modelitem->identifier];
-        foreach ($ids as $id) {
-            if ($id === '' || $id === '.' || $id === '/') {
-                continue;
-            }
-            $candidate = safe_path::within($this->packageroot, 'non_cc_assessments/' . $id . '.xml.qti');
-            if ($candidate !== null && is_readable($candidate) && realpath($candidate) !== $already) {
-                return $candidate;
-            }
-        }
-        return null;
     }
 
     /**

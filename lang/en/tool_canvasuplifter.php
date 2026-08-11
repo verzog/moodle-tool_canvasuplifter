@@ -243,6 +243,9 @@ $string['warnoutcomesmalformed'] = 'The package\'s learning_outcomes.xml could n
 $string['warnoutcomesskipped'] = 'Skipped {$a} Canvas learning outcome(s) whose mastery ratings did not form a '
     . 'usable scale (Moodle scales need at least two distinct rating labels); recreate those outcomes by hand '
     . 'if needed.';
+$string['warnquizbankincomplete'] = '{$a} bank-backed quiz(zes) are missing part of their questions because a '
+    . 'referenced Canvas item bank was not in the package (or held fewer questions than the quiz asked for); '
+    . 'review those quizzes and add the missing questions.';
 $string['warnquizplaceholders'] = '{$a} quiz(zes) were imported as hidden placeholders because Canvas '
     . 'did not export their questions (e.g. New Quizzes backed by an item bank). Their settings carried '
     . 'over; add questions and unhide them.';
