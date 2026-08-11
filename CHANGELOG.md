@@ -5,6 +5,19 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.52.0] - 2026-08-11
+
+- Regression coverage for grouped-page owner-relative media embedding. 0.51.0
+  extended owner-relative `$IMS-CC-FILEBASE$` embedding to the page/book/lesson
+  builders but only exercised standalone pages; these tests build a run of pages
+  as a **book** and as a **lesson** where the first page reaches a sibling
+  resource folder with a `../` climb, and assert the media embeds into the
+  chapter / lesson-page file area and that the backing resource is not also
+  surfaced as a standalone "Additional resources" download. Probing across
+  grouped pages, shared media across pages, and multi-file resources confirmed
+  the behaviour is correct; this locks it against future regressions. (Test-only;
+  no production behaviour change.)
+
 ## [0.51.0] - 2026-08-05
 
 - **Extend owner-relative media embedding to the page, book and lesson

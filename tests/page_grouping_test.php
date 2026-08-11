@@ -193,6 +193,132 @@ XML;
     }
 
     /**
+     * A grouped run whose first page references media in a sibling resource folder
+     * with an owner-relative $IMS-CC-FILEBASE$ climb: the image folder is not the
+     * package root, so it resolves only relative to the page's own folder.
+     *
+     * @return string Path to the package root.
+     */
+    private function build_owner_relative_media_fixture(): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        mkdir($dir . '/media');
+        // A 1x1 PNG so the embedded image resolves to a real file.
+        file_put_contents(
+            $dir . '/media/diagram.png',
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+        );
+        // The page lives under wiki_content/ and reaches the sibling media/ folder
+        // with a ../ climb - resolvable only relative to the page's own folder.
+        file_put_contents(
+            $dir . '/wiki_content/page-one.html',
+            '<p>Intro</p><p><img src="$IMS-CC-FILEBASE$../media/diagram.png"></p>'
+        );
+        file_put_contents($dir . '/wiki_content/page-two.html', '<p>Two</p>');
+        file_put_contents($dir . '/wiki_content/page-three.html', '<p>Three</p>');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Reading</title>
+          <item identifier="i1" identifierref="r1"><title>Page One</title></item>
+          <item identifier="i2" identifierref="r2"><title>Page Two</title></item>
+          <item identifier="i3" identifierref="r3"><title>Page Three</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r1" type="webcontent" href="wiki_content/page-one.html">
+      <file href="wiki_content/page-one.html"/>
+    </resource>
+    <resource identifier="r2" type="webcontent" href="wiki_content/page-two.html">
+      <file href="wiki_content/page-two.html"/>
+    </resource>
+    <resource identifier="r3" type="webcontent" href="wiki_content/page-three.html">
+      <file href="wiki_content/page-three.html"/>
+    </resource>
+    <resource identifier="r_diagram" type="webcontent" href="media/diagram.png">
+      <file href="media/diagram.png"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A book chapter grouped from pages embeds a chapter's owner-relative
+     * $IMS-CC-FILEBASE$ media (a ../ climb into a sibling folder) into the chapter
+     * file area, and the backing resource is not also surfaced as a standalone file.
+     *
+     * @return void
+     */
+    public function test_book_grouping_embeds_owner_relative_media(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_owner_relative_media_fixture();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root, null, 0, false, 'book'))->build($coursemodel);
+        $courseid = $report['courseid'];
+        $modinfo = get_fast_modinfo($courseid);
+
+        $book = $DB->get_record('book', ['course' => $courseid], '*', MUST_EXIST);
+        $chapter = $DB->get_record('book_chapters', ['bookid' => $book->id, 'title' => 'Page One'], '*', MUST_EXIST);
+        $this->assertStringContainsString('@@PLUGINFILE@@/media/diagram.png', $chapter->content);
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $chapter->content);
+
+        $cm = get_coursemodule_from_instance('book', $book->id, $courseid, false, MUST_EXIST);
+        $context = \context_module::instance($cm->id);
+        $fs = get_file_storage();
+        $this->assertTrue($fs->file_exists($context->id, 'mod_book', 'chapter', $chapter->id, '/media/', 'diagram.png'));
+
+        // The image resource is not also built as a standalone file activity.
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
+    }
+
+    /**
+     * A lesson page grouped from pages embeds an owner-relative $IMS-CC-FILEBASE$
+     * media reference (a ../ climb into a sibling folder) into the lesson-page file
+     * area, and the backing resource is not also surfaced as a standalone file.
+     *
+     * @return void
+     */
+    public function test_lesson_grouping_embeds_owner_relative_media(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_owner_relative_media_fixture();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root, null, 0, false, 'lesson'))->build($coursemodel);
+        $courseid = $report['courseid'];
+        $modinfo = get_fast_modinfo($courseid);
+
+        $lesson = $DB->get_record('lesson', ['course' => $courseid], '*', MUST_EXIST);
+        $page = $DB->get_record('lesson_pages', ['lessonid' => $lesson->id, 'title' => 'Page One'], '*', MUST_EXIST);
+        $this->assertStringContainsString('@@PLUGINFILE@@/media/diagram.png', $page->contents);
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $page->contents);
+
+        $cm = get_coursemodule_from_instance('lesson', $lesson->id, $courseid, false, MUST_EXIST);
+        $context = \context_module::instance($cm->id);
+        $fs = get_file_storage();
+        $this->assertTrue($fs->file_exists($context->id, 'mod_lesson', 'page_contents', $page->id, '/media/', 'diagram.png'));
+
+        // The image resource is not also built as a standalone file activity.
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
+    }
+
+    /**
      * An unpublished Canvas page in a grouped run is kept out of the lesson's
      * left-hand menu: its page-level display flag is off (the menu only lists
      * pages whose display is set), while published pages stay listed.
