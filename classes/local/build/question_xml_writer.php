@@ -91,6 +91,7 @@ class question_xml_writer {
             qti_question::TYPE_TRUEFALSE => 'truefalse',
             qti_question::TYPE_NUMERICAL => 'numerical',
             qti_question::TYPE_CALCULATED => 'calculated',
+            qti_question::TYPE_CLOZE => 'multianswer',
             default => 'multichoice',
         };
 
@@ -127,6 +128,11 @@ class question_xml_writer {
                 break;
             case 'calculated':
                 $body .= $this->calculated_xml($q);
+                break;
+            case 'multianswer':
+                // A Cloze question carries its sub-questions inline in the question
+                // text, so the common name/questiontext body is complete — no separate
+                // answers, and the grade comes from the embedded fields.
                 break;
             default:
                 $body .= "    <single>" . ($q->type === qti_question::TYPE_MULTIANSWER ? 'false' : 'true') . "</single>\n";

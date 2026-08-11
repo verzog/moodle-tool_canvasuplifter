@@ -205,6 +205,9 @@ class qti_parser {
             case qti_question::TYPE_CALCULATED:
                 $this->fill_calculated($item, $question);
                 break;
+            case qti_question::TYPE_CLOZE:
+                $this->fill_cloze($item, $presentation, $question);
+                break;
             case qti_question::TYPE_ESSAY:
             default:
                 break;
@@ -274,28 +277,36 @@ class qti_parser {
                 // equivalent (ddmarker/ordering are not core question types here),
                 // so name them explicitly and leave them unsupported.
                 return qti_question::TYPE_UNSUPPORTED;
-            case 'multiple_dropdowns_question':
             case 'fill_in_multiple_blanks_question':
-                // Inline dropdowns/blanks: each blank is a response_lid with its
-                // own render_choice and a scored answer. Two or more blanks become
-                // a Moodle match (one stem/answer pair per blank) — but only when
-                // every blank offers the same choice set, because Moodle match has
-                // a single global answer pool; with per-blank choices one blank's
-                // options would wrongly be offered for another, so leave it
-                // unsupported. A single fill-in-blank is a short answer (type the
-                // accepted word — its render_choice lists every acceptable answer);
-                // a single dropdown is a pick-from-list multiple choice and falls
-                // through to the cardinality fallback. A free-text blank has no
-                // response_lid and falls through to unsupported.
+                // Free-text blanks: each blank is a response_lid whose render_choice
+                // lists the acceptable answers for that blank. Two or more blanks
+                // become a Moodle Cloze (multianswer) — one SHORTANSWER field per
+                // blank, embedded in the stem at its placeholder — which keeps each
+                // blank's own answer set (unlike Moodle match's single global pool).
+                // A single blank is a plain short answer (type the accepted word).
+                $lidcount = $presentation !== null
+                    ? $presentation->getElementsByTagNameNS('*', 'response_lid')->length : 0;
+                if ($lidcount >= 2) {
+                    return qti_question::TYPE_CLOZE;
+                }
+                if ($lidcount === 1) {
+                    return qti_question::TYPE_SHORTANSWER;
+                }
+                break;
+            case 'multiple_dropdowns_question':
+                // Inline dropdowns: each blank is a response_lid with a fixed choice
+                // set. Two or more become a Moodle match (one stem/answer pair per
+                // blank) — but only when every blank offers the same choice set,
+                // because Moodle match has a single global answer pool; with per-blank
+                // choices one blank's options would wrongly be offered for another, so
+                // leave it unsupported. A single dropdown is a pick-from-list multiple
+                // choice and falls through to the cardinality fallback.
                 $lidcount = $presentation !== null
                     ? $presentation->getElementsByTagNameNS('*', 'response_lid')->length : 0;
                 if ($lidcount >= 2) {
                     return $this->blanks_share_choices($presentation) && $this->blanks_have_stems($presentation)
                         ? qti_question::TYPE_MATCHING
                         : qti_question::TYPE_UNSUPPORTED;
-                }
-                if ($lidcount === 1 && $canvastype === 'fill_in_multiple_blanks_question') {
-                    return qti_question::TYPE_SHORTANSWER;
                 }
                 break;
         }
@@ -590,6 +601,138 @@ class qti_parser {
             $html = (string) preg_replace('/\[' . $quoted . '\]/', '{' . $name . '}', $html);
         }
         return $html;
+    }
+
+    /**
+     * Populate a Canvas fill-in-multiple-blanks question as a Moodle Cloze.
+     *
+     * Each blank is a <response_lid ident="response_<id>"> whose <render_choice>
+     * lists the acceptable answers as <response_label>s, and the stem carries a
+     * [<id>] placeholder per blank. The accepted answers for a blank are the scoring
+     * <varequal respident="response_<id>"> values, each resolved to the matching
+     * response_label's display text. Each placeholder is replaced in the stem with a
+     * Moodle SHORTANSWER Cloze field listing that blank's answers, so the whole
+     * question becomes a single multianswer item.
+     *
+     * @param DOMElement $item The item element.
+     * @param DOMElement|null $presentation The presentation element.
+     * @param qti_question $question The question being built (modified in place).
+     * @return void
+     */
+    protected function fill_cloze(DOMElement $item, ?DOMElement $presentation, qti_question $question): void {
+        if ($presentation === null) {
+            return;
+        }
+        $stem = $question->questiontext;
+        $blanks = $this->cloze_blank_answers($item, $presentation);
+        $text = $stem;
+        foreach ($blanks as $blankid => $accepted) {
+            if ($accepted === []) {
+                continue;
+            }
+            $text = str_replace('[' . $blankid . ']', $this->cloze_field($accepted), $text);
+        }
+        $question->questiontext = $text;
+        // The name was derived from the raw stem, which for an untitled item still shows
+        // the [blank] placeholders; re-derive it with the blanks shown as gaps so it
+        // reads as prose. A titled item keeps its title (derive_name prefers it).
+        if (trim($item->getAttribute('title')) === '') {
+            $display = $stem;
+            foreach (array_keys($blanks) as $blankid) {
+                $display = str_replace('[' . $blankid . ']', ' ____ ', $display);
+            }
+            $question->name = $this->derive_name($item, $display);
+        }
+    }
+
+    /**
+     * Map each fill-in-multiple-blanks blank to its accepted answers. The blank id is
+     * the response_lid ident with the "response_" prefix removed; the answers are the
+     * scoring varequal values (negated conditions skipped), each resolved to the
+     * matching response_label's display text, or the value itself when it is not a
+     * label ident. When a blank has no scoring varequal, every listed choice is
+     * accepted (Canvas lists each acceptable spelling as a response_label).
+     *
+     * @param DOMElement $item The item element.
+     * @param DOMElement $presentation The presentation element.
+     * @return array Map of blank id to a list of accepted answer strings.
+     */
+    protected function cloze_blank_answers(DOMElement $item, DOMElement $presentation): array {
+        $resprocessing = $this->first_child_element($item, 'resprocessing');
+        $result = [];
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if (!($lid instanceof DOMElement) || $lid->getAttribute('ident') === '') {
+                continue;
+            }
+            $ident = $lid->getAttribute('ident');
+            $blankid = (string) preg_replace('/^response_/', '', $ident);
+            $labels = [];
+            foreach ($lid->getElementsByTagNameNS('*', 'response_label') as $label) {
+                if ($label instanceof DOMElement && $label->getAttribute('ident') !== '') {
+                    $labels[$label->getAttribute('ident')] = $this->material_text($label);
+                }
+            }
+            $accepted = [];
+            $seen = [];
+            if ($resprocessing !== null) {
+                foreach ($resprocessing->getElementsByTagNameNS('*', 'varequal') as $ve) {
+                    if (!($ve instanceof DOMElement) || $ve->getAttribute('respident') !== $ident) {
+                        continue;
+                    }
+                    if ($this->within($ve, 'not')) {
+                        continue;
+                    }
+                    $ref = trim($ve->textContent);
+                    $answer = trim($labels[$ref] ?? $ref);
+                    if ($answer !== '' && !isset($seen[$answer])) {
+                        $seen[$answer] = true;
+                        $accepted[] = $answer;
+                    }
+                }
+            }
+            if ($accepted === []) {
+                foreach ($labels as $labeltext) {
+                    $labeltext = trim($labeltext);
+                    if ($labeltext !== '' && !isset($seen[$labeltext])) {
+                        $seen[$labeltext] = true;
+                        $accepted[] = $labeltext;
+                    }
+                }
+            }
+            $result[$blankid] = $accepted;
+        }
+        return $result;
+    }
+
+    /**
+     * Build a Moodle SHORTANSWER Cloze field from a blank's accepted answers, e.g.
+     * {1:SHORTANSWER:=ipsum~=ipsem}. Each answer is a fully-credited option (=) with
+     * the Cloze metacharacters escaped so answer text can't break the field.
+     *
+     * @param array $accepted The accepted answer strings.
+     * @return string
+     */
+    protected function cloze_field(array $accepted): string {
+        $options = [];
+        foreach ($accepted as $answer) {
+            $options[] = '=' . $this->cloze_escape((string) $answer);
+        }
+        return '{1:SHORTANSWER:' . implode('~', $options) . '}';
+    }
+
+    /**
+     * Escape the Cloze metacharacters (backslash, braces, the # feedback separator and
+     * the ~ option separator) in answer text, backslash first so it is not doubled.
+     *
+     * @param string $text The answer text.
+     * @return string
+     */
+    protected function cloze_escape(string $text): string {
+        return str_replace(
+            ['\\', '{', '}', '#', '~'],
+            ['\\\\', '\\{', '\\}', '\\#', '\\~'],
+            $text
+        );
     }
 
     /**

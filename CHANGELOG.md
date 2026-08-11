@@ -5,6 +5,19 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.59.0] - 2026-08-12
+
+- **Free-text multi-blank questions now convert** (roadmap Phase 8, final type). A Canvas
+  `fill_in_multiple_blanks_question` with two or more blanks is imported as a Moodle Cloze
+  (`multianswer`) question rather than being reported as unsupported. Each blank is a
+  `<response_lid>` whose `<render_choice>` lists the acceptable answers, and the stem carries
+  a `[blank]` placeholder per blank; each placeholder is replaced with a `{1:SHORTANSWER:=…}`
+  Cloze field built from that blank's accepted answers (its scoring `<varequal>` values
+  resolved to the answer text), with Cloze metacharacters escaped. A single-blank fill-in
+  still imports as a short answer, and `multiple_dropdowns_question` still maps to matching
+  when its blanks share one choice set. Verified end-to-end through Moodle's own `qformat_xml`
+  importer. The analyse question-type matrix now counts Cloze among the supported types.
+
 ## [0.58.0] - 2026-08-12
 
 - **Calculated (formula) questions now convert** (roadmap Phase 8). A Canvas

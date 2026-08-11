@@ -717,14 +717,14 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
-     * Canvas's inline-choice "cloze" types (multiple_dropdowns_question and the
-     * choice form of fill_in_multiple_blanks_question) are authored as one
-     * response_lid + render_choice per blank, structurally a matching question,
-     * so they import as a Moodle match (one stem/answer pair per blank).
+     * A Canvas multiple_dropdowns_question is authored as one response_lid +
+     * render_choice per blank; when every blank shares one choice set it is
+     * structurally a matching question, so it imports as a Moodle match (one
+     * stem/answer pair per blank).
      *
      * @return void
      */
-    public function test_native_dropdowns_and_blanks_become_matching(): void {
+    public function test_native_dropdowns_become_matching(): void {
         $blank = function (string $ident, string $stem, string $a1, string $a2): string {
             return '<response_lid ident="' . $ident . '"><material><mattext>' . $stem . '</mattext></material>'
                 . '<render_choice>'
@@ -733,31 +733,114 @@ final class qti_parser_test extends \basic_testcase {
                 . '<response_label ident="' . $a2 . '"><material><mattext texttype="text/plain">Motor</mattext>'
                 . '</material></response_label></render_choice></response_lid>';
         };
-        foreach (['multiple_dropdowns_question', 'fill_in_multiple_blanks_question'] as $type) {
-            $pres = '<presentation><material><mattext texttype="text/html">Pick for each [I] [II].</mattext></material>'
-                . $blank('response_I', 'I', 'a1', 'a2') . $blank('response_II', 'II', 'b1', 'b2') . '</presentation>';
-            $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
-                . '<respcondition><conditionvar><varequal respident="response_I">a1</varequal></conditionvar>'
-                . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
-                . '<respcondition><conditionvar><varequal respident="response_II">b2</varequal></conditionvar>'
-                . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
-            $item = '<item ident="c1" title="Cloze"><itemmetadata><qtimetadata>'
-                . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>' . $type . '</fieldentry>'
-                . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+        $pres = '<presentation><material><mattext texttype="text/html">Pick for each [I] [II].</mattext></material>'
+            . $blank('response_I', 'I', 'a1', 'a2') . $blank('response_II', 'II', 'b1', 'b2') . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_I">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_II">b2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="c1" title="Cloze"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
 
-            $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
 
-            $this->assertSame(qti_question::TYPE_MATCHING, $q->type, "$type should map to matching");
-            $pairs = [];
-            foreach ($q->subquestions as $sub) {
-                if (trim($sub['text']) !== '') {
-                    $pairs[$this->plain($sub['text'])] = $sub['answer'];
-                }
+        $this->assertSame(qti_question::TYPE_MATCHING, $q->type);
+        $pairs = [];
+        foreach ($q->subquestions as $sub) {
+            if (trim($sub['text']) !== '') {
+                $pairs[$this->plain($sub['text'])] = $sub['answer'];
             }
-            $this->assertSame('Sensory', $pairs['I']);
-            $this->assertSame('Motor', $pairs['II']);
-            $this->assertTrue($q->is_importable(), "$type should be importable");
         }
+        $this->assertSame('Sensory', $pairs['I']);
+        $this->assertSame('Motor', $pairs['II']);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A Canvas fill_in_multiple_blanks_question with two or more free-text blanks
+     * becomes a Moodle Cloze: each [blank] placeholder in the stem is replaced by a
+     * SHORTANSWER field built from that blank's accepted answers (its varequal values
+     * resolved to the response_label display text).
+     *
+     * @return void
+     */
+    public function test_native_fill_in_multiple_blanks_becomes_cloze(): void {
+        $q = (new qti_parser())->parse($this->assessment($this->fib_item()))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        $this->assertSame('fill_in_multiple_blanks_question', $q->profile);
+        $this->assertTrue($q->is_importable());
+        $this->assertStringContainsString('Lorem {1:SHORTANSWER:=ipsum} dolor', $q->questiontext);
+        $this->assertStringContainsString('elit {1:SHORTANSWER:=sed} do', $q->questiontext);
+        // The name reads as prose (blanks shown as gaps), not the raw [blank] ids.
+        $this->assertStringNotContainsString('[b1]', $q->name);
+        $this->assertStringNotContainsString('{1:SHORTANSWER', $q->name);
+    }
+
+    /**
+     * A blank with several accepted spellings becomes a SHORTANSWER field listing each
+     * as a fully-credited (=) option, and Cloze metacharacters in an answer are escaped
+     * so they cannot break the field.
+     *
+     * @return void
+     */
+    public function test_native_cloze_multiple_answers_are_escaped(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">Sum: [b1] and [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice>'
+            . '<response_label ident="b1-0"><material><mattext texttype="text/plain">2~x</mattext></material></response_label>'
+            . '<response_label ident="b1-1"><material><mattext texttype="text/plain">two</mattext></material></response_label>'
+            . '</render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice>'
+            . '<response_label ident="b2-0"><material><mattext texttype="text/plain">3</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="c2"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>fill_in_multiple_blanks_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // First blank: two options, and the ~ in "2~x" is escaped as \~.
+        $this->assertStringContainsString('{1:SHORTANSWER:=2\~x~=two} and {1:SHORTANSWER:=3}', $q->questiontext);
+    }
+
+    /**
+     * A Canvas fill_in_multiple_blanks_question with three free-text blanks (the shape
+     * a real Canvas export uses: [blank] stem placeholders, response_lid per blank with
+     * its accepted answers as response_labels, scored by varequal to the label idents).
+     *
+     * @return string
+     */
+    private function fib_item(): string {
+        $blank = function (string $id, string $ans): string {
+            return '<response_lid ident="response_' . $id . '"><material><mattext>' . $ans . '</mattext></material>'
+                . '<render_choice><response_label ident="' . $id . '-0">'
+                . '<material><mattext texttype="text/plain">' . $ans . '</mattext></material>'
+                . '</response_label></render_choice></response_lid>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">'
+            . 'Lorem [b1] dolor sit amet, consectetur adipiscing elit [b2] do tempor [b3] aliqua.</mattext></material>'
+            . $blank('b1', 'ipsum') . $blank('b2', 'sed') . $blank('b3', 'magna') . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">33.33</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">33.33</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b3">b3-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">33.33</setvar></respcondition></resprocessing>';
+        return '<item ident="fib1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
     }
 
     /**

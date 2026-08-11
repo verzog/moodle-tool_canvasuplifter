@@ -43,6 +43,8 @@ class qti_question {
     public const TYPE_NUMERICAL = 'numerical';
     /** Calculated / formula (Canvas calculated_question) -> Moodle calculated. */
     public const TYPE_CALCULATED = 'calculated';
+    /** Free-text multi-blank (Canvas fill_in_multiple_blanks_question) -> Moodle Cloze (multianswer). */
+    public const TYPE_CLOZE = 'cloze';
     /** Text-only stimulus item (Canvas text_only_question) -> Moodle description. */
     public const TYPE_DESCRIPTION = 'description';
     /** Recognised QTI item we can't yet convert. */
@@ -189,6 +191,12 @@ class qti_question {
             // formula with an unsupported operator or function is dropped instead.
             return trim($this->formula) !== '' && $this->variables !== [] && $this->datarows !== []
                 && $this->calculated_formula_is_supported() && $this->calculated_rows_are_complete();
+        }
+        if ($this->type === self::TYPE_CLOZE) {
+            // A Moodle Cloze carries its sub-questions inline in the question text; it
+            // needs at least one embedded SHORTANSWER field, or qtype_multianswer
+            // rejects it on import and rolls back the whole batch.
+            return (bool) preg_match('/\{[0-9]*:SHORTANSWER:/', $this->questiontext);
         }
         // Multichoice and multianswer import as Moodle multichoice; both need at
         // least two answers.
