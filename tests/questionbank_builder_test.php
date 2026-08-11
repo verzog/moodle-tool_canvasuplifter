@@ -271,29 +271,31 @@ XML;
      *
      * @param string $ident The assessment ident.
      * @param string $title The assessment title.
+     * @param int $selnumber The selection_number (questions drawn from the bank).
      * @return string
      */
-    private function bankdrawshell(string $ident, string $title): string {
+    private function bankdrawshell(string $ident, string $title, int $selnumber = 2): string {
         return '<?xml version="1.0" encoding="utf-8"?>'
             . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
             . '<assessment ident="' . $ident . '" title="' . $title . '"><section ident="root">'
             . '<section ident="grp"><selection_ordering><selection>'
-            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>2</selection_number>'
+            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>' . $selnumber . '</selection_number>'
             . '</selection></selection_ordering></section>'
             . '</section></assessment></questestinterop>';
     }
 
     /**
-     * Write a package with a single unlinked (orphan) New Quiz that only draws two
-     * questions from bank1 (a two-question objectbank titled "Question Pool").
+     * Write a package with a single unlinked (orphan) New Quiz that draws from bank1
+     * (a two-question objectbank titled "Question Pool").
      *
+     * @param int $selnumber The selection_number (questions drawn from the bank).
      * @return string Path to the package root.
      */
-    private function write_orphan_bank_package(): string {
+    private function write_orphan_bank_package(int $selnumber = 2): string {
         $dir = make_request_directory();
         mkdir($dir . '/gnq', 0777, true);
         mkdir($dir . '/non_cc_assessments', 0777, true);
-        file_put_contents($dir . '/gnq/assessment_qti.xml', $this->bankdrawshell('gnq', 'Final Evaluation'));
+        file_put_contents($dir . '/gnq/assessment_qti.xml', $this->bankdrawshell('gnq', 'Final Evaluation', $selnumber));
         file_put_contents($dir . '/non_cc_assessments/bank1.xml.qti', $this->objectbank('Question Pool'));
         $manifest = <<<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -578,5 +580,33 @@ XML;
         $this->assertSame(0, $report['skipped']);
         $this->assertSame(0, $report['skippedcounts']['quiz'] ?? 0);
         $this->assertEmpty($report['skipreasons']);
+    }
+
+    /**
+     * Issue #144 review: an orphan New Quiz whose draw asks for more questions than the
+     * referenced bank holds is short even though every source question imported
+     * (full === true). A selection_number of 5 against a two-question bank must still
+     * raise the incomplete-bank warning.
+     *
+     * @return void
+     */
+    public function test_orphan_bank_draw_exceeding_pool_warns(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        // The quiz draws 5 questions from bank1, which only holds 2.
+        $dir = $this->write_orphan_bank_package(5);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        // The bank's two questions were still imported...
+        $this->assertCount(1, $modinfo->get_instances_of('qbank'));
+        // ...but the over-sized draw (5 > 2) is flagged as short.
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
     }
 }

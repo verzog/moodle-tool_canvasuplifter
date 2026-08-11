@@ -300,11 +300,14 @@ class course_builder {
                     }
                 }
                 // A bank-backed orphan that built no module of its own is still handled,
-                // not a failed build: its questions were imported into a shared bank and
-                // the toggle may have added a runnable quiz. Count it as created and drop
-                // the provisional skip note build_one recorded, so the report doesn't list
-                // it among the unconvertible/skipped items.
-                $handledviabank = $cmid === null && $isquizorphan && ($standalone || $bankdraws > 0);
+                // not a failed build, only when it had no inline questions of its own and
+                // its questions were imported into shared banks (questionbank_builder flags
+                // this via lasthandledviabank). Count that as created and drop the
+                // provisional skip note, so the report doesn't list it among the
+                // unconvertible/skipped items. A null from a failed inline import (its own
+                // questions rejected) is NOT flagged, so its skip reason is preserved even
+                // when the item also drew from a bank.
+                $handledviabank = $cmid === null && $hasbankstate && $qbb->lasthandledviabank;
                 if ($handledviabank) {
                     $skipreasons = array_slice($skipreasons, 0, $skipmark);
                 }

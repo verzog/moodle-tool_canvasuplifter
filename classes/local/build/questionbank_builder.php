@@ -49,6 +49,9 @@ class questionbank_builder {
     /** @var bool Whether the last build()'s bank draws were missing or partially imported. */
     public bool $lastbankincomplete = false;
 
+    /** @var bool Whether the last build() returned null purely because its questions live in shared banks. */
+    public bool $lasthandledviabank = false;
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -91,6 +94,7 @@ class questionbank_builder {
         $this->skipreason = null;
         $this->lastbankdraws = 0;
         $this->lastbankincomplete = false;
+        $this->lasthandledviabank = false;
 
         $qtipath = $this->locate_qti($modelitem);
         if ($qtipath === null) {
@@ -126,6 +130,12 @@ class questionbank_builder {
                     $importedbanks
                 )
                 : question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
+            // This item carried no inline questions of its own, so when its draws
+            // resolved into shared banks it is genuinely handled, not a failed build:
+            // the caller counts it created rather than skipped. A failed inline import
+            // below (questions of our own that Moodle rejects) is a real failure and
+            // never sets this, so its skip reason is kept.
+            $this->lasthandledviabank = $importedbanks > 0;
             return null;
         }
 
@@ -183,8 +193,10 @@ class questionbank_builder {
      * once (shared across the whole build) as its own always-visible mod_qbank; an
      * explicit zero-question draw imports nothing. This is a side effect — the imported
      * banks are shared and are not this item's own module. Sets $lastbankincomplete when
-     * a referenced bank is missing or only partially imported, so a caller that doesn't
-     * hand the quiz to quiz_builder can still warn that a draw is short.
+     * a referenced bank is missing, only partially imported, or asked for more questions
+     * than it holds (a single over-sized draw, or repeated draws that together outrun the
+     * pool), so a caller that doesn't hand the quiz to quiz_builder can still warn that a
+     * draw is short — mirroring quiz_builder::populate_from_banks().
      *
      * @param stdClass $course Course record.
      * @param array $selections Parsed selections: each ['bank' => id, 'count' => n|null, 'points' => p|null].
@@ -192,6 +204,7 @@ class questionbank_builder {
      */
     private function import_bank_draws(stdClass $course, array $selections): int {
         $imported = [];
+        $remaining = [];
         $incomplete = false;
         foreach ($selections as $selection) {
             if (($selection['count'] ?? null) !== null && (int) $selection['count'] < 1) {
@@ -199,7 +212,7 @@ class questionbank_builder {
                 continue;
             }
             $bankid = (string) ($selection['bank'] ?? '');
-            if ($bankid === '' || isset($imported[$bankid])) {
+            if ($bankid === '') {
                 continue;
             }
             $bank = $this->bankregistry->import_bank($course, $bankid);
@@ -213,6 +226,18 @@ class questionbank_builder {
                 $incomplete = true;
             }
             $imported[$bankid] = true;
+            if (!array_key_exists($bankid, $remaining)) {
+                $remaining[$bankid] = (int) $bank['count'];
+            }
+            // A missing selection_number draws the whole bank and can't exceed it; an
+            // explicit count is checked against what's left of the pool, so a draw of 5
+            // from a two-question bank — or repeated draws that together outrun it — is
+            // flagged short even when every source question imported (full === true).
+            $want = ($selection['count'] ?? null) === null ? $remaining[$bankid] : (int) $selection['count'];
+            if ($want > $remaining[$bankid]) {
+                $incomplete = true;
+            }
+            $remaining[$bankid] = max(0, $remaining[$bankid] - $want);
         }
         $this->lastbankincomplete = $incomplete;
         return count($imported);
