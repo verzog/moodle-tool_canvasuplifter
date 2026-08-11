@@ -52,4 +52,28 @@ final class safe_path {
         }
         return $real;
     }
+
+    /**
+     * The package-relative folder containing an absolute path within the package,
+     * or '' when the path sits at the root or outside it. Builders use this to
+     * resolve owner-relative $IMS-CC-FILEBASE$ media against the folder the piece
+     * of content actually came from (the intro HTML/XML), not the resource href.
+     *
+     * @param string $root Absolute path to the package root.
+     * @param string $absolute Absolute path within the package.
+     * @return string Package-relative folder ('' at the root or when outside it).
+     */
+    public static function package_dir(string $root, string $absolute): string {
+        $realroot = realpath($root);
+        $real = realpath($absolute);
+        if ($realroot === false || $real === false) {
+            return '';
+        }
+        if ($real !== $realroot && strpos($real, $realroot . DIRECTORY_SEPARATOR) !== 0) {
+            return '';
+        }
+        $relative = ltrim(substr($real, strlen($realroot)), '/\\');
+        $dir = trim(str_replace('\\', '/', dirname($relative)), '/');
+        return ($dir === '' || $dir === '.') ? '' : $dir;
+    }
 }

@@ -7,14 +7,16 @@ quickly.
 
 ## [0.53.0] - 2026-08-11
 
-- **Owner-relative media embedding now covers the assignment and LTI intro
-  builders** — the last two rich-text builders that still resolved
-  `$IMS-CC-FILEBASE$` only against the package root. `assign_builder` and
-  `lti_builder` now pass the resource's own folder to `file_embedder`, so an
-  assignment's instructions (and a re-homed external-tool assignment's LTI intro)
-  embed media referenced by a bare name or a `../` climb into a sibling resource
-  folder instead of leaving a broken placeholder. Every rich-text builder
-  (page/book/lesson/quiz/discussion/assignment/LTI) now resolves owner-relative.
+- **Owner-relative media embedding now covers the assignment, LTI and quiz
+  intros** — the remaining rich-text intros that still resolved
+  `$IMS-CC-FILEBASE$` only against the package root. `assign_builder`,
+  `lti_builder` and `quiz_builder` now embed the intro against the folder of the
+  file the intro text actually came from (the settings/profile XML, the
+  instructions HTML, or `assessment_meta.xml`) rather than always the resource
+  href's folder, so an intro referencing media by a bare name or a `../` climb
+  into a sibling resource folder embeds instead of leaving a broken placeholder.
+  With the page/book/lesson/quiz-question/discussion builders from earlier
+  releases, every rich-text builder now resolves owner-relative.
 - Dependency suppression is deliberately **not** extended to assignments/LTI:
   assignment resources routinely ship downloadable handout attachments as
   dependencies that are not embedded in the intro, so suppressing them would hide

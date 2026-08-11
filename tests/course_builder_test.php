@@ -1044,6 +1044,158 @@ XML;
     }
 
     /**
+     * A quiz description carried in assessment_meta.xml embeds an owner-relative
+     * $IMS-CC-FILEBASE$ reference (a bare name resolved against the quiz's own
+     * folder, not the package root) into the quiz intro file area.
+     *
+     * @return void
+     */
+    public function test_quiz_intro_embeds_owner_relative_media(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        file_put_contents(
+            $dir . '/quiz/a1/pic.png',
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+        );
+        file_put_contents(
+            $dir . '/quiz/a1/qti.xml',
+            '<?xml version="1.0"?><questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Q"><section ident="s1">'
+            . '<item ident="q1"><itemmetadata><qtimetadata><qtimetadatafield><fieldlabel>cc_profile</fieldlabel>'
+            . '<fieldentry>cc.multiple_choice.v0p1</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;p&gt;2+2?&lt;/p&gt;</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext>3</mattext></material></response_label>'
+            . '<response_label ident="B"><material><mattext>4</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation><resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">B</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>'
+            . '</section></assessment></questestinterop>'
+        );
+        file_put_contents(
+            $dir . '/quiz/a1/assessment_meta.xml',
+            '<?xml version="1.0"?><quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0"><title>Q</title>'
+            . '<description><![CDATA[<p>Intro <img src="$IMS-CC-FILEBASE$pic.png"></p>]]></description></quiz>'
+        );
+        file_put_contents(
+            $dir . '/imsmanifest.xml',
+            '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1"><organizations>'
+            . '<organization identifier="o"><item identifier="root"><item identifier="m1"><title>W</title>'
+            . '<item identifier="i" identifierref="rq"><title>Q</title></item></item></item></organization></organizations>'
+            . '<resources><resource identifier="rq" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="quiz/a1/qti.xml"/><file href="quiz/a1/assessment_meta.xml"/></resource></resources></manifest>'
+        );
+
+        $category = $this->getDataGenerator()->create_category();
+        $report = (new course_builder($category->id, $dir))->build((new manifest_parser($dir))->parse());
+
+        $quiz = $DB->get_record('quiz', ['course' => $report['courseid']], '*', MUST_EXIST);
+        $this->assertStringContainsString('@@PLUGINFILE@@/quiz/a1/pic.png', $quiz->intro);
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $quiz->intro);
+        $cm = get_coursemodule_from_instance('quiz', $quiz->id, $report['courseid'], false, MUST_EXIST);
+        $fs = get_file_storage();
+        $context = \context_module::instance($cm->id);
+        $this->assertTrue($fs->file_exists($context->id, 'mod_quiz', 'intro', 0, '/quiz/a1/', 'pic.png'));
+    }
+
+    /**
+     * When a flat Canvas assignment's prompt HTML lives in a different folder than
+     * its assignment_settings.xml, the intro's owner-relative media resolves
+     * against the prompt HTML's folder (where the media actually sits) rather than
+     * the settings folder, so a bare $IMS-CC-FILEBASE$ reference still embeds.
+     *
+     * @return void
+     */
+    public function test_assignment_intro_owner_dir_follows_prompt_html(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/a1', 0777, true);
+        mkdir($dir . '/prompt', 0777, true);
+        file_put_contents(
+            $dir . '/prompt/pic.png',
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+        );
+        file_put_contents(
+            $dir . '/a1/assignment_settings.xml',
+            '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0"><title>Essay</title>'
+            . '<points_possible>10.0</points_possible><grading_type>points</grading_type>'
+            . '<submission_types>online_text_entry</submission_types></assignment>'
+        );
+        // The prompt HTML sits in prompt/ and references a sibling image by bare
+        // name; resolvable only relative to the prompt folder, not a1/.
+        file_put_contents($dir . '/prompt/instructions.html', '<p>Do <img src="$IMS-CC-FILEBASE$pic.png"></p>');
+        file_put_contents(
+            $dir . '/imsmanifest.xml',
+            '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1"><organizations>'
+            . '<organization identifier="o"><item identifier="root"><item identifier="m1"><title>W</title>'
+            . '<item identifier="i" identifierref="ra"><title>Essay</title></item></item></item></organization></organizations>'
+            . '<resources><resource identifier="ra"'
+            . ' type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="a1/assignment_settings.xml">'
+            . '<file href="a1/assignment_settings.xml"/><file href="prompt/instructions.html"/></resource></resources></manifest>'
+        );
+
+        $category = $this->getDataGenerator()->create_category();
+        $report = (new course_builder($category->id, $dir))->build((new manifest_parser($dir))->parse());
+
+        $assign = $DB->get_record('assign', ['course' => $report['courseid']], '*', MUST_EXIST);
+        $this->assertStringContainsString('@@PLUGINFILE@@/prompt/pic.png', $assign->intro);
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $assign->intro);
+    }
+
+    /**
+     * A re-homed external-tool assignment whose instructions HTML lives in a
+     * different folder than its settings resolves its LTI intro's owner-relative
+     * media against the instructions HTML's folder.
+     *
+     * @return void
+     */
+    public function test_lti_intro_owner_dir_follows_instructions_html(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/a1', 0777, true);
+        mkdir($dir . '/prompt', 0777, true);
+        file_put_contents(
+            $dir . '/prompt/pic.png',
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+        );
+        file_put_contents(
+            $dir . '/a1/assignment_settings.xml',
+            '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0"><title>Tool</title>'
+            . '<submission_types>external_tool</submission_types>'
+            . '<external_tool_url>https://tool.example.com/launch</external_tool_url></assignment>'
+        );
+        file_put_contents($dir . '/prompt/instructions.html', '<p>Launch <img src="$IMS-CC-FILEBASE$pic.png"></p>');
+        file_put_contents(
+            $dir . '/imsmanifest.xml',
+            '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1"><organizations>'
+            . '<organization identifier="o"><item identifier="root"><item identifier="m1"><title>W</title>'
+            . '<item identifier="i" identifierref="rl"><title>Tool</title></item></item></item></organization></organizations>'
+            . '<resources><resource identifier="rl"'
+            . ' type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="a1/assignment_settings.xml">'
+            . '<file href="a1/assignment_settings.xml"/><file href="prompt/instructions.html"/></resource></resources></manifest>'
+        );
+
+        $category = $this->getDataGenerator()->create_category();
+        $report = (new course_builder($category->id, $dir))->build((new manifest_parser($dir))->parse());
+
+        $ltis = get_fast_modinfo($report['courseid'])->get_instances_of('lti');
+        $this->assertCount(1, $ltis);
+        $lti = $DB->get_record('lti', ['id' => reset($ltis)->instance], '*', MUST_EXIST);
+        $this->assertStringContainsString('@@PLUGINFILE@@/prompt/pic.png', $lti->intro);
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $lti->intro);
+    }
+
+    /**
      * A CC 1.3 IMS Assignment profile embedded inline inside <resource>
      * (no <file> child) builds end-to-end: the captured inline descriptor
      * lands on item::inlinexml and assign_builder consumes it directly so
