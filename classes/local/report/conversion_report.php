@@ -521,11 +521,11 @@ class conversion_report {
             // which does neither, so parse it that way to match what the build evaluates.
             $quizpath = $referenced && $modelitem->kind === item::KIND_QUIZ;
             $parsed = $this->assessment_parse($modelitem, true, $quizpath);
-            // quiz_builder imports each item bank a New Quiz draws from — but only from
-            // a genuine assessment (hasassessment), and never an explicit zero-question
-            // group (which it skips without importing). Orphan draws build through
-            // questionbank_builder, which doesn't resolve selections (tracked in #144),
-            // so they're excluded here.
+            // A referenced New Quiz's item-bank draws are imported by quiz_builder — but
+            // only from a genuine assessment (hasassessment), and never an explicit
+            // zero-question group (which it skips without importing). Orphan draws build
+            // through questionbank_builder, which doesn't resolve selections (tracked in
+            // #144), so they're excluded here.
             if ($quizpath && !empty($parsed['hasassessment'])) {
                 foreach ($parsed['selections'] ?? [] as $selection) {
                     $count = $selection['count'] ?? null;
