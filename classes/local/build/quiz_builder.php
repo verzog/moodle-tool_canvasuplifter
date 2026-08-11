@@ -112,7 +112,12 @@ class quiz_builder {
             $native = $this->locate_native_qti($modelitem, $qtipath);
             if ($native !== null) {
                 [$nativeparsed, $nativesupported, $nativeimportable] = $this->parse_qti($native);
-                if (!empty($nativeimportable)) {
+                // Adopt the native dump when it yields inline questions or bank
+                // selections — a New Quiz that draws solely from item banks has no
+                // inline importables, but its <selection_ordering> is the real content.
+                $nativeselections = ($nativeparsed['hasassessment'] ?? false)
+                    ? ($nativeparsed['selections'] ?? []) : [];
+                if (!empty($nativeimportable) || !empty($nativeselections)) {
                     $parsed = $nativeparsed;
                     $supported = $nativesupported;
                     $importable = $nativeimportable;
@@ -346,7 +351,9 @@ class quiz_builder {
         // Fresh structure per call so it never draws on stale cached slots.
         \mod_quiz\quiz_settings::create($quizid)->get_structure()
             ->add_random_questions(0, $number, $this->random_filter($categoryid));
-        if ($points !== null && $points > 0) {
+        // Honour an explicit per-item weight, including a genuine zero; only a
+        // missing points_per_item leaves Moodle's default maxmark untouched.
+        if ($points !== null) {
             $DB->set_field_select('quiz_slots', 'maxmark', $points, 'quizid = ? AND slot > ?', [$quizid, $before]);
         }
     }

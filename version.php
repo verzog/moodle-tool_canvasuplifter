@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026081200;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026081201;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
 $plugin->maturity  = MATURITY_ALPHA;  // New Quizzes now draw questions from their referenced item banks.
