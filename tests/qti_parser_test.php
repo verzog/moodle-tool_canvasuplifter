@@ -1171,6 +1171,66 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A numerical item scored against a non-100 SCORE maximum still awards full credit:
+     * the condition's score is scaled onto Moodle's 0–100 fraction by the declared max.
+     *
+     * @return void
+     */
+    public function test_native_numerical_scales_score_by_outcome_max(): void {
+        $item = '<item ident="n1" title="Answer"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>numerical_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>The answer?</mattext></material></presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="1" minvalue="0" varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar>'
+            . '<or><varequal respident="response1">42</varequal></or>'
+            . '</conditionvar><setvar action="Set" varname="SCORE">1</setvar></respcondition></resprocessing></item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertCount(1, $q->answers);
+        $this->assertSame(100.0, $q->answers[0]['fraction']);
+    }
+
+    /**
+     * An <or> that offers a distinct exact value alongside a range keeps both accepted
+     * answers, rather than dropping the exact alternative in favour of the range.
+     *
+     * @return void
+     */
+    public function test_native_numerical_keeps_distinct_or_alternatives(): void {
+        $item = $this->numerical_item(
+            '<or><varequal respident="response1">10</varequal>'
+            . '<and><vargte respident="response1">20</vargte>'
+            . '<varlte respident="response1">30</varlte></and></or>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $answers = array_map(fn($a) => $a['text'] . '±' . $a['tolerance'], $q->answers);
+        $this->assertContains('25±5', $answers);
+        $this->assertContains('10±0', $answers);
+        $this->assertCount(2, $q->answers);
+    }
+
+    /**
+     * An inverted range (lower bound above upper) can never match, so it is skipped
+     * rather than turned into a valid accepted interval.
+     *
+     * @return void
+     */
+    public function test_native_numerical_inverted_range_is_skipped(): void {
+        $item = $this->numerical_item(
+            '<and><vargte respident="response1">10</vargte><varlte respident="response1">4</varlte></and>'
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame([], $q->answers);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
      * Build a native Canvas numerical_question item whose scoring respcondition
      * carries the given conditionvar markup, and optionally a feedback link plus the
      * matching itemfeedback block.

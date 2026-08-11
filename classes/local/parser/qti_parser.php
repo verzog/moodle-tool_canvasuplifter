@@ -393,6 +393,7 @@ class qti_parser {
         if ($resprocessing === null) {
             return;
         }
+        $scoremax = $this->score_max($resprocessing);
         $seen = [];
         foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
             if (!($cond instanceof DOMElement)) {
@@ -402,23 +403,42 @@ class qti_parser {
             if ($score <= 0) {
                 continue;
             }
-            $answer = $this->numerical_answer($cond);
-            if ($answer === null) {
-                continue;
+            // Scale the raw SCORE onto Moodle's 0–100 fraction using the outcome's
+            // declared maximum, so an item scored out of, say, 1 still awards full credit.
+            $fraction = min(100.0, max(0.0, $score / $scoremax * 100.0));
+            $feedback = $this->condition_feedback($item, $cond);
+            foreach ($this->numerical_answers($cond) as [$value, $tolerance]) {
+                $key = $value . '/' . $tolerance;
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $question->answers[] = [
+                    'text' => $value,
+                    'fraction' => $fraction,
+                    'tolerance' => $tolerance,
+                    'feedback' => $feedback,
+                ];
             }
-            [$value, $tolerance] = $answer;
-            $key = $value . '/' . $tolerance;
-            if (isset($seen[$key])) {
-                continue;
-            }
-            $seen[$key] = true;
-            $question->answers[] = [
-                'text' => $value,
-                'fraction' => min(100.0, max(0.0, $score)),
-                'tolerance' => $tolerance,
-                'feedback' => $this->condition_feedback($item, $cond),
-            ];
         }
+    }
+
+    /**
+     * The declared maximum of the SCORE outcome variable in a resprocessing block,
+     * used to scale a condition's raw SCORE onto Moodle's 0–100 answer fraction.
+     * Defaults to 100 when unspecified or not positive.
+     *
+     * @param DOMElement $resprocessing The resprocessing element.
+     * @return float
+     */
+    protected function score_max(DOMElement $resprocessing): float {
+        foreach ($resprocessing->getElementsByTagNameNS('*', 'decvar') as $decvar) {
+            if ($decvar instanceof DOMElement && strtoupper($decvar->getAttribute('varname')) === 'SCORE') {
+                $max = (float) $decvar->getAttribute('maxvalue');
+                return $max > 0 ? $max : 100.0;
+            }
+        }
+        return 100.0;
     }
 
     /**
@@ -448,26 +468,34 @@ class qti_parser {
     }
 
     /**
-     * Read one numerical answer from a scoring respcondition as a [value, tolerance]
-     * pair (plain decimal strings), or null when it carries no numeric answer. A
-     * <vargte>/<varlte> pair is a range (midpoint + half-width); a bare <varequal>
-     * is an exact value with a zero tolerance, preserved verbatim so no precision is
-     * lost.
+     * Read the accepted numerical answers from a scoring respcondition as a list of
+     * [value, tolerance] pairs (plain decimal strings). A <vargte>/<varlte> pair is a
+     * range (midpoint + half-width); a bare <varequal> is an exact value with a zero
+     * tolerance, preserved verbatim. An <or> that lists a range together with an exact
+     * value inside it collapses to one answer (Canvas emits both as equivalent forms),
+     * but a distinct exact alternative is kept as its own answer. An inverted range
+     * (lower bound above upper) can never match in QTI, so it is skipped rather than
+     * turned into a valid interval.
      *
      * @param DOMElement $cond The respcondition element.
-     * @return array|null Two-element list [value, tolerance], or null.
+     * @return array A list of two-element [value, tolerance] lists (possibly empty).
      */
-    protected function numerical_answer(DOMElement $cond): ?array {
+    protected function numerical_answers(DOMElement $cond): array {
+        $answers = [];
         $gte = $this->condition_value($cond, 'vargte');
         $lte = $this->condition_value($cond, 'varlte');
-        if ($gte !== null && $lte !== null) {
-            return $this->range_answer($gte, $lte);
+        $hasrange = $gte !== null && $lte !== null && $this->dec_cmp($gte, $lte) <= 0;
+        if ($hasrange) {
+            $answers[] = $this->range_answer($gte, $lte);
         }
-        $eq = $this->condition_value($cond, 'varequal');
-        if ($eq !== null) {
-            return [$eq, '0'];
+        foreach ($this->condition_values($cond, 'varequal') as $eq) {
+            // Drop an exact value the range already covers, but keep a distinct one.
+            if ($hasrange && $this->dec_cmp($gte, $eq) <= 0 && $this->dec_cmp($eq, $lte) <= 0) {
+                continue;
+            }
+            $answers[] = [$eq, '0'];
         }
-        return null;
+        return $answers;
     }
 
     /**
@@ -479,18 +507,47 @@ class qti_parser {
      * @return string|null
      */
     protected function condition_value(DOMElement $cond, string $localname): ?string {
+        return $this->condition_values($cond, $localname)[0] ?? null;
+    }
+
+    /**
+     * The values of all non-negated named response tests of a kind in a respcondition,
+     * each as a plain decimal string (scientific notation expanded), skipping any that
+     * are non-numeric or carry an unexpandable exponent.
+     *
+     * @param DOMElement $cond The respcondition element.
+     * @param string $localname The test element name (varequal/vargte/varlte).
+     * @return array The values in document order.
+     */
+    protected function condition_values(DOMElement $cond, string $localname): array {
+        $values = [];
         foreach ($cond->getElementsByTagNameNS('*', $localname) as $node) {
             if ($node instanceof DOMElement && !$this->within($node, 'not')) {
                 $text = trim($node->textContent);
                 if (is_numeric($text)) {
                     $value = $this->normalise_decimal($text);
                     if ($value !== null) {
-                        return $value;
+                        $values[] = $value;
                     }
                 }
             }
         }
-        return null;
+        return $values;
+    }
+
+    /**
+     * Compare two signed decimal strings: -1 if a < b, 0 if equal, 1 if a > b.
+     *
+     * @param string $a The first value.
+     * @param string $b The second value.
+     * @return int
+     */
+    protected function dec_cmp(string $a, string $b): int {
+        $diff = $this->dec_add($a, $this->dec_negate($b));
+        if ($this->trim_decimal(ltrim($diff, '-')) === '0') {
+            return 0;
+        }
+        return $diff[0] === '-' ? -1 : 1;
     }
 
     /**
