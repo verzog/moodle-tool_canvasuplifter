@@ -1058,15 +1058,28 @@ XML;
     }
 
     /**
+     * A bare item-bank reference (an <item> with an ident but no presentation), the
+     * shape Canvas emits when a New Quiz references a question whose body it did not
+     * export. The parser counts it as unresolved.
+     *
+     * @param string $ident The item ident.
+     * @return string
+     */
+    protected function bankbareitem(string $ident): string {
+        return '<item ident="' . $ident . '" title="Q ' . $ident . '"></item>';
+    }
+
+    /**
      * Write a package with a Canvas New Quiz that has no inline questions and instead
-     * draws two of them from an item bank (non_cc_assessments/gbank1.xml.qti) via a
+     * draws from an item bank (non_cc_assessments/gbank1.xml.qti) via a
      * <selection_ordering>/<sourcebank_ref>. The bank holds three MC questions, plus
      * any extra bank items passed (e.g. an unsupported candidate).
      *
      * @param string $extrabankitems Extra <item> markup appended to the bank, or ''.
+     * @param string $selectnumber The <selection_number> value (how many to draw).
      * @return string Path to the package root.
      */
-    protected function build_fixture_bank_backed(string $extrabankitems = ''): string {
+    protected function build_fixture_bank_backed(string $extrabankitems = '', string $selectnumber = '2'): string {
         $dir = make_request_directory();
         mkdir($dir . '/gnewquiz', 0777, true);
         mkdir($dir . '/non_cc_assessments', 0777, true);
@@ -1076,7 +1089,7 @@ XML;
             . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
             . '<assessment ident="gnewquiz" title="Learning Expectations"><section ident="root_section">'
             . '<section ident="grp" title="Group"><selection_ordering><selection>'
-            . '<sourcebank_ref>gbank1</sourcebank_ref><selection_number>2</selection_number>'
+            . '<sourcebank_ref>gbank1</sourcebank_ref><selection_number>' . $selectnumber . '</selection_number>'
             . '<selection_extension><points_per_item>2.5</points_per_item></selection_extension>'
             . '</selection></selection_ordering></section>'
             . '</section></assessment></questestinterop>';
@@ -1194,6 +1207,64 @@ XML;
         $this->assertEquals(3, $DB->count_records('question', ['qtype' => 'multichoice']));
         // The report flags the quiz as short of a group because a candidate was dropped.
         $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * A bank that carries a bare (unresolved) item reference alongside importable ones
+     * is treated as incomplete, because Canvas omitted a question's body and Moodle's
+     * pool is therefore smaller than the source.
+     *
+     * @return void
+     */
+    public function test_new_quiz_bank_unresolved_reference_flags_incomplete(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        // The bank carries a fourth candidate that is a bare <item> reference with no
+        // body — an unresolved reference the parser counts but cannot import.
+        $root = $this->build_fixture_bank_backed($this->bankbareitem('b4'));
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        // Built and visible from the three importable questions, drawing the two asked.
+        $this->assertEquals(1, (int) $quizcm->visible);
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
+        // Flagged as short of a group because the bank held an unresolved reference.
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * An explicit <selection_number> of 0 is an authored empty draw: the group is
+     * skipped rather than misread as "draw the whole bank". With no other questions the
+     * quiz has nothing to import and falls back to a hidden placeholder.
+     *
+     * @return void
+     */
+    public function test_new_quiz_explicit_zero_draw_is_skipped(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_bank_backed('', '0');
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        // No questions were drawn — the zero draw did not pull the whole bank in.
+        $this->assertEquals(0, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
+        // The quiz is a hidden placeholder, and the bank was never imported.
+        $this->assertEquals(0, (int) $quizcm->visible);
+        $this->assertCount(0, $modinfo->get_instances_of('qbank'));
     }
 
     /**

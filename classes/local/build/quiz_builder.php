@@ -299,7 +299,7 @@ class quiz_builder {
      *
      * @param stdClass $course Course record.
      * @param stdClass $quiz Quiz record (with cmid set).
-     * @param array $selections Parsed selections: each ['bank' => id, 'count' => n, 'points' => p|null].
+     * @param array $selections Parsed selections: each ['bank' => id, 'count' => n|null, 'points' => p|null].
      * @return array [total random questions added, whether any group was missing/short].
      */
     private function populate_from_banks(stdClass $course, stdClass $quiz, array $selections): array {
@@ -308,6 +308,11 @@ class quiz_builder {
         $remaining = [];
         foreach ($selections as $selection) {
             $bankid = (string) $selection['bank'];
+            if ($selection['count'] !== null && (int) $selection['count'] < 1) {
+                // Canvas authored an explicit zero-question draw — an empty group. Skip
+                // it without importing the bank or flagging the quiz incomplete.
+                continue;
+            }
             $bank = $this->import_bank($course, $bankid);
             if ($bank === null) {
                 $incomplete = true;
@@ -321,7 +326,9 @@ class quiz_builder {
             if (!array_key_exists($bankid, $remaining)) {
                 $remaining[$bankid] = $bank['count'];
             }
-            $want = (int) $selection['count'] > 0 ? (int) $selection['count'] : $bank['count'];
+            // A missing selection_number means "draw the whole bank"; an explicit count
+            // caps the draw (and is honoured verbatim, including down to the bank size).
+            $want = $selection['count'] === null ? $bank['count'] : (int) $selection['count'];
             $number = min($want, $remaining[$bankid]);
             if ($number < 1) {
                 $incomplete = true;
@@ -447,7 +454,7 @@ class quiz_builder {
         $this->bankcategories[$bankid] = [
             'category' => (int) $category->id,
             'count' => count($questionids),
-            'full' => count($questionids) === count($parsed['questions']),
+            'full' => count($questionids) === count($parsed['questions']) && (int) ($parsed['unresolved'] ?? 0) === 0,
         ];
         return $this->bankcategories[$bankid];
     }

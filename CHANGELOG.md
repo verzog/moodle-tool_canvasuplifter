@@ -19,9 +19,11 @@ quickly.
   `points_per_item` as the slot max mark. Draws are capped per bank cumulatively across
   all groups, bank draws are accepted only from a valid QTI assessment, and a quiz can
   mix inline questions with bank groups. A quiz missing a group (a referenced bank
-  absent, short of questions, or holding unsupported candidates that shrink the draw
-  pool below Canvas's) is flagged in the build report; a New Quiz whose banks don't
-  resolve at all still falls back to the hidden placeholder, so nothing regresses.
+  absent, short of questions, or holding unsupported/unresolved candidates that shrink
+  the draw pool below Canvas's) is flagged in the build report; an explicit
+  `selection_number` of `0` is honoured as an authored empty draw rather than pulling
+  the whole bank in; a New Quiz whose banks don't resolve at all still falls back to the
+  hidden placeholder, so nothing regresses.
   The shared QTI-source helpers (`parse_qti`, `locate_native_qti`) now live in a
   `qti_source_locator` trait used by both the quiz and question-bank builders.
 

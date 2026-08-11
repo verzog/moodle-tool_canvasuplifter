@@ -117,11 +117,14 @@ class qti_parser {
             if ($bank === '') {
                 continue;
             }
-            $count = (int) $this->descendant_text($selnode, 'selection_number');
+            // Keep a missing selection_number (null) distinct from an explicit value,
+            // including a genuine 0 — an authored empty draw is not the same as "the
+            // exporter omitted the count", which the builder reads as "draw all".
+            $rawcount = $this->descendant_text($selnode, 'selection_number');
             $points = $this->descendant_text($selnode, 'points_per_item');
             $result['selections'][] = [
                 'bank' => $bank,
-                'count' => $count > 0 ? $count : 0,
+                'count' => $rawcount !== '' ? max(0, (int) $rawcount) : null,
                 'points' => $points !== '' ? (float) $points : null,
             ];
         }

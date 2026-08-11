@@ -1063,5 +1063,21 @@ final class qti_parser_test extends \basic_testcase {
 
         // A selection without a sourcebank_ref is not a bank draw and is ignored.
         $this->assertSame([], (new qti_parser())->parse($this->assessment(''))['selections']);
+
+        // A missing selection_number is kept null (draw all); an explicit 0 stays 0
+        // (an authored empty draw), so the two are not conflated.
+        $nonum = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="q2" title="Q"><section ident="root_section"><section ident="g">'
+            . '<selection_ordering><selection><sourcebank_ref>b1</sourcebank_ref></selection>'
+            . '<selection><sourcebank_ref>b2</sourcebank_ref><selection_number>0</selection_number></selection>'
+            . '</selection_ordering></section></section></assessment></questestinterop>';
+        $this->assertSame(
+            [
+                ['bank' => 'b1', 'count' => null, 'points' => null],
+                ['bank' => 'b2', 'count' => 0, 'points' => null],
+            ],
+            (new qti_parser())->parse($nonum)['selections']
+        );
     }
 }
