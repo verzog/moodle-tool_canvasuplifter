@@ -5,6 +5,28 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.55.0] - 2026-08-12
+
+- **New Quizzes backed by an item bank now import as working quizzes** (issue #140).
+  A Canvas New Quiz stores no inline questions — it draws them from a separate item
+  bank via `<selection_ordering>`/`<sourcebank_ref>`, which previously made these
+  quizzes import as hidden placeholders even though the bank's questions ship in the
+  package. `qti_parser` now captures each selection (bank id, count, per-item points);
+  `quiz_builder` imports each referenced bank (`non_cc_assessments/<id>.xml.qti`) once
+  as a section-0 `mod_qbank` — shared across quizzes that reference it, named from the
+  bank's `bank_title` — and adds that many random questions to the quiz
+  (`mod_quiz\structure::add_random_questions`), applying each selection's
+  `points_per_item` as the slot max mark. Draws are capped per bank cumulatively across
+  all groups, bank draws are accepted only from a valid QTI assessment, and a quiz can
+  mix inline questions with bank groups. A quiz missing a group (a referenced bank
+  absent, short of questions, or holding unsupported/unresolved candidates that shrink
+  the draw pool below Canvas's) is flagged in the build report; an explicit
+  `selection_number` of `0` is honoured as an authored empty draw rather than pulling
+  the whole bank in; a New Quiz whose banks don't resolve at all still falls back to the
+  hidden placeholder, so nothing regresses.
+  The shared QTI-source helpers (`parse_qti`, `locate_native_qti`) now live in a
+  `qti_source_locator` trait used by both the quiz and question-bank builders.
+
 ## [0.54.0] - 2026-08-11
 
 - **The build report now flags embedded assets the export referenced but did not

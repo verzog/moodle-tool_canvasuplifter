@@ -1021,4 +1021,309 @@ XML;
         sort($answers);
         $this->assertSame(['carpal', 'popliteal', 'prone'], $answers);
     }
+
+    /**
+     * One multiple-choice item for an item-bank <objectbank>, keyed by ident.
+     *
+     * @param string $ident The item ident.
+     * @return string
+     */
+    protected function bankmcitem(string $ident): string {
+        return '<item ident="' . $ident . '" title="Q ' . $ident . '"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_choice_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;div&gt;Question ' . $ident . '?&lt;/div&gt;</mattext>'
+            . '</material><response_lid ident="response1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="a"><material><mattext texttype="text/plain">Right</mattext></material></response_label>'
+            . '<response_label ident="b"><material><mattext texttype="text/plain">Wrong</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="response1">a</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
+     * One item-bank item of an unsupported Canvas type (ordering), keyed by ident, so
+     * a bank can carry a candidate that parses but cannot convert.
+     *
+     * @param string $ident The item ident.
+     * @return string
+     */
+    protected function bankorderingitem(string $ident): string {
+        return '<item ident="' . $ident . '" title="Q ' . $ident . '"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>ordering_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;div&gt;Order ' . $ident . '?&lt;/div&gt;</mattext>'
+            . '</material></presentation></item>';
+    }
+
+    /**
+     * A bare item-bank reference (an <item> with an ident but no presentation), the
+     * shape Canvas emits when a New Quiz references a question whose body it did not
+     * export. The parser counts it as unresolved.
+     *
+     * @param string $ident The item ident.
+     * @return string
+     */
+    protected function bankbareitem(string $ident): string {
+        return '<item ident="' . $ident . '" title="Q ' . $ident . '"></item>';
+    }
+
+    /**
+     * Write a package with a Canvas New Quiz that has no inline questions and instead
+     * draws from an item bank (non_cc_assessments/gbank1.xml.qti) via a
+     * <selection_ordering>/<sourcebank_ref>. The bank holds three MC questions, plus
+     * any extra bank items passed (e.g. an unsupported candidate).
+     *
+     * @param string $extrabankitems Extra <item> markup appended to the bank, or ''.
+     * @param string $selectnumber The <selection_number> value (how many to draw).
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_bank_backed(string $extrabankitems = '', string $selectnumber = '2'): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/gnewquiz', 0777, true);
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        // The CC assessment carries no items, only a bank draw of two questions worth
+        // 2.5 points each.
+        $qti = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnewquiz" title="Learning Expectations"><section ident="root_section">'
+            . '<section ident="grp" title="Group"><selection_ordering><selection>'
+            . '<sourcebank_ref>gbank1</sourcebank_ref><selection_number>' . $selectnumber . '</selection_number>'
+            . '<selection_extension><points_per_item>2.5</points_per_item></selection_extension>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/gnewquiz/assessment_qti.xml', $qti);
+        $meta = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz identifier="gnewquiz" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Learning Expectations</title><allowed_attempts>1</allowed_attempts></quiz>';
+        file_put_contents($dir . '/gnewquiz/assessment_meta.xml', $meta);
+        // The referenced item bank holds three MC questions and carries a bank title.
+        $bank = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="gbank1"><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>bank_title</fieldlabel><fieldentry>Unfiled Questions</fieldentry>'
+            . '</qtimetadatafield></qtimetadata>'
+            . $this->bankmcitem('b1') . $this->bankmcitem('b2') . $this->bankmcitem('b3')
+            . $extrabankitems
+            . '</objectbank></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/gbank1.xml.qti', $bank);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Learning Expectations</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">
+      <file href="gnewquiz/assessment_qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A New Quiz backed by an item bank is populated with random questions drawn from
+     * that bank (imported as a mod_qbank) instead of being left a hidden placeholder.
+     *
+     * @return void
+     */
+    public function test_new_quiz_populated_from_item_bank(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_bank_backed();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        // A real, visible quiz — not a hidden placeholder.
+        $this->assertEquals(1, (int) $quizcm->visible);
+        $this->assertStringNotContainsString('hidden placeholders', implode("\n", $report['warnings']));
+
+        // Two random-question slots were added (the selection asked for 2), each with
+        // the Canvas per-item points (2.5) as its max mark.
+        $slots = $DB->get_records('quiz_slots', ['quizid' => $quizcm->instance]);
+        $this->assertCount(2, $slots);
+        foreach ($slots as $slot) {
+            $this->assertEquals(2.5, (float) $slot->maxmark);
+        }
+
+        // The bank was imported as a question bank, kept in section 0 and named from
+        // its bank_title.
+        $qbanks = $modinfo->get_instances_of('qbank');
+        $this->assertCount(1, $qbanks);
+        $qbankcm = reset($qbanks);
+        $this->assertSame('Unfiled Questions', $qbankcm->get_name());
+        $this->assertEquals(0, $qbankcm->sectionnum);
+
+        // The build report notes the bank-draw rather than a placeholder warning.
+        $this->assertStringContainsString('drawing random questions', implode("\n", $report['warnings']));
+        $this->assertStringNotContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * When a referenced bank holds an unsupported candidate that cannot convert, the
+     * quiz still builds from the supported ones but is flagged as incomplete, because
+     * Moodle draws from a smaller pool than Canvas did.
+     *
+     * @return void
+     */
+    public function test_new_quiz_bank_partial_import_flags_incomplete(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        // The bank now carries a fourth candidate of an unsupported type; only the
+        // three MC questions import, so the pool (3) is smaller than the source (4).
+        $root = $this->build_fixture_bank_backed($this->bankorderingitem('b4'));
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        // Still a visible quiz built from what converted, drawing the requested two.
+        $this->assertEquals(1, (int) $quizcm->visible);
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
+        // Only the three supported questions imported into the bank.
+        $this->assertEquals(3, $DB->count_records('question', ['qtype' => 'multichoice']));
+        // The report flags the quiz as short of a group because a candidate was dropped.
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * A bank that carries a bare (unresolved) item reference alongside importable ones
+     * is treated as incomplete, because Canvas omitted a question's body and Moodle's
+     * pool is therefore smaller than the source.
+     *
+     * @return void
+     */
+    public function test_new_quiz_bank_unresolved_reference_flags_incomplete(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        // The bank carries a fourth candidate that is a bare <item> reference with no
+        // body — an unresolved reference the parser counts but cannot import.
+        $root = $this->build_fixture_bank_backed($this->bankbareitem('b4'));
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        // Built and visible from the three importable questions, drawing the two asked.
+        $this->assertEquals(1, (int) $quizcm->visible);
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
+        // Flagged as short of a group because the bank held an unresolved reference.
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * An explicit <selection_number> of 0 is an authored empty draw: the group is
+     * skipped rather than misread as "draw the whole bank". With no other questions the
+     * quiz has nothing to import and falls back to a hidden placeholder.
+     *
+     * @return void
+     */
+    public function test_new_quiz_explicit_zero_draw_is_skipped(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_bank_backed('', '0');
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quizcm = reset($quizzes);
+        // No questions were drawn — the zero draw did not pull the whole bank in.
+        $this->assertEquals(0, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
+        // The quiz is a hidden placeholder, and the bank was never imported.
+        $this->assertEquals(0, (int) $quizcm->visible);
+        $this->assertCount(0, $modinfo->get_instances_of('qbank'));
+    }
+
+    /**
+     * A New Quiz that mixes an inline question with a bank draw keeps the inline
+     * question and adds the bank draw; when a referenced bank is absent the quiz is
+     * still built from what resolved and the report flags it as missing a group.
+     *
+     * @return void
+     */
+    public function test_new_quiz_mixes_inline_and_reports_missing_bank(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/gnewquiz', 0777, true);
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        // One inline MC question plus a draw of 2 from a bank that is NOT shipped.
+        $inline = '<item ident="inline1" title="Inline"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_choice_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;div&gt;Inline?&lt;/div&gt;</mattext></material>'
+            . '<response_lid ident="response1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="a"><material><mattext texttype="text/plain">Right</mattext></material></response_label>'
+            . '<response_label ident="b"><material><mattext texttype="text/plain">Wrong</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="response1">a</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+        $qti = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnewquiz" title="Mixed"><section ident="root_section">'
+            . $inline
+            . '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>gmissing</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/gnewquiz/assessment_qti.xml', $qti);
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Mixed</title></item></item>'
+            . '</item></organization></organizations>'
+            . '<resources><resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">'
+            . '<file href="gnewquiz/assessment_qti.xml"/></resource></resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $this->assertSame(1, $report['createdcounts']['quiz'] ?? 0);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $quizcm = reset($quizzes);
+        // The inline question was kept even though a bank draw was also present.
+        $this->assertEquals(1, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
+        // The missing bank is surfaced as an incomplete-group warning.
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
 }

@@ -122,6 +122,8 @@ $string['notegradeletters'] = 'Imported {$a} letter-grade boundaries from the Ca
 $string['noteoutcomesimported'] = 'Imported {$a} Canvas learning outcome(s) as course grade outcomes, each with a '
     . 'scale built from its mastery ratings. Outcomes stay hidden until the site\'s "Enable outcomes" advanced '
     . 'setting is turned on.';
+$string['notequizbankdraw'] = 'Populated {$a} New Quiz(zes) by drawing random questions from their Canvas item '
+    . 'bank(s); each such quiz selects its questions from the imported bank rather than carrying a fixed set.';
 $string['noterubricsunlinked'] = 'Found {$a} rubric(s) in the package not linked to any activity, so they could '
     . 'not be imported; recreate them on the relevant activities if needed.';
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';
@@ -182,6 +184,7 @@ $string['qtype_multianswer'] = 'Multiple response';
 $string['qtype_multichoice'] = 'Multiple choice';
 $string['qtype_shortanswer'] = 'Fill in the blank / short answer';
 $string['qtype_truefalse'] = 'True/false';
+$string['quizbankname'] = 'Imported question bank';
 $string['quizfrombank'] = 'Also build a runnable quiz from each standalone question bank';
 $string['quizfrombank_help'] = 'Standalone assessments (not linked anywhere in the Canvas course) import as reusable question banks. Tick this to also create a runnable quiz from each one, placed in the "Additional resources" section. Quizzes linked within the course are always built as quizzes regardless of this setting.';
 $string['quizplaceholderintro'] = '<div class="alert alert-warning">This quiz was imported from Canvas '
@@ -240,6 +243,9 @@ $string['warnoutcomesmalformed'] = 'The package\'s learning_outcomes.xml could n
 $string['warnoutcomesskipped'] = 'Skipped {$a} Canvas learning outcome(s) whose mastery ratings did not form a '
     . 'usable scale (Moodle scales need at least two distinct rating labels); recreate those outcomes by hand '
     . 'if needed.';
+$string['warnquizbankincomplete'] = '{$a} bank-backed quiz(zes) are missing part of their questions because a '
+    . 'referenced Canvas item bank was not in the package (or held fewer questions than the quiz asked for); '
+    . 'review those quizzes and add the missing questions.';
 $string['warnquizplaceholders'] = '{$a} quiz(zes) were imported as hidden placeholders because Canvas '
     . 'did not export their questions (e.g. New Quizzes backed by an item bank). Their settings carried '
     . 'over; add questions and unhide them.';
