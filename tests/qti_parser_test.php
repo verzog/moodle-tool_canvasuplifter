@@ -1300,6 +1300,63 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * Canvas's base-10 log and natural ln are translated to Moodle's log10 and log, so
+     * the graded value matches Canvas rather than being silently mis-computed.
+     *
+     * @return void
+     */
+    public function test_native_calculated_translates_logarithms(): void {
+        $calc = '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places="0"><formula>log(a)+ln(a)</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">100</var><answer>2</answer></var_set></var_sets>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame('log10({a})+log({a})', $q->formula);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A scientific-notation literal (1e-3) is a valid Moodle formula constant, so a
+     * calculated question that uses one stays importable rather than being rejected by
+     * the formula-support check mistaking the exponent 'e' for a function.
+     *
+     * @return void
+     */
+    public function test_native_calculated_accepts_scientific_notation(): void {
+        $calc = '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places="0"><formula>a*1e-3</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><answer>0</answer></var_set></var_sets>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame('{a}*1e-3', $q->formula);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A data row that omits a declared variable cannot reconstruct Canvas's value tuple,
+     * so the calculated question is treated as not importable rather than emitting an
+     * empty dataset value.
+     *
+     * @return void
+     */
+    public function test_native_calculated_rejects_incomplete_rows(): void {
+        $calc = '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places="0"><formula>a+b</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var>'
+            . '<var name="b" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><answer>2</answer></var_set></var_sets>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame([['a' => '2']], $q->datarows);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
      * A calculated formula using a function Moodle's calculated grammar does not accept
      * (here factorial) would be rejected by qformat_xml and roll back the whole bank, so
      * the question is treated as not importable and dropped instead.

@@ -495,6 +495,12 @@ class qti_parser {
         // the whole imported bank. Both are right-associative with the same precedence,
         // so the swap is faithful.
         $formula = str_replace('^', '**', $this->templatise_formula($rawformula, $names));
+        // Canvas's log is base-10 and its ln is natural, but Moodle's calculated
+        // grammar spells base-10 log10 and natural log 'log'; translate so the graded
+        // value matches Canvas. Rewrite log first so the ln→log step is not re-mapped,
+        // and guard the {wildcard} braces so a variable named log/ln is left alone.
+        $formula = (string) preg_replace('/(?<![A-Za-z0-9_{])log(?![A-Za-z0-9_}])/', 'log10', $formula);
+        $formula = (string) preg_replace('/(?<![A-Za-z0-9_{])ln(?![A-Za-z0-9_}])/', 'log', $formula);
         $question->formula = $formula;
         $question->questiontext = $this->templatise_prompt($question->questiontext, $names);
 

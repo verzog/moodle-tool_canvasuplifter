@@ -188,7 +188,7 @@ class qti_question {
             // qformat_xml rejects it and rolls back the whole imported bank — so a
             // formula with an unsupported operator or function is dropped instead.
             return trim($this->formula) !== '' && $this->variables !== [] && $this->datarows !== []
-                && $this->calculated_formula_is_supported();
+                && $this->calculated_formula_is_supported() && $this->calculated_rows_are_complete();
         }
         // Multichoice and multianswer import as Moodle multichoice; both need at
         // least two answers.
@@ -219,8 +219,11 @@ class qti_question {
      * @return bool
      */
     private function calculated_formula_is_supported(): bool {
-        // Treat each {wildcard} as a number so only genuine functions remain as words.
+        // Treat each {wildcard} as a number, then strip numeric literals — including
+        // scientific notation like 1e-3 — so the exponent's 'e'/'E' is not mistaken for
+        // a bare function identifier and a valid literal is not rejected.
         $formula = (string) preg_replace('/\{[^}]*\}/', '1', $this->formula);
+        $formula = (string) preg_replace('/(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/', ' ', $formula);
         if (preg_match_all('/[A-Za-z_][A-Za-z0-9_]*/', $formula, $matches)) {
             foreach ($matches[0] as $identifier) {
                 if (!in_array(strtolower($identifier), self::CALCULATED_FUNCTIONS, true)) {
@@ -228,10 +231,30 @@ class qti_question {
                 }
             }
         }
-        // Once identifiers are stripped, only numbers and safe math operators may be
-        // left (** for exponent is two of the safe '*'). Anything else — a caret, a
-        // bitwise or comparison operator — means Moodle would reject the formula.
+        // Once numbers and function names are stripped, only safe math operators and
+        // grouping may remain (** for exponent is two of the safe '*'). Anything else —
+        // a caret, a bitwise or comparison operator — means Moodle would reject it.
         $operators = (string) preg_replace('/[A-Za-z_][A-Za-z0-9_]*/', '', $formula);
-        return preg_match('~[^0-9.,+\-*/%()eE\s]~', $operators) === 0;
+        return preg_match('~[^.,+\-*/%()\s]~', $operators) === 0;
+    }
+
+    /**
+     * Whether every generated data row carries a numeric value for every declared
+     * calculated variable. A Canvas var_set that omits a variable would otherwise be
+     * emitted with an empty dataset value while still claiming the full item count,
+     * which Moodle cannot reconstruct — so such a question is dropped instead.
+     *
+     * @return bool
+     */
+    private function calculated_rows_are_complete(): bool {
+        foreach ($this->datarows as $row) {
+            foreach ($this->variables as $variable) {
+                $value = trim((string) ($row[$variable['name']] ?? ''));
+                if ($value === '' || !is_numeric($value)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 }
