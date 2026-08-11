@@ -90,6 +90,7 @@ class question_xml_writer {
             qti_question::TYPE_DESCRIPTION => 'description',
             qti_question::TYPE_TRUEFALSE => 'truefalse',
             qti_question::TYPE_NUMERICAL => 'numerical',
+            qti_question::TYPE_CALCULATED => 'calculated',
             default => 'multichoice',
         };
 
@@ -123,6 +124,9 @@ class question_xml_writer {
                 break;
             case 'numerical':
                 $body .= $this->numerical_xml($q, $imagedir);
+                break;
+            case 'calculated':
+                $body .= $this->calculated_xml($q);
                 break;
             default:
                 $body .= "    <single>" . ($q->type === qti_question::TYPE_MULTIANSWER ? 'false' : 'true') . "</single>\n";
@@ -269,6 +273,107 @@ class question_xml_writer {
             $out .= "    </answer>\n";
         }
         return $out;
+    }
+
+    /**
+     * Render a calculated question body: the single scoring formula (with {var}
+     * wildcards) and its tolerance, then one dataset definition per variable whose
+     * items are the pre-generated value tuples. Moodle re-evaluates the formula over
+     * the same tuples, so the graded answers match Canvas's. Canvas calculated
+     * questions carry no units, so the units block is omitted.
+     *
+     * @param qti_question $q The question.
+     * @return string
+     */
+    protected function calculated_xml(qti_question $q): string {
+        [$tolerance, $tolerancetype] = $this->calculated_tolerance($q);
+        $decimals = $q->answerdecimals >= 0 ? $q->answerdecimals : 2;
+        // Canvas rounds the generated answer to its decimal-places setting and grades
+        // against that rounded value, whereas Moodle grades against its own full-precision
+        // evaluation of the formula. With a zero tolerance the two disagree on any
+        // non-terminating result, so when Canvas fixed the decimal places, round the
+        // formula to the same precision — correctanswerlength alone only affects display.
+        $formula = $q->answerdecimals >= 0
+            ? 'round(' . $q->formula . ', ' . $q->answerdecimals . ')'
+            : $q->formula;
+        $out = "    <synchronize>0</synchronize>\n    <single>true</single>\n";
+        $out .= "    <answernumbering>abc</answernumbering>\n    <shuffleanswers>false</shuffleanswers>\n";
+        $out .= "    <correctfeedback format=\"html\"><text></text></correctfeedback>\n";
+        $out .= "    <partiallycorrectfeedback format=\"html\"><text></text></partiallycorrectfeedback>\n";
+        $out .= "    <incorrectfeedback format=\"html\"><text></text></incorrectfeedback>\n";
+        $out .= "    <answer fraction=\"100\">\n";
+        $out .= "      <text>" . $this->cdata($formula) . "</text>\n";
+        $out .= "      <tolerance>" . htmlspecialchars($tolerance, ENT_XML1) . "</tolerance>\n";
+        $out .= "      <tolerancetype>$tolerancetype</tolerancetype>\n";
+        $out .= "      <correctanswerformat>1</correctanswerformat>\n";
+        $out .= "      <correctanswerlength>$decimals</correctanswerlength>\n";
+        $out .= "      <feedback format=\"html\"><text></text></feedback>\n";
+        $out .= "    </answer>\n";
+        return $out . $this->calculated_datasets($q);
+    }
+
+    /**
+     * Map a calculated question's tolerance to Moodle's [tolerance, tolerancetype].
+     * Canvas's absolute margin becomes Moodle's nominal type (2); a percent margin
+     * becomes the relative type (1), whose value is a fraction of the answer (a 5%
+     * margin is 0.05). Tolerance is inherently approximate, so the percent conversion
+     * uses ordinary arithmetic.
+     *
+     * @param qti_question $q The question.
+     * @return array A two-element list: [tolerance string, tolerancetype string].
+     */
+    protected function calculated_tolerance(qti_question $q): array {
+        $value = trim($q->answertolerance);
+        $value = $value === '' ? '0' : $value;
+        if ($q->tolerancekind === 'percent') {
+            $fraction = (float) $value / 100.0;
+            $formatted = rtrim(rtrim(sprintf('%.10F', $fraction), '0'), '.');
+            return [$formatted === '' ? '0' : $formatted, '1'];
+        }
+        return [$value, '2'];
+    }
+
+    /**
+     * Render the <dataset_definitions> block: one definition per calculated variable,
+     * carrying its range (min/max/decimals) and the column of values it takes across
+     * the pre-generated rows. The rows are numbered from 1 and shared by item number
+     * across every definition, so Moodle draws a consistent tuple per variant.
+     *
+     * @param qti_question $q The question.
+     * @return string
+     */
+    protected function calculated_datasets(qti_question $q): string {
+        if ($q->variables === []) {
+            return '';
+        }
+        $itemcount = count($q->datarows);
+        $out = "    <dataset_definitions>\n";
+        foreach ($q->variables as $var) {
+            $name = (string) ($var['name'] ?? '');
+            $out .= "      <dataset_definition>\n";
+            $out .= "        <status><text>private</text></status>\n";
+            $out .= "        <name><text>" . $this->cdata($name) . "</text></name>\n";
+            $out .= "        <type>calculated</type>\n";
+            $out .= "        <distribution><text>uniform</text></distribution>\n";
+            $out .= "        <minimum><text>" . htmlspecialchars((string) ($var['min'] ?? ''), ENT_XML1)
+                . "</text></minimum>\n";
+            $out .= "        <maximum><text>" . htmlspecialchars((string) ($var['max'] ?? ''), ENT_XML1)
+                . "</text></maximum>\n";
+            $out .= "        <decimals><text>" . (int) ($var['decimals'] ?? 0) . "</text></decimals>\n";
+            $out .= "        <itemcount>$itemcount</itemcount>\n";
+            if ($itemcount > 0) {
+                $out .= "        <dataset_items>\n";
+                foreach ($q->datarows as $i => $row) {
+                    $value = htmlspecialchars((string) ($row[$name] ?? ''), ENT_XML1);
+                    $out .= "          <dataset_item>\n            <number>" . ($i + 1) . "</number>\n";
+                    $out .= "            <value>$value</value>\n          </dataset_item>\n";
+                }
+                $out .= "        </dataset_items>\n";
+                $out .= "        <number_of_items>$itemcount</number_of_items>\n";
+            }
+            $out .= "      </dataset_definition>\n";
+        }
+        return $out . "    </dataset_definitions>\n";
     }
 
     /**

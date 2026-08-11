@@ -129,7 +129,7 @@ final class gbird_sandbox_test extends \advanced_testcase {
     }
 
     /**
-     * The question-type matrix: 9 of 16 questions convert; the rest are
+     * The question-type matrix: 10 of 16 questions convert; the rest are
      * New-Quiz-only types, all attributed to the "New quiz engine".
      *
      * @return void
@@ -143,7 +143,7 @@ final class gbird_sandbox_test extends \advanced_testcase {
         // mirrors what builds. Since #129, categorization_question and
         // ordering_question are unsupported rather than mis-read as choice questions.
         $this->assertSame(16, $matrix['total']);
-        $this->assertSame(9, $matrix['supported']);
+        $this->assertSame(10, $matrix['supported']);
 
         // A supported row (importable type, no dropped-source attribution).
         $supported = static fn(string $label, int $count): array => [
@@ -161,6 +161,7 @@ final class gbird_sandbox_test extends \advanced_testcase {
         // complete sources array (with counts), in order - so a status or
         // attribution regression is caught, not just a count change.
         $this->assertSame([
+            $supported('calculated', 1),
             $supported('description', 2),
             $supported('essay', 1),
             $supported('matching', 2),
@@ -173,7 +174,6 @@ final class gbird_sandbox_test extends \advanced_testcase {
                 ['name' => 'New quiz engine', 'count' => 1],
             ]),
             $newquiz('file_upload_question', 1, $engine),
-            $newquiz('calculated_question', 1, $engine),
             $newquiz('ordering_question', 1, $engine),
             $newquiz('fill_in_multiple_blanks_question', 1, $engine),
             $newquiz('hot_spot_question', 1, $engine),

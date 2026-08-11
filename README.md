@@ -106,11 +106,11 @@ Admin tools > Canvas Uplifter*.
   lessons have no per-page visibility, so an unpublished page folded into a
   lesson becomes visible.
 - Canvas QTI assessments convert their questions — multiple choice, multiple
-  response, fill-in-blank, true/false, essay, matching and numerical. Canvas
-  inline-dropdown and choice-form multiple-blank questions import as Moodle
-  matching when every blank shares one choice set (Moodle's match type has a
-  single answer pool); calculated and free-text multi-blank questions are
-  reported but not yet built. When a Canvas Common Cartridge assessment ships an
+  response, fill-in-blank, true/false, essay, matching, numerical and calculated
+  (formula). Canvas inline-dropdown and choice-form multiple-blank questions import
+  as Moodle matching when every blank shares one choice set (Moodle's match type has
+  a single answer pool); free-text multi-blank questions are reported but not yet
+  built. When a Canvas Common Cartridge assessment ships an
   empty shell, the questions are recovered from Canvas's native QTI dump
   (`non_cc_assessments`).
   Bundled media in question text — images, video, audio and attachments,
@@ -145,8 +145,10 @@ Background on how Canvas ships quizzes — and why some arrive without questions
 - **Question types that convert:** multiple choice (`render_choice`), true/false,
   fill-in-the-blank / short answer (`render_fib` / string matching), multiple
   answers, matching, numerical (`numerical_question` — exact or `vargte`/`varlte`
-  range, mapped to a Moodle numerical answer with tolerance), and essay. Other
-  interaction types are reported and skipped.
+  range, mapped to a Moodle numerical answer with tolerance), calculated
+  (`calculated_question` — the `<calculated>` formula, variables and pre-generated
+  `<var_sets>` become a Moodle calculated question with a dataset per variable), and
+  essay. Other interaction types are reported and skipped.
 - **"Referenced but not present" quizzes:** when a quiz draws its questions from a
   randomised group or an external question pool/bank instead of hard-coding them
   inside the `<section>`, Canvas may export only the shell — a bare
@@ -292,7 +294,7 @@ Everything lives under `~/.moodle-plugin-ci` (outside the repo).
 | 5 | Asynchronous **analyse**: run extract + parse + report as an adhoc task behind the existing polled status page, and move the remote-URL fetch into the task too, so large packages don't time out the web request (the build is already async; this closes the server-side gap that complements the built-in chunked-upload support) | Done |
 | 6 | Learning outcomes → course grade outcomes (scales from mastery ratings) | Done |
 | 7 | Bulk-migration integration: the public `\tool_canvasuplifter\launcher` facade (queue / list / get / delete / storage) and the `tool_automate` bulk driver — URL-list and server-directory sources, build-now or analyse-for-later, and a *Staged Canvas imports* review page with a storage counter and selective delete | Done |
-| 8 | Remaining QTI question types (numerical, calculated, free-text multi-blank) | Planned |
+| 8 | Remaining QTI question types (numerical ✓, calculated ✓, free-text multi-blank) | In progress |
 
 ## Path to beta
 

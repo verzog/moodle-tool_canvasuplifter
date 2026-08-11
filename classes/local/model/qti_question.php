@@ -41,6 +41,8 @@ class qti_question {
     public const TYPE_MATCHING = 'matching';
     /** Numerical (Canvas numerical_question) -> Moodle numerical. */
     public const TYPE_NUMERICAL = 'numerical';
+    /** Calculated / formula (Canvas calculated_question) -> Moodle calculated. */
+    public const TYPE_CALCULATED = 'calculated';
     /** Text-only stimulus item (Canvas text_only_question) -> Moodle description. */
     public const TYPE_DESCRIPTION = 'description';
     /** Recognised QTI item we can't yet convert. */
@@ -72,6 +74,31 @@ class qti_question {
 
     /** @var string General feedback (HTML), shown after answering. */
     public string $generalfeedback = '';
+
+    /** @var string Calculated formula (TYPE_CALCULATED only), in Moodle {var} syntax. */
+    public string $formula = '';
+
+    /** @var string Calculated answer tolerance (TYPE_CALCULATED only), a decimal string. */
+    public string $answertolerance = '0';
+
+    /** @var string Tolerance kind for a calculated answer: 'absolute' or 'percent'. */
+    public string $tolerancekind = 'absolute';
+
+    /** @var int Correct-answer decimal places for a calculated answer, or -1 when unspecified. */
+    public int $answerdecimals = -1;
+
+    /**
+     * @var array Calculated variable definitions (TYPE_CALCULATED only). Each:
+     *            ['name' => string, 'min' => string, 'max' => string, 'decimals' => int].
+     */
+    public array $variables = [];
+
+    /**
+     * @var array Calculated data rows (TYPE_CALCULATED only), one per Canvas var_set.
+     *            Each is a map of variable name => value string, aligned across variables
+     *            by row so Moodle draws a consistent tuple per generated variant.
+     */
+    public array $datarows = [];
 
     /** @var string The raw CC profile, e.g. "cc.fib.v0p1" (for the support matrix). */
     public string $profile = '';
@@ -153,8 +180,81 @@ class qti_question {
             }
             return false;
         }
+        if ($this->type === self::TYPE_CALCULATED) {
+            // Moodle calculated needs a formula, at least one variable to define a
+            // dataset from, and at least one generated data row to build a variant
+            // with; anything thinner cannot produce a graded question. The formula
+            // must also use only syntax Moodle's calculated grammar accepts, or
+            // qformat_xml rejects it and rolls back the whole imported bank — so a
+            // formula with an unsupported operator or function is dropped instead.
+            return trim($this->formula) !== '' && $this->variables !== [] && $this->datarows !== []
+                && $this->calculated_formula_is_supported() && $this->calculated_rows_are_complete();
+        }
         // Multichoice and multianswer import as Moodle multichoice; both need at
         // least two answers.
         return $nonempty >= 2;
+    }
+
+    /**
+     * The functions Moodle's calculated question grammar accepts in a formula
+     * (mirrors qtype_calculated's validator). A formula naming any other function is
+     * rejected on import, so a calculated question that uses one is treated as not
+     * importable.
+     */
+    private const CALCULATED_FUNCTIONS = [
+        'pi', 'abs', 'acos', 'acosh', 'asin', 'asinh', 'atan', 'atanh', 'bindec', 'ceil',
+        'cos', 'cosh', 'decbin', 'decoct', 'deg2rad', 'exp', 'expm1', 'floor', 'is_finite',
+        'is_infinite', 'is_nan', 'log10', 'log1p', 'octdec', 'rad2deg', 'sin', 'sinh', 'sqrt',
+        'tan', 'tanh', 'log', 'round', 'atan2', 'fmod', 'pow', 'min', 'max',
+    ];
+
+    /**
+     * Whether this calculated question's formula uses only operators and functions
+     * Moodle's calculated grammar accepts. Any wildcard is a number for the purposes
+     * of the check; every bare identifier must be a supported function name, and only
+     * safe operator/number characters may remain once identifiers are removed. Kept
+     * conservative so an unsupported formula is dropped (skipped) rather than rolling
+     * back the whole imported bank.
+     *
+     * @return bool
+     */
+    private function calculated_formula_is_supported(): bool {
+        // Treat each {wildcard} as a number, then strip numeric literals — including
+        // scientific notation like 1e-3 — so the exponent's 'e'/'E' is not mistaken for
+        // a bare function identifier and a valid literal is not rejected.
+        $formula = (string) preg_replace('/\{[^}]*\}/', '1', $this->formula);
+        $formula = (string) preg_replace('/(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/', ' ', $formula);
+        if (preg_match_all('/[A-Za-z_][A-Za-z0-9_]*/', $formula, $matches)) {
+            foreach ($matches[0] as $identifier) {
+                if (!in_array(strtolower($identifier), self::CALCULATED_FUNCTIONS, true)) {
+                    return false;
+                }
+            }
+        }
+        // Once numbers and function names are stripped, only safe math operators and
+        // grouping may remain (** for exponent is two of the safe '*'). Anything else —
+        // a caret, a bitwise or comparison operator — means Moodle would reject it.
+        $operators = (string) preg_replace('/[A-Za-z_][A-Za-z0-9_]*/', '', $formula);
+        return preg_match('~[^.,+\-*/%()\s]~', $operators) === 0;
+    }
+
+    /**
+     * Whether every generated data row carries a numeric value for every declared
+     * calculated variable. A Canvas var_set that omits a variable would otherwise be
+     * emitted with an empty dataset value while still claiming the full item count,
+     * which Moodle cannot reconstruct — so such a question is dropped instead.
+     *
+     * @return bool
+     */
+    private function calculated_rows_are_complete(): bool {
+        foreach ($this->datarows as $row) {
+            foreach ($this->variables as $variable) {
+                $value = trim((string) ($row[$variable['name']] ?? ''));
+                if ($value === '' || !is_numeric($value)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 }

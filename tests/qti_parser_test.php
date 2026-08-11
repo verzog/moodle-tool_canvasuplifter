@@ -1231,13 +1231,215 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
-     * Build a native Canvas numerical_question item whose scoring respcondition
-     * carries the given conditionvar markup, and optionally a feedback link plus the
-     * matching itemfeedback block.
+     * A Canvas calculated_question becomes a Moodle calculated question: the formula
+     * and stem variable references are rewritten to {var} wildcards, each variable is
+     * captured with its range, and each var_set becomes an aligned data row.
      *
-     * @param string $conditionvar The <or>/<varequal>/<vargte>… markup.
-     * @param string $displayfeedback Optional <displayfeedback> element for the condition.
-     * @param string $itemfeedback Optional <itemfeedback> block for the item.
+     * @return void
+     */
+    public function test_native_calculated_converts(): void {
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item()))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CALCULATED, $q->type);
+        $this->assertSame('calculated_question', $q->profile);
+        $this->assertTrue($q->is_importable());
+        $this->assertSame('{a}+{b}', $q->formula);
+        $this->assertStringContainsString('{a} + {b}', $q->questiontext);
+        $this->assertSame('absolute', $q->tolerancekind);
+        $this->assertSame('0', $q->answertolerance);
+        $this->assertSame(
+            [
+                ['name' => 'a', 'min' => '1', 'max' => '3', 'decimals' => 0],
+                ['name' => 'b', 'min' => '1', 'max' => '3', 'decimals' => 0],
+            ],
+            $q->variables
+        );
+        $this->assertSame([['a' => '2', 'b' => '3'], ['a' => '1', 'b' => '1']], $q->datarows);
+    }
+
+    /**
+     * A calculated question with a percent margin keeps the tolerance kind so the
+     * writer can map it to Moodle's relative tolerance type.
+     *
+     * @return void
+     */
+    public function test_native_calculated_percent_tolerance(): void {
+        $calc = '<answer_tolerance margin_type="percent">5</answer_tolerance>'
+            . '<formulas decimal_places="2"><formula>a+b</formula></formulas>'
+            . '<vars><var name="a" scale="1"><min>1</min><max>3</max></var>'
+            . '<var name="b" scale="1"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><var name="b">3</var><answer>5</answer></var_set>'
+            . '</var_sets>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame('percent', $q->tolerancekind);
+        $this->assertSame('5', $q->answertolerance);
+        $this->assertSame(2, $q->answerdecimals);
+        $this->assertSame(1, $q->variables[0]['decimals']);
+    }
+
+    /**
+     * Canvas writes exponentiation with a caret (a^2); Moodle spells it **, so the
+     * translated formula uses ** and the question stays importable.
+     *
+     * @return void
+     */
+    public function test_native_calculated_translates_caret_exponent(): void {
+        $calc = '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places="0"><formula>a^2+b</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var>'
+            . '<var name="b" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><var name="b">3</var><answer>7</answer></var_set>'
+            . '</var_sets>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame('{a}**2+{b}', $q->formula);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * Canvas's base-10 log and natural ln are translated to Moodle's log10 and log, so
+     * the graded value matches Canvas rather than being silently mis-computed.
+     *
+     * @return void
+     */
+    public function test_native_calculated_translates_logarithms(): void {
+        $calc = '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places="0"><formula>log(a)+ln(a)</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">100</var><answer>2</answer></var_set></var_sets>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame('log10({a})+log({a})', $q->formula);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A scientific-notation literal (1e-3) is a valid Moodle formula constant, so a
+     * calculated question that uses one stays importable rather than being rejected by
+     * the formula-support check mistaking the exponent 'e' for a function.
+     *
+     * @return void
+     */
+    public function test_native_calculated_accepts_scientific_notation(): void {
+        $calc = '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places="0"><formula>a*1e-3</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><answer>0</answer></var_set></var_sets>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame('{a}*1e-3', $q->formula);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A data row that omits a declared variable cannot reconstruct Canvas's value tuple,
+     * so the calculated question is treated as not importable rather than emitting an
+     * empty dataset value.
+     *
+     * @return void
+     */
+    public function test_native_calculated_rejects_incomplete_rows(): void {
+        $calc = '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places="0"><formula>a+b</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var>'
+            . '<var name="b" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><answer>2</answer></var_set></var_sets>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame([['a' => '2']], $q->datarows);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * A calculated formula using a function Moodle's calculated grammar does not accept
+     * (here factorial) would be rejected by qformat_xml and roll back the whole bank, so
+     * the question is treated as not importable and dropped instead.
+     *
+     * @return void
+     */
+    public function test_native_calculated_rejects_unsupported_formula(): void {
+        $calc = '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places="0"><formula>factorial(a)</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><answer>2</answer></var_set></var_sets>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CALCULATED, $q->type);
+        $this->assertSame('factorial({a})', $q->formula);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * A calculated question that carries no generated value rows cannot build a
+     * variant, so it stays a calculated question but is not importable.
+     *
+     * @return void
+     */
+    public function test_native_calculated_without_rows_is_unimportable(): void {
+        $calc = '<formulas decimal_places="0"><formula>a+b</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var>'
+            . '<var name="b" scale="0"><min>1</min><max>3</max></var></vars>';
+
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item($calc)))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CALCULATED, $q->type);
+        $this->assertSame([], $q->datarows);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * Square-bracket variable references in the stem (Canvas's other delimiter) are
+     * rewritten to {var} wildcards too, while bare prose is left untouched.
+     *
+     * @return void
+     */
+    public function test_native_calculated_bracket_stem_templatised(): void {
+        $stem = '&lt;p&gt;A rectangle [a] wide leaves a alone.&lt;/p&gt;';
+        $q = (new qti_parser())->parse($this->assessment($this->calculated_item(null, $stem)))['questions'][0];
+
+        $this->assertStringContainsString('{a} wide leaves a alone', $q->questiontext);
+    }
+
+    /**
+     * A native Canvas calculated_question over variables a and b, formula "a+b", with
+     * two pre-generated rows. Pass a replacement <calculated> body or stem to vary it.
+     *
+     * @param string|null $calc The inner <calculated> body, or null for the default.
+     * @param string|null $stem The presentation stem HTML (entity-encoded), or null for the default.
+     * @return string
+     */
+    private function calculated_item(?string $calc = null, ?string $stem = null): string {
+        // Canvas delimits an inline variable with a backtick; build it via chr(96) so
+        // the fixture avoids a literal backtick (moodle.Strings.ForbiddenStrings).
+        $tick = chr(96);
+        $stem ??= '&lt;p&gt;What is ' . $tick . 'a' . $tick . ' + ' . $tick . 'b' . $tick . '?&lt;/p&gt;';
+        $calc ??= '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places=""><formula>a+b</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var>'
+            . '<var name="b" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><var name="b">3</var><answer>5</answer></var_set>'
+            . '<var_set ident="s2"><var name="a">1</var><var name="b">1</var><answer>2</answer></var_set></var_sets>';
+        return '<item ident="c1" title="Sum"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>calculated_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">' . $stem . '</mattext></material></presentation>'
+            . '<itemproc_extension><calculated>' . $calc . '</calculated></itemproc_extension></item>';
+    }
+
+    /**
+     * A native Canvas numerical_question item whose accepted answer is a scoring
+     * condition var block.
+     *
+     * @param string $conditionvar The <conditionvar> body.
+     * @param string $displayfeedback Optional <displayfeedback> node for the condition.
+     * @param string $itemfeedback Optional trailing <itemfeedback> node.
      * @return string
      */
     private function numerical_item(string $conditionvar, string $displayfeedback = '', string $itemfeedback = ''): string {
