@@ -41,6 +41,8 @@ class qti_question {
     public const TYPE_MATCHING = 'matching';
     /** Numerical (Canvas numerical_question) -> Moodle numerical. */
     public const TYPE_NUMERICAL = 'numerical';
+    /** Calculated / formula (Canvas calculated_question) -> Moodle calculated. */
+    public const TYPE_CALCULATED = 'calculated';
     /** Text-only stimulus item (Canvas text_only_question) -> Moodle description. */
     public const TYPE_DESCRIPTION = 'description';
     /** Recognised QTI item we can't yet convert. */
@@ -72,6 +74,31 @@ class qti_question {
 
     /** @var string General feedback (HTML), shown after answering. */
     public string $generalfeedback = '';
+
+    /** @var string Calculated formula (TYPE_CALCULATED only), in Moodle {var} syntax. */
+    public string $formula = '';
+
+    /** @var string Calculated answer tolerance (TYPE_CALCULATED only), a decimal string. */
+    public string $answertolerance = '0';
+
+    /** @var string Tolerance kind for a calculated answer: 'absolute' or 'percent'. */
+    public string $tolerancekind = 'absolute';
+
+    /** @var int Correct-answer decimal places for a calculated answer, or -1 when unspecified. */
+    public int $answerdecimals = -1;
+
+    /**
+     * @var array Calculated variable definitions (TYPE_CALCULATED only). Each:
+     *            ['name' => string, 'min' => string, 'max' => string, 'decimals' => int].
+     */
+    public array $variables = [];
+
+    /**
+     * @var array Calculated data rows (TYPE_CALCULATED only), one per Canvas var_set.
+     *            Each is a map of variable name => value string, aligned across variables
+     *            by row so Moodle draws a consistent tuple per generated variant.
+     */
+    public array $datarows = [];
 
     /** @var string The raw CC profile, e.g. "cc.fib.v0p1" (for the support matrix). */
     public string $profile = '';
@@ -152,6 +179,12 @@ class qti_question {
                 }
             }
             return false;
+        }
+        if ($this->type === self::TYPE_CALCULATED) {
+            // Moodle calculated needs a formula, at least one variable to define a
+            // dataset from, and at least one generated data row to build a variant
+            // with; anything thinner cannot produce a graded question.
+            return trim($this->formula) !== '' && $this->variables !== [] && $this->datarows !== [];
         }
         // Multichoice and multianswer import as Moodle multichoice; both need at
         // least two answers.

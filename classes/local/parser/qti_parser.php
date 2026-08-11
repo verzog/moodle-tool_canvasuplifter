@@ -202,6 +202,9 @@ class qti_parser {
             case qti_question::TYPE_NUMERICAL:
                 $this->fill_numerical_answers($item, $question);
                 break;
+            case qti_question::TYPE_CALCULATED:
+                $this->fill_calculated($item, $question);
+                break;
             case qti_question::TYPE_ESSAY:
             default:
                 break;
@@ -253,6 +256,8 @@ class qti_parser {
                 return qti_question::TYPE_SHORTANSWER;
             case 'numerical_question':
                 return qti_question::TYPE_NUMERICAL;
+            case 'calculated_question':
+                return qti_question::TYPE_CALCULATED;
             case 'essay_question':
                 return qti_question::TYPE_ESSAY;
             case 'text_only_question':
@@ -421,6 +426,158 @@ class qti_parser {
                 ];
             }
         }
+    }
+
+    /**
+     * Populate a Canvas calculated (formula) question.
+     *
+     * Canvas stores the answer machinery in an <itemproc_extension><calculated>
+     * block: a <formula> over named variables, each variable's range as
+     * <vars><var name scale><min/><max/></var>, and a table of pre-generated value
+     * tuples as <var_sets><var_set><var name>value</var>…<answer>result</answer>.
+     * The formula and stem variable references (Canvas delimits them with backticks
+     * or square brackets) are rewritten to Moodle's {var} wildcard syntax; each
+     * variable becomes a dataset definition and each var_set a row of dataset items,
+     * so Moodle re-computes the answer from the same tuples.
+     *
+     * @param DOMElement $item The item element.
+     * @param qti_question $question The question being built (modified in place).
+     * @return void
+     */
+    protected function fill_calculated(DOMElement $item, qti_question $question): void {
+        $calc = $this->descendant($item, 'calculated');
+        if ($calc === null) {
+            return;
+        }
+
+        // Variable definitions live under <vars>; var_set values under <var_sets>.
+        $names = [];
+        $vars = $this->descendant($calc, 'vars');
+        if ($vars !== null) {
+            foreach ($vars->getElementsByTagNameNS('*', 'var') as $var) {
+                if (!($var instanceof DOMElement)) {
+                    continue;
+                }
+                $name = trim($var->getAttribute('name'));
+                if ($name === '') {
+                    continue;
+                }
+                $question->variables[] = [
+                    'name' => $name,
+                    'min' => $this->child_value($var, 'min'),
+                    'max' => $this->child_value($var, 'max'),
+                    'decimals' => max(0, (int) $var->getAttribute('scale')),
+                ];
+                $names[] = $name;
+            }
+        }
+
+        foreach ($calc->getElementsByTagNameNS('*', 'var_set') as $set) {
+            if (!($set instanceof DOMElement)) {
+                continue;
+            }
+            $row = [];
+            foreach ($set->getElementsByTagNameNS('*', 'var') as $var) {
+                if ($var instanceof DOMElement) {
+                    $row[trim($var->getAttribute('name'))] = trim($var->textContent);
+                }
+            }
+            if ($row !== []) {
+                $question->datarows[] = $row;
+            }
+        }
+
+        $formulanode = $this->descendant($calc, 'formula');
+        $rawformula = $formulanode !== null ? trim($formulanode->textContent) : '';
+        $question->formula = $this->templatise_formula($rawformula, $names);
+        $question->questiontext = $this->templatise_prompt($question->questiontext, $names);
+
+        $tolerance = $this->descendant($calc, 'answer_tolerance');
+        if ($tolerance !== null) {
+            $value = trim($tolerance->textContent);
+            $margin = strtolower($tolerance->getAttribute('margin_type'));
+            if ($margin === 'percent' || str_ends_with($value, '%')) {
+                $question->tolerancekind = 'percent';
+            }
+            $value = rtrim($value, '%');
+            $question->answertolerance = $value === '' ? '0' : $value;
+        }
+
+        $formulas = $this->descendant($calc, 'formulas');
+        if ($formulas !== null) {
+            $decimals = trim($formulas->getAttribute('decimal_places'));
+            if ($decimals !== '' && ctype_digit($decimals)) {
+                $question->answerdecimals = (int) $decimals;
+            }
+        }
+    }
+
+    /**
+     * The trimmed text of a parent's first descendant element with the given local
+     * name, or '' when absent.
+     *
+     * @param DOMElement $parent The parent element.
+     * @param string $localname The child element's local name.
+     * @return string
+     */
+    protected function child_value(DOMElement $parent, string $localname): string {
+        foreach ($parent->getElementsByTagNameNS('*', $localname) as $node) {
+            if ($node instanceof DOMElement) {
+                return trim($node->textContent);
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Rewrite the variable names in a calculated formula to Moodle's {var} wildcard
+     * syntax. Longer names are substituted first and identifier boundaries are
+     * enforced so one variable is never rewritten inside another's name (or inside a
+     * function name), and an already-wrapped name is left alone.
+     *
+     * @param string $formula The raw Canvas formula.
+     * @param array $names The declared variable names.
+     * @return string
+     */
+    protected function templatise_formula(string $formula, array $names): string {
+        if ($formula === '' || $names === []) {
+            return $formula;
+        }
+        usort($names, static fn(string $a, string $b): int => strlen($b) <=> strlen($a));
+        foreach ($names as $name) {
+            $formula = (string) preg_replace(
+                '/(?<![A-Za-z0-9_{])' . preg_quote($name, '/') . '(?![A-Za-z0-9_}])/',
+                '{' . $name . '}',
+                $formula
+            );
+        }
+        return $formula;
+    }
+
+    /**
+     * Rewrite variable references in a calculated question's stem to Moodle's {var}
+     * wildcard syntax. Canvas delimits an inline variable with a backtick or with
+     * square brackets; only those delimited forms are replaced, so prose that merely
+     * contains a one-letter variable name is left untouched.
+     *
+     * @param string $html The question stem HTML.
+     * @param array $names The declared variable names.
+     * @return string
+     */
+    protected function templatise_prompt(string $html, array $names): string {
+        if ($html === '' || $names === []) {
+            return $html;
+        }
+        // The backtick delimiter is built from chr(96) so the source carries no
+        // literal backtick (moodle.Strings.ForbiddenStrings).
+        $tick = chr(96);
+        usort($names, static fn(string $a, string $b): int => strlen($b) <=> strlen($a));
+        foreach ($names as $name) {
+            $quoted = preg_quote($name, '/');
+            $html = (string) preg_replace('/' . $tick . $quoted . $tick . '/', '{' . $name . '}', $html);
+            $html = (string) preg_replace('/\[' . $quoted . '\]/', '{' . $name . '}', $html);
+        }
+        return $html;
     }
 
     /**

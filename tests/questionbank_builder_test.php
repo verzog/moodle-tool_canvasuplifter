@@ -318,6 +318,108 @@ XML;
     }
 
     /**
+     * Phase 8: a Canvas calculated_question is imported end-to-end as a real Moodle
+     * calculated question — Moodle's own qformat_xml accepts the emitted XML — with the
+     * formula rewritten to {var} wildcards and a dataset definition per variable.
+     *
+     * @return void
+     */
+    public function test_build_imports_calculated_question(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Formula Quiz"><section ident="s1">'
+            . $this->mcitem() . $this->calculateditem()
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/a1/qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/a1/qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $banks = $modinfo->get_instances_of('qbank');
+        $this->assertCount(1, $banks);
+        $bank = reset($banks);
+        $context = \context_module::instance($bank->id);
+        $cat = question_get_default_category($context->id);
+
+        // The calculated question was created with the calculated qtype (Moodle's
+        // importer accepted our XML), and its formula/datasets survived the round trip.
+        $sql = "SELECT q.id, q.qtype
+                  FROM {question} q
+                  JOIN {question_versions} qv ON qv.questionid = q.id
+                  JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                 WHERE qbe.questioncategoryid = ? AND q.qtype = ?";
+        $calculated = $DB->get_records_sql($sql, [$cat->id, 'calculated']);
+        $this->assertCount(1, $calculated);
+        $calculatedid = (int) reset($calculated)->id;
+
+        // The formula answer carries the {var} wildcards.
+        $answer = $DB->get_record('question_answers', ['question' => $calculatedid]);
+        $this->assertSame('{a}+{b}', $answer->answer);
+        // Two dataset definitions (a, b) were created for this question and wired to it.
+        $datasets = $DB->get_records_sql(
+            "SELECT qdd.id, qdd.name
+               FROM {question_dataset_definitions} qdd
+               JOIN {question_datasets} qds ON qds.datasetdefinition = qdd.id
+              WHERE qds.question = ?",
+            [$calculatedid]
+        );
+        $names = array_map(static fn($d): string => $d->name, $datasets);
+        sort($names);
+        $this->assertSame(['a', 'b'], $names);
+    }
+
+    /**
+     * A native Canvas calculated_question over two variables (a, b) with formula
+     * "a+b" and two pre-generated value rows.
+     *
+     * @return string
+     */
+    private function calculateditem(): string {
+        // Canvas delimits an inline variable with a backtick; build it via chr(96) so
+        // the fixture avoids a literal backtick (moodle.Strings.ForbiddenStrings).
+        $tick = chr(96);
+        $stem = '&lt;p&gt;What is ' . $tick . 'a' . $tick . ' + ' . $tick . 'b' . $tick . '?&lt;/p&gt;';
+        return '<item ident="calc1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>calculated_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">' . $stem . '</mattext>'
+            . '</material></presentation>'
+            . '<itemproc_extension><calculated>'
+            . '<answer_tolerance margin_type="absolute">0</answer_tolerance>'
+            . '<formulas decimal_places="0"><formula>a+b</formula></formulas>'
+            . '<vars><var name="a" scale="0"><min>1</min><max>3</max></var>'
+            . '<var name="b" scale="0"><min>1</min><max>3</max></var></vars>'
+            . '<var_sets><var_set ident="s1"><var name="a">2</var><var name="b">3</var><answer>5</answer></var_set>'
+            . '<var_set ident="s2"><var name="a">1</var><var name="b">1</var><answer>2</answer></var_set>'
+            . '</var_sets></calculated></itemproc_extension></item>';
+    }
+
+    /**
      * A native Canvas numerical_question item whose accepted answer is the range
      * [41.5, 42.5] (midpoint 42, tolerance 0.5).
      *

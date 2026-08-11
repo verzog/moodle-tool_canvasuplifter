@@ -212,6 +212,85 @@ final class question_xml_writer_test extends \advanced_testcase {
     }
 
     /**
+     * A calculated question emits the formula answer with an absolute (nominal, type
+     * 2) tolerance and one dataset definition per variable, each carrying its column
+     * of values numbered from 1.
+     *
+     * @return void
+     */
+    public function test_writes_calculated(): void {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_CALCULATED;
+        $q->name = 'Sum';
+        $q->questiontext = '<p>What is {a}+{b}?</p>';
+        $q->formula = '{a}+{b}';
+        $q->answertolerance = '0';
+        $q->tolerancekind = 'absolute';
+        $q->answerdecimals = 0;
+        $q->variables = [
+            ['name' => 'a', 'min' => '1', 'max' => '3', 'decimals' => 0],
+            ['name' => 'b', 'min' => '1', 'max' => '3', 'decimals' => 0],
+        ];
+        $q->datarows = [['a' => '2', 'b' => '3'], ['a' => '1', 'b' => '1']];
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], '$course$/Imported/Bank');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml), 'output should be well-formed XML');
+
+        $types = [];
+        foreach ($dom->getElementsByTagName('question') as $node) {
+            $types[] = $node->getAttribute('type');
+        }
+        $this->assertSame(['category', 'calculated'], $types);
+
+        $answer = $dom->getElementsByTagName('answer')->item(0);
+        $this->assertSame('{a}+{b}', $answer->getElementsByTagName('text')->item(0)->textContent);
+        $this->assertSame('0', $answer->getElementsByTagName('tolerance')->item(0)->textContent);
+        $this->assertSame('2', $answer->getElementsByTagName('tolerancetype')->item(0)->textContent);
+
+        $defs = $dom->getElementsByTagName('dataset_definition');
+        $this->assertSame(2, $defs->length);
+        // First definition is variable 'a' with its two values 2 then 1.
+        $first = $defs->item(0);
+        $this->assertSame('a', $first->getElementsByTagName('name')->item(0)->textContent);
+        $this->assertSame('3', $first->getElementsByTagName('maximum')->item(0)->textContent);
+        $this->assertSame('2', $first->getElementsByTagName('itemcount')->item(0)->textContent);
+        $values = [];
+        foreach ($first->getElementsByTagName('dataset_item') as $item) {
+            $values[$item->getElementsByTagName('number')->item(0)->textContent] =
+                $item->getElementsByTagName('value')->item(0)->textContent;
+        }
+        $this->assertSame(['1' => '2', '2' => '1'], $values);
+    }
+
+    /**
+     * A calculated question with a percent margin maps to Moodle's relative tolerance
+     * type (1) with the value expressed as a fraction of the answer.
+     *
+     * @return void
+     */
+    public function test_writes_calculated_percent_tolerance(): void {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_CALCULATED;
+        $q->name = 'Sum';
+        $q->questiontext = '<p>What is {a}?</p>';
+        $q->formula = '{a}';
+        $q->answertolerance = '5';
+        $q->tolerancekind = 'percent';
+        $q->variables = [['name' => 'a', 'min' => '1', 'max' => '3', 'decimals' => 0]];
+        $q->datarows = [['a' => '2']];
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml));
+        $answer = $dom->getElementsByTagName('answer')->item(0);
+        $this->assertSame('0.05', $answer->getElementsByTagName('tolerance')->item(0)->textContent);
+        $this->assertSame('1', $answer->getElementsByTagName('tolerancetype')->item(0)->textContent);
+    }
+
+    /**
      * When the source options carry no 'true'/'false' labels, the writer falls
      * back to position (first option is the true side) and still scores the
      * correct one.

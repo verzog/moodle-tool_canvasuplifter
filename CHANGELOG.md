@@ -5,6 +5,21 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.58.0] - 2026-08-12
+
+- **Calculated (formula) questions now convert** (roadmap Phase 8). A Canvas
+  `calculated_question` is imported as a Moodle calculated question rather than being
+  reported as unsupported. Canvas stores the answer machinery in an
+  `<itemproc_extension><calculated>` block — a `<formula>` over named variables, each
+  variable's range in `<vars>`, and a table of pre-generated value tuples in `<var_sets>`.
+  The formula and the stem's variable references (Canvas delimits them with backticks or
+  square brackets) are rewritten to Moodle's `{var}` wildcard syntax; each variable becomes
+  a dataset definition and each `<var_set>` a row of dataset items, so Moodle re-computes
+  the answer from the same tuples. A Canvas absolute margin maps to Moodle's nominal
+  tolerance and a percent margin to the relative type. Verified end-to-end through Moodle's
+  own `qformat_xml` importer. The analyse question-type matrix now counts calculated as a
+  supported type.
+
 ## [0.57.0] - 2026-08-12
 
 - **Numerical questions now convert** (roadmap Phase 8). A Canvas `numerical_question`
