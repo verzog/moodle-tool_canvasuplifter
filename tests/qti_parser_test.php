@@ -1104,6 +1104,14 @@ final class qti_parser_test extends \basic_testcase {
         )))['questions'][0];
         $this->assertSame('0.000000002', $range->answers[0]['text']);
         $this->assertSame('0.000000001', $range->answers[0]['tolerance']);
+
+        // A small exponent well beyond a few dozen places is still cheap to expand and
+        // must be kept, not rejected as if it were an abusive value.
+        $tiny = (new qti_parser())->parse($this->assessment(
+            $this->numerical_item('<or><varequal respident="response1">1e-66</varequal></or>')
+        ))['questions'][0];
+        $this->assertSame('0.' . str_repeat('0', 65) . '1', $tiny->answers[0]['text']);
+        $this->assertTrue($tiny->is_importable());
     }
 
     /**

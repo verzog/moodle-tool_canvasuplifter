@@ -106,12 +106,13 @@ Admin tools > Canvas Uplifter*.
   lessons have no per-page visibility, so an unpublished page folded into a
   lesson becomes visible.
 - Canvas QTI assessments convert their questions — multiple choice, multiple
-  response, fill-in-blank, true/false, essay and matching. Canvas inline-dropdown
-  and choice-form multiple-blank questions import as Moodle matching when every
-  blank shares one choice set (Moodle's match type has a single answer pool);
-  numerical, calculated and free-text multi-blank questions are reported but not
-  yet built. When a Canvas Common Cartridge assessment ships an empty shell, the
-  questions are recovered from Canvas's native QTI dump (`non_cc_assessments`).
+  response, fill-in-blank, true/false, essay, matching and numerical. Canvas
+  inline-dropdown and choice-form multiple-blank questions import as Moodle
+  matching when every blank shares one choice set (Moodle's match type has a
+  single answer pool); calculated and free-text multi-blank questions are
+  reported but not yet built. When a Canvas Common Cartridge assessment ships an
+  empty shell, the questions are recovered from Canvas's native QTI dump
+  (`non_cc_assessments`).
   Bundled media in question text — images, video, audio and attachments,
   including `$IMS-CC-FILEBASE$` references — is imported with the question, and
   internal Canvas links in question text are rewritten once their targets exist;

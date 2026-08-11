@@ -509,10 +509,12 @@ class qti_parser {
         }
         $digits = $m[2] . ($m[3] ?? '');
         $point = strlen($m[2]) + (int) $m[4];
-        // Reject an exponent that would pad on more zeros than any real quiz answer
-        // needs, before str_repeat allocates them.
+        // Reject only an exponent whose expansion would allocate an unreasonably large
+        // string (a malformed or hostile 1e-9999999999), while still admitting any
+        // genuine high-precision answer; the bound is a resource guard, not a precision
+        // limit, so it is generous.
         $zeros = $point <= 0 ? -$point : max(0, $point - strlen($digits));
-        if ($zeros > 64) {
+        if ($zeros > 100000) {
             return null;
         }
         if ($point <= 0) {
