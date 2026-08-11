@@ -154,6 +154,40 @@ class question_importer {
                 $ids[] = (int) $id;
             }
         }
+        $this->restore_cloze_marks($questions, $ids);
         return $ids;
+    }
+
+    /**
+     * Restore the Canvas mark on imported Cloze (multianswer) questions.
+     *
+     * Moodle's multianswer importer derives the question's default mark from the sum
+     * of its inline field weights (one per blank), overriding the Canvas
+     * points_possible the writer emitted — so a three-blank question worth one point
+     * in Canvas would become a three-mark question, skewing its weight in a quiz. The
+     * per-blank fractions are unaffected (multianswer grading returns a fraction
+     * normalised by the field weights), so resetting the question's default mark to
+     * the Canvas value restores the intended weight while keeping the blanks even.
+     * Applied only on a clean 1:1 import, where the model and id lists line up by
+     * position.
+     *
+     * @param array $questions The imported model questions, in import order.
+     * @param array $ids The created question ids, in the same order.
+     * @return void
+     */
+    private function restore_cloze_marks(array $questions, array $ids): void {
+        global $DB;
+        if (count($ids) !== count($questions)) {
+            return;
+        }
+        foreach ($questions as $index => $question) {
+            if ($question->type !== qti_question::TYPE_CLOZE) {
+                continue;
+            }
+            $mark = max(0.0, (float) $question->defaultmark);
+            if ($mark > 0) {
+                $DB->set_field('question', 'defaultmark', $mark, ['id' => $ids[$index]]);
+            }
+        }
     }
 }

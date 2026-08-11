@@ -624,7 +624,7 @@ class qti_parser {
             return;
         }
         $stem = $question->questiontext;
-        $blanks = $this->cloze_blank_answers($item, $presentation);
+        $blanks = $this->cloze_blank_answers($presentation);
         $text = $stem;
         foreach ($blanks as $blankid => $accepted) {
             if ($accepted === []) {
@@ -647,56 +647,38 @@ class qti_parser {
 
     /**
      * Map each fill-in-multiple-blanks blank to its accepted answers. The blank id is
-     * the response_lid ident with the "response_" prefix removed; the answers are the
-     * scoring varequal values (negated conditions skipped), each resolved to the
-     * matching response_label's display text, or the value itself when it is not a
-     * label ident. When a blank has no scoring varequal, every listed choice is
-     * accepted (Canvas lists each acceptable spelling as a response_label).
+     * the response_lid ident with the "response_" prefix removed; every listed
+     * response_label is an acceptable open-entry answer (Canvas enumerates each
+     * accepted spelling as a label, and the scoring respcondition may reference only
+     * one of them), so all are kept — mirroring how {@see fill_text_answers} treats a
+     * single blank. Each answer carries whether Canvas graded it as "contains" so the
+     * writer can widen it to a Moodle SHORTANSWER wildcard match.
      *
-     * @param DOMElement $item The item element.
      * @param DOMElement $presentation The presentation element.
-     * @return array Map of blank id to a list of accepted answer strings.
+     * @return array Map of blank id to a list of ['text' => string, 'contains' => bool].
      */
-    protected function cloze_blank_answers(DOMElement $item, DOMElement $presentation): array {
-        $resprocessing = $this->first_child_element($item, 'resprocessing');
+    protected function cloze_blank_answers(DOMElement $presentation): array {
         $result = [];
         foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
             if (!($lid instanceof DOMElement) || $lid->getAttribute('ident') === '') {
                 continue;
             }
-            $ident = $lid->getAttribute('ident');
-            $blankid = (string) preg_replace('/^response_/', '', $ident);
-            $labels = [];
-            foreach ($lid->getElementsByTagNameNS('*', 'response_label') as $label) {
-                if ($label instanceof DOMElement && $label->getAttribute('ident') !== '') {
-                    $labels[$label->getAttribute('ident')] = $this->material_text($label);
-                }
-            }
+            $blankid = (string) preg_replace('/^response_/', '', $lid->getAttribute('ident'));
             $accepted = [];
             $seen = [];
-            if ($resprocessing !== null) {
-                foreach ($resprocessing->getElementsByTagNameNS('*', 'varequal') as $ve) {
-                    if (!($ve instanceof DOMElement) || $ve->getAttribute('respident') !== $ident) {
-                        continue;
-                    }
-                    if ($this->within($ve, 'not')) {
-                        continue;
-                    }
-                    $ref = trim($ve->textContent);
-                    $answer = trim($labels[$ref] ?? $ref);
-                    if ($answer !== '' && !isset($seen[$answer])) {
-                        $seen[$answer] = true;
-                        $accepted[] = $answer;
-                    }
+            foreach ($lid->getElementsByTagNameNS('*', 'response_label') as $label) {
+                if (!($label instanceof DOMElement)) {
+                    continue;
                 }
-            }
-            if ($accepted === []) {
-                foreach ($labels as $labeltext) {
-                    $labeltext = trim($labeltext);
-                    if ($labeltext !== '' && !isset($seen[$labeltext])) {
-                        $seen[$labeltext] = true;
-                        $accepted[] = $labeltext;
-                    }
+                $text = trim($this->material_text($label));
+                // A contains-match algorithm (Canvas TextContainsAnswer) accepts any
+                // response holding the answer, so the answer text alone is not a
+                // reliable dedup key; qualify it with the algorithm.
+                $contains = strcasecmp($label->getAttribute('scoring_algorithm'), 'TextContainsAnswer') === 0;
+                $key = ($contains ? '~' : '=') . $text;
+                if ($text !== '' && !isset($seen[$key])) {
+                    $seen[$key] = true;
+                    $accepted[] = ['text' => $text, 'contains' => $contains];
                 }
             }
             $result[$blankid] = $accepted;
@@ -707,30 +689,34 @@ class qti_parser {
     /**
      * Build a Moodle SHORTANSWER Cloze field from a blank's accepted answers, e.g.
      * {1:SHORTANSWER:=ipsum~=ipsem}. Each answer is a fully-credited option (=) with
-     * the Cloze metacharacters escaped so answer text can't break the field.
+     * the Cloze/short-answer metacharacters escaped; a Canvas "contains" answer is
+     * wrapped in * wildcards so Moodle accepts any response holding the text.
      *
-     * @param array $accepted The accepted answer strings.
+     * @param array $accepted List of ['text' => string, 'contains' => bool].
      * @return string
      */
     protected function cloze_field(array $accepted): string {
         $options = [];
         foreach ($accepted as $answer) {
-            $options[] = '=' . $this->cloze_escape((string) $answer);
+            $escaped = $this->cloze_escape((string) ($answer['text'] ?? ''));
+            $options[] = '=' . (!empty($answer['contains']) ? '*' . $escaped . '*' : $escaped);
         }
         return '{1:SHORTANSWER:' . implode('~', $options) . '}';
     }
 
     /**
-     * Escape the Cloze metacharacters (backslash, braces, the # feedback separator and
-     * the ~ option separator) in answer text, backslash first so it is not doubled.
+     * Escape the Cloze and short-answer metacharacters in answer text so it can't
+     * break the field or be read as a wildcard: backslash first (so it is not
+     * doubled), then the braces, the # feedback separator, the ~ option separator and
+     * the * short-answer wildcard (a literal Canvas asterisk must stay literal).
      *
      * @param string $text The answer text.
      * @return string
      */
     protected function cloze_escape(string $text): string {
         return str_replace(
-            ['\\', '{', '}', '#', '~'],
-            ['\\\\', '\\{', '\\}', '\\#', '\\~'],
+            ['\\', '{', '}', '#', '~', '*'],
+            ['\\\\', '\\{', '\\}', '\\#', '\\~', '\\*'],
             $text
         );
     }

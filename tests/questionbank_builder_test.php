@@ -457,6 +457,9 @@ XML;
         // question_multianswer sequence.
         $sequence = $DB->get_field('question_multianswer', 'sequence', ['question' => $clozeid]);
         $this->assertCount(2, explode(',', $sequence));
+        // The Canvas mark (default 1.0) is preserved rather than becoming the blank
+        // count (2), so the question keeps its intended weight in a quiz.
+        $this->assertEquals(1.0, (float) $DB->get_field('question', 'defaultmark', ['id' => $clozeid]));
     }
 
     /**

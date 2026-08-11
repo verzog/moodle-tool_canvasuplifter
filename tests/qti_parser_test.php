@@ -814,6 +814,37 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A Canvas open-entry blank scored by "contains" (scoring_algorithm=
+     * TextContainsAnswer) widens to a Moodle SHORTANSWER wildcard match (=*answer*),
+     * so a response that merely holds the answer still earns credit, and a literal
+     * asterisk in the answer is escaped rather than treated as a wildcard.
+     *
+     * @return void
+     */
+    public function test_native_cloze_contains_becomes_wildcard(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">The [b1] and [b2] room.</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice>'
+            . '<response_label ident="b1-0" scoring_algorithm="TextContainsAnswer" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">a*b</mattext></material></response_label>'
+            . '</render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice>'
+            . '<response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">exact</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>';
+        $item = '<item ident="c3"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // The contains blank widens to a wildcard match and its literal * is escaped;
+        // the plain blank stays an exact match.
+        $this->assertStringContainsString('{1:SHORTANSWER:=*a\*b*} and {1:SHORTANSWER:=exact}', $q->questiontext);
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with three free-text blanks (the shape
      * a real Canvas export uses: [blank] stem placeholders, response_lid per blank with
      * its accepted answers as response_labels, scored by varequal to the label idents).
