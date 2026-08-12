@@ -254,6 +254,8 @@ $string['warnquizplaceholders'] = '{$a} quiz(zes) were imported as hidden placeh
 $string['warnreportduplicates'] = 'Some resources look like duplicate copies of other files in the package '
     . '(for example "name (2)" or "name-1"); all are imported, so review the resource list for repeats.';
 $string['warnreportlti'] = 'External (LTI) tools need their keys reconfigured by hand after import.';
+$string['warnreportnavtools'] = 'This Canvas course had external tools in its course navigation that carry no launch '
+    . 'configuration in the package, so they could not be imported; add them by hand in Moodle if the course needs them.';
 $string['warnreportobsolete'] = 'Some resources are Flash (.swf) or other obsolete formats that modern browsers '
     . 'no longer play; they are imported but will not function.';
 $string['warnreportquiz'] = 'Quiz questions depend on type support; check the question-type matrix.';

@@ -3189,4 +3189,87 @@ XML;
         $this->assertCount(1, $course->orphans);
         $this->assertSame('Audio Visual', $course->orphans[0]->title);
     }
+
+    /**
+     * A Canvas course-navigation external tool that is also placed as a module item
+     * is already imported as a hidden mod_lti, so it is deduped; a nav-only tool that
+     * appears only in course_settings.xml's tab_configuration carries no launch
+     * configuration in the package, so it is counted for the report to surface.
+     *
+     * @return void
+     */
+    public function test_reports_unimported_course_navigation_tools(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        // The Accredible tool is placed as a module item (built as a hidden mod_lti);
+        // "navonly" appears only as a navigation tab, with no definition anywhere.
+        file_put_contents(
+            $dir . '/course_settings/module_meta.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<module identifier="m1"><title>Tools</title><workflow_state>active</workflow_state>'
+            . '<items><item identifier="mi1"><content_type>ContextExternalTool</content_type>'
+            . '<workflow_state>active</workflow_state><title>Accredible</title>'
+            . '<identifierref>toolA</identifierref><url>https://tool.example/a</url></item></items>'
+            . '</module></modules>'
+        );
+        file_put_contents(
+            $dir . '/course_settings/course_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="c1">'
+            . '<title>Nav Tools Course</title>'
+            . '<tab_configuration>[{"id":0},{"id":"context_external_tool_toolA"},'
+            . '{"id":"context_external_tool_navonly","hidden":true}]</tab_configuration>'
+            . '</course>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources/>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The placed Accredible tool is already a hidden mod_lti (deduped); only the
+        // nav-only tool is counted as unimported.
+        $this->assertSame(1, $course->navtoolsunimported);
+        // The placed tool built as a KIND_LTI item; the nav-only tool did not.
+        $ltis = array_filter($course->all_items(), fn($i) => $i->kind === item::KIND_LTI);
+        $this->assertCount(1, $ltis);
+        $this->assertSame('Accredible', array_values($ltis)[0]->title);
+    }
+
+    /**
+     * A package whose tab_configuration has no external-tool tabs (or no
+     * course_settings.xml at all) records no unimported navigation tools.
+     *
+     * @return void
+     */
+    public function test_no_navigation_tools_when_tab_configuration_has_none(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        file_put_contents(
+            $dir . '/course_settings/course_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="c1">'
+            . '<title>Plain Course</title>'
+            . '<tab_configuration>[{"id":0},{"id":14},{"id":3}]</tab_configuration>'
+            . '</course>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources/>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame(0, $course->navtoolsunimported);
+    }
 }

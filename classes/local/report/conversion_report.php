@@ -401,6 +401,12 @@ class conversion_report {
         if (($counts[item::KIND_LTI] ?? 0) > 0) {
             $warnings[] = 'warnreportlti';
         }
+        // Course-navigation external tools with no launch configuration in the
+        // package (and not already imported as a module item) cannot be built, so
+        // nudge the admin to add them by hand rather than dropping them silently.
+        if ($this->course->navtoolsunimported > 0) {
+            $warnings[] = 'warnreportnavtools';
+        }
         if (($counts[item::KIND_QUIZ] ?? 0) > 0 || ($counts[item::KIND_QUESTIONBANK] ?? 0) > 0) {
             $warnings[] = 'warnreportquiz';
         }

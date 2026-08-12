@@ -68,6 +68,15 @@ class course_model {
     public int $canvasboilerplatedropped = 0;
 
     /**
+     * @var int Count of Canvas course-navigation external tools (course_settings.xml
+     * tab_configuration context_external_tool_ entries) that carry no importable
+     * configuration in the package and are not already imported as a module item, so
+     * the build report can flag them for the admin to add by hand. A nav tool that is
+     * also placed as a module item (already a hidden mod_lti) is not counted.
+     */
+    public int $navtoolsunimported = 0;
+
+    /**
      * @var array Canvas rubric library, keyed by Canvas identifier. Each value
      * is a hash with keys: title (string), free_form_comments (bool),
      * hide_score_total (bool), criteria (array of ['id','description','points',

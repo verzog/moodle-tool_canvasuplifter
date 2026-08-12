@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026081241;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026081242;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Suppress embedded-only media from activity intros too (#141).
-$plugin->release   = '0.70.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Report course-navigation external tools that can't be imported (#152).
+$plugin->release   = '0.71.0';
