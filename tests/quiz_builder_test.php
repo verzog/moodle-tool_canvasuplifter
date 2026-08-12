@@ -1077,9 +1077,14 @@ XML;
      *
      * @param string $extrabankitems Extra <item> markup appended to the bank, or ''.
      * @param string $selectnumber The <selection_number> value (how many to draw).
+     * @param string $selectionmeta Extra markup inside the <selection> (e.g. a filter), or ''.
      * @return string Path to the package root.
      */
-    protected function build_fixture_bank_backed(string $extrabankitems = '', string $selectnumber = '2'): string {
+    protected function build_fixture_bank_backed(
+        string $extrabankitems = '',
+        string $selectnumber = '2',
+        string $selectionmeta = ''
+    ): string {
         $dir = make_request_directory();
         mkdir($dir . '/gnewquiz', 0777, true);
         mkdir($dir . '/non_cc_assessments', 0777, true);
@@ -1091,6 +1096,7 @@ XML;
             . '<section ident="grp" title="Group"><selection_ordering><selection>'
             . '<sourcebank_ref>gbank1</sourcebank_ref><selection_number>' . $selectnumber . '</selection_number>'
             . '<selection_extension><points_per_item>2.5</points_per_item></selection_extension>'
+            . $selectionmeta
             . '</selection></selection_ordering></section>'
             . '</section></assessment></questestinterop>';
         file_put_contents($dir . '/gnewquiz/assessment_qti.xml', $qti);
@@ -1454,5 +1460,36 @@ XML;
         $this->assertSame(0, $DB->count_records('question_set_references', ['component' => 'mod_quiz', 'questionarea' => 'slot']));
         // The unreproducible filter is surfaced as an incomplete-group warning.
         $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * A New Quiz whose only draw is filtered leaves no slots, so it becomes a hidden
+     * placeholder — but it is still flagged incomplete (the warning isn't lost on the
+     * placeholder path), and the referenced bank is imported in full so its questions
+     * aren't dropped even though the quiz drew none.
+     *
+     * @return void
+     */
+    public function test_new_quiz_bank_only_filtered_draw_flags_and_imports_bank(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $meta = '<selection_metadata>{"filter":{"tags":["unit1"]}}</selection_metadata>';
+        $root = $this->build_fixture_bank_backed('', '2', $meta);
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        // The quiz became a hidden placeholder (no slots drawn)...
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $quizcm = reset($quizzes);
+        $this->assertEquals(0, (int) $quizcm->visible);
+        // ...but is still flagged incomplete for a grader.
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+        // The referenced bank is imported in full despite the skipped draw.
+        $qbanks = $modinfo->get_instances_of('qbank');
+        $this->assertCount(1, $qbanks);
+        $this->assertSame('Unfiled Questions', reset($qbanks)->get_name());
     }
 }
