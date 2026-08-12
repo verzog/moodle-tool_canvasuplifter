@@ -64,6 +64,20 @@ class renderer extends plugin_renderer_base {
             ), ['class' => 'text-muted']);
         }
 
+        // Lead with the unsupported-source explanation for a Blackboard-native
+        // package so it is the first thing the user sees, rather than being buried
+        // under an otherwise-empty mapping table, sections and orphan list. Shown
+        // once here, so drop it from the warnings list rendered at the foot.
+        $warnings = $report['warnings'] ?? [];
+        if (in_array('warnblackboardnative', $warnings, true)) {
+            $out .= html_writer::tag(
+                'p',
+                get_string('warnblackboardnative', 'tool_canvasuplifter'),
+                ['class' => 'alert alert-warning']
+            );
+            $warnings = array_values(array_filter($warnings, fn($w) => $w !== 'warnblackboardnative'));
+        }
+
         $out .= html_writer::tag('p', get_string('buildsnowsummary', 'tool_canvasuplifter', [
             'now' => (int) ($report['buildsnowtotal'] ?? 0),
             'later' => (int) ($report['latertotal'] ?? 0),
@@ -77,7 +91,7 @@ class renderer extends plugin_renderer_base {
         if (debugging() && !empty($report['unknowntypes'])) {
             $out .= $this->unknown_types($report['unknowntypes']);
         }
-        $out .= $this->warnings($report['warnings'] ?? []);
+        $out .= $this->warnings($warnings);
         return $out;
     }
 

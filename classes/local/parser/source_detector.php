@@ -69,17 +69,28 @@ final class source_detector {
         $d2l = false;
         $exe = false;
         $blackboardlog = false;
-        $blackboardnative = is_file($basedir . '/.bb-package-info');
+        $bbmarker = is_file($basedir . '/.bb-package-info');
+        $hasxbb = false;
+        $hasccontent = false;
+        // Recognised Common Cartridge / Canvas content resource types (the ones
+        // classify() can build something from), used to tell a wholly-native
+        // Blackboard package from one that only mixes in a few x-bb-* settings.
+        $ccpattern = '#(webcontent|imswl_xmlv1p|imsdt_xmlv1p|imsbasiclti_xmlv1p'
+            . '|assignment_xmlv1p|imsqti|imscc_|learning-application-resource|question-bank)#i';
         foreach ($manifest->getElementsByTagNameNS('*', 'resource') as $resource) {
             if (!($resource instanceof DOMElement)) {
                 continue;
             }
             // Blackboard's native export declares proprietary x-bb-* resource types
             // (resource/x-bb-document, assessment/x-bb-qti-test, course/x-bb-*), which
-            // no Common Cartridge exporter uses. Either these or the .bb-package-info
-            // marker identify the package as Blackboard-native (not importable here).
-            if (stripos($resource->getAttribute('type'), 'x-bb-') !== false) {
-                $blackboardnative = true;
+            // no Common Cartridge exporter uses. Track those separately from any
+            // recognised CC content type, so a package that mixes a few x-bb-* settings
+            // resources with genuine importable CC content is not mistaken for native.
+            $type = $resource->getAttribute('type');
+            if (stripos($type, 'x-bb-') !== false) {
+                $hasxbb = true;
+            } else if (preg_match($ccpattern, $type)) {
+                $hasccontent = true;
             }
             $identifier = $resource->getAttribute('identifier');
             // ANGEL is recognised by its <system>ID_LM_/FOLD_/GLO_/FRM_/CRS_<n>
@@ -110,10 +121,13 @@ final class source_detector {
                 }
             }
         }
-        // A Blackboard-native package has a highly distinctive fingerprint that no
-        // Common Cartridge carries, so recognise it first — its resource types would
-        // otherwise fall through as unclassified content and build nothing.
-        if ($blackboardnative) {
+        // Declare a package Blackboard-native only when it carries no importable
+        // Common Cartridge content at all — so a genuinely native package (all
+        // x-bb-* resources, or the .bb-package-info marker) is caught, while one that
+        // mixes a few x-bb-* settings with real CC content is left to import what it
+        // can. Recognised first so a wholly-native package's x-bb-* resources don't
+        // fall through as unclassified and build nothing.
+        if (!$hasccontent && ($bbmarker || $hasxbb)) {
             return self::BLACKBOARD_NATIVE;
         }
         if ($d2l) {

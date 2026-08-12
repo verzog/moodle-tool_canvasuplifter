@@ -2373,6 +2373,10 @@ XML;
         foreach (['r_bbassess', 'r_bbcreate', 'r_bbtest'] as $id) {
             $this->assertNotSame(item::KIND_QUIZ, $bykind[$id] ?? null, "Blackboard $id must not be a quiz");
         }
+        // A package that mixes a few x-bb-* settings resources with genuine importable
+        // CC content (the real Canvas QTI quiz here) is NOT a wholly-native package, so
+        // it must not be flagged blackboard_native and told nothing can be imported.
+        $this->assertNotSame(source_detector::BLACKBOARD_NATIVE, $course->source);
     }
 
     /**
