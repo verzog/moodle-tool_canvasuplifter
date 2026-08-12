@@ -945,7 +945,8 @@ final class qti_parser_test extends \basic_testcase {
     public function test_native_cloze_answer_containing_marker_stays_literal(): void {
         $pres = '<presentation><material><mattext texttype="text/html">First [b1] then [b2].</mattext></material>'
             . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
-            . '<material><mattext texttype="text/plain">see [b2]</mattext></material></response_label></render_choice></response_lid>'
+            . '<material><mattext texttype="text/plain">see [b2]</mattext></material>'
+            . '</response_label></render_choice></response_lid>'
             . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
             . '<material><mattext texttype="text/plain">value</mattext></material></response_label></render_choice>'
             . '</response_lid></presentation>';
