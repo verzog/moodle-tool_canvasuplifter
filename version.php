@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026081237;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026081238;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Thread exact objectbank path; share draw capacity by bank identity (#146).
-$plugin->release   = '0.66.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Prefer HTML payload; nested-bank quiz draws; no empty bank sections (#146).
+$plugin->release   = '0.67.0';

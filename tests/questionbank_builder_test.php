@@ -856,6 +856,98 @@ XML;
     }
 
     /**
+     * Issue #146: a placed standalone bank (referenced from an organization section as that
+     * section's only item) builds into section 0 without leaving an empty visible topic
+     * section behind — the bank-only section is skipped when numbering topics.
+     *
+     * @return void
+     */
+    public function test_placed_standalone_bank_creates_no_empty_section(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        file_put_contents($dir . '/non_cc_assessments/pool.xml.qti', $this->objectbank('Section Bank'));
+        // "Week 1" is a topic section whose only item is the standalone bank.
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title>'
+            . '<item identifier="i_b" identifierref="r_bank"><title>Section Bank</title></item></item>'
+            . '</item></organization></organizations><resources>'
+            . '<resource identifier="r_bank" type="associatedcontent/imscc_xmlv1p1/learning-application-resource">'
+            . '<file href="non_cc_assessments/pool.xml.qti"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $banks = $modinfo->get_instances_of('qbank');
+        $this->assertCount(1, $banks);
+        $this->assertEquals(0, reset($banks)->sectionnum);
+        // The bank-only "Week 1" section is not created as an empty topic section.
+        $sectionnames = $DB->get_fieldset_select('course_sections', 'name', 'course = ?', [$report['courseid']]);
+        $this->assertNotContains('Week 1', $sectionnames);
+    }
+
+    /**
+     * Issue #146: a linked quiz draws from a bank by id (sourcebank_ref) while the standalone
+     * resource stores that dump under a directory prefix (resources/non_cc_assessments/...).
+     * The quiz still resolves the bank — the builder registers each id => exact path — and
+     * fills its slots.
+     *
+     * @return void
+     */
+    public function test_quiz_draw_resolves_nested_standalone_bank(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/gnq', 0777, true);
+        mkdir($dir . '/resources/non_cc_assessments', 0777, true);
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnq" title="Final Evaluation"><section ident="root">'
+            . '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>pool</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/gnq/assessment_qti.xml', $shell);
+        // The bank ships as a standalone resource nested under resources/.
+        file_put_contents($dir . '/resources/non_cc_assessments/pool.xml.qti', $this->objectbank('Question Pool'));
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Final Evaluation</title></item></item>'
+            . '</item></organization></organizations><resources>'
+            . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="gnq/assessment_qti.xml"/></resource>'
+            . '<resource identifier="r_bank" type="associatedcontent/imscc_xmlv1p1/learning-application-resource">'
+            . '<file href="resources/non_cc_assessments/pool.xml.qti"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $this->assertCount(1, $modinfo->get_instances_of('qbank'));
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => reset($quizzes)->instance]));
+    }
+
+    /**
      * Issue #146: two draw groups in one quiz whose sourcebank_ref values differ only by case
      * ("pool" and "Pool") resolve to the one physical dump, so they share its capacity —
      * the quiz draws at most the bank's size and is flagged incomplete, rather than each

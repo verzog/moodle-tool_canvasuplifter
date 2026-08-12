@@ -1429,14 +1429,17 @@ class manifest_parser {
                     return item::KIND_ASSIGNMENT;
                 }
             }
-            // A learning-application-resource whose file is a native item-bank dump
+            // A learning-application-resource whose payload is a native item-bank dump
             // (non_cc_assessments/<id>.xml.qti rooted at <objectbank>) is a standalone
             // Canvas question bank not wired to any quiz; import it as a mod_qbank instead
-            // of dropping it as a metadata-only companion.
-            if ($this->standalone_objectbank_path($href, $files) !== null) {
+            // of dropping it as a metadata-only companion. But only when the resource has no
+            // HTML page of its own: a resource whose primary payload is HTML (even if it also
+            // lists a bank dump as an auxiliary file) is a page, not a bank.
+            $hashtml = $this->has_html($href, $files);
+            if (!$hashtml && $this->standalone_objectbank_path($href, $files) !== null) {
                 return item::KIND_QUESTIONBANK;
             }
-            return $this->has_html($href, $files) ? item::KIND_PAGE : item::KIND_UNKNOWN;
+            return $hashtml ? item::KIND_PAGE : item::KIND_UNKNOWN;
         }
         // Plain web content: an HTML page under wiki_content is a page, else a file.
         if ($type === 'webcontent' || str_contains($type, 'webcontent')) {
@@ -1516,6 +1519,12 @@ class manifest_parser {
                 continue;
             }
             $parsed = (new qti_parser())->parse((string) @file_get_contents($absolute));
+            // Require the objectbank to be the file's sole QTI payload: a document that also
+            // carries an <assessment> is an assessment dump (which quiz_builder owns), not a
+            // standalone bank, so classifying it here would import its questions twice.
+            if (!empty($parsed['hasassessment'])) {
+                continue;
+            }
             if (!empty($parsed['hasobjectbank']) && (!empty($parsed['questions']) || (int) ($parsed['unresolved'] ?? 0) > 0)) {
                 return $path;
             }

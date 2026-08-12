@@ -47,8 +47,11 @@ class item_bank_registry {
     /** @var media_report|null Shared collector for unresolved question media references. */
     private ?media_report $mediareport;
 
-    /** @var array Memoised import result per bank id: ['cmid', 'category', 'count', 'full'] or null. */
+    /** @var array Memoised import result per resolved dump identity: ['cmid', ...] or null. */
     private array $banks = [];
+
+    /** @var array Map of bank id => exact package-relative dump path, from standalone resources. */
+    private array $bankpaths = [];
 
     /**
      * Constructor.
@@ -59,6 +62,22 @@ class item_bank_registry {
     public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
         $this->mediareport = $mediareport;
+    }
+
+    /**
+     * Register the exact dump paths of standalone item-bank resources, keyed by bank id, so a
+     * quiz draw that names a bank by id alone (sourcebank_ref) can still resolve a dump the
+     * manifest stored under a directory prefix rather than at the package root.
+     *
+     * @param array $paths Map of bank id to package-relative objectbank path.
+     * @return void
+     */
+    public function register_bank_paths(array $paths): void {
+        foreach ($paths as $id => $path) {
+            if ((string) $id !== '' && (string) $path !== '') {
+                $this->bankpaths[(string) $id] = (string) $path;
+            }
+        }
     }
 
     /**
@@ -87,7 +106,9 @@ class item_bank_registry {
         // sourcebank_ref and a standalone resource can name the same physical file under
         // different casing or directory prefix, and both must reuse one import rather than
         // creating two banks for the same file. A standalone resource supplies its exact
-        // matched path; a quiz draw resolves the id under non_cc_assessments.
+        // matched path; a quiz draw naming the id alone falls back to a path registered for
+        // that id (so a nested dump still resolves), else the non_cc_assessments lookup.
+        $path ??= $this->bankpaths[$bankid] ?? null;
         $file = $path !== null ? safe_path::within($this->packageroot, $path) : $this->bank_dump_path($bankid);
         if ($file !== null && !is_readable($file)) {
             $file = null;

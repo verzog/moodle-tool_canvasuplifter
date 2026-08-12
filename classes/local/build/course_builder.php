@@ -175,6 +175,15 @@ class course_builder {
         // item bank a New Quiz draws from is imported once whether it's reached from a
         // linked quiz (quiz_builder) or an orphan quiz/bank (questionbank_builder).
         $bankregistry = new item_bank_registry($this->packageroot, $this->mediareport);
+        // A standalone bank's dump may sit under a directory prefix; register each id => path
+        // so a quiz draw that names the bank by id alone still resolves the same file.
+        $bankpaths = [];
+        foreach ($coursemodel->all_items() as $bankitem) {
+            if ($bankitem->objectbankid !== '' && $bankitem->objectbankpath !== '') {
+                $bankpaths[$bankitem->objectbankid] = $bankitem->objectbankpath;
+            }
+        }
+        $bankregistry->register_bank_paths($bankpaths);
         $builders = [
             item::KIND_PAGE => new page_builder($this->packageroot, $this->pathtoid, $this->mediareport),
             item::KIND_URL => new url_builder($this->packageroot),
@@ -198,9 +207,24 @@ class course_builder {
         $totalitems = max(1, count($coursemodel->all_items()));
         $processed = 0;
 
-        foreach ($coursemodel->sections as $index => $sectionmodel) {
-            $sectionnum = $index + 1;
-            $this->prepare_section($course, $sectionnum, $sectionmodel->title);
+        $builtsections = 0;
+        foreach ($coursemodel->sections as $sectionmodel) {
+            // A section whose every item routes to section 0 (a question bank) would leave an
+            // empty visible topic section, since those items build into section 0 regardless.
+            // Only give a section a numbered topic when it has at least one placed item, and
+            // number the topics consecutively so skipping one leaves no gap.
+            $hasplaced = false;
+            foreach ($sectionmodel->items as $sectionitem) {
+                if (!in_array($sectionitem->kind, self::SECTION_ZERO_KINDS, true)) {
+                    $hasplaced = true;
+                    break;
+                }
+            }
+            $sectionnum = 0;
+            if ($hasplaced) {
+                $sectionnum = ++$builtsections;
+                $this->prepare_section($course, $sectionnum, $sectionmodel->title);
+            }
             foreach ($this->segment_items($sectionmodel->items) as $segment) {
                 if ($segment['type'] === 'group') {
                     $this->build_page_group(
@@ -256,7 +280,7 @@ class course_builder {
                 }
             }
             if ($needssection) {
-                $orphansection = count($coursemodel->sections) + 1;
+                $orphansection = $builtsections + 1;
                 $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
             }
             $orphantitle = get_string('additionalresources', 'tool_canvasuplifter');
@@ -354,7 +378,7 @@ class course_builder {
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
         $skippedtotal = $itemcount - $createdtotal;
-        $sectioncount = count($coursemodel->sections) + ($orphansection > 0 ? 1 : 0);
+        $sectioncount = $builtsections + ($orphansection > 0 ? 1 : 0);
 
         // Make sure section caches reflect everything we just built.
         rebuild_course_cache($course->id, true);

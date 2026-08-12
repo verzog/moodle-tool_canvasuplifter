@@ -1591,6 +1591,76 @@ XML;
     }
 
     /**
+     * Issue #146: a learning-application-resource whose primary payload is an HTML page but
+     * that also lists an objectbank dump as an auxiliary file is a page, not a bank — the
+     * page must not be dropped and replaced by a section-0 question bank.
+     *
+     * @return void
+     */
+    public function test_html_learning_app_resource_with_aux_bank_is_page(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content', 0777, true);
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        file_put_contents($dir . '/wiki_content/page.html', '<html><head><title>Intro</title></head><body>Hi</body></html>');
+        file_put_contents(
+            $dir . '/non_cc_assessments/pool.xml.qti',
+            '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="ob"><item ident="q1"/></objectbank></questestinterop>'
+        );
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title></item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r1" type="associatedcontent/imscc_xmlv1p1/learning-application-resource"'
+            . ' href="wiki_content/page.html">'
+            . '<file href="wiki_content/page.html"/><file href="non_cc_assessments/pool.xml.qti"/>'
+            . '</resource></resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame(item::KIND_PAGE, $course->orphans[0]->kind);
+        $this->assertSame('', $course->orphans[0]->objectbankid);
+    }
+
+    /**
+     * Issue #146: a QTI file rooted at <questestinterop> that carries both an <assessment>
+     * and a sibling <objectbank> is an assessment dump (owned by the quiz path), not a
+     * standalone bank, so classification must not treat it as a mod_qbank resource.
+     *
+     * @return void
+     */
+    public function test_mixed_assessment_objectbank_not_standalone_bank(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        $mixed = '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a" title="Quiz"><section ident="s"/></assessment>'
+            . '<objectbank ident="ob"><item ident="q1"/></objectbank></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/mixed.xml.qti', $mixed);
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title></item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r1" type="associatedcontent/imscc_xmlv1p1/learning-application-resource">'
+            . '<file href="non_cc_assessments/mixed.xml.qti"/></resource></resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // Not classified as a standalone bank: it surfaces no question-bank orphan (it would
+        // have become one — and been counted here — without the mixed-payload guard).
+        foreach ($course->orphans as $orphan) {
+            $this->assertNotSame(item::KIND_QUESTIONBANK, $orphan->kind);
+            $this->assertSame('', $orphan->objectbankid);
+        }
+        $banks = array_filter($course->orphans, fn($o) => $o->kind === item::KIND_QUESTIONBANK);
+        $this->assertCount(0, $banks);
+    }
+
+    /**
      * Course title fallback only consults the manifest's direct <metadata>
      * child. CC resources may carry their own LOM <metadata> blocks; the
      * lookup must not borrow a resource title as the course full name when
