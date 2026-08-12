@@ -624,6 +624,43 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * Issue #146: a standalone objectbank whose only items are bare references (Canvas
+     * omitted their bodies) surfaces that data loss in the matrix as an 'omitted' unsupported
+     * row sourced to the bank, rather than the resource appearing buildable against an empty
+     * matrix while the build silently skips it.
+     *
+     * @return void
+     */
+    public function test_matrix_surfaces_unresolved_standalone_bank(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/non_cc_assessments');
+        $bank = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="empty"><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>bank_title</fieldlabel><fieldentry>Empty Pool</fieldentry>'
+            . '</qtimetadatafield></qtimetadata>'
+            . '<item ident="q1"/><item ident="q2"/></objectbank></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/empty.xml.qti', $bank);
+        $course = new course_model();
+        $bankitem = new item('r_bank', 'Empty Pool');
+        $bankitem->kind = item::KIND_QUESTIONBANK;
+        $bankitem->files = ['non_cc_assessments/empty.xml.qti'];
+        $bankitem->objectbankid = 'empty';
+        $course->orphans[] = $bankitem;
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        // Two omitted bodies are surfaced (not an empty matrix) with none convertible.
+        $this->assertSame(2, $matrix['total']);
+        $this->assertSame(0, $matrix['supported']);
+        $omitted = array_values(array_filter($matrix['rows'], fn($r) => $r['label'] === 'omitted'));
+        $this->assertCount(1, $omitted);
+        $this->assertSame(2, $omitted[0]['count']);
+        $this->assertSame('unsupported', $omitted[0]['status']);
+        $this->assertSame('Empty Pool', $omitted[0]['sources'][0]['name']);
+    }
+
+    /**
      * The matrix only follows an item-bank draw the build actually imports: an
      * explicit zero-question draw (which quiz_builder skips), and a selection on a
      * question-bank kind (questionbank_builder never resolves selections), are both

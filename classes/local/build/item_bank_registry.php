@@ -80,8 +80,14 @@ class item_bank_registry {
         require_once($CFG->libdir . '/questionlib.php');
         require_once($CFG->dirroot . '/course/lib.php');
         require_once($CFG->dirroot . '/course/modlib.php');
-        if (array_key_exists($bankid, $this->banks)) {
-            $existing = $this->banks[$bankid];
+        // Key the memo by the resolved dump's identity, not the raw bank id: a New Quiz's
+        // sourcebank_ref and a standalone resource can name the same physical file under
+        // different casing (the lookup resolves case-insensitively), and both must reuse
+        // one import rather than creating two banks for the same file.
+        $file = $this->bank_dump_path($bankid);
+        $key = $file !== null ? (realpath($file) ?: $file) : $bankid;
+        if (array_key_exists($key, $this->banks)) {
+            $existing = $this->banks[$key];
             if ($existing !== null && $name !== null && $name !== '') {
                 // The bank was imported earlier (e.g. by a quiz draw) under its own
                 // <bank_title>; a standalone resource now supplies the authoritative
@@ -90,8 +96,7 @@ class item_bank_registry {
             }
             return $existing;
         }
-        $this->banks[$bankid] = null;
-        $file = $this->bank_dump_path($bankid);
+        $this->banks[$key] = null;
         if ($file === null) {
             return null;
         }
@@ -136,13 +141,13 @@ class item_bank_registry {
         // When the bank holds unsupported types (or the importer rejects some), Moodle's
         // pool is smaller than the one Canvas drew from, so a group sourcing this bank
         // must be reported as incomplete even when it can still fill its requested count.
-        $this->banks[$bankid] = [
+        $this->banks[$key] = [
             'cmid' => (int) $created->coursemodule,
             'category' => (int) $category->id,
             'count' => count($questionids),
             'full' => count($questionids) === count($parsed['questions']) && (int) ($parsed['unresolved'] ?? 0) === 0,
         ];
-        return $this->banks[$bankid];
+        return $this->banks[$key];
     }
 
     /**

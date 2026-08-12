@@ -89,14 +89,23 @@ class qti_parser {
             // / assessmentSection), so neither matches here.
             $result['hasassessment'] = $dom->getElementsByTagNameNS('*', 'section')->length > 0;
         }
-        // A native item bank is rooted at <objectbank> and carries its name in a
-        // bank_title metadata field rather than a title attribute; record the root and
-        // use its title so a standalone bank keeps its Canvas name and can be told apart
-        // from an <assessment>-rooted file (or a non-QTI assessment_meta sibling).
-        $banks = $dom->getElementsByTagNameNS('*', 'objectbank');
-        $result['hasobjectbank'] = $banks->length > 0 && $banks->item(0) instanceof DOMElement;
-        if ($result['title'] === '' && $result['hasobjectbank']) {
-            $result['title'] = $this->metadata_field($banks->item(0), 'bank_title');
+        // A native item bank is the document's root payload: an <objectbank> that is a
+        // direct child of <questestinterop>. It carries its name in a bank_title metadata
+        // field rather than a title attribute. An <assessment>-rooted dump can also contain
+        // a nested <objectbank>, so a descendant-wide match would misread it as a standalone
+        // bank; require the root child so only a genuine bank file sets the flag.
+        $rootbank = null;
+        if ($dom->documentElement !== null) {
+            foreach ($dom->documentElement->childNodes as $child) {
+                if ($child instanceof DOMElement && $child->localName === 'objectbank') {
+                    $rootbank = $child;
+                    break;
+                }
+            }
+        }
+        $result['hasobjectbank'] = $rootbank !== null;
+        if ($result['title'] === '' && $rootbank !== null) {
+            $result['title'] = $this->metadata_field($rootbank, 'bank_title');
         }
 
         foreach ($dom->getElementsByTagNameNS('*', 'item') as $itemnode) {

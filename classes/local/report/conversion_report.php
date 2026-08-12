@@ -522,14 +522,21 @@ class conversion_report {
             // in the same resource — once per bank id, and record the id so a repeated resource
             // (or a quiz draw below) can't double-count the one shared bank the build imports.
             if ($modelitem->kind === item::KIND_QUESTIONBANK && $modelitem->objectbankid !== '') {
-                if (isset($standalonebankids[$modelitem->objectbankid])) {
+                $identity = $this->bank_identity($modelitem->objectbankid);
+                if (isset($standalonebankids[$identity])) {
                     continue;
                 }
-                $standalonebankids[$modelitem->objectbankid] = true;
-                [$questions] = $this->bank_questions($modelitem->objectbankid);
+                $standalonebankids[$identity] = true;
+                [$questions, , $unresolved] = $this->bank_questions($modelitem->objectbankid);
+                $source = $this->display_title($modelitem, $referenced);
                 if (!empty($questions)) {
-                    $total += $this->tally_batch($acc, $questions, $this->display_title($modelitem, $referenced));
+                    $total += $this->tally_batch($acc, $questions, $source);
                 }
+                // A bank whose <item>s are only bare references (Canvas omitted their bodies)
+                // yields no questions but real data loss the build reports as a skip; surface
+                // it so Analyze doesn't advertise the bank as fully importable via an empty
+                // matrix.
+                $total += $this->tally_omitted($acc, $unresolved, $source);
                 continue;
             }
             // Only a referenced quiz takes the quiz_builder path, which alone adopts
@@ -560,15 +567,40 @@ class conversion_report {
         }
         // Each referenced item bank is imported once by the build (shared across the
         // quizzes that draw from it), so tally each unique bank a single time under its own
-        // name — skipping any already counted above as a standalone objectbank item.
+        // name — keyed by resolved file identity so a bank already counted above as a
+        // standalone objectbank item (or a second sourcebank_ref differing only by case)
+        // isn't tallied twice.
+        $seenbanks = $standalonebankids;
         foreach (array_keys($bankids) as $bankid) {
-            if (isset($standalonebankids[$bankid])) {
+            $identity = $this->bank_identity($bankid);
+            if (isset($seenbanks[$identity])) {
                 continue;
             }
-            [$questions, $bankname] = $this->bank_questions($bankid);
+            $seenbanks[$identity] = true;
+            [$questions, $bankname, $unresolved] = $this->bank_questions($bankid);
             $total += $this->tally_batch($acc, $questions, $bankname);
+            $total += $this->tally_omitted($acc, $unresolved, $bankname);
         }
         return $this->finalize_matrix($acc, $total);
+    }
+
+    /**
+     * Fold a bank's unresolved bare item references — questions whose bodies Canvas did not
+     * export — into the matrix as an unsupported 'omitted' row sourced to the bank, so the
+     * analysis surfaces the same data loss the build reports rather than dropping it silently.
+     *
+     * @param array $acc Running counters, modified in place.
+     * @param int $count The number of unresolved references.
+     * @param string $source The bank name graders will see.
+     * @return int The number of references tallied.
+     */
+    private function tally_omitted(array &$acc, int $count, string $source): int {
+        if ($count < 1) {
+            return 0;
+        }
+        $acc['unsupported']['omitted'] = ($acc['unsupported']['omitted'] ?? 0) + $count;
+        $acc['unsupportedsources']['omitted'][$source] = ($acc['unsupportedsources']['omitted'][$source] ?? 0) + $count;
+        return $count;
     }
 
     /**
@@ -648,19 +680,33 @@ class conversion_report {
     protected function bank_questions(string $bankid): array {
         $path = $this->resolve_bank_dump($bankid);
         if ($path === null) {
-            return [[], ''];
+            return [[], '', 0];
         }
         $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
         $name = $parsed['title'] !== '' ? $parsed['title'] : $bankid;
-        return [$parsed['questions'], $name];
+        return [$parsed['questions'], $name, (int) ($parsed['unresolved'] ?? 0)];
+    }
+
+    /**
+     * The resolved identity of a bank dump — its realpath when it resolves, else the raw
+     * bank id — so ids that differ only by case (a New Quiz's sourcebank_ref vs a standalone
+     * resource) but name one physical file dedupe to a single matrix tally, matching the
+     * build's shared import.
+     *
+     * @param string $bankid The bank id.
+     * @return string
+     */
+    private function bank_identity(string $bankid): string {
+        $path = $this->resolve_bank_dump($bankid);
+        return $path !== null ? (realpath($path) ?: $path) : $bankid;
     }
 
     /**
      * Resolve a native item-bank dump (non_cc_assessments/<id>.xml.qti) by bank id,
-     * tolerating extension case so a dump Canvas exported as e.g. Pool.XML.QTI still
-     * resolves on a case-sensitive filesystem (the bank id strips the suffix
-     * case-insensitively). Mirrors the builders' resolver so the report reads the same
-     * file the build imports.
+     * tolerating both the folder and extension case so a dump Canvas exported as e.g.
+     * NON_CC_ASSESSMENTS/Pool.XML.QTI still resolves on a case-sensitive filesystem (the
+     * bank id strips the suffix case-insensitively). Mirrors the builders' resolver so the
+     * report reads the same file the build imports.
      *
      * @param string $bankid The bank id (basename minus the .xml.qti suffix).
      * @return string|null Absolute path within the package, or null.
@@ -670,14 +716,40 @@ class conversion_report {
         if ($direct !== null) {
             return $direct;
         }
-        $dir = $this->resolve_within('non_cc_assessments');
-        if ($dir === null || !is_dir($dir)) {
+        $dir = $this->resolve_bank_dir();
+        if ($dir === null) {
             return null;
         }
         $target = strtolower($bankid . '.xml.qti');
         foreach ((array) @scandir($dir) as $entry) {
             if (strtolower((string) $entry) === $target && is_file($dir . '/' . $entry)) {
                 return $dir . '/' . $entry;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolve the non_cc_assessments folder within the package, tolerating case: the exact
+     * name when present, else a case-insensitive match among the package root's entries.
+     *
+     * @return string|null Absolute path to the folder, or null when absent.
+     */
+    private function resolve_bank_dir(): ?string {
+        $direct = $this->resolve_within('non_cc_assessments');
+        if ($direct !== null && is_dir($direct)) {
+            return $direct;
+        }
+        $root = $this->packageroot !== null ? realpath($this->packageroot) : false;
+        if ($root === false) {
+            return null;
+        }
+        foreach ((array) @scandir($root) as $entry) {
+            if ($entry === '.' || $entry === '..' || strtolower((string) $entry) !== 'non_cc_assessments') {
+                continue;
+            }
+            if (is_dir($root . '/' . $entry)) {
+                return $root . '/' . $entry;
             }
         }
         return null;

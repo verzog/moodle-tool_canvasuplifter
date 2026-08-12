@@ -183,6 +183,7 @@ $string['progressparse'] = 'Parsing manifest…';
 $string['qtype_essay'] = 'Essay';
 $string['qtype_multianswer'] = 'Multiple response';
 $string['qtype_multichoice'] = 'Multiple choice';
+$string['qtype_omitted'] = 'Question body not present in the package';
 $string['qtype_shortanswer'] = 'Fill in the blank / short answer';
 $string['qtype_truefalse'] = 'True/false';
 $string['quizbankname'] = 'Imported question bank';
