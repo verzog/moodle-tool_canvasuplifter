@@ -37,8 +37,16 @@ use DOMElement;
 final class source_detector {
     /** Canvas LMS export. */
     public const CANVAS = 'canvas';
-    /** Blackboard Learn export. */
+    /** Blackboard Learn export (a Common Cartridge Blackboard authored/exported). */
     public const BLACKBOARD = 'blackboard';
+    /**
+     * Blackboard Learn NATIVE export (not Common Cartridge): Blackboard's own
+     * IMS-CP variant, fingerprinted by a .bb-package-info marker or x-bb-* resource
+     * types, with content in resNNNNN.dat files. This tool imports Canvas Common
+     * Cartridge, not this format, so it builds nothing from such a package; detected
+     * so the report can say so instead of silently producing zero items.
+     */
+    public const BLACKBOARD_NATIVE = 'blackboard_native';
     /** D2L Brightspace export. */
     public const D2L = 'd2l';
     /** ANGEL LMS export (often carrying eXe learning modules). */
@@ -110,5 +118,32 @@ final class source_detector {
             return self::EXE;
         }
         return self::GENERIC;
+    }
+
+    /**
+     * Whether a package bears Blackboard Learn's native-export fingerprint: the
+     * .bb-package-info marker file, or any proprietary x-bb-* resource type
+     * (resource/x-bb-document, assessment/x-bb-qti-test, course/x-bb-*), which no
+     * Common Cartridge exporter uses.
+     *
+     * This is only the fingerprint. Whether the package is actually an unimportable
+     * native export is decided by the caller in combination with the build result
+     * (a native package the parser could build nothing from), so the conclusion
+     * never diverges from what classify() actually builds or suppresses.
+     *
+     * @param string $basedir Absolute path to the extracted package root.
+     * @param array $resourcetypes The raw resource type strings from the manifest.
+     * @return bool
+     */
+    public static function has_native_fingerprint(string $basedir, array $resourcetypes): bool {
+        if (is_file($basedir . '/.bb-package-info')) {
+            return true;
+        }
+        foreach ($resourcetypes as $type) {
+            if (stripos((string) $type, 'x-bb-') !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 }

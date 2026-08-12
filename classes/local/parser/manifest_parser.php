@@ -257,7 +257,37 @@ class manifest_parser {
         // configuration in the package, so there is nothing to build a mod_lti from).
         $this->mark_navigation_tools($resources, $course);
 
+        // A Blackboard Learn native export (x-bb-* resource types / .bb-package-info
+        // marker) is not Common Cartridge, so this Canvas-focused tool classifies
+        // none of its proprietary content. When it bears that fingerprint and the
+        // parser could build nothing from it, relabel the source so the report leads
+        // with clear guidance rather than a blank result. Judged from the built model
+        // (not a resource-type heuristic), so the conclusion never disagrees with what
+        // classify() actually built or suppressed: a package that also carries genuine
+        // importable content keeps its detected source and imports what it can.
+        $types = array_map(fn($resourceitem) => $resourceitem->resourcetype, $resources);
+        if (!$this->has_buildable_items($course) && source_detector::has_native_fingerprint($this->basedir, $types)) {
+            $course->source = source_detector::BLACKBOARD_NATIVE;
+        }
+
         return $course;
+    }
+
+    /**
+     * Whether the parsed course has at least one item a builder would create — an
+     * item whose kind is in item::BUILDS_NOW. Used to tell a Blackboard-native export
+     * that builds nothing from a package that still imports content.
+     *
+     * @param course_model $course The parsed course.
+     * @return bool
+     */
+    protected function has_buildable_items(course_model $course): bool {
+        foreach ($course->all_items() as $modelitem) {
+            if (in_array($modelitem->kind, item::BUILDS_NOW, true)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

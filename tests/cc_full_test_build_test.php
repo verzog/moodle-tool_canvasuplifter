@@ -208,4 +208,27 @@ final class cc_full_test_build_test extends \advanced_testcase {
 
         $this->assertContains(get_string('warnreportnavtools', 'tool_canvasuplifter'), $report['warnings']);
     }
+
+    /**
+     * A Blackboard-native package builds nothing, and the direct Build path leads its
+     * report with the actionable warnblackboardnative message.
+     *
+     * @return void
+     */
+    public function test_blackboard_native_warning_on_direct_build(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $model = new course_model();
+        $model->fullname = 'Blackboard Export';
+        $model->source = \tool_canvasuplifter\local\parser\source_detector::BLACKBOARD_NATIVE;
+        $report = (new course_builder($category->id, __DIR__ . '/fixtures/cc_full_test'))->build($model);
+
+        $this->assertContains(get_string('warnblackboardnative', 'tool_canvasuplifter'), $report['warnings']);
+        $this->assertSame(0, $report['created']);
+        // The build report carries the source so the status page can lead with the
+        // native-format explanation before the zero-created summary.
+        $this->assertSame(\tool_canvasuplifter\local\parser\source_detector::BLACKBOARD_NATIVE, $report['source']);
+    }
 }

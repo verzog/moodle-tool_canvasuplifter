@@ -352,6 +352,171 @@ XML;
     }
 
     /**
+     * A Blackboard Learn native export declares proprietary x-bb-* resource types
+     * (not Common Cartridge), so it is detected as blackboard_native and its content
+     * stays unclassified — the report then leads with a clear message rather than
+     * silently building zero items.
+     *
+     * @return void
+     */
+    public function test_blackboard_native_export_is_detected_from_resource_types(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/res00001.dat', '<content/>');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="toc00001"><item identifier="root"/></organization>
+  </organizations>
+  <resources>
+    <resource identifier="res00001" type="resource/x-bb-document" href="res00001.dat">
+      <file href="res00001.dat"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame(source_detector::BLACKBOARD_NATIVE, $course->source);
+        // The x-bb-document content is unclassified, so nothing builds from it.
+        $this->assertSame([], $course->orphans);
+    }
+
+    /**
+     * The .bb-package-info marker file alone (even with an otherwise unremarkable
+     * manifest) identifies a Blackboard-native package.
+     *
+     * @return void
+     */
+    public function test_blackboard_native_detected_by_marker_file(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/.bb-package-info', "version=1\n");
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="toc00001"><item identifier="root"/></organization></organizations>
+  <resources/>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame(source_detector::BLACKBOARD_NATIVE, $course->source);
+    }
+
+    /**
+     * A package that mixes x-bb-* settings with a resource whose href is an absolute
+     * URL is not native: classify() builds that resource as a mod_url regardless of
+     * its (unrecognised) type, so the package has importable content.
+     *
+     * @return void
+     */
+    public function test_blackboard_native_not_flagged_when_a_weblink_builds(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="toc00001">
+      <item identifier="root"><item identifier="i_link" identifierref="res_link"><title>Handbook</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="res_settings" type="course/x-bb-coursesetting"/>
+    <resource identifier="res_link" type="resource/x-bb-link" href="https://example.org/handbook"/>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The absolute-href resource is importable content, so the package is not
+        // declared native, and that resource builds as a URL.
+        $this->assertNotSame(source_detector::BLACKBOARD_NATIVE, $course->source);
+        $kinds = array_map(fn($i) => $i->kind, $course->all_items());
+        $this->assertContains(item::KIND_URL, $kinds);
+    }
+
+    /**
+     * A package of x-bb-* resources plus a genuine Blackboard build-log artifact
+     * (web_content<n>.log carrying instructor-role LOM metadata, which the parser
+     * suppresses) builds nothing, so it is recognised as native. The nativeness is
+     * judged from the built model, so it tracks the parser's real suppression rather
+     * than a resource-type guess.
+     *
+     * @return void
+     */
+    public function test_blackboard_native_ignores_build_log_artifact(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/web_content00001', 0777, true);
+        file_put_contents($dir . '/web_content00001/web_content00001.log', "export build log\n");
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1"
+  xmlns:lom="http://ltsc.ieee.org/xsd/imsccv1p2/LOM/resource">
+  <organizations><organization identifier="toc00001"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="res_doc" type="resource/x-bb-document" href="res00001.dat"><file href="res00001.dat"/></resource>
+    <resource identifier="res_log" type="webcontent" href="web_content00001/web_content00001.log">
+      <metadata><lom:lom><lom:educational><lom:intendedEndUserRole>
+        <lom:source>IMSGLC_CC_Rolesv1p2</lom:source><lom:value>Instructor</lom:value>
+      </lom:intendedEndUserRole></lom:educational></lom:lom></metadata>
+      <file href="web_content00001/web_content00001.log"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The build log is suppressed and the x-bb doc is unclassified, so nothing
+        // builds and the package is native. Also confirm nothing was placed/orphaned.
+        $this->assertSame([], $course->all_items());
+        $this->assertSame(source_detector::BLACKBOARD_NATIVE, $course->source);
+    }
+
+    /**
+     * A package that bears the native fingerprint but still imports genuine content
+     * is NOT declared native: the source is judged from the built model, so a package
+     * the parser can build something from keeps its detected source (and the
+     * unsupported-format warning, which is source-driven, does not fire).
+     *
+     * @return void
+     */
+    public function test_native_fingerprint_not_flagged_when_content_builds(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/.bb-package-info', "version=1\n");
+        mkdir($dir . '/content', 0777, true);
+        file_put_contents($dir . '/content/notes.pdf', '%PDF-1.4');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="toc00001">
+      <item identifier="root"><item identifier="i_pdf" identifierref="res_pdf"><title>Notes</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="res_pdf" type="webcontent" href="content/notes.pdf"><file href="content/notes.pdf"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The file builds, so the package is not declared native despite the marker.
+        $this->assertNotSame(source_detector::BLACKBOARD_NATIVE, $course->source);
+        $kinds = array_map(fn($i) => $i->kind, $course->all_items());
+        $this->assertContains(item::KIND_FILE, $kinds);
+    }
+
+    /**
      * A file embedded inside a page body via a $IMS-CC-FILEBASE$ token (Canvas
      * stores these under web_resources/) is inlined into the page at build time,
      * so it must not also surface as a standalone orphan resource — while a file
@@ -2317,6 +2482,10 @@ XML;
         foreach (['r_bbassess', 'r_bbcreate', 'r_bbtest'] as $id) {
             $this->assertNotSame(item::KIND_QUIZ, $bykind[$id] ?? null, "Blackboard $id must not be a quiz");
         }
+        // A package that mixes a few x-bb-* settings resources with genuine importable
+        // CC content (the real Canvas QTI quiz here) is NOT a wholly-native package, so
+        // it must not be flagged blackboard_native and told nothing can be imported.
+        $this->assertNotSame(source_detector::BLACKBOARD_NATIVE, $course->source);
     }
 
     /**
