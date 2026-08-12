@@ -3189,4 +3189,192 @@ XML;
         $this->assertCount(1, $course->orphans);
         $this->assertSame('Audio Visual', $course->orphans[0]->title);
     }
+
+    /**
+     * A Canvas course-navigation external tool that is also placed as a module item
+     * is already imported as a hidden mod_lti, so it is deduped; a nav-only tool that
+     * appears only in course_settings.xml's tab_configuration carries no launch
+     * configuration in the package, so it is counted for the report to surface.
+     *
+     * @return void
+     */
+    public function test_reports_unimported_course_navigation_tools(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        // The Accredible tool is placed as a module item (built as a hidden mod_lti);
+        // "navonly" appears only as a navigation tab, with no definition anywhere.
+        file_put_contents(
+            $dir . '/course_settings/module_meta.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<module identifier="m1"><title>Tools</title><workflow_state>active</workflow_state>'
+            . '<items><item identifier="mi1"><content_type>ContextExternalTool</content_type>'
+            . '<workflow_state>active</workflow_state><title>Accredible</title>'
+            . '<identifierref>toolA</identifierref><url>https://tool.example/a</url></item></items>'
+            . '</module></modules>'
+        );
+        file_put_contents(
+            $dir . '/course_settings/course_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="c1">'
+            . '<title>Nav Tools Course</title>'
+            . '<tab_configuration>[{"id":0},{"id":"context_external_tool_toolA"},'
+            . '{"id":"context_external_tool_navonly","hidden":true}]</tab_configuration>'
+            . '</course>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources/>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The placed Accredible tool is already a hidden mod_lti (deduped); only the
+        // nav-only tool is counted as unimported.
+        $this->assertSame(1, $course->navtoolsunimported);
+        // The placed tool built as a KIND_LTI item; the nav-only tool did not.
+        $ltis = array_filter($course->all_items(), fn($i) => $i->kind === item::KIND_LTI);
+        $this->assertCount(1, $ltis);
+        $this->assertSame('Accredible', array_values($ltis)[0]->title);
+    }
+
+    /**
+     * A package whose tab_configuration has no external-tool tabs (or no
+     * course_settings.xml at all) records no unimported navigation tools.
+     *
+     * @return void
+     */
+    public function test_no_navigation_tools_when_tab_configuration_has_none(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        file_put_contents(
+            $dir . '/course_settings/course_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="c1">'
+            . '<title>Plain Course</title>'
+            . '<tab_configuration>[{"id":0},{"id":14},{"id":3}]</tab_configuration>'
+            . '</course>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources/>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame(0, $course->navtoolsunimported);
+    }
+
+    /**
+     * A ContextExternalTool module item with a missing or non-http(s) launch URL is
+     * not built (no mod_lti is created), so a navigation tab pointing at it must
+     * still be flagged rather than deduped away as "already imported".
+     *
+     * @return void
+     */
+    public function test_navigation_tool_for_unbuilt_module_item_is_flagged(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        // The tool's <url> is not http(s), so item_from_module_meta drops it.
+        file_put_contents(
+            $dir . '/course_settings/module_meta.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<module identifier="m1"><title>Tools</title><workflow_state>active</workflow_state>'
+            . '<items><item identifier="mi1"><content_type>ContextExternalTool</content_type>'
+            . '<workflow_state>active</workflow_state><title>Broken</title>'
+            . '<identifierref>toolB</identifierref><url>javascript:alert(1)</url></item></items>'
+            . '</module></modules>'
+        );
+        file_put_contents(
+            $dir . '/course_settings/course_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="c1">'
+            . '<title>Broken Tool Course</title>'
+            . '<tab_configuration>[{"id":0},{"id":"context_external_tool_toolB"}]</tab_configuration>'
+            . '</course>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources/>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // No LTI was built for toolB, and the nav tab is not deduped away.
+        $this->assertCount(0, array_filter($course->all_items(), fn($i) => $i->kind === item::KIND_LTI));
+        $this->assertSame(1, $course->navtoolsunimported);
+    }
+
+    /**
+     * A nav tab that resolves to a manifest LTI resource is deduped (that tool is
+     * imported as an orphan mod_lti and, either way, surfaced to the admin); a tab
+     * that resolves to a resource which will not build (KIND_UNKNOWN) is not deduped
+     * and is flagged, as is one that resolves to no resource at all.
+     *
+     * @return void
+     */
+    public function test_navigation_tool_dedup_requires_a_buildable_resource(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/tool');
+        file_put_contents(
+            $dir . '/tool/basiclti.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p0"'
+            . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0">'
+            . '<blti:title>Publisher Tool</blti:title>'
+            . '<blti:launch_url>https://tool.example/launch</blti:launch_url>'
+            . '</cartridge_basiclti_link>'
+        );
+        // A learning-application-resource whose only payload is a non-HTML companion
+        // file classifies as KIND_UNKNOWN and never builds.
+        file_put_contents($dir . '/tool/meta.txt', 'metadata');
+        file_put_contents(
+            $dir . '/course_settings/course_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="c1">'
+            . '<title>Mixed Nav Tools</title>'
+            . '<tab_configuration>[{"id":0},{"id":"context_external_tool_navL"},'
+            . '{"id":"context_external_tool_navU"},{"id":"context_external_tool_navonly"}]</tab_configuration>'
+            . '</course>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="navL" type="imsbasiclti_xmlv1p0" href="tool/basiclti.xml">
+      <file href="tool/basiclti.xml"/>
+    </resource>
+    <resource identifier="navU" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="tool/meta.txt">
+      <file href="tool/meta.txt"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The navL resource (a real LTI) is deduped; navU (won't build) and navonly
+        // (no resource) are both flagged.
+        $this->assertSame(2, $course->navtoolsunimported);
+        // The LTI resource did build as an orphan mod_lti.
+        $ltis = array_filter($course->all_items(), fn($i) => $i->kind === item::KIND_LTI);
+        $this->assertCount(1, $ltis);
+        $this->assertSame('Publisher Tool', array_values($ltis)[0]->title);
+    }
 }

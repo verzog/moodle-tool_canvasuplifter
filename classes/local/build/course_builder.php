@@ -459,6 +459,12 @@ class course_builder {
         if (!empty($unresolvedmedia)) {
             $warnings[] = get_string('warnunresolvedmedia', 'tool_canvasuplifter', count($unresolvedmedia));
         }
+        // Course-navigation external tools with no launch configuration in the
+        // package can't be built, so flag them on the direct Build path too (the
+        // analyse report raises the same key via conversion_report).
+        if ($coursemodel->navtoolsunimported > 0) {
+            $warnings[] = get_string('warnreportnavtools', 'tool_canvasuplifter');
+        }
 
         return [
             'courseid' => (int) $course->id,

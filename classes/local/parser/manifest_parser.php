@@ -57,6 +57,15 @@ class manifest_parser {
     private array $containerconsumed = [];
 
     /**
+     * @var array Set (keyed by Canvas tool identifierref, value true) of every
+     *            ContextExternalTool placed as a module item in module_meta.xml.
+     *            course_settings.xml's tab_configuration references course-navigation
+     *            tools by this ref, so it is the dedup key: a nav tool already placed
+     *            (and built as a hidden mod_lti) here must not be reported as missing.
+     */
+    private array $externaltoolrefs = [];
+
+    /**
      * Constructor.
      *
      * @param string $basedir Absolute path to the extracted .imscc directory.
@@ -242,6 +251,11 @@ class manifest_parser {
         // question bank so graders can tell the two mod_qbank/mod_quiz
         // activities apart on the course page and in the report.
         $this->disambiguate_questionbank_titles($course);
+
+        // Surface Canvas course-navigation external tools that no module item
+        // places, so the report flags them for the admin (they carry no launch
+        // configuration in the package, so there is nothing to build a mod_lti from).
+        $this->mark_navigation_tools($resources, $course);
 
         return $course;
     }
@@ -2105,6 +2119,14 @@ class manifest_parser {
             if (preg_match('#^https?://#i', $url) !== 1) {
                 return null;
             }
+            // Record the Canvas tool identifierref only now that the tool actually
+            // builds as a hidden mod_lti, so tab_configuration (which keys
+            // course-navigation tools by this ref) can tell a nav tool already placed
+            // here from a genuinely nav-only one with no config to import. Recording
+            // it before the URL check would dedup away a nav tab whose tool we dropped.
+            if ($ref !== '') {
+                $this->externaltoolrefs[$ref] = true;
+            }
             $id = $node->getAttribute('identifier');
             $modelitem = new item($id, $title);
             $modelitem->kind = item::KIND_LTI;
@@ -2529,6 +2551,80 @@ class manifest_parser {
             return '';
         }
         return strtolower(trim((string) $xml->group_weighting_scheme));
+    }
+
+    /**
+     * Flag Canvas course-navigation external tools that the import cannot recover.
+     *
+     * Canvas records the course's left-nav tabs in course_settings.xml's
+     * <tab_configuration> JSON; a tab installed from an external tool has an id of
+     * the form "context_external_tool_<ref>". When that tool is also placed as a
+     * module item it is already imported as a hidden mod_lti (and re-importing it
+     * would duplicate the activity), so it is deduped here against the module-item
+     * tool refs and the manifest resource map. A tool that appears only as a nav tab
+     * has no launch URL anywhere in the package - Canvas exports the configuration
+     * only for content placements - so there is nothing to build a working mod_lti
+     * from; count it so the report can tell the admin to add it by hand rather than
+     * dropping it silently. The "hidden":true flag Canvas may carry does not change
+     * this: a hidden or a visible nav-only tool is equally unrecoverable.
+     *
+     * @param array $resources Resources keyed by identifier.
+     * @param course_model $course The course model to annotate.
+     * @return void
+     */
+    protected function mark_navigation_tools(array $resources, course_model $course): void {
+        foreach ($this->read_tab_configuration_refs() as $ref) {
+            // Already imported, so do not flag it: a ContextExternalTool module item
+            // built as a hidden mod_lti (recorded only once its URL validated), or a
+            // manifest resource with this id that will build - it is placed or lands
+            // on the orphan list (kind != UNKNOWN, not suppressed), exactly the
+            // condition the orphan pass uses. Such a resource is always surfaced to
+            // the admin anyway (an LTI row in the analyse report, or an LTI skip note
+            // if its cartridge later fails to build), so it is never silently absent
+            // the way a nav-only tool with no resource at all is.
+            $resource = $resources[$ref] ?? null;
+            $importedasresource = $resource !== null
+                && $resource->kind !== item::KIND_UNKNOWN
+                && !$resource->suppressed;
+            if ($importedasresource || isset($this->externaltoolrefs[$ref])) {
+                continue;
+            }
+            $course->navtoolsunimported++;
+        }
+    }
+
+    /**
+     * The Canvas tool refs referenced by course-navigation tabs: the "<ref>" of each
+     * "context_external_tool_<ref>" entry in course_settings.xml's <tab_configuration>
+     * JSON array. Numeric built-in tab ids and any malformed JSON yield an empty list.
+     * Moodle-free so it stays testable from file contents.
+     *
+     * @return array Tool refs (strings), in tab order; empty when none.
+     */
+    protected function read_tab_configuration_refs(): array {
+        $path = $this->basedir . '/course_settings/course_settings.xml';
+        if (!is_readable($path)) {
+            return [];
+        }
+        $previous = libxml_use_internal_errors(true);
+        $xml = simplexml_load_file($path, 'SimpleXMLElement', LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if ($xml === false || !isset($xml->tab_configuration)) {
+            return [];
+        }
+        $tabs = json_decode(trim((string) $xml->tab_configuration), true);
+        if (!is_array($tabs)) {
+            return [];
+        }
+        $refs = [];
+        foreach ($tabs as $tab) {
+            $id = is_array($tab) ? ($tab['id'] ?? null) : null;
+            if (is_string($id) && preg_match('/^context_external_tool_(.+)$/', $id, $m) === 1) {
+                $refs[] = $m[1];
+            }
+        }
+        return $refs;
     }
 
     /**

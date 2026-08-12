@@ -89,6 +89,20 @@ final class conversion_report_test extends \advanced_testcase {
      *
      * @return void
      */
+    /**
+     * Unimported course-navigation external tools raise the warnreportnavtools
+     * warning so the admin knows to add them by hand; none raises nothing.
+     *
+     * @return void
+     */
+    public function test_unimported_navigation_tools_warning(): void {
+        $course = new course_model();
+        $this->assertNotContains('warnreportnavtools', (new conversion_report($course))->build()['warnings']);
+
+        $course->navtoolsunimported = 2;
+        $this->assertContains('warnreportnavtools', (new conversion_report($course))->build()['warnings']);
+    }
+
     public function test_subheader_reports_as_label(): void {
         $course = new course_model();
         $section = new section_model('Week 1');

@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\course_builder;
+use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\parser\manifest_parser;
 
 /**
@@ -187,5 +188,24 @@ final class cc_full_test_build_test extends \advanced_testcase {
             ['component' => 'mod_forum', 'filearea' => 'attachment']
         );
         $this->assertSame(['angry_person.jpg'], array_values(array_unique($attachments)));
+    }
+
+    /**
+     * The direct Build path surfaces unimported course-navigation external tools in
+     * its build-report warnings, not only the analyse report.
+     *
+     * @return void
+     */
+    public function test_navigation_tools_warning_on_direct_build(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $model = new course_model();
+        $model->fullname = 'Nav Tools Course';
+        $model->navtoolsunimported = 2;
+        $report = (new course_builder($category->id, __DIR__ . '/fixtures/cc_full_test'))->build($model);
+
+        $this->assertContains(get_string('warnreportnavtools', 'tool_canvasuplifter'), $report['warnings']);
     }
 }

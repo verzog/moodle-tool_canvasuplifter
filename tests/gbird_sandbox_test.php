@@ -547,5 +547,11 @@ final class gbird_sandbox_test extends \advanced_testcase {
         $this->assertSame(item::KIND_LTI, $accredible->kind);
         $this->assertSame('https://api.accredible.com/v1/lti/launch', $accredible->launchurl);
         $this->assertFalse($accredible->isvisible, 'the unpublished tool should import hidden');
+
+        // The course_settings.xml tab_configuration lists two course-navigation
+        // tools: the Accredible tool (also this module item, so deduped) and a second
+        // one (context_external_tool_g7e72e4...) that appears only as a nav tab with
+        // no definition in the package. Only the nav-only one is flagged for the admin.
+        $this->assertSame(1, $course->navtoolsunimported);
     }
 }
