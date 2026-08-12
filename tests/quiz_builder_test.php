@@ -1077,9 +1077,14 @@ XML;
      *
      * @param string $extrabankitems Extra <item> markup appended to the bank, or ''.
      * @param string $selectnumber The <selection_number> value (how many to draw).
+     * @param string $selectionmeta Extra markup inside the <selection> (e.g. a filter), or ''.
      * @return string Path to the package root.
      */
-    protected function build_fixture_bank_backed(string $extrabankitems = '', string $selectnumber = '2'): string {
+    protected function build_fixture_bank_backed(
+        string $extrabankitems = '',
+        string $selectnumber = '2',
+        string $selectionmeta = ''
+    ): string {
         $dir = make_request_directory();
         mkdir($dir . '/gnewquiz', 0777, true);
         mkdir($dir . '/non_cc_assessments', 0777, true);
@@ -1091,6 +1096,7 @@ XML;
             . '<section ident="grp" title="Group"><selection_ordering><selection>'
             . '<sourcebank_ref>gbank1</sourcebank_ref><selection_number>' . $selectnumber . '</selection_number>'
             . '<selection_extension><points_per_item>2.5</points_per_item></selection_extension>'
+            . $selectionmeta
             . '</selection></selection_ordering></section>'
             . '</section></assessment></questestinterop>';
         file_put_contents($dir . '/gnewquiz/assessment_qti.xml', $qti);
@@ -1325,5 +1331,165 @@ XML;
         $this->assertEquals(1, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
         // The missing bank is surfaced as an incomplete-group warning.
         $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * An inline MC item for use directly in an assessment section (a Canvas
+     * multiple_choice_question with a single right answer).
+     *
+     * @param string $id The item ident.
+     * @return string
+     */
+    protected function inlinemcitem(string $id): string {
+        return '<item ident="' . $id . '" title="Inline ' . $id . '"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_choice_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/plain">Q ' . $id . '?</mattext></material>'
+            . '<response_lid ident="response1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="a"><material><mattext texttype="text/plain">Right</mattext></material></response_label>'
+            . '<response_label ident="b"><material><mattext texttype="text/plain">Wrong</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="response1">a</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
+     * Write a mixed New-Quiz package: an inline item, then a bank draw, then another
+     * inline item — so the authored order places the bank group between the inline
+     * questions. The bank (gbank1) is shipped so the draw resolves. $selectionmeta is
+     * extra markup inserted inside the <selection> (e.g. a <selection_metadata> filter).
+     *
+     * @param string $selectionmeta Extra markup for the selection, or ''.
+     * @return string Path to the package root.
+     */
+    protected function build_fixture_ordered_mixed(string $selectionmeta = ''): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/gnewquiz', 0777, true);
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        $qti = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnewquiz" title="Ordered"><section ident="root_section">'
+            . $this->inlinemcitem('one')
+            . '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>gbank1</sourcebank_ref><selection_number>1</selection_number>'
+            . '<selection_extension><points_per_item>2.5</points_per_item></selection_extension>'
+            . $selectionmeta
+            . '</selection></selection_ordering></section>'
+            . $this->inlinemcitem('two')
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/gnewquiz/assessment_qti.xml', $qti);
+        $meta = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz identifier="gnewquiz" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Ordered</title><allowed_attempts>1</allowed_attempts></quiz>';
+        file_put_contents($dir . '/gnewquiz/assessment_meta.xml', $meta);
+        $bank = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="gbank1"><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>bank_title</fieldlabel><fieldentry>Bank</fieldentry></qtimetadatafield></qtimetadata>'
+            . $this->bankmcitem('b1') . $this->bankmcitem('b2') . $this->bankmcitem('b3')
+            . '</objectbank></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/gbank1.xml.qti', $bank);
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Ordered</title></item></item>'
+            . '</item></organization></organizations>'
+            . '<resources><resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">'
+            . '<file href="gnewquiz/assessment_qti.xml"/></resource></resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A New Quiz that places a bank draw between two inline questions materialises the
+     * quiz slots in Canvas authored order: inline, bank draw, inline — so the random
+     * (bank-draw) slot lands in the middle rather than after both inline questions.
+     *
+     * @return void
+     */
+    public function test_new_quiz_preserves_authored_order(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_ordered_mixed();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $quizcm = reset($quizzes);
+        $slots = array_values($DB->get_records('quiz_slots', ['quizid' => $quizcm->instance], 'slot ASC'));
+        $this->assertCount(3, $slots);
+        // The random bank-draw slot is identified by its question_set_reference; it must
+        // sit at slot 2 (between the inline questions), not appended after both.
+        $setrefs = $DB->get_records('question_set_references', ['component' => 'mod_quiz', 'questionarea' => 'slot']);
+        $randomslotids = array_map(fn($r) => (int) $r->itemid, $setrefs);
+        $this->assertContains((int) $slots[1]->id, $randomslotids);
+        $this->assertNotContains((int) $slots[0]->id, $randomslotids);
+        $this->assertNotContains((int) $slots[2]->id, $randomslotids);
+    }
+
+    /**
+     * A bank draw carrying a <selection_metadata> filter can't be reproduced against the
+     * whole imported category, so it is skipped (no random slot) and the quiz flagged
+     * incomplete, rather than over-drawing questions Canvas excluded. The inline
+     * questions around it are kept.
+     *
+     * @return void
+     */
+    public function test_new_quiz_filtered_bank_draw_is_skipped_and_flagged(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $meta = '<selection_metadata>{"filter":{"tags":["unit1"]}}</selection_metadata>';
+        $root = $this->build_fixture_ordered_mixed($meta);
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $quizcm = reset($quizzes);
+        // Only the two inline questions became slots; the filtered draw added none.
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quizcm->instance]));
+        $this->assertSame(0, $DB->count_records('question_set_references', ['component' => 'mod_quiz', 'questionarea' => 'slot']));
+        // The unreproducible filter is surfaced as an incomplete-group warning.
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+    }
+
+    /**
+     * A New Quiz whose only draw is filtered leaves no slots, so it becomes a hidden
+     * placeholder — but it is still flagged incomplete (the warning isn't lost on the
+     * placeholder path), and the referenced bank is imported in full so its questions
+     * aren't dropped even though the quiz drew none.
+     *
+     * @return void
+     */
+    public function test_new_quiz_bank_only_filtered_draw_flags_and_imports_bank(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $meta = '<selection_metadata>{"filter":{"tags":["unit1"]}}</selection_metadata>';
+        $root = $this->build_fixture_bank_backed('', '2', $meta);
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        // The quiz became a hidden placeholder (no slots drawn)...
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $quizcm = reset($quizzes);
+        $this->assertEquals(0, (int) $quizcm->visible);
+        // ...but is still flagged incomplete for a grader.
+        $this->assertStringContainsString('missing part of their questions', implode("\n", $report['warnings']));
+        // The referenced bank is imported in full despite the skipped draw.
+        $qbanks = $modinfo->get_instances_of('qbank');
+        $this->assertCount(1, $qbanks);
+        $this->assertSame('Unfiled Questions', reset($qbanks)->get_name());
     }
 }

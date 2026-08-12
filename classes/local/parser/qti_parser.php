@@ -52,15 +52,20 @@ class qti_parser {
      * The 'selections' list captures each <selection_ordering>/<selection> group a
      * Canvas New Quiz uses to draw questions from a separate item bank rather than
      * inlining them: the referenced bank id (sourcebank_ref), how many questions to
-     * draw (selection_number) and the per-question points. It lets the quiz builder
-     * populate such a quiz from the imported bank instead of leaving a placeholder.
+     * draw (selection_number), the per-question points, and whether the draw carries a
+     * <selection_metadata> filter (hasfilter) that restricts the eligible pool. It lets
+     * the quiz builder populate such a quiz from the imported bank instead of leaving a
+     * placeholder. The 'sequence' list records the authored order of inline items and
+     * selection groups (entries {kind: 'inline'|'selection', index: int} pointing into
+     * 'questions'/'selections') so the builder can add quiz slots in Canvas order.
      *
      * @param string $xml The QTI assessment document.
-     * @return array{title: string, questions: array, unresolved: int, hasassessment: bool, selections: array}
+     * @return array{title: string, questions: array, unresolved: int, hasassessment: bool, selections: array, sequence: array}
      *         Parsed assessment.
      */
     public function parse(string $xml): array {
-        $result = ['title' => '', 'questions' => [], 'unresolved' => 0, 'hasassessment' => false, 'selections' => []];
+        $result = ['title' => '', 'questions' => [], 'unresolved' => 0, 'hasassessment' => false,
+            'selections' => [], 'sequence' => []];
         if (trim($xml) === '') {
             return $result;
         }
@@ -122,11 +127,38 @@ class qti_parser {
             // exporter omitted the count", which the builder reads as "draw all".
             $rawcount = $this->descendant_text($selnode, 'selection_number');
             $points = $this->descendant_text($selnode, 'points_per_item');
+            // A <selection_metadata> restricts the eligible pool to a subset of the bank
+            // (e.g. by tag/criteria). We can't reproduce that filter against the whole
+            // imported Moodle category, so flag it; the builder treats a filtered draw as
+            // not faithfully reproducible rather than drawing questions Canvas excluded.
+            $hasfilter = $selnode->getElementsByTagNameNS('*', 'selection_metadata')->length > 0;
             $result['selections'][] = [
                 'bank' => $bank,
                 'count' => $rawcount !== '' ? max(0, (int) $rawcount) : null,
                 'points' => $points !== '' ? (float) $points : null,
+                'hasfilter' => $hasfilter,
             ];
+        }
+
+        // Record the authored order of inline items and bank-selection groups so the
+        // builder can add quiz slots in the order Canvas presented them rather than all
+        // inline questions before all bank draws. Indices point into the 'questions' and
+        // 'selections' lists above; both are enumerated in document order with the same
+        // filters (a bare item reference and a sourcebank-less selection are omitted), so
+        // the k-th inline/selection entry here matches questions[k]/selections[k].
+        $inlineidx = 0;
+        $selidx = 0;
+        foreach ($dom->getElementsByTagNameNS('*', '*') as $node) {
+            if (!($node instanceof DOMElement)) {
+                continue;
+            }
+            if ($node->localName === 'item') {
+                if ($this->first_child_element($node, 'presentation') !== null) {
+                    $result['sequence'][] = ['kind' => 'inline', 'index' => $inlineidx++];
+                }
+            } else if ($node->localName === 'selection' && $this->descendant_text($node, 'sourcebank_ref') !== '') {
+                $result['sequence'][] = ['kind' => 'selection', 'index' => $selidx++];
+            }
         }
         return $result;
     }
