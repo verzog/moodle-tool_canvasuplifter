@@ -665,10 +665,16 @@ class qti_parser {
             $question->type = qti_question::TYPE_UNSUPPORTED;
             return;
         }
-        // Apply every marker substitution against the original stem in a single pass so a
+        // Escape any Cloze grammar already present in the authored stem before inserting
+        // the generated fields: an instructional example such as {1:SHORTANSWER:=x} would
+        // otherwise be parsed by Moodle as an extra graded subquestion. Encoding the braces
+        // to HTML entities keeps them visible but inert (Moodle's multianswer parser has no
+        // backslash escape); the fields inserted next carry real braces.
+        $escaped = strtr($stem, ['{' => '&#123;', '}' => '&#125;']);
+        // Apply every marker substitution against the escaped stem in a single pass so a
         // generated field that happens to contain another blank's [id] marker is never
         // re-searched (strtr replaces simultaneously, longest key first).
-        $question->questiontext = strtr($stem, $replacements);
+        $question->questiontext = strtr($escaped, $replacements);
         // The name was derived from the raw stem, which for an untitled item still shows
         // the [blank] placeholders; re-derive it with the blanks shown as gaps so it
         // reads as prose. A titled item keeps its title (derive_name prefers it).
@@ -748,10 +754,21 @@ class qti_parser {
             $block = '/<\s*\/?\s*(?:p|div|br|li|tr|td|th|thead|tbody|table|ul|ol|dl|dd|dt'
                 . '|h[1-6]|blockquote|section|article|header|footer|hr|pre|figure|figcaption)\b[^>]*>/i';
             $spaced = (string) preg_replace($block, ' ', $raw);
-            $text = html_entity_decode(strip_tags($spaced), ENT_QUOTES | ENT_HTML5);
-            return trim((string) preg_replace('/\s+/', ' ', $text));
+            return $this->collapse_ws(html_entity_decode(strip_tags($spaced), ENT_QUOTES | ENT_HTML5));
         }
-        return trim((string) preg_replace('/\s+/', ' ', $raw));
+        return $this->collapse_ws($raw);
+    }
+
+    /**
+     * Collapse runs of whitespace to a single space and trim. The pattern is Unicode-aware
+     * and includes U+00A0 so a non-breaking space (e.g. a decoded &nbsp;) becomes an
+     * ordinary space rather than surviving into a SHORTANSWER key a learner can't type.
+     *
+     * @param string $text The text to normalise.
+     * @return string
+     */
+    protected function collapse_ws(string $text): string {
+        return trim((string) preg_replace('/[\s\x{00A0}]+/u', ' ', $text));
     }
 
     /**
@@ -1572,6 +1589,23 @@ class qti_parser {
     }
 
     /**
+     * Whether a respcondition's SCORE setvar adds to the running total (action="Add")
+     * rather than setting it. Additive scoring is what lets each blank's points be read as
+     * an independent weight; a "Set" or action-less setvar is treated as non-additive.
+     *
+     * @param DOMElement $cond The respcondition element.
+     * @return bool
+     */
+    protected function condition_is_additive(DOMElement $cond): bool {
+        foreach ($cond->getElementsByTagNameNS('*', 'setvar') as $setvar) {
+            if ($setvar instanceof DOMElement && strtoupper($setvar->getAttribute('varname')) === 'SCORE') {
+                return strcasecmp($setvar->getAttribute('action'), 'Add') === 0;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Whether a fill-in-multiple-blanks item can be faithfully converted to an
      * evenly-weighted Cloze. A Cloze grades every SHORTANSWER field with the same weight,
      * so this holds only when Canvas scores the blanks that way. Reading the resprocessing:
@@ -1598,6 +1632,13 @@ class qti_parser {
         foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
             if (!($cond instanceof DOMElement) || $this->condition_score($cond) <= 0) {
                 continue;
+            }
+            // Only additive scoring (SCORE action="Add") maps to independent per-blank
+            // weights. A "Set" (or action-less, whose QTI default is Set) condition awards
+            // its value once regardless of how many blanks are right, which an even split
+            // would mis-grade, so the item is left unsupported.
+            if (!$this->condition_is_additive($cond)) {
+                return false;
             }
             $blanks = [];
             foreach ($cond->getElementsByTagNameNS('*', 'varequal') as $ve) {

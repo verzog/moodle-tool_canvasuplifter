@@ -1151,6 +1151,91 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A stem that literally contains Moodle Cloze grammar (e.g. an instructional example
+     * {1:SHORTANSWER:=foo}) has those braces HTML-encoded so Moodle does not parse them as
+     * an extra graded subquestion; only the generated blank fields remain real Cloze
+     * fields.
+     *
+     * @return void
+     */
+    public function test_native_cloze_preexisting_syntax_in_stem_is_escaped(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">'
+            . 'Example {1:SHORTANSWER:=foo}: fill [b1] and [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $item = '<item ident="es1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // The authored example is inert (braces encoded); only the two blanks are fields.
+        $this->assertStringContainsString('&#123;1:SHORTANSWER:=foo&#125;', $q->questiontext);
+        $this->assertSame(2, substr_count($q->questiontext, '{1:SHORTANSWER:'));
+    }
+
+    /**
+     * A non-breaking space in an HTML answer (a decoded &nbsp;, U+00A0) is normalised to an
+     * ordinary space, so the SHORTANSWER key is one a learner typing a normal space can
+     * match.
+     *
+     * @return void
+     */
+    public function test_native_cloze_html_answer_normalises_nbsp(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">City [b1] and [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/html">New&amp;nbsp;York</mattext></material>'
+            . '</response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">value</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $item = '<item ident="nb1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        $this->assertStringContainsString('{1:SHORTANSWER:=New York}', $q->questiontext);
+    }
+
+    /**
+     * Non-additive scoring (a SCORE setvar with action="Set" rather than "Add") does not map
+     * to independent per-blank weights — each condition sets the total regardless of how
+     * many blanks are right — so the item is left unsupported rather than mis-graded by an
+     * even split.
+     *
+     * @return void
+     */
+    public function test_native_cloze_non_additive_scoring_is_unsupported(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">A [b1] B [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Set">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Set">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="na1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with three free-text blanks (the shape
      * a real Canvas export uses: [blank] stem placeholders, response_lid per blank with
      * its accepted answers as response_labels, scored by varequal to the label idents).
