@@ -383,15 +383,19 @@ class manifest_parser {
     }
 
     /**
-     * Absolute package paths of the files each page embeds via $IMS-CC-FILEBASE$
-     * tokens, taken from the builder's own {@see link_rewriter} so the set matches
-     * exactly what is inlined into the built page (URL-encoded tokens, tokens in
-     * any attribute, the bare-path/web_resources resolution order, and safe dot
-     * segments all included).
+     * Absolute package paths of every file embedded via $IMS-CC-FILEBASE$ tokens in
+     * a built resource's rich text, taken from the builder's own {@see link_rewriter}
+     * so the set matches exactly what each builder inlines (URL-encoded tokens, tokens
+     * in any attribute, the bare-path/web_resources resolution order, owner-relative
+     * ../ climbs and safe dot segments all included).
      *
-     * Only KIND_PAGE resources are scanned: the page/book/lesson builders run
-     * file_embedder, whereas file_builder (which builds a KIND_FILE HTML resource)
-     * never embeds, so treating its tokens as embedded would drop a real file.
+     * Scans every rich-text surface a builder runs file_embedder over: page/book/lesson
+     * bodies (KIND_PAGE) plus the activity intros that also embed — a quiz's
+     * assessment_meta.xml description, an assignment's instructions, a discussion body,
+     * and an inline LTI launch description — each resolved against the folder its own
+     * content came from, mirroring the owner directory the matching builder passes. A
+     * file_builder HTML resource (KIND_FILE) is never scanned: file_builder does not
+     * embed, so treating its tokens as embedded would drop a real standalone file.
      *
      * @param array $resources The resources keyed by identifier.
      * @return array Set keyed by absolute package path, each value true.
@@ -400,26 +404,59 @@ class manifest_parser {
         $rewriter = new link_rewriter();
         $embedded = [];
         foreach ($resources as $resourceitem) {
-            // A page prefer_variant() suppressed (its <variant> selected an
-            // assignment instead) is never rendered, so it embeds nothing — don't
-            // let its tokens suppress a real standalone file.
-            if ($resourceitem->kind !== item::KIND_PAGE || $resourceitem->suppressed) {
+            // A resource suppressed elsewhere (e.g. a page whose prefer_variant()
+            // selected an assignment instead) is never built, so it embeds nothing —
+            // don't let its tokens suppress a real standalone file.
+            if ($resourceitem->suppressed) {
                 continue;
             }
-            $html = $this->rendered_page_html($resourceitem);
-            if ($html === null) {
+            $source = $this->intro_embed_source($resourceitem);
+            if ($source === null) {
                 continue;
             }
-            // Resolve $IMS-CC-FILEBASE$ references the same way the page/book/lesson
-            // builders now do — including the page's own folder as an owner-relative
-            // fallback — so media a page embeds with a bare name or a ../ sibling
-            // climb is recognised here and kept off the standalone-download orphan list.
-            $ownerdir = page_payload::basedir($this->basedir, $resourceitem);
+            // Resolve $IMS-CC-FILEBASE$ references the same way the matching builder
+            // does — including the content's own folder as an owner-relative fallback
+            // — so media embedded with a bare name or a ../ sibling climb is recognised
+            // here and kept off the standalone-download orphan list.
+            [$html, $ownerdir] = $source;
             foreach ($rewriter->rewrite_files($html, $this->basedir, $ownerdir)['files'] as $file) {
                 $embedded[$file['package']] = true;
             }
         }
         return $embedded;
+    }
+
+    /**
+     * The rich-text HTML a builder embeds for this resource and the package-relative
+     * owner directory its $IMS-CC-FILEBASE$ tokens resolve against, or null when the
+     * kind embeds no intro (or none is readable). Dispatches per kind so each source
+     * and owner directory mirror the matching builder exactly.
+     *
+     * @param item $resourceitem The resource.
+     * @return array|null [html, ownerdir], or null.
+     */
+    protected function intro_embed_source(item $resourceitem): ?array {
+        switch ($resourceitem->kind) {
+            case item::KIND_PAGE:
+                $html = $this->rendered_page_html($resourceitem);
+                return $html === null ? null : [$html, page_payload::basedir($this->basedir, $resourceitem)];
+            case item::KIND_QUIZ:
+                return $this->quiz_intro_source($resourceitem);
+            case item::KIND_ASSIGNMENT:
+                return $this->assignment_intro_source($resourceitem);
+            case item::KIND_DISCUSSION:
+                return $this->discussion_intro_source($resourceitem);
+            case item::KIND_LTI:
+                // The lti_builder embeds only an inline launch description (a re-homed
+                // external-tool assignment's instructions); a BLTI cartridge carries a
+                // plain-text description that embeds nothing. The description's owner is
+                // the folder it was read from, recorded on the item at parse time.
+                return $resourceitem->launchdescription === ''
+                    ? null
+                    : [$resourceitem->launchdescription, $resourceitem->launchdescriptiondir];
+            default:
+                return null;
+        }
     }
 
     /**
@@ -447,6 +484,218 @@ class manifest_parser {
             }
         }
         return null;
+    }
+
+    /**
+     * The quiz description HTML and its owner directory, mirroring quiz_builder: the
+     * description comes from the sibling assessment_meta.xml, so its owner-relative
+     * media resolves against that file's own folder. Null when no meta file is
+     * readable or it carries no description.
+     *
+     * @param item $resourceitem The quiz resource.
+     * @return array|null [html, ownerdir], or null.
+     */
+    protected function quiz_intro_source(item $resourceitem): ?array {
+        $metapath = $this->locate_quiz_meta($resourceitem);
+        if ($metapath === null) {
+            return null;
+        }
+        $settings = quiz_settings::parse((string) @file_get_contents($metapath));
+        if ($settings->description === '') {
+            return null;
+        }
+        return [$settings->description, safe_path::package_dir($this->basedir, $metapath)];
+    }
+
+    /**
+     * Locate the assessment_meta.xml carrying a quiz's description, mirroring
+     * quiz_builder::locate_meta: an explicit assessment_meta.xml file entry when
+     * present, otherwise the one beside the resolved QTI assessment file.
+     *
+     * @param item $resourceitem The quiz resource.
+     * @return string|null Absolute path within the package, or null.
+     */
+    protected function locate_quiz_meta(item $resourceitem): ?string {
+        foreach ($resourceitem->files as $relative) {
+            if (str_ends_with((string) $relative, 'assessment_meta.xml')) {
+                $absolute = $this->resolve_within((string) $relative);
+                if ($absolute !== null) {
+                    return $absolute;
+                }
+            }
+        }
+        $qtipath = $this->locate_quiz_qti($resourceitem);
+        if ($qtipath === null) {
+            return null;
+        }
+        $sibling = dirname($qtipath) . '/assessment_meta.xml';
+        return is_readable($sibling) ? $sibling : null;
+    }
+
+    /**
+     * Find the QTI assessment XML backing a quiz resource, mirroring
+     * quiz_builder::locate_qti: the first readable .xml/.xml.qti file that is not the
+     * sibling assessment_meta.xml (which carries settings, not questions).
+     *
+     * @param item $resourceitem The quiz resource.
+     * @return string|null Absolute path within the package, or null.
+     */
+    protected function locate_quiz_qti(item $resourceitem): ?string {
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        foreach ($candidates as $relative) {
+            $relative = (string) $relative;
+            if (str_ends_with($relative, 'assessment_meta.xml') || !preg_match('/\.xml(\.qti)?$/i', $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within($relative);
+            if ($absolute !== null) {
+                return $absolute;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The assignment instructions HTML and its owner directory, mirroring
+     * assign_builder: prefer the settings profile's own <text> description (owner =
+     * that settings file's folder, or the resource folder for an inline CC 1.3
+     * profile), otherwise the sibling description HTML (owner = its own folder). Null
+     * when no settings are readable or no description is found.
+     *
+     * @param item $resourceitem The assignment resource.
+     * @return array|null [html, ownerdir], or null.
+     */
+    protected function assignment_intro_source(item $resourceitem): ?array {
+        $settingspath = $this->locate_assignment_settings($resourceitem);
+        if ($settingspath !== null) {
+            $settings = assignment_settings::parse((string) @file_get_contents($settingspath));
+        } else if ($resourceitem->inlinexml !== '') {
+            $settings = assignment_settings::parse($resourceitem->inlinexml);
+        } else {
+            return null;
+        }
+        if ($settings->description !== '') {
+            $ownerdir = $settingspath !== null
+                ? safe_path::package_dir($this->basedir, $settingspath)
+                : $this->resource_dir($resourceitem);
+            return [$settings->description, $ownerdir];
+        }
+        if ($settingspath === null) {
+            return null;
+        }
+        $descpath = $this->locate_assignment_description($resourceitem, $settingspath);
+        if ($descpath === null) {
+            return null;
+        }
+        $html = (string) @file_get_contents($descpath);
+        return $html === '' ? null : [$html, safe_path::package_dir($this->basedir, $descpath)];
+    }
+
+    /**
+     * Locate an assignment's description HTML sibling, mirroring
+     * assign_builder::locate_description_html: the first readable .htm/.html file on
+     * the resource that is not the settings file itself.
+     *
+     * @param item $resourceitem The assignment resource.
+     * @param string $settingspath Absolute path of the settings file, to skip it.
+     * @return string|null Absolute path within the package, or null.
+     */
+    protected function locate_assignment_description(item $resourceitem, string $settingspath): ?string {
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        foreach ($candidates as $relative) {
+            $relative = (string) $relative;
+            if (!preg_match('/\.html?$/i', $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within($relative);
+            if ($absolute === null || $absolute === $settingspath) {
+                continue;
+            }
+            return $absolute;
+        }
+        return null;
+    }
+
+    /**
+     * The discussion body HTML and its owner directory, mirroring forum_builder: the
+     * topic body from the imsdt XML, resolved against that file's own folder. Null
+     * when the body is plain text, empty, or no topic XML is readable.
+     *
+     * @param item $resourceitem The discussion resource.
+     * @return array|null [html, ownerdir], or null.
+     */
+    protected function discussion_intro_source(item $resourceitem): ?array {
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        foreach ($candidates as $relative) {
+            $relative = (string) $relative;
+            if (!preg_match('/\.xml$/i', $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within($relative);
+            if ($absolute === null) {
+                continue;
+            }
+            $body = $this->discussion_body((string) @file_get_contents($absolute));
+            if ($body !== null) {
+                return [$body, safe_path::package_dir($this->basedir, $absolute)];
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Extract the HTML body of a Common Cartridge discussion-topic document, mirroring
+     * forum_builder's topic parse. Returns null when the document is not a topic, its
+     * body is empty, or the body is explicitly plain text (which the forum builder
+     * stores as FORMAT_PLAIN and never runs the embedder over).
+     *
+     * @param string $xml The topic XML.
+     * @return string|null The HTML body, or null.
+     */
+    protected function discussion_body(string $xml): ?string {
+        if (trim($xml) === '') {
+            return null;
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded || $dom->getElementsByTagNameNS('*', 'topic')->length === 0) {
+            return null;
+        }
+        $text = $dom->getElementsByTagNameNS('*', 'text')->item(0);
+        if (!($text instanceof DOMElement)) {
+            return null;
+        }
+        if (strtolower(trim($text->getAttribute('texttype'))) === 'text/plain') {
+            return null;
+        }
+        $body = trim($text->textContent);
+        return $body === '' ? null : $body;
+    }
+
+    /**
+     * Package-relative folder of a resource's primary source (href, else first file),
+     * used as the owner directory for an inline settings profile that has no on-disk
+     * file of its own, mirroring assign_builder::intro_owner_dir's inline fallback.
+     *
+     * @param item $resourceitem The resource.
+     * @return string Package-relative folder ('' at the package root).
+     */
+    protected function resource_dir(item $resourceitem): string {
+        $source = $resourceitem->href !== '' ? $resourceitem->href : (string) ($resourceitem->files[0] ?? '');
+        $dir = trim(str_replace('\\', '/', dirname($source)), '/');
+        return ($dir === '' || $dir === '.') ? '' : $dir;
     }
 
     /**

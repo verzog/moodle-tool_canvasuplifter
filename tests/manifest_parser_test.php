@@ -423,6 +423,184 @@ XML;
     }
 
     /**
+     * Media embedded only in a quiz description (Canvas stores it in the sibling
+     * assessment_meta.xml, referenced with a $IMS-CC-FILEBASE$ token) is inlined
+     * into the quiz intro at build time, so it must not also surface as a standalone
+     * orphan — mirroring the page suppression. A file the quiz never references is
+     * still surfaced as an orphan.
+     *
+     * @return void
+     */
+    public function test_quiz_description_embedded_assets_are_not_orphans(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        mkdir($dir . '/web_resources/Banners', 0777, true);
+        file_put_contents(
+            $dir . '/quiz/qti.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Pre-Emergency Survey"><section ident="s1"/></assessment>'
+            . '</questestinterop>'
+        );
+        // The Canvas quiz configuration; its description embeds a banner image.
+        file_put_contents(
+            $dir . '/quiz/assessment_meta.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="a1">'
+            . '<title>Pre-Emergency Survey</title>'
+            . '<description>&lt;p&gt;&lt;img src="$IMS-CC-FILEBASE$/Banners/EmergencyContinuity.jpg"&gt;&lt;/p&gt;</description>'
+            . '</quiz>'
+        );
+        file_put_contents($dir . '/web_resources/Banners/EmergencyContinuity.jpg', 'JPG');
+        file_put_contents($dir . '/handout.pdf', 'PDF');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="i_quiz" identifierref="r_quiz"><title>Pre-Emergency Survey</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment" href="quiz/qti.xml">
+      <file href="quiz/qti.xml"/>
+    </resource>
+    <resource identifier="r_banner" type="webcontent" href="web_resources/Banners/EmergencyContinuity.jpg">
+      <file href="web_resources/Banners/EmergencyContinuity.jpg"/>
+    </resource>
+    <resource identifier="r_handout" type="webcontent" href="handout.pdf">
+      <file href="handout.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
+        // The banner embedded only in the quiz description is suppressed.
+        $this->assertNotContains('web_resources/Banners/EmergencyContinuity.jpg', $orphanhrefs);
+        // The unreferenced handout still becomes an orphan.
+        $this->assertContains('handout.pdf', $orphanhrefs);
+    }
+
+    /**
+     * Media embedded only in an assignment's instructions (a CC 1.3 profile's
+     * <text>, here with an owner-relative $IMS-CC-FILEBASE$ token) is inlined into
+     * the assignment intro at build time, so it must not also surface as a standalone
+     * orphan. A file the assignment never references still does.
+     *
+     * @return void
+     */
+    public function test_assignment_description_embedded_assets_are_not_orphans(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/asg');
+        // A CC 1.3 IMS Assignment profile whose HTML instructions embed a sibling
+        // banner by bare name (resolved against the profile's own folder).
+        file_put_contents(
+            $dir . '/asg/lab.xml',
+            '<?xml version="1.0"?>'
+            . '<assignment xmlns="http://www.imsglobal.org/xsd/imscc_extensions/assignment" identifier="a1">'
+            . '<title>Lab Report</title>'
+            . '<text texttype="text/html">&lt;p&gt;&lt;img src="$IMS-CC-FILEBASE$banner.jpg"&gt;&lt;/p&gt;</text>'
+            . '<gradable points_possible="5">true</gradable>'
+            . '<submission_formats><format type="html"/></submission_formats>'
+            . '</assignment>'
+        );
+        file_put_contents($dir . '/asg/banner.jpg', 'JPG');
+        file_put_contents($dir . '/handout.pdf', 'PDF');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="i_asg" identifierref="r_asg"><title>Lab Report</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_asg" type="assignment_xmlv1p0" href="asg/lab.xml">
+      <file href="asg/lab.xml"/>
+    </resource>
+    <resource identifier="r_banner" type="webcontent" href="asg/banner.jpg">
+      <file href="asg/banner.jpg"/>
+    </resource>
+    <resource identifier="r_handout" type="webcontent" href="handout.pdf">
+      <file href="handout.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
+        // The banner embedded only in the assignment instructions is suppressed.
+        $this->assertNotContains('asg/banner.jpg', $orphanhrefs);
+        // The unreferenced handout still becomes an orphan.
+        $this->assertContains('handout.pdf', $orphanhrefs);
+    }
+
+    /**
+     * Media embedded only in a discussion body (an owner-relative $IMS-CC-FILEBASE$
+     * token in the imsdt topic HTML) is inlined into the first forum post at build
+     * time, so it must not also surface as a standalone orphan. A file the discussion
+     * never references still does.
+     *
+     * @return void
+     */
+    public function test_discussion_body_embedded_assets_are_not_orphans(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/disc');
+        file_put_contents(
+            $dir . '/disc/topic.xml',
+            '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Week 1 Discussion</title>'
+            . '<text texttype="text/html">&lt;p&gt;&lt;img src="$IMS-CC-FILEBASE$media.png"&gt;&lt;/p&gt;</text>'
+            . '</topic>'
+        );
+        file_put_contents($dir . '/disc/media.png', 'PNG');
+        file_put_contents($dir . '/handout.pdf', 'PDF');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="i_disc" identifierref="r_disc"><title>Week 1 Discussion</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_disc" type="imsdt_xmlv1p1" href="disc/topic.xml">
+      <file href="disc/topic.xml"/>
+    </resource>
+    <resource identifier="r_media" type="webcontent" href="disc/media.png">
+      <file href="disc/media.png"/>
+    </resource>
+    <resource identifier="r_handout" type="webcontent" href="handout.pdf">
+      <file href="handout.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
+        // The image embedded only in the discussion body is suppressed.
+        $this->assertNotContains('disc/media.png', $orphanhrefs);
+        // The unreferenced handout still becomes an orphan.
+        $this->assertContains('handout.pdf', $orphanhrefs);
+    }
+
+    /**
      * Discussion (imsdt) resources are XML, but their <title> element should be
      * recovered as the title rather than falling back to the file name.
      *
