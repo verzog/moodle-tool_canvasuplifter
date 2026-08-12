@@ -963,6 +963,34 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A text/plain response label whose answer is a literal tag-like string (e.g. the
+     * QTI encoding <mattext>&lt;div&gt;</mattext>) is kept verbatim: only HTML labels
+     * are stripped of markup, so the angle brackets survive as the accepted answer
+     * rather than being deleted (which would otherwise drop the blank and the item).
+     *
+     * @return void
+     */
+    public function test_native_cloze_plain_text_literal_markup_survives(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">Enter [b1] then [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">&lt;div&gt;</mattext></material>'
+            . '</response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">value</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $item = '<item ident="pl1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // The literal <div> is preserved as the SHORTANSWER key, not stripped to empty.
+        $this->assertStringContainsString('{1:SHORTANSWER:=<div>}', $q->questiontext);
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with three free-text blanks (the shape
      * a real Canvas export uses: [blank] stem placeholders, response_lid per blank with
      * its accepted answers as response_labels, scored by varequal to the label idents).

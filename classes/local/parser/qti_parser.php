@@ -681,9 +681,10 @@ class qti_parser {
      * (not a distractor) and all are kept, regardless of whether the label carries the
      * answer_type/scoring_algorithm attributes — mirroring how {@see fill_text_answers}
      * treats a single blank, where Canvas may enumerate several spellings but the
-     * respcondition references only one. Each answer's text is flattened to plain text
-     * (a SHORTANSWER key is not rendered as HTML) and carries whether Canvas graded it
-     * as "contains" so the writer can widen it to a Moodle wildcard match.
+     * respcondition references only one. An HTML label's text is flattened (a SHORTANSWER
+     * key is not rendered as HTML) while a text/plain label is kept verbatim so a literal
+     * tag-like answer survives; each carries whether Canvas graded it as "contains" so the
+     * writer can widen it to a Moodle wildcard match.
      *
      * @param DOMElement $presentation The presentation element.
      * @return array Map of blank id to a list of ['text' => string, 'contains' => bool].
@@ -701,7 +702,7 @@ class qti_parser {
                 if (!($label instanceof DOMElement)) {
                     continue;
                 }
-                $text = $this->plain_answer($this->material_text($label));
+                $text = $this->label_answer_text($label);
                 // A contains-match algorithm (Canvas TextContainsAnswer) accepts any
                 // response holding the answer, so the answer text alone is not a
                 // reliable dedup key; qualify it with the algorithm.
@@ -715,6 +716,45 @@ class qti_parser {
             $result[$blankid] = $accepted;
         }
         return $result;
+    }
+
+    /**
+     * Flatten a response_label's answer text for use as a SHORTANSWER key. An HTML
+     * label (a mattext declaring texttype="text/html") is stripped of markup, since
+     * Moodle does not render a short-answer key as HTML; a plain-text label keeps its
+     * content verbatim (only whitespace collapsed), so a literal tag-like answer such
+     * as "<div>" survives rather than being deleted as markup.
+     *
+     * @param DOMElement $label The response_label element.
+     * @return string
+     */
+    protected function label_answer_text(DOMElement $label): string {
+        $raw = $this->material_text($label);
+        if ($this->material_is_html($label)) {
+            return $this->plain_answer($raw);
+        }
+        return trim((string) preg_replace('/\s+/', ' ', $raw));
+    }
+
+    /**
+     * Whether a node's material is authored as HTML — any of its mattext children
+     * declares a text/html texttype. Canvas marks plain answers text/plain, so the
+     * default (no type, or a non-HTML type) is treated as literal plain text.
+     *
+     * @param DOMElement $node The element carrying a material descendant.
+     * @return bool
+     */
+    protected function material_is_html(DOMElement $node): bool {
+        $material = $this->descendant($node, 'material');
+        if ($material === null) {
+            return false;
+        }
+        foreach ($material->getElementsByTagNameNS('*', 'mattext') as $mt) {
+            if ($mt instanceof DOMElement && stripos($mt->getAttribute('texttype'), 'html') !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
