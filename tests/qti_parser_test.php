@@ -909,6 +909,59 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A blank whose response_lid carries no ident is counted by map_type (which routes
+     * the item to a Cloze) but cannot be resolved to a placed field, so it must fail the
+     * whole item: completeness is measured against every source response_lid, not only
+     * the resolvable ones, so a dropped blank cannot silently vanish.
+     *
+     * @return void
+     */
+    public function test_native_cloze_ident_less_blank_is_unsupported(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">First [b1] then more.</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid><render_choice><response_label ident="x-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $item = '<item ident="il1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * When one blank's accepted answer literally contains another blank's [id] marker,
+     * the marker substitutions are applied against the original stem in a single pass, so
+     * the marker text inside the generated field is left literal rather than expanded
+     * into a nested Cloze field.
+     *
+     * @return void
+     */
+    public function test_native_cloze_answer_containing_marker_stays_literal(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">First [b1] then [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">see [b2]</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">value</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $item = '<item ident="cm1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // The [b2] inside b1's field is literal; only the real trailing [b2] became a field.
+        $this->assertStringContainsString('{1:SHORTANSWER:=see [b2]} then {1:SHORTANSWER:=value}', $q->questiontext);
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with three free-text blanks (the shape
      * a real Canvas export uses: [blank] stem placeholders, response_lid per blank with
      * its accepted answers as response_labels, scored by varequal to the label idents).

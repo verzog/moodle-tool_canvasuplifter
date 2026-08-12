@@ -625,8 +625,17 @@ class qti_parser {
         }
         $stem = $question->questiontext;
         $blanks = $this->cloze_blank_answers($presentation);
-        $text = $stem;
-        $complete = $blanks !== [];
+        // Count every response_lid the presentation declares, including any that
+        // cloze_blank_answers skipped for a missing ident: completeness is measured
+        // against the source blanks, not the already-filtered map, so a blank that was
+        // dropped there still fails the whole item rather than silently vanishing.
+        $sourceblanks = 0;
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if ($lid instanceof DOMElement) {
+                $sourceblanks++;
+            }
+        }
+        $replacements = [];
         foreach ($blanks as $blankid => $accepted) {
             $marker = '[' . $blankid . ']';
             // A blank we cannot place — it has no accepted answer, or its [id] marker
@@ -634,25 +643,31 @@ class qti_parser {
             // whole item is left unsupported (reported by name) rather than importing a
             // partial question with a blank dropped to literal text.
             if ($accepted === [] || strpos($stem, $marker) === false) {
-                $complete = false;
                 continue;
             }
-            $text = str_replace($marker, $this->cloze_field($accepted), $text);
+            $replacements[$marker] = $this->cloze_field($accepted);
         }
-        if (!$complete) {
+        // Every source blank must have produced exactly one placed field; a skipped or
+        // unresolved blank (ident-less node, missing marker, no accepted answer) leaves
+        // the count short and the item is reported unsupported rather than imported with
+        // a gap.
+        if ($sourceblanks === 0 || count($replacements) !== $sourceblanks) {
             $question->type = qti_question::TYPE_UNSUPPORTED;
             return;
         }
-        $question->questiontext = $text;
+        // Apply every marker substitution against the original stem in a single pass so a
+        // generated field that happens to contain another blank's [id] marker is never
+        // re-searched (strtr replaces simultaneously, longest key first).
+        $question->questiontext = strtr($stem, $replacements);
         // The name was derived from the raw stem, which for an untitled item still shows
         // the [blank] placeholders; re-derive it with the blanks shown as gaps so it
         // reads as prose. A titled item keeps its title (derive_name prefers it).
         if (trim($item->getAttribute('title')) === '') {
-            $display = $stem;
+            $gaps = [];
             foreach (array_keys($blanks) as $blankid) {
-                $display = str_replace('[' . $blankid . ']', ' ____ ', $display);
+                $gaps['[' . $blankid . ']'] = ' ____ ';
             }
-            $question->name = $this->derive_name($item, $display);
+            $question->name = $this->derive_name($item, strtr($stem, $gaps));
         }
     }
 
