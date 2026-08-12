@@ -550,6 +550,25 @@ class manifest_parser {
                 }
             }
         }
+        // A standalone item bank (non_cc_assessments/<id>.xml.qti) names itself in the
+        // objectbank's <bank_title> metadata rather than an <assessment title> or <title>,
+        // and the .xml.qti file was skipped above. Read it so the report title, the built
+        // activity name, and duplicate-title disambiguation all use the same bank name.
+        if ($modelitem->objectbankid !== '') {
+            foreach ($candidates as $relative) {
+                if (!preg_match('#(^|/)non_cc_assessments/[^/]+\.xml\.qti$#i', (string) $relative)) {
+                    continue;
+                }
+                $absolute = $this->resolve_within($relative);
+                if ($absolute === null) {
+                    continue;
+                }
+                $title = (new qti_parser())->parse((string) @file_get_contents($absolute))['title'] ?? '';
+                if ($title !== '') {
+                    return $title;
+                }
+            }
+        }
         return '';
     }
 

@@ -1552,6 +1552,45 @@ XML;
     }
 
     /**
+     * Issue #146: an unplaced standalone objectbank resource whose only file is a
+     * non_cc_assessments/<id>.xml.qti dump (no organisation <title>, no <assessment>
+     * title, no HTML) takes its model title from the objectbank's <bank_title>, so the
+     * analysis report, the built activity, and duplicate-title disambiguation all use the
+     * same name rather than falling back to the file slug.
+     *
+     * @return void
+     */
+    public function test_standalone_objectbank_title_from_bank_title(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/non_cc_assessments');
+        $bank = '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="ob"><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>bank_title</fieldlabel><fieldentry>Unfiled Questions</fieldentry>'
+            . '</qtimetadatafield></qtimetadata>'
+            . '<item ident="q1"/></objectbank></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/pool.xml.qti', $bank);
+        // The resource is declared but never placed in the organisation tree (an orphan).
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title></item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_bank" type="associatedcontent/imscc_xmlv1p1/learning-application-resource">'
+            . '<file href="non_cc_assessments/pool.xml.qti"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->orphans);
+        $orphan = $course->orphans[0];
+        $this->assertSame(item::KIND_QUESTIONBANK, $orphan->kind);
+        $this->assertSame('pool', $orphan->objectbankid);
+        // The title comes from <bank_title>, not the "pool.xml.qti" file slug.
+        $this->assertSame('Unfiled Questions', $orphan->title);
+    }
+
+    /**
      * Course title fallback only consults the manifest's direct <metadata>
      * child. CC resources may carry their own LOM <metadata> blocks; the
      * lookup must not borrow a resource title as the course full name when
