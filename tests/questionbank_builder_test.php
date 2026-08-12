@@ -460,6 +460,10 @@ XML;
         // The Canvas mark (default 1.0) is preserved rather than becoming the blank
         // count (2), so the question keeps its intended weight in a quiz.
         $this->assertEquals(1.0, (float) $DB->get_field('question', 'defaultmark', ['id' => $clozeid]));
+        // Answer-specific Canvas feedback survives the round-trip into a sub-question answer.
+        [$insql, $inparams] = $DB->get_in_or_equal(explode(',', $sequence));
+        $feedbacks = $DB->get_fieldset_select('question_answers', 'feedback', "question $insql", $inparams);
+        $this->assertStringContainsString('Well done', implode(' | ', $feedbacks));
     }
 
     /**
@@ -480,9 +484,11 @@ XML;
             . '</response_lid></presentation>'
             . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
             . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
-            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<setvar varname="SCORE" action="Add">50</setvar><displayfeedback linkrefid="fbb1"/></respcondition>'
             . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
-            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing></item>';
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>'
+            . '<itemfeedback ident="fbb1"><material><mattext texttype="text/plain">Well done.</mattext>'
+            . '</material></itemfeedback></item>';
     }
 
     /**

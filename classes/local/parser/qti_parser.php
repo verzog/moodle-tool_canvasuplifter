@@ -624,7 +624,7 @@ class qti_parser {
             return;
         }
         $stem = $question->questiontext;
-        $blanks = $this->cloze_blank_answers($presentation);
+        $blanks = $this->cloze_blank_answers($presentation, $this->label_feedback_map($item));
         // Count every response_lid the presentation declares, including any that
         // cloze_blank_answers skipped for a missing ident: completeness is measured
         // against the source blanks, not the already-filtered map, so a blank that was
@@ -706,9 +706,10 @@ class qti_parser {
      * writer can widen it to a Moodle wildcard match.
      *
      * @param DOMElement $presentation The presentation element.
-     * @return array Map of blank id to a list of ['text' => string, 'contains' => bool].
+     * @param array $feedback Map of response_label ident to its Canvas feedback HTML.
+     * @return array Map of blank id to a list of ['text' => string, 'contains' => bool, 'feedback' => string].
      */
-    protected function cloze_blank_answers(DOMElement $presentation): array {
+    protected function cloze_blank_answers(DOMElement $presentation, array $feedback = []): array {
         $result = [];
         foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
             if (!($lid instanceof DOMElement) || $lid->getAttribute('ident') === '') {
@@ -726,15 +727,30 @@ class qti_parser {
                 // response holding the answer, so the answer text alone is not a
                 // reliable dedup key; qualify it with the algorithm.
                 $contains = strcasecmp($label->getAttribute('scoring_algorithm'), 'TextContainsAnswer') === 0;
+                // Answer-specific feedback is keyed by the label ident (the varequal value the
+                // scoring condition links to its itemfeedback), flattened to plain text since a
+                // Cloze renders per-option feedback inline.
+                $fb = $this->flatten_feedback($feedback[$label->getAttribute('ident')] ?? '');
                 $key = ($contains ? '~' : '=') . $text;
                 if ($text !== '' && !isset($seen[$key])) {
                     $seen[$key] = true;
-                    $accepted[] = ['text' => $text, 'contains' => $contains];
+                    $accepted[] = ['text' => $text, 'contains' => $contains, 'feedback' => $fb];
                 }
             }
             $result[$blankid] = $accepted;
         }
         return $result;
+    }
+
+    /**
+     * Flatten answer feedback HTML to the plain text a Cloze per-option feedback (#…) shows:
+     * strip markup, decode entities and collapse whitespace.
+     *
+     * @param string $html The feedback HTML.
+     * @return string
+     */
+    protected function flatten_feedback(string $html): string {
+        return $this->collapse_ws(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5));
     }
 
     /**
@@ -813,16 +829,23 @@ class qti_parser {
      * Build a Moodle SHORTANSWER Cloze field from a blank's accepted answers, e.g.
      * {1:SHORTANSWER:=ipsum~=ipsem}. Each answer is a fully-credited option (=) with
      * the Cloze/short-answer metacharacters escaped; a Canvas "contains" answer is
-     * wrapped in * wildcards so Moodle accepts any response holding the text.
+     * wrapped in * wildcards so Moodle accepts any response holding the text. An answer
+     * that carried Canvas feedback appends it after a # separator (e.g. =ipsum#Well done),
+     * so authored per-answer feedback survives the conversion.
      *
-     * @param array $accepted List of ['text' => string, 'contains' => bool].
+     * @param array $accepted List of ['text' => string, 'contains' => bool, 'feedback' => string].
      * @return string
      */
     protected function cloze_field(array $accepted): string {
         $options = [];
         foreach ($accepted as $answer) {
             $escaped = $this->cloze_escape((string) ($answer['text'] ?? ''));
-            $options[] = '=' . (!empty($answer['contains']) ? '*' . $escaped . '*' : $escaped);
+            $option = '=' . (!empty($answer['contains']) ? '*' . $escaped . '*' : $escaped);
+            $feedback = (string) ($answer['feedback'] ?? '');
+            if ($feedback !== '') {
+                $option .= '#' . $this->cloze_escape($feedback);
+            }
+            $options[] = $option;
         }
         return '{1:SHORTANSWER:' . implode('~', $options) . '}';
     }
@@ -1669,7 +1692,11 @@ class qti_parser {
      * - a nonzero initial SCORE, or per-blank additions that fall short of the SCORE maximum,
      *   would let a fully-correct Cloze out-score the Canvas original — unsafe;
      * - a condition carrying more than one SCORE update has a net value the single-value read
-     *   cannot see, so it is not trusted — unsafe.
+     *   cannot see, so it is not trusted — unsafe;
+     * - a scoring condition with a negated predicate (<not>), or a non-additive zero reset
+     *   (Set 0) that could erase accrued credit, has no even-Cloze equivalent — unsafe;
+     * - a blank whose accepted alternatives carry different scores would be over-credited on
+     *   the cheaper spelling by a single even field — unsafe.
      *
      * @param DOMElement $item The item element.
      * @param array $placed The blank ids that produced a Cloze field.
@@ -1686,7 +1713,8 @@ class qti_parser {
             if (!($cond instanceof DOMElement)) {
                 continue;
             }
-            if ($this->count_score_setvars($cond) > 1) {
+            $scorecount = $this->count_score_setvars($cond);
+            if ($scorecount > 1) {
                 // A condition with several SCORE updates (e.g. Add 50 then Add -10) has a net
                 // value condition_score() does not capture; leave the item unsupported rather
                 // than read only the first update.
@@ -1700,6 +1728,13 @@ class qti_parser {
                 return false;
             }
             if ($score <= 0) {
+                // A non-additive SCORE update of zero (a "Set 0" reset, typically on a wrong
+                // response) can erase credit earlier conditions accrued — a Cloze can't undo
+                // credit, so reject. A bare additive "Add 0", or a condition with no SCORE
+                // setvar at all, is a harmless no-op and is skipped.
+                if ($scorecount === 1 && !$this->condition_is_additive($cond)) {
+                    return false;
+                }
                 continue;
             }
             // Only additive scoring (SCORE action="Add") maps to independent per-blank
@@ -1707,6 +1742,13 @@ class qti_parser {
             // its value once regardless of how many blanks are right, which an even split
             // would mis-grade, so the item is left unsupported.
             if (!$this->condition_is_additive($cond)) {
+                return false;
+            }
+            // A scoring condition that also constrains a response negatively (a <not> predicate,
+            // e.g. "b1 = x AND b2 != y") credits its blank only in combination with another
+            // response's value; an even Cloze grades each field independently and can't
+            // reproduce that, so reject rather than over-credit.
+            if ($cond->getElementsByTagNameNS('*', 'not')->length > 0) {
                 return false;
             }
             $blanks = [];
@@ -1732,7 +1774,13 @@ class qti_parser {
                 // over the placed fields would drop this score.
                 return false;
             }
-            $scores[$blankid] = max($scores[$blankid] ?? 0.0, $score);
+            if (isset($scores[$blankid]) && abs($scores[$blankid] - $score) > 1e-6) {
+                // The same blank has accepted alternatives worth different amounts (e.g. one
+                // spelling adds 50, another 25). A single even field credits every alternative
+                // equally, over-crediting the cheaper spelling, so reject.
+                return false;
+            }
+            $scores[$blankid] = $score;
         }
         if ($scores === []) {
             // Resprocessing names no scored blank: nothing to preserve, even split is fine.
