@@ -454,13 +454,7 @@ class manifest_parser {
             case item::KIND_DISCUSSION:
                 return $this->discussion_intro_source($resourceitem);
             case item::KIND_LTI:
-                // The lti_builder embeds only an inline launch description (a re-homed
-                // external-tool assignment's instructions); a BLTI cartridge carries a
-                // plain-text description that embeds nothing. The description's owner is
-                // the folder it was read from, recorded on the item at parse time.
-                return $resourceitem->launchdescription === ''
-                    ? null
-                    : [$resourceitem->launchdescription, $resourceitem->launchdescriptiondir];
+                return $this->lti_intro_source($resourceitem);
             default:
                 return null;
         }
@@ -672,6 +666,12 @@ class manifest_parser {
      * @return array|null [html, ownerdir], or null.
      */
     protected function discussion_intro_source(item $resourceitem): ?array {
+        // An unpublished announcement (isannouncement && !isvisible) is skipped by
+        // forum_builder::build() before it creates or embeds anything, so leave its
+        // body media as a standalone download rather than suppressing it.
+        if ($resourceitem->isannouncement && !$resourceitem->isvisible) {
+            return null;
+        }
         $candidates = $resourceitem->files;
         if ($resourceitem->href !== '') {
             $candidates[] = $resourceitem->href;
@@ -723,6 +723,46 @@ class manifest_parser {
         }
         $body = trim($text->textContent);
         return $body === '' ? null : $body;
+    }
+
+    /**
+     * The LTI intro instructions HTML and its owner directory, mirroring
+     * lti_builder. Only an item with an inline launch URL — a re-homed external-tool
+     * assignment or a Canvas ContextExternalTool — embeds intro instructions; a
+     * cartridge LTI link carries only a plain-text description that embeds nothing.
+     * The instructions are the re-homed assignment's inline CC 1.3 <text>, else the
+     * first readable sibling HTML file (a flat Canvas assignment's prompt), each
+     * resolved against the folder its own content came from.
+     *
+     * @param item $resourceitem The LTI resource.
+     * @return array|null [html, ownerdir], or null.
+     */
+    protected function lti_intro_source(item $resourceitem): ?array {
+        if ($resourceitem->launchurl === '') {
+            return null;
+        }
+        if ($resourceitem->launchdescription !== '') {
+            $ownerdir = $resourceitem->launchdescriptiondir !== ''
+                ? $resourceitem->launchdescriptiondir
+                : $this->resource_dir($resourceitem);
+            return [$resourceitem->launchdescription, $ownerdir];
+        }
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        foreach ($candidates as $relative) {
+            if (!preg_match('/\.html?$/i', (string) $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute === null) {
+                continue;
+            }
+            $html = (string) @file_get_contents($absolute);
+            return $html === '' ? null : [$html, safe_path::package_dir($this->basedir, $absolute)];
+        }
+        return null;
     }
 
     /**

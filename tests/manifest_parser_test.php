@@ -724,6 +724,128 @@ XML;
     }
 
     /**
+     * An unpublished announcement is skipped by forum_builder before it embeds
+     * anything, so media referenced only by its body must be left as a standalone
+     * download rather than suppressed and lost.
+     *
+     * @return void
+     */
+    public function test_unpublished_announcement_body_media_is_kept(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/disc');
+        file_put_contents(
+            $dir . '/disc/topic.xml',
+            '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Draft Announcement</title>'
+            . '<text texttype="text/html">&lt;p&gt;&lt;img src="$IMS-CC-FILEBASE$media.png"&gt;&lt;/p&gt;</text>'
+            . '</topic>'
+        );
+        // The topicMeta marks the discussion an announcement and unpublished.
+        file_put_contents(
+            $dir . '/disc/topicMeta.xml',
+            '<topicMeta xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="r_meta">'
+            . '<topic_id>r_disc</topic_id><type>announcement</type>'
+            . '<workflow_state>unpublished</workflow_state></topicMeta>'
+        );
+        file_put_contents($dir . '/disc/media.png', 'PNG');
+        // The announcement is not placed in the org tree (unpublished draft).
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_disc" type="imsdt_xmlv1p1" href="disc/topic.xml">
+      <file href="disc/topic.xml"/>
+    </resource>
+    <resource identifier="r_meta" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="disc/topicMeta.xml">
+      <file href="disc/topicMeta.xml"/>
+    </resource>
+    <resource identifier="r_media" type="webcontent" href="disc/media.png">
+      <file href="disc/media.png"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The body media of an unpublished announcement (which never builds) is kept.
+        $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
+        $this->assertContains('disc/media.png', $orphanhrefs);
+    }
+
+    /**
+     * A flat Canvas external-tool assignment re-homed to a hidden mod_lti has no
+     * inline description, so lti_builder reads its instructions from a sibling HTML
+     * file and embeds that file's media into the LTI intro. Media referenced only
+     * there must not also surface as a standalone orphan.
+     *
+     * @return void
+     */
+    public function test_lti_sibling_html_embedded_assets_are_not_orphans(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/lti');
+        // A flat Canvas external-tool assignment: settings name the launch URL but
+        // carry no inline description; the prompt lives in a sibling HTML file.
+        file_put_contents(
+            $dir . '/lti/assignment_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="a1">'
+            . '<title>Publisher Tool</title>'
+            . '<submission_types>external_tool</submission_types>'
+            . '<external_tool_url>https://tool.example/launch</external_tool_url>'
+            . '</assignment>'
+        );
+        file_put_contents(
+            $dir . '/lti/instructions.html',
+            '<p><img src="$IMS-CC-FILEBASE$banner.jpg"></p>'
+        );
+        file_put_contents($dir . '/lti/banner.jpg', 'JPG');
+        file_put_contents($dir . '/handout.pdf', 'PDF');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="i_lti" identifierref="r_lti"><title>Publisher Tool</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_lti" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="lti/instructions.html">
+      <file href="lti/assignment_settings.xml"/>
+      <file href="lti/instructions.html"/>
+    </resource>
+    <resource identifier="r_banner" type="webcontent" href="lti/banner.jpg">
+      <file href="lti/banner.jpg"/>
+    </resource>
+    <resource identifier="r_handout" type="webcontent" href="handout.pdf">
+      <file href="handout.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The re-homed LTI item embeds the sibling HTML's banner into its intro.
+        $lti = $course->sections[0]->items[0];
+        $this->assertSame(item::KIND_LTI, $lti->kind);
+        $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
+        // The banner embedded only in the LTI instructions is suppressed.
+        $this->assertNotContains('lti/banner.jpg', $orphanhrefs);
+        // The unreferenced handout still becomes an orphan.
+        $this->assertContains('handout.pdf', $orphanhrefs);
+    }
+
+    /**
      * Discussion (imsdt) resources are XML, but their <title> element should be
      * recovered as the title rather than falling back to the file name.
      *
