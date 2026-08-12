@@ -1661,6 +1661,51 @@ XML;
     }
 
     /**
+     * Issue #149: the quiz classifier must require a real QTI/CC assessment shape, not any
+     * resource type containing the word "assessment". Blackboard's course/x-bb-* settings
+     * and its x-bb-qti-test resources carry no Canvas QTI, so they must not become phantom
+     * quizzes; a genuine imsqti CC assessment must still classify as a quiz.
+     *
+     * @return void
+     */
+    public function test_blackboard_assessment_types_are_not_quizzes(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        file_put_contents(
+            $dir . '/a1/assessment_qti.xml',
+            '<questestinterop><assessment ident="a" title="Real Quiz"><section ident="s"/></assessment></questestinterop>'
+        );
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org"><item identifier="root">'
+            . '<item identifier="i_q" identifierref="r_qti"><title>Real Quiz</title></item>'
+            . '<item identifier="i_a" identifierref="r_bbassess"><title>BB settings</title></item>'
+            . '<item identifier="i_c" identifierref="r_bbcreate"><title>BB create settings</title></item>'
+            . '<item identifier="i_t" identifierref="r_bbtest"><title>BB test</title></item>'
+            . '</item></organization></organizations><resources>'
+            . '<resource identifier="r_qti" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="a1/assessment_qti.xml"/></resource>'
+            . '<resource identifier="r_bbassess" type="course/x-bb-courseassessment"/>'
+            . '<resource identifier="r_bbcreate" type="course/x-bb-courseassessmentcreationsettings"/>'
+            . '<resource identifier="r_bbtest" type="assessment/x-bb-qti-test"/>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $bykind = [];
+        foreach ($course->all_items() as $modelitem) {
+            $bykind[$modelitem->identifier] = $modelitem->kind;
+        }
+        // The genuine Canvas QTI assessment is still a quiz.
+        $this->assertSame(item::KIND_QUIZ, $bykind['r_qti'] ?? null);
+        // None of the Blackboard *assessment* types are classified as quizzes.
+        foreach (['r_bbassess', 'r_bbcreate', 'r_bbtest'] as $id) {
+            $this->assertNotSame(item::KIND_QUIZ, $bykind[$id] ?? null, "Blackboard $id must not be a quiz");
+        }
+    }
+
+    /**
      * Course title fallback only consults the manifest's direct <metadata>
      * child. CC resources may carry their own LOM <metadata> blocks; the
      * lookup must not borrow a resource title as the course full name when
