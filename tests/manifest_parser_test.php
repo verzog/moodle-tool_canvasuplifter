@@ -442,6 +442,74 @@ XML;
     }
 
     /**
+     * A Blackboard build-log artifact (web_content<n>.log, typed webcontent but
+     * suppressed by the parser) does not count as importable content, so a package
+     * of x-bb-* resources plus that log is still recognised as native rather than
+     * mistaken for an ordinary Blackboard Common Cartridge.
+     *
+     * @return void
+     */
+    public function test_blackboard_native_ignores_build_log_artifact(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/web_content00001', 0777, true);
+        file_put_contents($dir . '/web_content00001/web_content00001.log', "export build log\n");
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="toc00001"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="res_doc" type="resource/x-bb-document" href="res00001.dat"><file href="res00001.dat"/></resource>
+    <resource identifier="res_log" type="webcontent" href="web_content00001/web_content00001.log">
+      <file href="web_content00001/web_content00001.log"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The only webcontent resource is a suppressed build log, so there is no
+        // importable content and the package is native.
+        $this->assertSame(source_detector::BLACKBOARD_NATIVE, $course->source);
+    }
+
+    /**
+     * A .bb-package-info marker is definitive even when the archive also carries a
+     * genuinely buildable resource: the package is native, and the buildable
+     * resource still imports — so the warning must not claim nothing was built.
+     *
+     * @return void
+     */
+    public function test_blackboard_native_marker_wins_but_content_still_builds(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/.bb-package-info', "version=1\n");
+        mkdir($dir . '/content', 0777, true);
+        file_put_contents($dir . '/content/notes.pdf', '%PDF-1.4');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="toc00001">
+      <item identifier="root"><item identifier="i_pdf" identifierref="res_pdf"><title>Notes</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="res_pdf" type="webcontent" href="content/notes.pdf"><file href="content/notes.pdf"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The marker makes it native, yet the buildable file resource still imports.
+        $this->assertSame(source_detector::BLACKBOARD_NATIVE, $course->source);
+        $kinds = array_map(fn($i) => $i->kind, $course->all_items());
+        $this->assertContains(item::KIND_FILE, $kinds);
+    }
+
+    /**
      * A file embedded inside a page body via a $IMS-CC-FILEBASE$ token (Canvas
      * stores these under web_resources/) is inlined into the page at build time,
      * so it must not also surface as a standalone orphan resource — while a file

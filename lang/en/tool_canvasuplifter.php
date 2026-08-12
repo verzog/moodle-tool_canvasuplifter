@@ -238,9 +238,10 @@ $string['unresolvedmediatruncated'] = '... and {$a} more not listed here.';
 $string['untitledsection'] = 'Untitled section';
 $string['uploaded'] = 'File uploaded';
 $string['uploadnotfinished'] = 'Upload did not finish!';
-$string['warnblackboardnative'] = 'This looks like a Blackboard Learn native export, not a Common Cartridge package, so '
-    . 'its content cannot be imported and nothing was built. In Blackboard, export the course as Common Cartridge (IMSCC) '
-    . 'and import that package instead.';
+$string['warnblackboardnative'] = 'This looks like a Blackboard Learn native export rather than a Common Cartridge '
+    . 'package, so most of its content — Blackboard\'s proprietary resources — cannot be imported (any Common Cartridge '
+    . 'items it does contain are still imported). To bring the whole course across, export it from Blackboard as Common '
+    . 'Cartridge (IMSCC) and import that package instead.';
 $string['warningsheading'] = 'Notes and warnings';
 $string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';

@@ -87,13 +87,32 @@ final class source_detector {
             // importable content, so a package that mixes a few x-bb-* settings
             // resources with genuine buildable content is not mistaken for native.
             $type = $resource->getAttribute('type');
+            $href = $resource->getAttribute('href');
             if (stripos($type, 'x-bb-') !== false) {
                 $hasxbb = true;
             }
+            $paths = $href !== '' ? [$href] : [];
+            foreach ($resource->getElementsByTagNameNS('*', 'file') as $file) {
+                if ($file instanceof DOMElement) {
+                    $paths[] = $file->getAttribute('href');
+                }
+            }
+            $isbuildlog = false;
+            foreach ($paths as $path) {
+                if (preg_match('~(^|/)web_content\d+\.log$~i', (string) $path)) {
+                    $blackboardlog = true;
+                    $isbuildlog = true;
+                }
+                if (preg_match('~(^|/)(js/yahoo/|exe_)~i', (string) $path)) {
+                    $exe = true;
+                }
+            }
             // Importable content is a recognised CC content type, or any resource
             // whose href is an absolute URL — classify() maps the latter to a mod_url
-            // regardless of type, so it builds even under an unrecognised type.
-            if (preg_match('#^https?://#i', $resource->getAttribute('href')) || preg_match($ccpattern, $type)) {
+            // regardless of type, so it builds even under an unrecognised type. A
+            // Blackboard build-log artifact (web_content<n>.log) is typed webcontent
+            // but the parser suppresses it, so it does not count as importable.
+            if (!$isbuildlog && (preg_match('#^https?://#i', $href) || preg_match($ccpattern, $type))) {
                 $hasccontent = true;
             }
             $identifier = $resource->getAttribute('identifier');
@@ -108,20 +127,6 @@ final class source_detector {
             foreach ($resource->attributes as $attr) {
                 if ($attr->localName === 'material_type') {
                     $d2l = true;
-                }
-            }
-            $paths = $resource->getAttribute('href') !== '' ? [$resource->getAttribute('href')] : [];
-            foreach ($resource->getElementsByTagNameNS('*', 'file') as $file) {
-                if ($file instanceof DOMElement) {
-                    $paths[] = $file->getAttribute('href');
-                }
-            }
-            foreach ($paths as $path) {
-                if (preg_match('~(^|/)web_content\d+\.log$~i', (string) $path)) {
-                    $blackboardlog = true;
-                }
-                if (preg_match('~(^|/)(js/yahoo/|exe_)~i', (string) $path)) {
-                    $exe = true;
                 }
             }
         }
