@@ -245,8 +245,20 @@ class course_builder {
 
         $orphansection = 0;
         if (!empty($extras)) {
-            $orphansection = count($coursemodel->sections) + 1;
-            $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
+            // Create the "Additional resources" section only when an orphan actually lands
+            // in it: a section-zero kind (a question bank) is forced into section 0, so a
+            // package whose only orphans are such banks must not gain an empty section.
+            $needssection = false;
+            foreach ($extras as $extraitem) {
+                if (!in_array($extraitem->kind, self::SECTION_ZERO_KINDS, true)) {
+                    $needssection = true;
+                    break;
+                }
+            }
+            if ($needssection) {
+                $orphansection = count($coursemodel->sections) + 1;
+                $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
+            }
             $orphantitle = get_string('additionalresources', 'tool_canvasuplifter');
             foreach ($this->segment_items($extras) as $segment) {
                 if ($segment['type'] === 'group') {

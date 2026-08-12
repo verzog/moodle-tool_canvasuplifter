@@ -499,6 +499,7 @@ class conversion_report {
             'incompletesources' => [], 'unsupportedsources' => []];
         $total = 0;
         $bankids = [];             // Unique item-bank ids a built quiz draws from.
+        $standalonebankids = [];   // Bank ids already tallied as a standalone objectbank item.
         // Walk orphans then section items (matching all_items() order) but keep the
         // referenced flag: an orphan quiz builds as a named bank, and only a
         // referenced quiz (quiz_builder) resolves its item-bank draws.
@@ -540,11 +541,19 @@ class conversion_report {
             if (!empty($parsed['questions'])) {
                 $total += $this->tally_batch($acc, $parsed['questions'], $this->display_title($modelitem, $referenced));
             }
+            // A standalone objectbank item is tallied here from its own file; note its bank
+            // id so it isn't tallied a second time below when a quiz also draws from it.
+            if ($modelitem->kind === item::KIND_QUESTIONBANK && $modelitem->objectbankid !== '') {
+                $standalonebankids[$modelitem->objectbankid] = true;
+            }
         }
         // Each referenced item bank is imported once by the build (shared across the
-        // quizzes that draw from it), so tally each unique bank a single time under
-        // its own name.
+        // quizzes that draw from it), so tally each unique bank a single time under its own
+        // name — skipping any already counted above as a standalone objectbank item.
         foreach (array_keys($bankids) as $bankid) {
+            if (isset($standalonebankids[$bankid])) {
+                continue;
+            }
             [$questions, $bankname] = $this->bank_questions($bankid);
             $total += $this->tally_batch($acc, $questions, $bankname);
         }

@@ -70,15 +70,25 @@ class item_bank_registry {
      *
      * @param stdClass $course Course record.
      * @param string $bankid The Canvas sourcebank_ref (a package resource id).
+     * @param string|null $name Preferred activity name (a standalone bank's disambiguated
+     *        title); null keeps the bank's own <bank_title>. Renames the module if the
+     *        bank was already imported under a different name.
      * @return array|null ['cmid' => int, 'category' => int, 'count' => int, 'full' => bool], or null when unavailable.
      */
-    public function import_bank(stdClass $course, string $bankid): ?array {
+    public function import_bank(stdClass $course, string $bankid, ?string $name = null): ?array {
         global $CFG, $DB;
         require_once($CFG->libdir . '/questionlib.php');
         require_once($CFG->dirroot . '/course/lib.php');
         require_once($CFG->dirroot . '/course/modlib.php');
         if (array_key_exists($bankid, $this->banks)) {
-            return $this->banks[$bankid];
+            $existing = $this->banks[$bankid];
+            if ($existing !== null && $name !== null && $name !== '') {
+                // The bank was imported earlier (e.g. by a quiz draw) under its own
+                // <bank_title>; a standalone resource now supplies the authoritative
+                // (possibly disambiguated) name, so rename the module to match.
+                $this->rename_bank($course, (int) $existing['cmid'], $name);
+            }
+            return $existing;
         }
         $this->banks[$bankid] = null;
         $file = safe_path::within($this->packageroot, 'non_cc_assessments/' . $bankid . '.xml.qti');
@@ -101,7 +111,8 @@ class item_bank_registry {
             // questionbank_builder's, not scattered into a topic section.
             'section' => 0,
             'visible' => 1,
-            'name' => $parsed['title'] !== '' ? $parsed['title'] : $this->default_bank_name(),
+            'name' => $name !== null && $name !== '' ? $name
+                : ($parsed['title'] !== '' ? $parsed['title'] : $this->default_bank_name()),
             'intro' => '',
             'introformat' => FORMAT_HTML,
             'type' => \core_question\local\bank\question_bank_helper::TYPE_STANDARD,
@@ -132,6 +143,26 @@ class item_bank_registry {
             'full' => count($questionids) === count($parsed['questions']) && (int) ($parsed['unresolved'] ?? 0) === 0,
         ];
         return $this->banks[$bankid];
+    }
+
+    /**
+     * Rename an already-imported bank's mod_qbank, so a bank first created by a quiz draw
+     * (under its own <bank_title>) adopts the authoritative name a standalone resource
+     * later supplies. A no-op when the module is gone or already named that.
+     *
+     * @param stdClass $course Course record.
+     * @param int $cmid The bank's course module id.
+     * @param string $name The new activity name.
+     * @return void
+     */
+    private function rename_bank(stdClass $course, int $cmid, string $name): void {
+        global $DB;
+        $cm = get_coursemodule_from_id('qbank', $cmid, 0, false, IGNORE_MISSING);
+        if ($cm === false || $cm->name === $name) {
+            return;
+        }
+        $DB->set_field('qbank', 'name', $name, ['id' => $cm->instance]);
+        rebuild_course_cache((int) $course->id, true);
     }
 
     /**

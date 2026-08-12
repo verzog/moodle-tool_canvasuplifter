@@ -215,6 +215,16 @@ class item {
     public string $banktitle = '';
 
     /**
+     * @var string For a standalone Canvas item bank (a learning-application-resource
+     *             whose file is a non_cc_assessments/<id>.xml.qti objectbank), the bank
+     *             id — its file basename without the .xml.qti suffix. Equals a New Quiz's
+     *             sourcebank_ref, so the shared item_bank_registry imports the bank once
+     *             whether reached from this resource or a quiz draw. Empty for anything
+     *             else.
+     */
+    public string $objectbankid = '';
+
+    /**
      * Constructor.
      *
      * @param string $identifier Canvas resource identifier.

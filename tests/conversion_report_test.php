@@ -549,6 +549,37 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * Issue #146: when the same bank is both a quiz's sourcebank_ref draw and a standalone
+     * objectbank resource, the matrix counts it once (the build imports one shared bank),
+     * not twice.
+     *
+     * @return void
+     */
+    public function test_matrix_counts_shared_standalone_bank_once(): void {
+        $dir = $this->write_bank_draw_package('2');
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        // A referenced quiz that draws from bank1...
+        $quiz = new item('q1', 'New quiz engine');
+        $quiz->kind = item::KIND_QUIZ;
+        $quiz->files = ['a1/assessment_qti.xml'];
+        $section->add_item($quiz);
+        $course->add_section($section);
+        // ...and the same bank shipped as a standalone objectbank resource.
+        $bank = new item('r_bank', 'Shared bank');
+        $bank->kind = item::KIND_QUESTIONBANK;
+        $bank->files = ['non_cc_assessments/bank1.xml.qti'];
+        $bank->objectbankid = 'bank1';
+        $course->orphans[] = $bank;
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        // bank1 (one importable + one unsupported) is tallied once, not doubled to 4.
+        $this->assertSame(2, $matrix['total']);
+        $this->assertSame(1, $matrix['supported']);
+    }
+
+    /**
      * The matrix only follows an item-bank draw the build actually imports: an
      * explicit zero-question draw (which quiz_builder skips), and a selection on a
      * question-bank kind (questionbank_builder never resolves selections), are both

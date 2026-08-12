@@ -728,6 +728,54 @@ XML;
         $context = \context_module::instance($bank->id);
         $cat = question_get_default_category($context->id);
         $this->assertSame(2, $DB->count_records('question_bank_entries', ['questioncategoryid' => $cat->id]));
+        // A package whose only orphan is the section-0 bank gains no empty "Additional
+        // resources" section.
+        $sectionnames = $DB->get_fieldset_select('course_sections', 'name', 'course = ?', [$report['courseid']]);
+        $this->assertNotContains(get_string('additionalresources', 'tool_canvasuplifter'), $sectionnames);
+    }
+
+    /**
+     * Issue #146: a standalone objectbank whose questions are only bare references (Canvas
+     * didn't export their bodies) is still recognised and its data loss surfaced as a skip,
+     * rather than the whole resource being dropped silently.
+     *
+     * @return void
+     */
+    public function test_standalone_objectbank_with_unresolved_bodies_is_reported_not_dropped(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        $bank = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="b1"><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>bank_title</fieldlabel><fieldentry>Empty Pool</fieldentry></qtimetadatafield></qtimetadata>'
+            . '<item ident="q1"/><item ident="q2"/>'
+            . '</objectbank></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/empty.xml.qti', $bank);
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1">'
+            . '<item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>'
+            . '</organization></organizations><resources>'
+            . '<resource identifier="r_bank" type="associatedcontent/imscc_xmlv1p1/learning-application-resource">'
+            . '<file href="non_cc_assessments/empty.xml.qti"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        // No importable questions, so no bank module is created...
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $this->assertCount(0, $modinfo->get_instances_of('qbank'));
+        // ...but the bank is recognised and counted as a skip whose reason names the loss.
+        $this->assertSame(1, $report['skippedcounts']['questionbank'] ?? 0);
+        $this->assertStringContainsString('not present in the package', implode("\n", $report['skipreasons']));
     }
 
     /**

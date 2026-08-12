@@ -100,6 +100,15 @@ class questionbank_builder {
         $this->lasthandledviabank = false;
         $this->lastbankselections = 0;
 
+        // A standalone Canvas item bank (a learning-application-resource whose file is a
+        // non_cc_assessments/<id>.xml.qti objectbank, recorded by the parser) is imported
+        // through the shared registry keyed by that id — which equals a New Quiz's
+        // sourcebank_ref — so the bank is imported once whether reached from this resource
+        // or a quiz draw. The registry-created mod_qbank is this item's own module.
+        if ($modelitem->objectbankid !== '') {
+            return $this->build_standalone_bank($course, $modelitem);
+        }
+
         $qtipath = $this->locate_qti($modelitem);
         if ($qtipath === null) {
             $this->skipreason = 'no QTI assessment file found';
@@ -111,24 +120,6 @@ class questionbank_builder {
         [$parsed, $supported, $importable, $imagedir, $selections] =
             $this->resolve_assessment_source($modelitem, $qtipath);
         $questions = $parsed['questions'];
-
-        // A standalone Canvas item bank (this resource's file is a
-        // non_cc_assessments/<id>.xml.qti rooted at <objectbank>) is imported through the
-        // shared registry keyed by its file basename, so a bank a New Quiz also draws from
-        // (sourcebank_ref = that id), or the same bank reached from another resource, is
-        // imported exactly once. The registry-created mod_qbank is this item's own module.
-        if (!empty($parsed['hasobjectbank']) && ($bankid = $this->objectbank_bankid($qtipath)) !== null) {
-            $bank = $this->bankregistry->import_bank($course, $bankid);
-            if ($bank === null) {
-                $this->skipreason = question_importer::describe_unconvertible(
-                    $questions,
-                    $supported,
-                    $parsed['unresolved'] ?? 0
-                );
-                return null;
-            }
-            return (int) $bank['cmid'];
-        }
 
         // A Canvas New Quiz that isn't linked from a module is routed here rather than
         // to quiz_builder; it can draw its questions from a separate item bank via
@@ -210,19 +201,32 @@ class questionbank_builder {
     }
 
     /**
-     * The bank id for a standalone item-bank file, or null when the file is not one the
-     * shared registry can key. The registry derives non_cc_assessments/<id>.xml.qti from
-     * the id, so only a file in that folder qualifies; its basename (minus .xml.qti) is
-     * the id, matching a New Quiz's sourcebank_ref so the two dedupe to one import.
+     * Import a standalone objectbank item bank ({@see item::objectbankid}) as a mod_qbank
+     * through the shared registry, so a bank a New Quiz also draws from imports once. The
+     * bank takes this item's effective title (its disambiguated banktitle when set), and a
+     * bank that yields nothing importable — unsupported types, or bare references whose
+     * bodies Canvas didn't export — is reported as a skip rather than dropped silently.
      *
-     * @param string $qtipath Absolute path of the located QTI file.
-     * @return string|null
+     * @param stdClass $course Course record.
+     * @param item $modelitem The standalone item-bank resource.
+     * @return int|null The created course module id, or null when nothing imported.
      */
-    private function objectbank_bankid(string $qtipath): ?string {
-        if (!preg_match('#(^|/)non_cc_assessments/[^/]+\.xml\.qti$#i', $qtipath)) {
-            return null;
+    private function build_standalone_bank(stdClass $course, item $modelitem): ?int {
+        $name = $modelitem->title !== '' ? $modelitem->title : null;
+        $bank = $this->bankregistry->import_bank($course, $modelitem->objectbankid, $name);
+        if ($bank !== null) {
+            return (int) $bank['cmid'];
         }
-        return basename($qtipath, '.xml.qti');
+        // Nothing importable: report the data loss (unsupported types, or bodies Canvas
+        // omitted) with the same summary the inline path uses.
+        $file = safe_path::within($this->packageroot, 'non_cc_assessments/' . $modelitem->objectbankid . '.xml.qti');
+        [$parsed, $supported] = $file !== null ? $this->parse_qti($file) : [['questions' => [], 'unresolved' => 0], []];
+        $this->skipreason = question_importer::describe_unconvertible(
+            $parsed['questions'] ?? [],
+            $supported,
+            (int) ($parsed['unresolved'] ?? 0)
+        );
+        return null;
     }
 
     /**

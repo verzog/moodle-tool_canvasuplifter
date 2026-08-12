@@ -627,6 +627,15 @@ class manifest_parser {
             $modelitem->variantref = $this->read_variant_ref($resource);
 
             $modelitem->kind = $this->classify($type, $href, $modelitem->files);
+            // Record the standalone item-bank id so the builder imports it through the
+            // shared registry keyed by the exact objectbank file (not whichever XML
+            // locate_qti happens to pick first), deduping it against a New Quiz draw.
+            if ($modelitem->kind === item::KIND_QUESTIONBANK && str_contains($type, 'learning-application-resource')) {
+                $bankpath = $this->standalone_objectbank_path($href, $modelitem->files);
+                if ($bankpath !== null) {
+                    $modelitem->objectbankid = $this->objectbank_id_from_path($bankpath);
+                }
+            }
             // An external-link resource (a native D2L "contentlink", or any
             // resource whose href is an absolute URL) carries its target directly
             // in the href rather than in a weblink XML file; record it so
@@ -1406,10 +1415,10 @@ class manifest_parser {
                 }
             }
             // A learning-application-resource whose file is a native item-bank dump
-            // (non_cc_assessments/<id>.xml.qti rooted at <objectbank> with real questions)
-            // is a standalone Canvas question bank not wired to any quiz; import it as a
-            // mod_qbank instead of dropping it as a metadata-only companion.
-            if ($this->is_standalone_objectbank($href, $files)) {
+            // (non_cc_assessments/<id>.xml.qti rooted at <objectbank>) is a standalone
+            // Canvas question bank not wired to any quiz; import it as a mod_qbank instead
+            // of dropping it as a metadata-only companion.
+            if ($this->standalone_objectbank_path($href, $files) !== null) {
                 return item::KIND_QUESTIONBANK;
             }
             return $this->has_html($href, $files) ? item::KIND_PAGE : item::KIND_UNKNOWN;
@@ -1470,16 +1479,19 @@ class manifest_parser {
     }
 
     /**
-     * Whether a resource's file is a standalone Canvas item bank: a native
-     * non_cc_assessments/<id>.xml.qti dump rooted at an <objectbank> carrying real
-     * questions (not an <assessment>-rooted file, nor a non-QTI metadata companion),
-     * so it can be imported as a mod_qbank rather than dropped.
+     * The path of a resource's standalone Canvas item-bank file, or null when it has none.
+     * A standalone bank is a native non_cc_assessments/<id>.xml.qti dump rooted at an
+     * <objectbank> that carries questions or bare question references (not an
+     * <assessment>-rooted file, nor a non-QTI metadata companion). An objectbank of only
+     * bare references is still recognised so the builder can report the omitted bodies as a
+     * skip rather than dropping the bank silently. Returns the exact matched path so the
+     * builder targets the right file when a resource lists several.
      *
      * @param string $href The primary href.
      * @param string[] $files All file hrefs.
-     * @return bool
+     * @return string|null
      */
-    protected function is_standalone_objectbank(string $href, array $files): bool {
+    protected function standalone_objectbank_path(string $href, array $files): ?string {
         foreach (array_merge([$href], $files) as $path) {
             if ($path === '' || !preg_match('#(^|/)non_cc_assessments/[^/]+\.xml\.qti$#i', $path)) {
                 continue;
@@ -1489,11 +1501,24 @@ class manifest_parser {
                 continue;
             }
             $parsed = (new qti_parser())->parse((string) @file_get_contents($absolute));
-            if (!empty($parsed['hasobjectbank']) && !empty($parsed['questions'])) {
-                return true;
+            if (!empty($parsed['hasobjectbank']) && (!empty($parsed['questions']) || (int) ($parsed['unresolved'] ?? 0) > 0)) {
+                return $path;
             }
         }
-        return false;
+        return null;
+    }
+
+    /**
+     * The item-bank id for a standalone objectbank file path: its basename without the
+     * .xml.qti suffix (stripped case-insensitively, matching the classifier's and
+     * locate_qti's case-insensitive extension handling), which equals a New Quiz's
+     * sourcebank_ref so the two dedupe to one import.
+     *
+     * @param string $path The objectbank file path.
+     * @return string
+     */
+    protected function objectbank_id_from_path(string $path): string {
+        return (string) preg_replace('/\.xml\.qti$/i', '', basename($path));
     }
 
     /**
