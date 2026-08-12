@@ -636,22 +636,33 @@ class qti_parser {
             }
         }
         $replacements = [];
+        $placedblanks = [];
         foreach ($blanks as $blankid => $accepted) {
             $marker = '[' . $blankid . ']';
             // A blank we cannot place — it has no accepted answer, or its [id] marker
-            // is absent from the stem — would leave a silently truncated Cloze, so the
-            // whole item is left unsupported (reported by name) rather than importing a
-            // partial question with a blank dropped to literal text.
-            if ($accepted === [] || strpos($stem, $marker) === false) {
+            // does not appear in the stem exactly once — would leave a silently truncated
+            // or duplicated Cloze, so the whole item is left unsupported (reported by name)
+            // rather than importing a partial question or grading one QTI response as two
+            // independent subquestions.
+            if ($accepted === [] || substr_count($stem, $marker) !== 1) {
                 continue;
             }
             $replacements[$marker] = $this->cloze_field($accepted);
+            $placedblanks[] = $blankid;
         }
         // Every source blank must have produced exactly one placed field; a skipped or
-        // unresolved blank (ident-less node, missing marker, no accepted answer) leaves
-        // the count short and the item is reported unsupported rather than imported with
-        // a gap.
+        // unresolved blank (ident-less node, missing/duplicated marker, no accepted
+        // answer) leaves the count short and the item is reported unsupported rather than
+        // imported with a gap.
         if ($sourceblanks === 0 || count($replacements) !== $sourceblanks) {
+            $question->type = qti_question::TYPE_UNSUPPORTED;
+            return;
+        }
+        // Canvas can award different points to different blanks, but a Cloze weights every
+        // SHORTANSWER field equally (1); emitting an even split would silently change the
+        // partial-credit ratio, so an item whose blanks carry unequal scores is left
+        // unsupported rather than mis-graded. Equal or unscored blanks convert as usual.
+        if ($this->scores_are_uneven($this->cloze_blank_scores($item, $placedblanks))) {
             $question->type = qti_question::TYPE_UNSUPPORTED;
             return;
         }
@@ -731,7 +742,11 @@ class qti_parser {
     protected function label_answer_text(DOMElement $label): string {
         $raw = $this->material_text($label);
         if ($this->material_is_html($label)) {
-            return $this->plain_answer($raw);
+            // Replace each tag with a space (not nothing) before flattening, so adjacent
+            // block or break elements keep their word boundary — <p>New</p><p>York</p>
+            // becomes "New York", not "NewYork" — then decode entities and collapse.
+            $spaced = html_entity_decode((string) preg_replace('/<[^>]+>/', ' ', $raw), ENT_QUOTES | ENT_HTML5);
+            return trim((string) preg_replace('/\s+/', ' ', $spaced));
         }
         return trim((string) preg_replace('/\s+/', ' ', $raw));
     }
@@ -1551,6 +1566,68 @@ class qti_parser {
             }
         }
         return 0.0;
+    }
+
+    /**
+     * The positive SCORE Canvas awards each named fill-in-multiple-blanks blank, read from
+     * the resprocessing: each scoring respcondition names a blank through its
+     * <varequal respident="response_<id>"> and adds a SCORE. The highest score seen for a
+     * blank is kept (its several accepted spellings all award the same points). Only the
+     * blanks in $wanted are returned, and only when a positive score was found.
+     *
+     * @param DOMElement $item The item element.
+     * @param array $wanted The blank ids whose scores are needed.
+     * @return array Map of blank id to its positive score.
+     */
+    protected function cloze_blank_scores(DOMElement $item, array $wanted): array {
+        $resprocessing = $this->first_child_element($item, 'resprocessing');
+        if ($resprocessing === null) {
+            return [];
+        }
+        $keep = array_fill_keys($wanted, true);
+        $scores = [];
+        foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
+            if (!($cond instanceof DOMElement)) {
+                continue;
+            }
+            $score = $this->condition_score($cond);
+            if ($score <= 0) {
+                continue;
+            }
+            foreach ($cond->getElementsByTagNameNS('*', 'varequal') as $ve) {
+                if (!($ve instanceof DOMElement) || $this->within($ve, 'not')) {
+                    continue;
+                }
+                $blankid = (string) preg_replace('/^response_/', '', $ve->getAttribute('respident'));
+                if ($blankid === '' || !isset($keep[$blankid])) {
+                    continue;
+                }
+                $scores[$blankid] = max($scores[$blankid] ?? 0.0, $score);
+            }
+        }
+        return $scores;
+    }
+
+    /**
+     * Whether a set of per-blank scores disagree — two or more positive scores that are
+     * not all equal. Fewer than two scores (or all equal) is treated as even, so an
+     * unscored or equally-weighted item is not rejected.
+     *
+     * @param array $scores The per-blank scores.
+     * @return bool
+     */
+    protected function scores_are_uneven(array $scores): bool {
+        $values = array_values($scores);
+        if (count($values) < 2) {
+            return false;
+        }
+        $first = $values[0];
+        foreach ($values as $value) {
+            if (abs($value - $first) > 1e-6) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
