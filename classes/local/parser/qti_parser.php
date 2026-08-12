@@ -658,11 +658,10 @@ class qti_parser {
             $question->type = qti_question::TYPE_UNSUPPORTED;
             return;
         }
-        // Canvas can award different points to different blanks, but a Cloze weights every
-        // SHORTANSWER field equally (1); emitting an even split would silently change the
-        // partial-credit ratio, so an item whose blanks carry unequal scores is left
-        // unsupported rather than mis-graded. Equal or unscored blanks convert as usual.
-        if ($this->scores_are_uneven($this->cloze_blank_scores($item, $placedblanks))) {
+        // A Cloze weights every SHORTANSWER field equally, so only convert when Canvas
+        // scores the blanks that way; an item with unequal, incomplete, or combined
+        // (cross-blank) scoring is left unsupported rather than silently mis-graded.
+        if (!$this->cloze_weighting_is_safe($item, $placedblanks)) {
             $question->type = qti_question::TYPE_UNSUPPORTED;
             return;
         }
@@ -742,11 +741,15 @@ class qti_parser {
     protected function label_answer_text(DOMElement $label): string {
         $raw = $this->material_text($label);
         if ($this->material_is_html($label)) {
-            // Replace each tag with a space (not nothing) before flattening, so adjacent
-            // block or break elements keep their word boundary — <p>New</p><p>York</p>
-            // becomes "New York", not "NewYork" — then decode entities and collapse.
-            $spaced = html_entity_decode((string) preg_replace('/<[^>]+>/', ' ', $raw), ENT_QUOTES | ENT_HTML5);
-            return trim((string) preg_replace('/\s+/', ' ', $spaced));
+            // A block or break element renders as a word boundary, so replace it with a
+            // space (<p>New</p><p>York</p> -> "New York"); an inline element (<b>, <sub>…)
+            // renders with no boundary, so strip it without a space (<b>New</b>York ->
+            // "NewYork", H<sub>2</sub>O -> "H2O"). Then decode entities and collapse.
+            $block = '/<\s*\/?\s*(?:p|div|br|li|tr|td|th|thead|tbody|table|ul|ol|dl|dd|dt'
+                . '|h[1-6]|blockquote|section|article|header|footer|hr|pre|figure|figcaption)\b[^>]*>/i';
+            $spaced = (string) preg_replace($block, ' ', $raw);
+            $text = html_entity_decode(strip_tags($spaced), ENT_QUOTES | ENT_HTML5);
+            return trim((string) preg_replace('/\s+/', ' ', $text));
         }
         return trim((string) preg_replace('/\s+/', ' ', $raw));
     }
@@ -1569,43 +1572,67 @@ class qti_parser {
     }
 
     /**
-     * The positive SCORE Canvas awards each named fill-in-multiple-blanks blank, read from
-     * the resprocessing: each scoring respcondition names a blank through its
-     * <varequal respident="response_<id>"> and adds a SCORE. The highest score seen for a
-     * blank is kept (its several accepted spellings all award the same points). Only the
-     * blanks in $wanted are returned, and only when a positive score was found.
+     * Whether a fill-in-multiple-blanks item can be faithfully converted to an
+     * evenly-weighted Cloze. A Cloze grades every SHORTANSWER field with the same weight,
+     * so this holds only when Canvas scores the blanks that way. Reading the resprocessing:
+     *
+     * - no resprocessing, or none of its positive conditions name a blank, means there is
+     *   no per-blank weighting to preserve, so an even split is the only assumption — safe;
+     * - a positive condition that names more than one blank (an <and>/<or> awarding points
+     *   only for a combination) can't be split into independent even fields — unsafe;
+     * - a placed blank that no positive condition scores would be granted credit Canvas
+     *   withholds — unsafe;
+     * - placed blanks scored with unequal positive values would have their ratio flattened
+     *   to 1:1 — unsafe.
      *
      * @param DOMElement $item The item element.
-     * @param array $wanted The blank ids whose scores are needed.
-     * @return array Map of blank id to its positive score.
+     * @param array $placed The blank ids that produced a Cloze field.
+     * @return bool
      */
-    protected function cloze_blank_scores(DOMElement $item, array $wanted): array {
+    protected function cloze_weighting_is_safe(DOMElement $item, array $placed): bool {
         $resprocessing = $this->first_child_element($item, 'resprocessing');
         if ($resprocessing === null) {
-            return [];
+            return true;
         }
-        $keep = array_fill_keys($wanted, true);
         $scores = [];
         foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
-            if (!($cond instanceof DOMElement)) {
+            if (!($cond instanceof DOMElement) || $this->condition_score($cond) <= 0) {
                 continue;
             }
-            $score = $this->condition_score($cond);
-            if ($score <= 0) {
-                continue;
-            }
+            $blanks = [];
             foreach ($cond->getElementsByTagNameNS('*', 'varequal') as $ve) {
                 if (!($ve instanceof DOMElement) || $this->within($ve, 'not')) {
                     continue;
                 }
                 $blankid = (string) preg_replace('/^response_/', '', $ve->getAttribute('respident'));
-                if ($blankid === '' || !isset($keep[$blankid])) {
-                    continue;
+                if ($blankid !== '') {
+                    $blanks[$blankid] = true;
                 }
+            }
+            if (count($blanks) > 1) {
+                // A single condition scoring several blanks together (e.g. an <and>) can't
+                // be represented as independent even fields.
+                return false;
+            }
+            $score = $this->condition_score($cond);
+            foreach (array_keys($blanks) as $blankid) {
                 $scores[$blankid] = max($scores[$blankid] ?? 0.0, $score);
             }
         }
-        return $scores;
+        if ($scores === []) {
+            // Resprocessing names no scored blank: nothing to preserve, even split is fine.
+            return true;
+        }
+        $values = [];
+        foreach ($placed as $blankid) {
+            if (!isset($scores[$blankid])) {
+                // Some blanks are scored but this placed one is not — an even split would
+                // credit a blank Canvas awards nothing.
+                return false;
+            }
+            $values[] = $scores[$blankid];
+        }
+        return !$this->scores_are_uneven($values);
     }
 
     /**
