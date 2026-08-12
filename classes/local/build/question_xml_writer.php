@@ -91,6 +91,7 @@ class question_xml_writer {
             qti_question::TYPE_TRUEFALSE => 'truefalse',
             qti_question::TYPE_NUMERICAL => 'numerical',
             qti_question::TYPE_CALCULATED => 'calculated',
+            qti_question::TYPE_CLOZE => 'multianswer',
             default => 'multichoice',
         };
 
@@ -127,6 +128,11 @@ class question_xml_writer {
                 break;
             case 'calculated':
                 $body .= $this->calculated_xml($q);
+                break;
+            case 'multianswer':
+                // A Cloze question carries its sub-questions inline in the question
+                // text, so the common name/questiontext body is complete — no separate
+                // answers, and the grade comes from the embedded fields.
                 break;
             default:
                 $body .= "    <single>" . ($q->type === qti_question::TYPE_MULTIANSWER ? 'false' : 'true') . "</single>\n";
@@ -439,9 +445,18 @@ class question_xml_writer {
         if ($imagedir === null || $html === '') {
             return $html;
         }
+        // Shield Cloze fields ({1:SHORTANSWER:=...}) from the HTML round-trip below: an
+        // answer key can hold literal tag-like text (e.g. =<div>) that DOMDocument would
+        // otherwise parse as real markup and corrupt. Cloze fields never carry media, so
+        // swapping them for inert placeholders before parsing and restoring them after keeps
+        // their exact bytes. Done before the media check so a tag-like key can't itself
+        // trigger a needless (corrupting) reserialisation.
+        $tokens = [];
+        $shielded = $this->shield_cloze_fields($html, $tokens);
+
         // Fast path: nothing to do unless a media-bearing tag is present, and this
         // avoids reserialising plain text through the DOM.
-        if (!preg_match('~<(?:' . implode('|', self::MEDIA_TAGS) . ')\b~i', $html)) {
+        if (!preg_match('~<(?:' . implode('|', self::MEDIA_TAGS) . ')\b~i', $shielded)) {
             return $html;
         }
 
@@ -449,7 +464,7 @@ class question_xml_writer {
         // named entities (e.g. &rightarrow;, &sol;) would otherwise be corrupted
         // on the round-trip. Pre-convert them to numeric references, which it
         // preserves both in text and in attribute values.
-        $prepared = $this->numericise_html5_entities($html);
+        $prepared = $this->numericise_html5_entities($shielded);
 
         $dom = new \DOMDocument();
         $previous = libxml_use_internal_errors(true);
@@ -494,7 +509,41 @@ class question_xml_writer {
         foreach (iterator_to_array($wrapper->childNodes) as $child) {
             $out .= $dom->saveHTML($child);
         }
-        return $out;
+        return $this->restore_cloze_fields($out, $tokens);
+    }
+
+    /**
+     * Replace Moodle Cloze fields ({1:SHORTANSWER:=...}) with inert alphanumeric
+     * placeholders so an HTML round-trip cannot alter their contents, recording each
+     * placeholder's original text for {@see restore_cloze_fields}. A field body may
+     * contain escaped braces (\{ \}), so matching walks escaped characters explicitly.
+     *
+     * @param string $html The HTML.
+     * @param array $tokens Filled with placeholder to original-field (modified in place).
+     * @return string The HTML with fields replaced by placeholders.
+     */
+    protected function shield_cloze_fields(string $html, array &$tokens): string {
+        $tokens = [];
+        $i = 0;
+        $pattern = '/\{[0-9]*:[A-Z_]+:(?:\\\\.|[^{}\\\\])*\}/s';
+        $out = preg_replace_callback($pattern, function (array $m) use (&$tokens, &$i): string {
+            $token = 'CLOZEFIELDPLACEHOLDER' . ($i++) . 'END';
+            $tokens[$token] = $m[0];
+            return $token;
+        }, $html);
+        return $out ?? $html;
+    }
+
+    /**
+     * Restore the Cloze fields shielded by {@see shield_cloze_fields}, swapping each
+     * placeholder back for its original field text.
+     *
+     * @param string $html The HTML carrying placeholders.
+     * @param array $tokens Placeholder to original-field map.
+     * @return string
+     */
+    protected function restore_cloze_fields(string $html, array $tokens): string {
+        return $tokens === [] ? $html : strtr($html, $tokens);
     }
 
     /**

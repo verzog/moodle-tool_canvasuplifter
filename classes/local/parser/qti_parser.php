@@ -205,6 +205,9 @@ class qti_parser {
             case qti_question::TYPE_CALCULATED:
                 $this->fill_calculated($item, $question);
                 break;
+            case qti_question::TYPE_CLOZE:
+                $this->fill_cloze($item, $presentation, $question);
+                break;
             case qti_question::TYPE_ESSAY:
             default:
                 break;
@@ -274,28 +277,36 @@ class qti_parser {
                 // equivalent (ddmarker/ordering are not core question types here),
                 // so name them explicitly and leave them unsupported.
                 return qti_question::TYPE_UNSUPPORTED;
-            case 'multiple_dropdowns_question':
             case 'fill_in_multiple_blanks_question':
-                // Inline dropdowns/blanks: each blank is a response_lid with its
-                // own render_choice and a scored answer. Two or more blanks become
-                // a Moodle match (one stem/answer pair per blank) — but only when
-                // every blank offers the same choice set, because Moodle match has
-                // a single global answer pool; with per-blank choices one blank's
-                // options would wrongly be offered for another, so leave it
-                // unsupported. A single fill-in-blank is a short answer (type the
-                // accepted word — its render_choice lists every acceptable answer);
-                // a single dropdown is a pick-from-list multiple choice and falls
-                // through to the cardinality fallback. A free-text blank has no
-                // response_lid and falls through to unsupported.
+                // Free-text blanks: each blank is a response_lid whose render_choice
+                // lists the acceptable answers for that blank. Two or more blanks
+                // become a Moodle Cloze (multianswer) — one SHORTANSWER field per
+                // blank, embedded in the stem at its placeholder — which keeps each
+                // blank's own answer set (unlike Moodle match's single global pool).
+                // A single blank is a plain short answer (type the accepted word).
+                $lidcount = $presentation !== null
+                    ? $presentation->getElementsByTagNameNS('*', 'response_lid')->length : 0;
+                if ($lidcount >= 2) {
+                    return qti_question::TYPE_CLOZE;
+                }
+                if ($lidcount === 1) {
+                    return qti_question::TYPE_SHORTANSWER;
+                }
+                break;
+            case 'multiple_dropdowns_question':
+                // Inline dropdowns: each blank is a response_lid with a fixed choice
+                // set. Two or more become a Moodle match (one stem/answer pair per
+                // blank) — but only when every blank offers the same choice set,
+                // because Moodle match has a single global answer pool; with per-blank
+                // choices one blank's options would wrongly be offered for another, so
+                // leave it unsupported. A single dropdown is a pick-from-list multiple
+                // choice and falls through to the cardinality fallback.
                 $lidcount = $presentation !== null
                     ? $presentation->getElementsByTagNameNS('*', 'response_lid')->length : 0;
                 if ($lidcount >= 2) {
                     return $this->blanks_share_choices($presentation) && $this->blanks_have_stems($presentation)
                         ? qti_question::TYPE_MATCHING
                         : qti_question::TYPE_UNSUPPORTED;
-                }
-                if ($lidcount === 1 && $canvastype === 'fill_in_multiple_blanks_question') {
-                    return qti_question::TYPE_SHORTANSWER;
                 }
                 break;
         }
@@ -593,6 +604,270 @@ class qti_parser {
     }
 
     /**
+     * Populate a Canvas fill-in-multiple-blanks question as a Moodle Cloze.
+     *
+     * Each blank is a <response_lid ident="response_<id>"> whose <render_choice>
+     * lists the acceptable answers as <response_label>s, and the stem carries a
+     * [<id>] placeholder per blank. The accepted answers for a blank are the scoring
+     * <varequal respident="response_<id>"> values, each resolved to the matching
+     * response_label's display text. Each placeholder is replaced in the stem with a
+     * Moodle SHORTANSWER Cloze field listing that blank's answers, so the whole
+     * question becomes a single multianswer item.
+     *
+     * @param DOMElement $item The item element.
+     * @param DOMElement|null $presentation The presentation element.
+     * @param qti_question $question The question being built (modified in place).
+     * @return void
+     */
+    protected function fill_cloze(DOMElement $item, ?DOMElement $presentation, qti_question $question): void {
+        if ($presentation === null) {
+            return;
+        }
+        $stem = $question->questiontext;
+        $blanks = $this->cloze_blank_answers($presentation, $this->label_feedback_map($item));
+        // Count every response_lid the presentation declares, including any that
+        // cloze_blank_answers skipped for a missing ident: completeness is measured
+        // against the source blanks, not the already-filtered map, so a blank that was
+        // dropped there still fails the whole item rather than silently vanishing.
+        $sourceblanks = 0;
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if ($lid instanceof DOMElement) {
+                $sourceblanks++;
+            }
+        }
+        $replacements = [];
+        $placedblanks = [];
+        $rendered = $this->rendered_text($stem);
+        foreach ($blanks as $blankid => $accepted) {
+            $marker = '[' . $blankid . ']';
+            // A blank we cannot place is left unsupported (the whole item is dropped,
+            // reported by name) rather than importing a partial or malformed Cloze. It is
+            // unplaceable when it has no accepted answer; when its [id] marker does not
+            // appear in the stem exactly once (missing, or duplicated into two graded
+            // fields); or when the marker survives only inside markup (an attribute like
+            // <img alt="[b1]">, or inert content like <script>[b1]</script>), where a
+            // substituted field would not sit in ordinary rendered text.
+            if ($accepted === [] || substr_count($stem, $marker) !== 1 || strpos($rendered, $marker) === false) {
+                continue;
+            }
+            $replacements[$marker] = $this->cloze_field($accepted);
+            $placedblanks[] = $blankid;
+        }
+        // Every source blank must have produced exactly one placed field; a skipped or
+        // unresolved blank (ident-less node, missing/duplicated marker, no accepted
+        // answer) leaves the count short and the item is reported unsupported rather than
+        // imported with a gap.
+        if ($sourceblanks === 0 || count($replacements) !== $sourceblanks) {
+            $question->type = qti_question::TYPE_UNSUPPORTED;
+            return;
+        }
+        // A Cloze weights every SHORTANSWER field equally, so only convert when Canvas
+        // scores the blanks that way; an item with unequal, incomplete, or combined
+        // (cross-blank) scoring is left unsupported rather than silently mis-graded.
+        if (!$this->cloze_weighting_is_safe($item, $placedblanks)) {
+            $question->type = qti_question::TYPE_UNSUPPORTED;
+            return;
+        }
+        // Escape any Cloze grammar already present in the authored stem before inserting
+        // the generated fields: an instructional example such as {1:SHORTANSWER:=x} would
+        // otherwise be parsed by Moodle as an extra graded subquestion. Encoding the braces
+        // to HTML entities keeps them visible but inert (Moodle's multianswer parser has no
+        // backslash escape); the fields inserted next carry real braces.
+        $escaped = strtr($stem, ['{' => '&#123;', '}' => '&#125;']);
+        // Apply every marker substitution against the escaped stem in a single pass so a
+        // generated field that happens to contain another blank's [id] marker is never
+        // re-searched (strtr replaces simultaneously, longest key first).
+        $question->questiontext = strtr($escaped, $replacements);
+        // The name was derived from the raw stem, which for an untitled item still shows
+        // the [blank] placeholders; re-derive it with the blanks shown as gaps so it
+        // reads as prose. A titled item keeps its title (derive_name prefers it).
+        if (trim($item->getAttribute('title')) === '') {
+            $gaps = [];
+            foreach (array_keys($blanks) as $blankid) {
+                $gaps['[' . $blankid . ']'] = ' ____ ';
+            }
+            $question->name = $this->derive_name($item, strtr($stem, $gaps));
+        }
+    }
+
+    /**
+     * Map each fill-in-multiple-blanks blank to its accepted answers. The blank id is
+     * the response_lid ident with the "response_" prefix removed. A
+     * fill_in_multiple_blanks_question is a free-text (open-entry) question by type —
+     * this method is only reached for that Canvas type; a genuine pick-from-a-fixed-set
+     * question is a multiple_dropdowns_question, which {@see map_type} routes to a
+     * Moodle match, not here. So every listed response_label is an acceptable spelling
+     * (not a distractor) and all are kept, regardless of whether the label carries the
+     * answer_type/scoring_algorithm attributes — mirroring how {@see fill_text_answers}
+     * treats a single blank, where Canvas may enumerate several spellings but the
+     * respcondition references only one. An HTML label's text is flattened (a SHORTANSWER
+     * key is not rendered as HTML) while a text/plain label is kept verbatim so a literal
+     * tag-like answer survives; each carries whether Canvas graded it as "contains" so the
+     * writer can widen it to a Moodle wildcard match.
+     *
+     * @param DOMElement $presentation The presentation element.
+     * @param array $feedback Map of response_label ident to its Canvas feedback HTML.
+     * @return array Map of blank id to a list of ['text' => string, 'contains' => bool, 'feedback' => string].
+     */
+    protected function cloze_blank_answers(DOMElement $presentation, array $feedback = []): array {
+        $result = [];
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if (!($lid instanceof DOMElement) || $lid->getAttribute('ident') === '') {
+                continue;
+            }
+            $blankid = (string) preg_replace('/^response_/', '', $lid->getAttribute('ident'));
+            $accepted = [];
+            $seen = [];
+            foreach ($lid->getElementsByTagNameNS('*', 'response_label') as $label) {
+                if (!($label instanceof DOMElement)) {
+                    continue;
+                }
+                $text = $this->label_answer_text($label);
+                // A contains-match algorithm (Canvas TextContainsAnswer) accepts any
+                // response holding the answer, so the answer text alone is not a
+                // reliable dedup key; qualify it with the algorithm.
+                $contains = strcasecmp($label->getAttribute('scoring_algorithm'), 'TextContainsAnswer') === 0;
+                // Answer-specific feedback is keyed by the label ident (the varequal value the
+                // scoring condition links to its itemfeedback), flattened to plain text since a
+                // Cloze renders per-option feedback inline.
+                $fb = $this->flatten_feedback($feedback[$label->getAttribute('ident')] ?? '');
+                $key = ($contains ? '~' : '=') . $text;
+                if ($text !== '' && !isset($seen[$key])) {
+                    $seen[$key] = true;
+                    $accepted[] = ['text' => $text, 'contains' => $contains, 'feedback' => $fb];
+                }
+            }
+            $result[$blankid] = $accepted;
+        }
+        return $result;
+    }
+
+    /**
+     * Flatten answer feedback HTML to the plain text a Cloze per-option feedback (#…) shows:
+     * strip markup, decode entities and collapse whitespace.
+     *
+     * @param string $html The feedback HTML.
+     * @return string
+     */
+    protected function flatten_feedback(string $html): string {
+        return $this->collapse_ws(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5));
+    }
+
+    /**
+     * Flatten a response_label's answer text for use as a SHORTANSWER key. An HTML
+     * label (a mattext declaring texttype="text/html") is stripped of markup, since
+     * Moodle does not render a short-answer key as HTML; a plain-text label keeps its
+     * content verbatim (only whitespace collapsed), so a literal tag-like answer such
+     * as "<div>" survives rather than being deleted as markup.
+     *
+     * @param DOMElement $label The response_label element.
+     * @return string
+     */
+    protected function label_answer_text(DOMElement $label): string {
+        $raw = $this->material_text($label);
+        if ($this->material_is_html($label)) {
+            // A block or break element renders as a word boundary, so replace it with a
+            // space (<p>New</p><p>York</p> -> "New York"); an inline element (<b>, <sub>…)
+            // renders with no boundary, so strip it without a space (<b>New</b>York ->
+            // "NewYork", H<sub>2</sub>O -> "H2O"). Then decode entities and collapse.
+            $block = '/<\s*\/?\s*(?:p|div|br|li|tr|td|th|thead|tbody|table|ul|ol|dl|dd|dt'
+                . '|h[1-6]|blockquote|section|article|header|footer|hr|pre|figure|figcaption)\b[^>]*>/i';
+            $spaced = (string) preg_replace($block, ' ', $raw);
+            return $this->collapse_ws(html_entity_decode(strip_tags($spaced), ENT_QUOTES | ENT_HTML5));
+        }
+        return $this->collapse_ws($raw);
+    }
+
+    /**
+     * Collapse runs of whitespace to a single space and trim. The pattern is Unicode-aware
+     * and includes U+00A0 so a non-breaking space (e.g. a decoded &nbsp;) becomes an
+     * ordinary space rather than surviving into a SHORTANSWER key a learner can't type.
+     *
+     * @param string $text The text to normalise.
+     * @return string
+     */
+    protected function collapse_ws(string $text): string {
+        return trim((string) preg_replace('/[\s\x{00A0}]+/u', ' ', $text));
+    }
+
+    /**
+     * The visible text of a stem: the contents of elements that do not render as ordinary
+     * text (script, style, template, textarea, title) are removed first, then the remaining
+     * tags are stripped. A marker surviving here belongs to a real text node, not to inert
+     * or hidden content where a substituted Cloze field could not be answered.
+     *
+     * @param string $stem The stem HTML (or plain text).
+     * @return string
+     */
+    protected function rendered_text(string $stem): string {
+        $stripped = (string) preg_replace('#<(script|style|template|textarea|title)\b[^>]*>.*?</\1>#is', '', $stem);
+        return strip_tags($stripped);
+    }
+
+    /**
+     * Whether a node's material is authored as HTML — any of its mattext children
+     * declares a text/html texttype. Canvas marks plain answers text/plain, so the
+     * default (no type, or a non-HTML type) is treated as literal plain text.
+     *
+     * @param DOMElement $node The element carrying a material descendant.
+     * @return bool
+     */
+    protected function material_is_html(DOMElement $node): bool {
+        $material = $this->descendant($node, 'material');
+        if ($material === null) {
+            return false;
+        }
+        foreach ($material->getElementsByTagNameNS('*', 'mattext') as $mt) {
+            if ($mt instanceof DOMElement && stripos($mt->getAttribute('texttype'), 'html') !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Build a Moodle SHORTANSWER Cloze field from a blank's accepted answers, e.g.
+     * {1:SHORTANSWER:=ipsum~=ipsem}. Each answer is a fully-credited option (=) with
+     * the Cloze/short-answer metacharacters escaped; a Canvas "contains" answer is
+     * wrapped in * wildcards so Moodle accepts any response holding the text. An answer
+     * that carried Canvas feedback appends it after a # separator (e.g. =ipsum#Well done),
+     * so authored per-answer feedback survives the conversion.
+     *
+     * @param array $accepted List of ['text' => string, 'contains' => bool, 'feedback' => string].
+     * @return string
+     */
+    protected function cloze_field(array $accepted): string {
+        $options = [];
+        foreach ($accepted as $answer) {
+            $escaped = $this->cloze_escape((string) ($answer['text'] ?? ''));
+            $option = '=' . (!empty($answer['contains']) ? '*' . $escaped . '*' : $escaped);
+            $feedback = (string) ($answer['feedback'] ?? '');
+            if ($feedback !== '') {
+                $option .= '#' . $this->cloze_escape($feedback);
+            }
+            $options[] = $option;
+        }
+        return '{1:SHORTANSWER:' . implode('~', $options) . '}';
+    }
+
+    /**
+     * Escape the Cloze and short-answer metacharacters in answer text so it can't
+     * break the field or be read as a wildcard: backslash first (so it is not
+     * doubled), then the braces, the # feedback separator, the ~ option separator and
+     * the * short-answer wildcard (a literal Canvas asterisk must stay literal).
+     *
+     * @param string $text The answer text.
+     * @return string
+     */
+    protected function cloze_escape(string $text): string {
+        return str_replace(
+            ['\\', '{', '}', '#', '~', '*'],
+            ['\\\\', '\\{', '\\}', '\\#', '\\~', '\\*'],
+            $text
+        );
+    }
+
+    /**
      * The declared maximum of the SCORE outcome variable in a resprocessing block,
      * used to scale a condition's raw SCORE onto Moodle's 0–100 answer fraction.
      * Defaults to 100 when unspecified or not positive.
@@ -602,7 +877,7 @@ class qti_parser {
      */
     protected function score_max(DOMElement $resprocessing): float {
         foreach ($resprocessing->getElementsByTagNameNS('*', 'decvar') as $decvar) {
-            if ($decvar instanceof DOMElement && strtoupper($decvar->getAttribute('varname')) === 'SCORE') {
+            if ($decvar instanceof DOMElement && $this->is_score_var($decvar->getAttribute('varname'))) {
                 $max = (float) $decvar->getAttribute('maxvalue');
                 return $max > 0 ? $max : 100.0;
             }
@@ -1339,6 +1614,18 @@ class qti_parser {
     }
 
     /**
+     * Whether a QTI variable name refers to the SCORE outcome. The varname attribute on a
+     * setvar/decvar is optional and defaults to SCORE, so an absent (empty) name counts as
+     * SCORE, as does an explicit SCORE in any case.
+     *
+     * @param string $varname The varname attribute value.
+     * @return bool
+     */
+    protected function is_score_var(string $varname): bool {
+        return $varname === '' || strtoupper($varname) === 'SCORE';
+    }
+
+    /**
      * The SCORE a respcondition sets, or 0 if it doesn't set a positive score.
      *
      * @param DOMElement $cond The respcondition element.
@@ -1346,11 +1633,227 @@ class qti_parser {
      */
     protected function condition_score(DOMElement $cond): float {
         foreach ($cond->getElementsByTagNameNS('*', 'setvar') as $setvar) {
-            if ($setvar instanceof DOMElement && strtoupper($setvar->getAttribute('varname')) === 'SCORE') {
+            if ($setvar instanceof DOMElement && $this->is_score_var($setvar->getAttribute('varname'))) {
                 return (float) trim($setvar->textContent);
             }
         }
         return 0.0;
+    }
+
+    /**
+     * How many SCORE setvar updates a respcondition carries. More than one means the
+     * condition's net SCORE effect is not the single value {@see condition_score} reads
+     * (e.g. an Add of 50 followed by an Add of -10 nets 40, but only the 50 is seen).
+     *
+     * @param DOMElement $cond The respcondition element.
+     * @return int
+     */
+    protected function count_score_setvars(DOMElement $cond): int {
+        $count = 0;
+        foreach ($cond->getElementsByTagNameNS('*', 'setvar') as $setvar) {
+            if ($setvar instanceof DOMElement && $this->is_score_var($setvar->getAttribute('varname'))) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    /**
+     * Whether a respcondition's SCORE setvar adds to the running total (action="Add")
+     * rather than setting it. Additive scoring is what lets each blank's points be read as
+     * an independent weight; a "Set" or action-less setvar is treated as non-additive.
+     *
+     * @param DOMElement $cond The respcondition element.
+     * @return bool
+     */
+    protected function condition_is_additive(DOMElement $cond): bool {
+        foreach ($cond->getElementsByTagNameNS('*', 'setvar') as $setvar) {
+            if ($setvar instanceof DOMElement && $this->is_score_var($setvar->getAttribute('varname'))) {
+                return strcasecmp($setvar->getAttribute('action'), 'Add') === 0;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a fill-in-multiple-blanks item can be faithfully converted to an
+     * evenly-weighted Cloze. A Cloze grades every SHORTANSWER field with the same weight,
+     * so this holds only when Canvas scores the blanks that way. Reading the resprocessing:
+     *
+     * - no resprocessing, or none of its positive conditions name a blank, means there is
+     *   no per-blank weighting to preserve, so an even split is the only assumption — safe;
+     * - a positive condition that does not credit exactly one placed blank — several at once
+     *   (an <and>/<or> awarding points only for a combination), an <other> bonus, or a
+     *   condition on another response — can't be represented as independent even fields — unsafe;
+     * - a placed blank that no positive condition scores would be granted credit Canvas
+     *   withholds — unsafe;
+     * - placed blanks scored with unequal positive values would have their ratio flattened
+     *   to 1:1 — unsafe;
+     * - a nonzero initial SCORE, or per-blank additions that fall short of the SCORE maximum,
+     *   would let a fully-correct Cloze out-score the Canvas original — unsafe;
+     * - a condition carrying more than one SCORE update has a net value the single-value read
+     *   cannot see, so it is not trusted — unsafe;
+     * - a scoring condition with a negated predicate (<not>), or a non-additive zero reset
+     *   (Set 0) that could erase accrued credit, has no even-Cloze equivalent — unsafe;
+     * - a blank whose accepted alternatives carry different scores would be over-credited on
+     *   the cheaper spelling by a single even field — unsafe.
+     *
+     * @param DOMElement $item The item element.
+     * @param array $placed The blank ids that produced a Cloze field.
+     * @return bool
+     */
+    protected function cloze_weighting_is_safe(DOMElement $item, array $placed): bool {
+        $resprocessing = $this->first_child_element($item, 'resprocessing');
+        if ($resprocessing === null) {
+            return true;
+        }
+        $placedset = array_flip($placed);
+        $scores = [];
+        foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
+            if (!($cond instanceof DOMElement)) {
+                continue;
+            }
+            $scorecount = $this->count_score_setvars($cond);
+            if ($scorecount > 1) {
+                // A condition with several SCORE updates (e.g. Add 50 then Add -10) has a net
+                // value condition_score() does not capture; leave the item unsupported rather
+                // than read only the first update.
+                return false;
+            }
+            $score = $this->condition_score($cond);
+            if ($score < 0) {
+                // A penalty (negative SCORE adjustment for a wrong response) reduces the
+                // Canvas total but has no equivalent in an even Cloze split, so the item
+                // is left unsupported rather than over-credited.
+                return false;
+            }
+            if ($score <= 0) {
+                // A non-additive SCORE update of zero (a "Set 0" reset, typically on a wrong
+                // response) can erase credit earlier conditions accrued — a Cloze can't undo
+                // credit, so reject. A bare additive "Add 0", or a condition with no SCORE
+                // setvar at all, is a harmless no-op and is skipped.
+                if ($scorecount === 1 && !$this->condition_is_additive($cond)) {
+                    return false;
+                }
+                continue;
+            }
+            // Only additive scoring (SCORE action="Add") maps to independent per-blank
+            // weights. A "Set" (or action-less, whose QTI default is Set) condition awards
+            // its value once regardless of how many blanks are right, which an even split
+            // would mis-grade, so the item is left unsupported.
+            if (!$this->condition_is_additive($cond)) {
+                return false;
+            }
+            // A scoring condition that also constrains a response negatively (a <not> predicate,
+            // e.g. "b1 = x AND b2 != y") credits its blank only in combination with another
+            // response's value; an even Cloze grades each field independently and can't
+            // reproduce that, so reject rather than over-credit.
+            if ($cond->getElementsByTagNameNS('*', 'not')->length > 0) {
+                return false;
+            }
+            $blanks = [];
+            foreach ($cond->getElementsByTagNameNS('*', 'varequal') as $ve) {
+                if (!($ve instanceof DOMElement) || $this->within($ve, 'not')) {
+                    continue;
+                }
+                $blankid = (string) preg_replace('/^response_/', '', $ve->getAttribute('respident'));
+                if ($blankid !== '') {
+                    $blanks[$blankid] = true;
+                }
+            }
+            if (count($blanks) !== 1) {
+                // A positive condition must credit exactly one blank. Several at once (an
+                // <and>/<or>) can't be split into independent even fields, and none at all
+                // (an <other> bonus, or a condition on a different response) awards Canvas
+                // credit no placed Cloze field can reproduce.
+                return false;
+            }
+            $blankid = array_key_first($blanks);
+            if (!isset($placedset[$blankid])) {
+                // The credited blank is not one placed as a Cloze field, so an even split
+                // over the placed fields would drop this score.
+                return false;
+            }
+            if (isset($scores[$blankid]) && abs($scores[$blankid] - $score) > 1e-6) {
+                // The same blank has accepted alternatives worth different amounts (e.g. one
+                // spelling adds 50, another 25). A single even field credits every alternative
+                // equally, over-crediting the cheaper spelling, so reject.
+                return false;
+            }
+            $scores[$blankid] = $score;
+        }
+        if ($scores === []) {
+            // Resprocessing names no scored blank: nothing to preserve, even split is fine.
+            return true;
+        }
+        if (abs($this->declared_score_default($resprocessing)) > 1e-9) {
+            // A nonzero starting SCORE (decvar defaultval) shifts the whole grading scale, so
+            // the per-blank additions no longer span 0..max evenly; leave the item unsupported
+            // rather than mis-weight it.
+            return false;
+        }
+        $values = [];
+        foreach ($placed as $blankid) {
+            if (!isset($scores[$blankid])) {
+                // Some blanks are scored but this placed one is not — an even split would
+                // credit a blank Canvas awards nothing.
+                return false;
+            }
+            $values[] = $scores[$blankid];
+        }
+        if ($this->scores_are_uneven($values)) {
+            return false;
+        }
+        // Even per-blank scores must also sum to the SCORE maximum: if they fall short (e.g.
+        // two blanks adding 25 each against a max of 100), a fully-correct response earns only
+        // part of the item in Canvas while an even Cloze awards it in full, so such an item is
+        // left unsupported. A per-blank rounding tolerance keeps scores like 33.33×3 ≈ 100
+        // convertible. An undeclared maximum falls back to 100, matching how the rest of the
+        // parser reads an omitted SCORE maximum ({@see score_max}).
+        $maxvalue = $this->score_max($resprocessing);
+        if (abs(array_sum($values) - $maxvalue) > count($placed) * 0.01) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * The declared initial value of the SCORE outcome variable in a resprocessing block — the
+     * decvar defaultval — or 0 when none is declared. A nonzero baseline shifts the grading
+     * scale away from an even per-blank split.
+     *
+     * @param DOMElement $resprocessing The resprocessing element.
+     * @return float
+     */
+    protected function declared_score_default(DOMElement $resprocessing): float {
+        foreach ($resprocessing->getElementsByTagNameNS('*', 'decvar') as $decvar) {
+            if ($decvar instanceof DOMElement && $this->is_score_var($decvar->getAttribute('varname'))) {
+                return (float) $decvar->getAttribute('defaultval');
+            }
+        }
+        return 0.0;
+    }
+
+    /**
+     * Whether a set of per-blank scores disagree — two or more positive scores that are
+     * not all equal. Fewer than two scores (or all equal) is treated as even, so an
+     * unscored or equally-weighted item is not rejected.
+     *
+     * @param array $scores The per-blank scores.
+     * @return bool
+     */
+    protected function scores_are_uneven(array $scores): bool {
+        $values = array_values($scores);
+        if (count($values) < 2) {
+            return false;
+        }
+        $first = $values[0];
+        foreach ($values as $value) {
+            if (abs($value - $first) > 1e-6) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

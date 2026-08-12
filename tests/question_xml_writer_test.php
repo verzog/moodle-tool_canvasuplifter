@@ -318,6 +318,70 @@ final class question_xml_writer_test extends \advanced_testcase {
     }
 
     /**
+     * A Cloze question is emitted as a Moodle multianswer whose question text carries
+     * the embedded SHORTANSWER fields, with no separate <answer> elements (the grade
+     * comes from the inline sub-questions).
+     *
+     * @return void
+     */
+    public function test_writes_cloze(): void {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_CLOZE;
+        $q->name = 'Blanks';
+        $q->questiontext = '<p>Lorem {1:SHORTANSWER:=ipsum} dolor {1:SHORTANSWER:=sit}.</p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], '$course$/Imported/Bank');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml), 'output should be well-formed XML');
+
+        $types = [];
+        foreach ($dom->getElementsByTagName('question') as $node) {
+            $types[] = $node->getAttribute('type');
+        }
+        $this->assertSame(['category', 'multianswer'], $types);
+
+        $qtext = $dom->getElementsByTagName('questiontext')->item(0)->getElementsByTagName('text')->item(0)->textContent;
+        $this->assertStringContainsString('{1:SHORTANSWER:=ipsum}', $qtext);
+        $this->assertStringContainsString('{1:SHORTANSWER:=sit}', $qtext);
+        // A Cloze carries no separate <answer>/<single> — the fields live in the text.
+        $this->assertStringNotContainsString('<answer', $xml);
+        $this->assertStringNotContainsString('<single>', $xml);
+    }
+
+    /**
+     * When a Cloze stem carries bundled media (triggering the HTML media round-trip) and a
+     * SHORTANSWER field's answer is literal tag-like text, the field must survive intact:
+     * the answer's angle brackets are not parsed as markup and the field is not corrupted.
+     *
+     * @return void
+     */
+    public function test_cloze_field_survives_media_reserialisation(): void {
+        $dir = make_request_directory();
+        // 1x1 transparent PNG.
+        $png = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+        );
+        file_put_contents($dir . '/pic.png', $png);
+
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_CLOZE;
+        $q->name = 'Blanks';
+        $q->questiontext = '<p>See <img src="pic.png" alt="x"> then {1:SHORTANSWER:=<div>} and {1:SHORTANSWER:=value}.</p>';
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], 'cat', $dir);
+
+        // The stem image was rewritten (the media path ran)...
+        $this->assertStringContainsString('@@PLUGINFILE@@/pic.png', $xml);
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml), 'output should be well-formed XML');
+        $qtext = $dom->getElementsByTagName('questiontext')->item(0)->getElementsByTagName('text')->item(0)->textContent;
+        // ...yet the tag-like Cloze field is byte-for-byte intact, not split across markup.
+        $this->assertStringContainsString('{1:SHORTANSWER:=<div>}', $qtext);
+        $this->assertStringContainsString('{1:SHORTANSWER:=value}', $qtext);
+    }
+
+    /**
      * When the source options carry no 'true'/'false' labels, the writer falls
      * back to position (first option is the true side) and still scores the
      * correct one.

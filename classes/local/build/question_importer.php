@@ -154,6 +154,79 @@ class question_importer {
                 $ids[] = (int) $id;
             }
         }
+        $this->restore_cloze_marks($questions, $ids);
         return $ids;
+    }
+
+    /**
+     * Restore the Canvas mark on imported Cloze (multianswer) questions.
+     *
+     * Moodle's multianswer importer derives the question's default mark from the sum
+     * of its inline field weights (one per blank), overriding the Canvas
+     * points_possible the writer emitted — so a three-blank question worth one point
+     * in Canvas would become a three-mark question, skewing its weight in a quiz. The
+     * per-blank fractions are unaffected (multianswer grading returns a fraction
+     * normalised by the field weights), so resetting the question's default mark to
+     * the Canvas value restores the intended weight while keeping the blanks even.
+     *
+     * The mark is applied per created id, matched to its model by the (plain) question
+     * name Moodle stored, rather than by list position — so a batch where qformat_xml
+     * skipped some questions (leaving fewer ids than models) still restores the mark on
+     * every surviving Cloze. A name shared by Cloze questions that carry different Canvas
+     * marks is left untouched (the imported questions can't be told apart); a repeated
+     * name whose occurrences agree on the mark is still restored, since the value is the
+     * same whichever question it lands on.
+     *
+     * @param array $questions The imported model questions, in import order.
+     * @param array $ids The created question ids.
+     * @return void
+     */
+    private function restore_cloze_marks(array $questions, array $ids): void {
+        global $DB;
+        $marks = [];
+        $ambiguous = [];
+        foreach ($questions as $question) {
+            if ($question->type !== qti_question::TYPE_CLOZE) {
+                continue;
+            }
+            $name = $this->plain_name((string) $question->name);
+            $mark = max(0.0, (float) $question->defaultmark);
+            // A repeated name is only ambiguous when its occurrences disagree on the
+            // mark: identical name-to-mark mappings resolve to the same value whichever
+            // imported question they land on, so they are safe to restore. Only a name
+            // that maps to two different marks can't be told apart and is left alone.
+            if (array_key_exists($name, $marks) && abs($marks[$name] - $mark) > 1e-9) {
+                $ambiguous[$name] = true;
+            }
+            $marks[$name] = $mark;
+        }
+        if ($marks === []) {
+            return;
+        }
+        foreach ($ids as $id) {
+            $record = $DB->get_record('question', ['id' => $id], 'id, name, qtype');
+            if ($record === false || $record->qtype !== 'multianswer') {
+                continue;
+            }
+            if (isset($ambiguous[$record->name]) || !isset($marks[$record->name])) {
+                continue;
+            }
+            if ($marks[$record->name] > 0) {
+                $DB->set_field('question', 'defaultmark', $marks[$record->name], ['id' => $id]);
+            }
+        }
+    }
+
+    /**
+     * The plain-text form of a question name, matching how {@see question_xml_writer}
+     * emits it into the import XML, so an imported question can be matched back to its
+     * model by the name Moodle actually stored.
+     *
+     * @param string $name The raw model question name.
+     * @return string
+     */
+    private function plain_name(string $name): string {
+        $text = trim((string) preg_replace('/\s+/', ' ', strip_tags(html_entity_decode($name, ENT_QUOTES | ENT_HTML5))));
+        return $text !== '' ? $text : 'Question';
     }
 }
