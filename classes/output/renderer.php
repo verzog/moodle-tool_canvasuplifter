@@ -69,6 +69,7 @@ class renderer extends plugin_renderer_base {
         // under an otherwise-empty mapping table, sections and orphan list. Shown
         // once here, so drop it from the warnings list rendered at the foot.
         $warnings = $report['warnings'] ?? [];
+        $nativeshown = false;
         if (in_array('warnblackboardnative', $warnings, true)) {
             $out .= html_writer::tag(
                 'p',
@@ -76,6 +77,7 @@ class renderer extends plugin_renderer_base {
                 ['class' => 'alert alert-warning']
             );
             $warnings = array_values(array_filter($warnings, fn($w) => $w !== 'warnblackboardnative'));
+            $nativeshown = true;
         }
 
         $out .= html_writer::tag('p', get_string('buildsnowsummary', 'tool_canvasuplifter', [
@@ -91,7 +93,12 @@ class renderer extends plugin_renderer_base {
         if (debugging() && !empty($report['unknowntypes'])) {
             $out .= $this->unknown_types($report['unknowntypes']);
         }
-        $out .= $this->warnings($warnings);
+        // Skip the "no warnings, straightforward to convert" footer when the only
+        // warning was the Blackboard-native alert already shown at the top — that
+        // footer would contradict it. Any other warnings still render normally.
+        if (!$nativeshown || !empty($warnings)) {
+            $out .= $this->warnings($warnings);
+        }
         return $out;
     }
 

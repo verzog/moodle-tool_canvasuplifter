@@ -408,6 +408,40 @@ XML;
     }
 
     /**
+     * A package that mixes x-bb-* settings with a resource whose href is an absolute
+     * URL is not native: classify() builds that resource as a mod_url regardless of
+     * its (unrecognised) type, so the package has importable content.
+     *
+     * @return void
+     */
+    public function test_blackboard_native_not_flagged_when_a_weblink_builds(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="toc00001">
+      <item identifier="root"><item identifier="i_link" identifierref="res_link"><title>Handbook</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="res_settings" type="course/x-bb-coursesetting"/>
+    <resource identifier="res_link" type="resource/x-bb-link" href="https://example.org/handbook"/>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The absolute-href resource is importable content, so the package is not
+        // declared native, and that resource builds as a URL.
+        $this->assertNotSame(source_detector::BLACKBOARD_NATIVE, $course->source);
+        $kinds = array_map(fn($i) => $i->kind, $course->all_items());
+        $this->assertContains(item::KIND_URL, $kinds);
+    }
+
+    /**
      * A file embedded inside a page body via a $IMS-CC-FILEBASE$ token (Canvas
      * stores these under web_resources/) is inlined into the page at build time,
      * so it must not also surface as a standalone orphan resource — while a file

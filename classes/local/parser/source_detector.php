@@ -84,12 +84,16 @@ final class source_detector {
             // Blackboard's native export declares proprietary x-bb-* resource types
             // (resource/x-bb-document, assessment/x-bb-qti-test, course/x-bb-*), which
             // no Common Cartridge exporter uses. Track those separately from any
-            // recognised CC content type, so a package that mixes a few x-bb-* settings
-            // resources with genuine importable CC content is not mistaken for native.
+            // importable content, so a package that mixes a few x-bb-* settings
+            // resources with genuine buildable content is not mistaken for native.
             $type = $resource->getAttribute('type');
             if (stripos($type, 'x-bb-') !== false) {
                 $hasxbb = true;
-            } else if (preg_match($ccpattern, $type)) {
+            }
+            // Importable content is a recognised CC content type, or any resource
+            // whose href is an absolute URL — classify() maps the latter to a mod_url
+            // regardless of type, so it builds even under an unrecognised type.
+            if (preg_match('#^https?://#i', $resource->getAttribute('href')) || preg_match($ccpattern, $type)) {
                 $hasccontent = true;
             }
             $identifier = $resource->getAttribute('identifier');
