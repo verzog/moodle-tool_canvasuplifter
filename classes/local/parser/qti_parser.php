@@ -624,7 +624,7 @@ class qti_parser {
             return;
         }
         $stem = $question->questiontext;
-        $blanks = $this->cloze_blank_answers($item, $presentation);
+        $blanks = $this->cloze_blank_answers($presentation);
         $text = $stem;
         $complete = $blanks !== [];
         foreach ($blanks as $blankid => $accepted) {
@@ -658,21 +658,22 @@ class qti_parser {
 
     /**
      * Map each fill-in-multiple-blanks blank to its accepted answers. The blank id is
-     * the response_lid ident with the "response_" prefix removed. An open-entry label
-     * (answer_type="openEntry") is always an acceptable free-text spelling, so all such
-     * labels are kept — mirroring how {@see fill_text_answers} treats a single blank
-     * (Canvas enumerates each spelling and the respcondition may reference only one).
-     * A non-open-entry (choice-form) label is a distractor unless a scoring condition
-     * marks it correct, so those are resolved through {@see correct_idents}. Each answer
-     * carries whether Canvas graded it as "contains" so the writer can widen it to a
-     * Moodle SHORTANSWER wildcard match.
+     * the response_lid ident with the "response_" prefix removed. A
+     * fill_in_multiple_blanks_question is a free-text (open-entry) question by type —
+     * this method is only reached for that Canvas type; a genuine pick-from-a-fixed-set
+     * question is a multiple_dropdowns_question, which {@see map_type} routes to a
+     * Moodle match, not here. So every listed response_label is an acceptable spelling
+     * (not a distractor) and all are kept, regardless of whether the label carries the
+     * answer_type/scoring_algorithm attributes — mirroring how {@see fill_text_answers}
+     * treats a single blank, where Canvas may enumerate several spellings but the
+     * respcondition references only one. Each answer's text is flattened to plain text
+     * (a SHORTANSWER key is not rendered as HTML) and carries whether Canvas graded it
+     * as "contains" so the writer can widen it to a Moodle wildcard match.
      *
-     * @param DOMElement $item The item element.
      * @param DOMElement $presentation The presentation element.
      * @return array Map of blank id to a list of ['text' => string, 'contains' => bool].
      */
-    protected function cloze_blank_answers(DOMElement $item, DOMElement $presentation): array {
-        $correct = array_flip($this->correct_idents($item));
+    protected function cloze_blank_answers(DOMElement $presentation): array {
         $result = [];
         foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
             if (!($lid instanceof DOMElement) || $lid->getAttribute('ident') === '') {
@@ -685,13 +686,7 @@ class qti_parser {
                 if (!($label instanceof DOMElement)) {
                     continue;
                 }
-                // Keep open-entry spellings unconditionally; a choice-form label counts
-                // only when a scoring condition marks its ident correct (not a distractor).
-                $openentry = strcasecmp($label->getAttribute('answer_type'), 'openEntry') === 0;
-                if (!$openentry && !isset($correct[$label->getAttribute('ident')])) {
-                    continue;
-                }
-                $text = trim($this->material_text($label));
+                $text = $this->plain_answer($this->material_text($label));
                 // A contains-match algorithm (Canvas TextContainsAnswer) accepts any
                 // response holding the answer, so the answer text alone is not a
                 // reliable dedup key; qualify it with the algorithm.

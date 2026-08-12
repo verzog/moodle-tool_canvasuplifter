@@ -845,30 +845,30 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
-     * A fill_in_multiple_blanks_question authored in choice form (labels are fixed
-     * choices with distractors rather than open-entry spellings) accepts only the
-     * label each blank's scoring condition marks correct — a distractor is not turned
-     * into a second correct answer.
+     * A fill-in-multiple-blanks blank is free-text, so every listed spelling is an
+     * accepted answer even when the scoring respcondition references only one and the
+     * labels carry no answer_type attribute. Their HTML is flattened to plain text,
+     * because a Moodle SHORTANSWER key is not rendered as markup.
      *
      * @return void
      */
-    public function test_native_cloze_choice_form_excludes_distractors(): void {
-        $blank = function (string $id, string $c1, string $t1, string $c2, string $t2): string {
-            return '<response_lid ident="response_' . $id . '"><render_choice>'
-                . '<response_label ident="' . $c1 . '"><material><mattext texttype="text/plain">' . $t1
-                . '</mattext></material></response_label>'
-                . '<response_label ident="' . $c2 . '"><material><mattext texttype="text/plain">' . $t2
-                . '</mattext></material></response_label></render_choice></response_lid>';
-        };
-        $pres = '<presentation><material><mattext texttype="text/html">Pick [b1] and [b2].</mattext></material>'
-            . $blank('b1', 'x1', 'Alpha', 'x2', 'Beta') . $blank('b2', 'y1', 'Gamma', 'y2', 'Delta')
-            . '</presentation>';
+    public function test_native_cloze_keeps_all_spellings_and_flattens_html(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">The [b1] and [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice>'
+            . '<response_label ident="b1-0"><material><mattext texttype="text/html">&lt;p&gt;colour&lt;/p&gt;</mattext>'
+            . '</material></response_label>'
+            . '<response_label ident="b1-1"><material><mattext texttype="text/plain">color</mattext></material>'
+            . '</response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice>'
+            . '<response_label ident="b2-0"><material><mattext texttype="text/plain">two</mattext></material>'
+            . '</response_label></render_choice></response_lid></presentation>';
+        // Scoring references only b1-0 and b2-0, yet the b1-1 spelling must still be kept.
         $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
-            . '<respcondition><conditionvar><varequal respident="response_b1">x1</varequal></conditionvar>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
             . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
-            . '<respcondition><conditionvar><varequal respident="response_b2">y2</varequal></conditionvar>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
             . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
-        $item = '<item ident="cf1"><itemmetadata><qtimetadata>'
+        $item = '<item ident="sp1"><itemmetadata><qtimetadata>'
             . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
             . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
             . $pres . $resp . '</item>';
@@ -876,10 +876,11 @@ final class qti_parser_test extends \basic_testcase {
         $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
 
         $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
-        // Only the scored choice per blank; distractors Beta and Gamma are excluded.
-        $this->assertStringContainsString('{1:SHORTANSWER:=Alpha} and {1:SHORTANSWER:=Delta}', $q->questiontext);
-        $this->assertStringNotContainsString('Beta', $q->questiontext);
-        $this->assertStringNotContainsString('Gamma', $q->questiontext);
+        // Both spellings retained (the unreferenced b1-1 too), and the HTML label is
+        // flattened to plain "colour" rather than "<p>colour</p>".
+        $this->assertStringContainsString('{1:SHORTANSWER:=colour~=color} and {1:SHORTANSWER:=two}', $q->questiontext);
+        $this->assertStringNotContainsString('&lt;p&gt;', $q->questiontext);
+        $this->assertStringNotContainsString('<p>colour', $q->questiontext);
     }
 
     /**
