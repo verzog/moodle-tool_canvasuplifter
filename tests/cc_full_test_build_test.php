@@ -227,5 +227,8 @@ final class cc_full_test_build_test extends \advanced_testcase {
 
         $this->assertContains(get_string('warnblackboardnative', 'tool_canvasuplifter'), $report['warnings']);
         $this->assertSame(0, $report['created']);
+        // The build report carries the source so the status page can lead with the
+        // native-format explanation before the zero-created summary.
+        $this->assertSame(\tool_canvasuplifter\local\parser\source_detector::BLACKBOARD_NATIVE, $report['source']);
     }
 }

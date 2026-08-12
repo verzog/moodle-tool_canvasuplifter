@@ -121,13 +121,14 @@ final class source_detector {
                 }
             }
         }
-        // Declare a package Blackboard-native only when it carries no importable
-        // Common Cartridge content at all — so a genuinely native package (all
-        // x-bb-* resources, or the .bb-package-info marker) is caught, while one that
-        // mixes a few x-bb-* settings with real CC content is left to import what it
-        // can. Recognised first so a wholly-native package's x-bb-* resources don't
-        // fall through as unclassified and build nothing.
-        if (!$hasccontent && ($bbmarker || $hasxbb)) {
+        // The .bb-package-info marker is definitive — only Blackboard's native
+        // packager writes it — so it identifies a native package on its own. The
+        // x-bb-* resource-type heuristic is softer, so it only concludes "native"
+        // when the package carries no importable Common Cartridge content at all; a
+        // package that mixes a few x-bb-* settings with real CC content is left to
+        // import what it can. Recognised first so a wholly-native package's x-bb-*
+        // resources don't fall through as unclassified and build nothing.
+        if ($bbmarker || ($hasxbb && !$hasccontent)) {
             return self::BLACKBOARD_NATIVE;
         }
         if ($d2l) {

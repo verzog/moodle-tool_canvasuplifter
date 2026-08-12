@@ -26,6 +26,7 @@ require(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
 
 use tool_canvasuplifter\local\job_manager;
+use tool_canvasuplifter\local\parser\source_detector;
 
 $jobid = required_param('jobid', PARAM_INT);
 
@@ -102,6 +103,19 @@ if ($job->status === job_manager::STATUS_DONE && $job->kind === job_manager::KIN
     }
 } else if ($job->status === job_manager::STATUS_DONE && $job->courseid) {
     $report = json_decode((string) $job->report, true) ?: [];
+    // A Blackboard-native package builds nothing, so lead with the actionable
+    // explanation before the zero-created summary and result table; drop it from the
+    // warnings list at the foot so it is not shown twice.
+    $buildwarnings = $report['warnings'] ?? [];
+    if (($report['source'] ?? '') === source_detector::BLACKBOARD_NATIVE) {
+        echo html_writer::tag(
+            'p',
+            get_string('warnblackboardnative', 'tool_canvasuplifter'),
+            ['class' => 'alert alert-warning']
+        );
+        $nativetext = get_string('warnblackboardnative', 'tool_canvasuplifter');
+        $buildwarnings = array_values(array_filter($buildwarnings, fn($w) => $w !== $nativetext));
+    }
     echo html_writer::tag('p', get_string('builtcoursesummary', 'tool_canvasuplifter', [
         'sectioncount' => (int) ($report['sectioncount'] ?? 0),
         'itemcount' => (int) ($report['itemcount'] ?? 0),
@@ -138,9 +152,9 @@ if ($job->status === job_manager::STATUS_DONE && $job->kind === job_manager::KIN
         ));
     }
 
-    if (!empty($report['warnings'])) {
+    if (!empty($buildwarnings)) {
         echo $OUTPUT->heading(get_string('warningsheading', 'tool_canvasuplifter'), 4);
-        echo html_writer::alist(array_map('s', $report['warnings']));
+        echo html_writer::alist(array_map('s', $buildwarnings));
     }
 
     if (debugging() && !empty($report['skipreasons'])) {

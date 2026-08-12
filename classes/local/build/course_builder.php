@@ -474,6 +474,7 @@ class course_builder {
 
         return [
             'courseid' => (int) $course->id,
+            'source' => $coursemodel->source,
             'sectioncount' => $sectioncount,
             'itemcount' => $itemcount,
             'created' => $createdtotal,
