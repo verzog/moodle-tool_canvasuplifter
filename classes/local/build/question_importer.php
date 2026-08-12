@@ -172,8 +172,10 @@ class question_importer {
      * The mark is applied per created id, matched to its model by the (plain) question
      * name Moodle stored, rather than by list position — so a batch where qformat_xml
      * skipped some questions (leaving fewer ids than models) still restores the mark on
-     * every surviving Cloze. A name shared by more than one Cloze is left untouched,
-     * since without a unique name the imported questions can't be told apart.
+     * every surviving Cloze. A name shared by Cloze questions that carry different Canvas
+     * marks is left untouched (the imported questions can't be told apart); a repeated
+     * name whose occurrences agree on the mark is still restored, since the value is the
+     * same whichever question it lands on.
      *
      * @param array $questions The imported model questions, in import order.
      * @param array $ids The created question ids.
@@ -188,10 +190,15 @@ class question_importer {
                 continue;
             }
             $name = $this->plain_name((string) $question->name);
-            if (array_key_exists($name, $marks)) {
+            $mark = max(0.0, (float) $question->defaultmark);
+            // A repeated name is only ambiguous when its occurrences disagree on the
+            // mark: identical name-to-mark mappings resolve to the same value whichever
+            // imported question they land on, so they are safe to restore. Only a name
+            // that maps to two different marks can't be told apart and is left alone.
+            if (array_key_exists($name, $marks) && abs($marks[$name] - $mark) > 1e-9) {
                 $ambiguous[$name] = true;
             }
-            $marks[$name] = max(0.0, (float) $question->defaultmark);
+            $marks[$name] = $mark;
         }
         if ($marks === []) {
             return;
