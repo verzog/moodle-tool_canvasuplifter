@@ -25,6 +25,7 @@ use tool_canvasuplifter\local\build\safe_path;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\section_model;
 use tool_canvasuplifter\local\model\item;
+use tool_canvasuplifter\local\model\qti_question;
 
 /**
  * Reads an extracted Canvas Common Cartridge package into a {@see course_model}.
@@ -319,7 +320,7 @@ class manifest_parser {
      * @return void
      */
     protected function suppress_embedded_page_assets(array $resources, array $placed): void {
-        $embedded = $this->collect_embedded_files($resources);
+        $embedded = $this->collect_embedded_files($resources, $placed);
         if (empty($embedded)) {
             return;
         }
@@ -383,43 +384,80 @@ class manifest_parser {
     }
 
     /**
-     * Absolute package paths of the files each page embeds via $IMS-CC-FILEBASE$
-     * tokens, taken from the builder's own {@see link_rewriter} so the set matches
-     * exactly what is inlined into the built page (URL-encoded tokens, tokens in
-     * any attribute, the bare-path/web_resources resolution order, and safe dot
-     * segments all included).
+     * Absolute package paths of every file embedded via $IMS-CC-FILEBASE$ tokens in
+     * a built resource's rich text, taken from the builder's own {@see link_rewriter}
+     * so the set matches exactly what each builder inlines (URL-encoded tokens, tokens
+     * in any attribute, the bare-path/web_resources resolution order, owner-relative
+     * ../ climbs and safe dot segments all included).
      *
-     * Only KIND_PAGE resources are scanned: the page/book/lesson builders run
-     * file_embedder, whereas file_builder (which builds a KIND_FILE HTML resource)
-     * never embeds, so treating its tokens as embedded would drop a real file.
+     * Scans every rich-text surface a builder runs file_embedder over: page/book/lesson
+     * bodies (KIND_PAGE) plus the activity intros that also embed — a quiz's
+     * assessment_meta.xml description, an assignment's instructions, a discussion body,
+     * and an inline LTI launch description — each resolved against the folder its own
+     * content came from, mirroring the owner directory the matching builder passes. A
+     * file_builder HTML resource (KIND_FILE) is never scanned: file_builder does not
+     * embed, so treating its tokens as embedded would drop a real standalone file.
      *
      * @param array $resources The resources keyed by identifier.
+     * @param array $placed Identifiers placed as their own activity in the organisation tree.
      * @return array Set keyed by absolute package path, each value true.
      */
-    protected function collect_embedded_files(array $resources): array {
+    protected function collect_embedded_files(array $resources, array $placed): array {
         $rewriter = new link_rewriter();
         $embedded = [];
-        foreach ($resources as $resourceitem) {
-            // A page prefer_variant() suppressed (its <variant> selected an
-            // assignment instead) is never rendered, so it embeds nothing — don't
-            // let its tokens suppress a real standalone file.
-            if ($resourceitem->kind !== item::KIND_PAGE || $resourceitem->suppressed) {
+        foreach ($resources as $identifier => $resourceitem) {
+            // A resource suppressed elsewhere (e.g. a page whose prefer_variant()
+            // selected an assignment instead) is never built, so it embeds nothing —
+            // don't let its tokens suppress a real standalone file.
+            if ($resourceitem->suppressed) {
                 continue;
             }
-            $html = $this->rendered_page_html($resourceitem);
-            if ($html === null) {
+            $source = $this->intro_embed_source($resourceitem, isset($placed[$identifier]));
+            if ($source === null) {
                 continue;
             }
-            // Resolve $IMS-CC-FILEBASE$ references the same way the page/book/lesson
-            // builders now do — including the page's own folder as an owner-relative
-            // fallback — so media a page embeds with a bare name or a ../ sibling
-            // climb is recognised here and kept off the standalone-download orphan list.
-            $ownerdir = page_payload::basedir($this->basedir, $resourceitem);
+            // Resolve $IMS-CC-FILEBASE$ references the same way the matching builder
+            // does — including the content's own folder as an owner-relative fallback
+            // — so media embedded with a bare name or a ../ sibling climb is recognised
+            // here and kept off the standalone-download orphan list.
+            [$html, $ownerdir] = $source;
             foreach ($rewriter->rewrite_files($html, $this->basedir, $ownerdir)['files'] as $file) {
                 $embedded[$file['package']] = true;
             }
         }
         return $embedded;
+    }
+
+    /**
+     * The rich-text HTML a builder embeds for this resource and the package-relative
+     * owner directory its $IMS-CC-FILEBASE$ tokens resolve against, or null when the
+     * kind embeds no intro (or none is readable). Dispatches per kind so each source
+     * and owner directory mirror the matching builder exactly.
+     *
+     * @param item $resourceitem The resource.
+     * @param bool $placed Whether the resource is placed as its own activity in the organisation tree.
+     * @return array|null [html, ownerdir], or null.
+     */
+    protected function intro_embed_source(item $resourceitem, bool $placed): ?array {
+        switch ($resourceitem->kind) {
+            case item::KIND_PAGE:
+                $html = $this->rendered_page_html($resourceitem);
+                return $html === null ? null : [$html, page_payload::basedir($this->basedir, $resourceitem)];
+            case item::KIND_QUIZ:
+                // Only a placed quiz builds through quiz_builder (which embeds its
+                // description); an orphan assessment is routed to questionbank_builder,
+                // whose bank has an empty intro and embeds nothing, so suppressing its
+                // description media would drop it. Leave orphan quizzes' media alone.
+                return $placed ? $this->quiz_intro_source($resourceitem) : null;
+            case item::KIND_ASSIGNMENT:
+                return $this->assignment_intro_source($resourceitem);
+            case item::KIND_DISCUSSION:
+                return $this->discussion_intro_source($resourceitem);
+            case item::KIND_LTI:
+                return $this->lti_intro_source($resourceitem);
+            default:
+                return null;
+        }
     }
 
     /**
@@ -447,6 +485,390 @@ class manifest_parser {
             }
         }
         return null;
+    }
+
+    /**
+     * The quiz description HTML and its owner directory, mirroring quiz_builder: the
+     * description comes from the sibling assessment_meta.xml, so its owner-relative
+     * media resolves against that file's own folder. Null when no meta file is
+     * readable or it carries no description.
+     *
+     * @param item $resourceitem The quiz resource.
+     * @return array|null [html, ownerdir], or null.
+     */
+    protected function quiz_intro_source(item $resourceitem): ?array {
+        $metapath = $this->locate_quiz_meta($resourceitem);
+        if ($metapath === null) {
+            return null;
+        }
+        $settings = quiz_settings::parse((string) @file_get_contents($metapath));
+        if ($settings->description === '') {
+            return null;
+        }
+        if (!$this->quiz_builds_as_quiz($resourceitem)) {
+            return null;
+        }
+        return [$settings->description, safe_path::package_dir($this->basedir, $metapath)];
+    }
+
+    /**
+     * Whether a placed quiz will actually build as a runnable mod_quiz — and so
+     * quiz_builder will embed its assessment_meta.xml description — mirroring
+     * quiz_builder's build gate via qti_source_locator::resolve_assessment_source():
+     * it builds when there is at least one importable question, a genuine but empty
+     * QTI 1.2 shell (a hidden placeholder that still carries the description), or
+     * item-bank draws. The Common Cartridge QTI is checked first; when it yields
+     * nothing buildable, the native non_cc_assessments dump quiz_builder adopts is
+     * consulted too, so a New Quiz whose real content lives only there is recognised.
+     * A quiz that is malformed / not QTI 1.2 with no such content is skipped by
+     * quiz_builder and embeds nothing, so its description media stays a standalone
+     * download.
+     *
+     * @param item $resourceitem The quiz resource.
+     * @return bool
+     */
+    protected function quiz_builds_as_quiz(item $resourceitem): bool {
+        $qtipath = $this->locate_quiz_qti($resourceitem);
+        if ($qtipath === null) {
+            return false;
+        }
+        $parsed = (new qti_parser())->parse((string) @file_get_contents($qtipath));
+        if ($this->qti_builds($parsed)) {
+            return true;
+        }
+        // The quiz_builder native fallback: Canvas often exports a New Quiz's real
+        // importable questions or item-bank draws only to non_cc_assessments/<id>.
+        // xml.qti, which quiz_builder adopts. Adopt it only for importable questions
+        // or draws (never an empty native shell — quiz_builder does not), so this
+        // never suppresses media for a quiz that will not in fact build.
+        $native = $this->locate_native_quiz_qti($resourceitem, $qtipath);
+        if ($native === null) {
+            return false;
+        }
+        $nativeparsed = (new qti_parser())->parse((string) @file_get_contents($native));
+        return $this->qti_has_importable($nativeparsed)
+            || (!empty($nativeparsed['hasassessment']) && !empty($nativeparsed['selections']));
+    }
+
+    /**
+     * Whether a parsed QTI assessment makes quiz_builder create (and so embed the
+     * description of) a quiz: an importable question, an empty QTI 1.2 shell (built
+     * as a hidden placeholder), or item-bank draws.
+     *
+     * @param array $parsed A qti_parser::parse() result.
+     * @return bool
+     */
+    protected function qti_builds(array $parsed): bool {
+        if ($this->qti_has_importable($parsed)) {
+            return true;
+        }
+        if (empty($parsed['hasassessment'])) {
+            return false;
+        }
+        // An empty shell builds a placeholder; item-bank draws build a runnable or
+        // placeholder quiz — both carry and embed the description.
+        return empty($parsed['questions']) || !empty($parsed['selections']);
+    }
+
+    /**
+     * Whether a parsed QTI assessment carries at least one importable question, the
+     * same test quiz_builder applies to decide there is convertible content.
+     *
+     * @param array $parsed A qti_parser::parse() result.
+     * @return bool
+     */
+    protected function qti_has_importable(array $parsed): bool {
+        foreach (($parsed['questions'] ?? []) as $question) {
+            if ($question->type !== qti_question::TYPE_UNSUPPORTED && $question->is_importable()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Locate the native Canvas question dump for a quiz, mirroring
+     * qti_source_locator::locate_native_qti: an explicit non_cc_assessments/<id>.
+     * xml.qti entry on the file list, else the dump keyed by the CC folder name or
+     * the resource identifier. Never returns the QTI file already parsed.
+     *
+     * @param item $resourceitem The quiz resource.
+     * @param string $qtipath Absolute path of the resolved Common Cartridge QTI file.
+     * @return string|null Absolute path within the package, or null.
+     */
+    protected function locate_native_quiz_qti(item $resourceitem, string $qtipath): ?string {
+        $already = realpath($qtipath);
+        foreach ($resourceitem->files as $relative) {
+            if (!preg_match('~(^|/)non_cc_assessments/[^/]+\.xml\.qti$~i', (string) $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute !== null && realpath($absolute) !== $already) {
+                return $absolute;
+            }
+        }
+        foreach ([basename(dirname($qtipath)), $resourceitem->identifier] as $id) {
+            if ($id === '' || $id === '.' || $id === '/') {
+                continue;
+            }
+            $absolute = $this->resolve_within('non_cc_assessments/' . $id . '.xml.qti');
+            if ($absolute !== null && realpath($absolute) !== $already) {
+                return $absolute;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Locate the assessment_meta.xml carrying a quiz's description, mirroring
+     * quiz_builder::locate_meta: an explicit assessment_meta.xml file entry when
+     * present, otherwise the one beside the resolved QTI assessment file.
+     *
+     * @param item $resourceitem The quiz resource.
+     * @return string|null Absolute path within the package, or null.
+     */
+    protected function locate_quiz_meta(item $resourceitem): ?string {
+        foreach ($resourceitem->files as $relative) {
+            if (str_ends_with((string) $relative, 'assessment_meta.xml')) {
+                $absolute = $this->resolve_within((string) $relative);
+                if ($absolute !== null) {
+                    return $absolute;
+                }
+            }
+        }
+        $qtipath = $this->locate_quiz_qti($resourceitem);
+        if ($qtipath === null) {
+            return null;
+        }
+        $sibling = dirname($qtipath) . '/assessment_meta.xml';
+        return is_readable($sibling) ? $sibling : null;
+    }
+
+    /**
+     * Find the QTI assessment XML backing a quiz resource, mirroring
+     * quiz_builder::locate_qti: the first readable .xml/.xml.qti file that is not the
+     * sibling assessment_meta.xml (which carries settings, not questions).
+     *
+     * @param item $resourceitem The quiz resource.
+     * @return string|null Absolute path within the package, or null.
+     */
+    protected function locate_quiz_qti(item $resourceitem): ?string {
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        foreach ($candidates as $relative) {
+            $relative = (string) $relative;
+            if (str_ends_with($relative, 'assessment_meta.xml') || !preg_match('/\.xml(\.qti)?$/i', $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within($relative);
+            if ($absolute !== null) {
+                return $absolute;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The assignment instructions HTML and its owner directory, mirroring
+     * assign_builder: prefer the settings profile's own <text> description (owner =
+     * that settings file's folder, or the resource folder for an inline CC 1.3
+     * profile), otherwise the sibling description HTML (owner = its own folder). Null
+     * when no settings are readable or no description is found.
+     *
+     * @param item $resourceitem The assignment resource.
+     * @return array|null [html, ownerdir], or null.
+     */
+    protected function assignment_intro_source(item $resourceitem): ?array {
+        $settingspath = $this->locate_assignment_settings($resourceitem);
+        if ($settingspath !== null) {
+            $settings = assignment_settings::parse((string) @file_get_contents($settingspath));
+        } else if ($resourceitem->inlinexml !== '') {
+            $settings = assignment_settings::parse($resourceitem->inlinexml);
+        } else {
+            return null;
+        }
+        if ($settings->description !== '') {
+            $ownerdir = $settingspath !== null
+                ? safe_path::package_dir($this->basedir, $settingspath)
+                : $this->resource_dir($resourceitem);
+            return [$settings->description, $ownerdir];
+        }
+        if ($settingspath === null) {
+            return null;
+        }
+        $descpath = $this->locate_assignment_description($resourceitem, $settingspath);
+        if ($descpath === null) {
+            return null;
+        }
+        $html = (string) @file_get_contents($descpath);
+        return $html === '' ? null : [$html, safe_path::package_dir($this->basedir, $descpath)];
+    }
+
+    /**
+     * Locate an assignment's description HTML sibling, mirroring
+     * assign_builder::locate_description_html: the first readable .htm/.html file on
+     * the resource that is not the settings file itself.
+     *
+     * @param item $resourceitem The assignment resource.
+     * @param string $settingspath Absolute path of the settings file, to skip it.
+     * @return string|null Absolute path within the package, or null.
+     */
+    protected function locate_assignment_description(item $resourceitem, string $settingspath): ?string {
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        foreach ($candidates as $relative) {
+            $relative = (string) $relative;
+            if (!preg_match('/\.html?$/i', $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within($relative);
+            if ($absolute === null || $absolute === $settingspath) {
+                continue;
+            }
+            return $absolute;
+        }
+        return null;
+    }
+
+    /**
+     * The discussion body HTML and its owner directory, mirroring forum_builder: the
+     * topic body from the imsdt XML, resolved against that file's own folder. Null
+     * when the body is plain text, empty, or no topic XML is readable.
+     *
+     * @param item $resourceitem The discussion resource.
+     * @return array|null [html, ownerdir], or null.
+     */
+    protected function discussion_intro_source(item $resourceitem): ?array {
+        // An unpublished announcement (isannouncement && !isvisible) is skipped by
+        // forum_builder::build() before it creates or embeds anything, so leave its
+        // body media as a standalone download rather than suppressing it.
+        if ($resourceitem->isannouncement && !$resourceitem->isvisible) {
+            return null;
+        }
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        foreach ($candidates as $relative) {
+            $relative = (string) $relative;
+            if (!preg_match('/\.xml$/i', $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within($relative);
+            if ($absolute === null) {
+                continue;
+            }
+            $topic = $this->parse_discussion_topic((string) @file_get_contents($absolute));
+            if ($topic === null) {
+                // Not a topic document; forum_builder::read_topic() skips it too.
+                continue;
+            }
+            // The first document that parses as a topic is the one forum_builder
+            // uses — it never looks past it. So stop here: an empty or plain-text
+            // body embeds nothing (return null and don't scan a later candidate the
+            // builder would never read), while an HTML body is the embedded content.
+            if ($topic['plain'] || $topic['text'] === '') {
+                return null;
+            }
+            return [$topic['text'], safe_path::package_dir($this->basedir, $absolute)];
+        }
+        return null;
+    }
+
+    /**
+     * Parse a Common Cartridge discussion-topic document the way forum_builder's
+     * read_topic()/parse_topic() does, returning its body text and whether that body
+     * is plain text — or null when the document is not a topic at all. The caller
+     * distinguishes "not a topic" (keep looking, as the builder does) from a valid
+     * topic whose body is empty or plain text (the builder accepts it and embeds
+     * nothing, so no later candidate is scanned).
+     *
+     * @param string $xml The candidate XML.
+     * @return array|null ['text' => string, 'plain' => bool], or null if not a topic.
+     */
+    protected function parse_discussion_topic(string $xml): ?array {
+        if (trim($xml) === '') {
+            return null;
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded || $dom->getElementsByTagNameNS('*', 'topic')->length === 0) {
+            return null;
+        }
+        $text = $dom->getElementsByTagNameNS('*', 'text')->item(0);
+        // A body is plain text only when the schema says so explicitly (texttype=
+        // text/plain), matching forum_builder; anything else is treated as HTML.
+        $plain = $text instanceof DOMElement
+            && strtolower(trim($text->getAttribute('texttype'))) === 'text/plain';
+        return [
+            'text' => $text !== null ? trim($text->textContent) : '',
+            'plain' => $plain,
+        ];
+    }
+
+    /**
+     * The LTI intro instructions HTML and its owner directory, mirroring
+     * lti_builder. Only an item with an inline launch URL — a re-homed external-tool
+     * assignment or a Canvas ContextExternalTool — embeds intro instructions; a
+     * cartridge LTI link carries only a plain-text description that embeds nothing.
+     * The instructions are the re-homed assignment's inline CC 1.3 <text>, else the
+     * first readable sibling HTML file (a flat Canvas assignment's prompt), each
+     * resolved against the folder its own content came from.
+     *
+     * @param item $resourceitem The LTI resource.
+     * @return array|null [html, ownerdir], or null.
+     */
+    protected function lti_intro_source(item $resourceitem): ?array {
+        // Mirror lti_builder::cartridge_from_launchurl()/sanitise_url(): only an
+        // http(s) launch URL yields a built activity; a javascript:/data:/file:
+        // scheme is rejected, so nothing embeds its instructions — leave that media
+        // as a standalone download rather than suppressing it.
+        if (preg_match('#^https?://#i', trim($resourceitem->launchurl)) !== 1) {
+            return null;
+        }
+        if ($resourceitem->launchdescription !== '') {
+            $ownerdir = $resourceitem->launchdescriptiondir !== ''
+                ? $resourceitem->launchdescriptiondir
+                : $this->resource_dir($resourceitem);
+            return [$resourceitem->launchdescription, $ownerdir];
+        }
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        foreach ($candidates as $relative) {
+            if (!preg_match('/\.html?$/i', (string) $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute === null) {
+                continue;
+            }
+            $html = (string) @file_get_contents($absolute);
+            return $html === '' ? null : [$html, safe_path::package_dir($this->basedir, $absolute)];
+        }
+        return null;
+    }
+
+    /**
+     * Package-relative folder of a resource's primary source (href, else first file),
+     * used as the owner directory for an inline settings profile that has no on-disk
+     * file of its own, mirroring assign_builder::intro_owner_dir's inline fallback.
+     *
+     * @param item $resourceitem The resource.
+     * @return string Package-relative folder ('' at the package root).
+     */
+    protected function resource_dir(item $resourceitem): string {
+        $source = $resourceitem->href !== '' ? $resourceitem->href : (string) ($resourceitem->files[0] ?? '');
+        $dir = trim(str_replace('\\', '/', dirname($source)), '/');
+        return ($dir === '' || $dir === '.') ? '' : $dir;
     }
 
     /**
