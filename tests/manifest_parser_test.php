@@ -442,10 +442,11 @@ XML;
     }
 
     /**
-     * A Blackboard build-log artifact (web_content<n>.log, typed webcontent but
-     * suppressed by the parser) does not count as importable content, so a package
-     * of x-bb-* resources plus that log is still recognised as native rather than
-     * mistaken for an ordinary Blackboard Common Cartridge.
+     * A package of x-bb-* resources plus a genuine Blackboard build-log artifact
+     * (web_content<n>.log carrying instructor-role LOM metadata, which the parser
+     * suppresses) builds nothing, so it is recognised as native. The nativeness is
+     * judged from the built model, so it tracks the parser's real suppression rather
+     * than a resource-type guess.
      *
      * @return void
      */
@@ -455,11 +456,15 @@ XML;
         file_put_contents($dir . '/web_content00001/web_content00001.log', "export build log\n");
         $manifest = <<<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
-<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1"
+  xmlns:lom="http://ltsc.ieee.org/xsd/imsccv1p2/LOM/resource">
   <organizations><organization identifier="toc00001"><item identifier="root"/></organization></organizations>
   <resources>
     <resource identifier="res_doc" type="resource/x-bb-document" href="res00001.dat"><file href="res00001.dat"/></resource>
     <resource identifier="res_log" type="webcontent" href="web_content00001/web_content00001.log">
+      <metadata><lom:lom><lom:educational><lom:intendedEndUserRole>
+        <lom:source>IMSGLC_CC_Rolesv1p2</lom:source><lom:value>Instructor</lom:value>
+      </lom:intendedEndUserRole></lom:educational></lom:lom></metadata>
       <file href="web_content00001/web_content00001.log"/>
     </resource>
   </resources>
@@ -469,19 +474,21 @@ XML;
 
         $course = (new manifest_parser($dir))->parse();
 
-        // The only webcontent resource is a suppressed build log, so there is no
-        // importable content and the package is native.
+        // The build log is suppressed and the x-bb doc is unclassified, so nothing
+        // builds and the package is native. Also confirm nothing was placed/orphaned.
+        $this->assertSame([], $course->all_items());
         $this->assertSame(source_detector::BLACKBOARD_NATIVE, $course->source);
     }
 
     /**
-     * A .bb-package-info marker is definitive even when the archive also carries a
-     * genuinely buildable resource: the package is native, and the buildable
-     * resource still imports — so the warning must not claim nothing was built.
+     * A package that bears the native fingerprint but still imports genuine content
+     * is NOT declared native: the source is judged from the built model, so a package
+     * the parser can build something from keeps its detected source (and the
+     * unsupported-format warning, which is source-driven, does not fire).
      *
      * @return void
      */
-    public function test_blackboard_native_marker_wins_but_content_still_builds(): void {
+    public function test_native_fingerprint_not_flagged_when_content_builds(): void {
         $dir = make_request_directory();
         file_put_contents($dir . '/.bb-package-info', "version=1\n");
         mkdir($dir . '/content', 0777, true);
@@ -503,8 +510,8 @@ XML;
 
         $course = (new manifest_parser($dir))->parse();
 
-        // The marker makes it native, yet the buildable file resource still imports.
-        $this->assertSame(source_detector::BLACKBOARD_NATIVE, $course->source);
+        // The file builds, so the package is not declared native despite the marker.
+        $this->assertNotSame(source_detector::BLACKBOARD_NATIVE, $course->source);
         $kinds = array_map(fn($i) => $i->kind, $course->all_items());
         $this->assertContains(item::KIND_FILE, $kinds);
     }

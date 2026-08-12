@@ -69,51 +69,9 @@ final class source_detector {
         $d2l = false;
         $exe = false;
         $blackboardlog = false;
-        $bbmarker = is_file($basedir . '/.bb-package-info');
-        $hasxbb = false;
-        $hasccontent = false;
-        // Recognised Common Cartridge / Canvas content resource types (the ones
-        // classify() can build something from), used to tell a wholly-native
-        // Blackboard package from one that only mixes in a few x-bb-* settings.
-        $ccpattern = '#(webcontent|imswl_xmlv1p|imsdt_xmlv1p|imsbasiclti_xmlv1p'
-            . '|assignment_xmlv1p|imsqti|imscc_|learning-application-resource|question-bank)#i';
         foreach ($manifest->getElementsByTagNameNS('*', 'resource') as $resource) {
             if (!($resource instanceof DOMElement)) {
                 continue;
-            }
-            // Blackboard's native export declares proprietary x-bb-* resource types
-            // (resource/x-bb-document, assessment/x-bb-qti-test, course/x-bb-*), which
-            // no Common Cartridge exporter uses. Track those separately from any
-            // importable content, so a package that mixes a few x-bb-* settings
-            // resources with genuine buildable content is not mistaken for native.
-            $type = $resource->getAttribute('type');
-            $href = $resource->getAttribute('href');
-            if (stripos($type, 'x-bb-') !== false) {
-                $hasxbb = true;
-            }
-            $paths = $href !== '' ? [$href] : [];
-            foreach ($resource->getElementsByTagNameNS('*', 'file') as $file) {
-                if ($file instanceof DOMElement) {
-                    $paths[] = $file->getAttribute('href');
-                }
-            }
-            $isbuildlog = false;
-            foreach ($paths as $path) {
-                if (preg_match('~(^|/)web_content\d+\.log$~i', (string) $path)) {
-                    $blackboardlog = true;
-                    $isbuildlog = true;
-                }
-                if (preg_match('~(^|/)(js/yahoo/|exe_)~i', (string) $path)) {
-                    $exe = true;
-                }
-            }
-            // Importable content is a recognised CC content type, or any resource
-            // whose href is an absolute URL — classify() maps the latter to a mod_url
-            // regardless of type, so it builds even under an unrecognised type. A
-            // Blackboard build-log artifact (web_content<n>.log) is typed webcontent
-            // but the parser suppresses it, so it does not count as importable.
-            if (!$isbuildlog && (preg_match('#^https?://#i', $href) || preg_match($ccpattern, $type))) {
-                $hasccontent = true;
             }
             $identifier = $resource->getAttribute('identifier');
             // ANGEL is recognised by its <system>ID_LM_/FOLD_/GLO_/FRM_/CRS_<n>
@@ -129,16 +87,20 @@ final class source_detector {
                     $d2l = true;
                 }
             }
-        }
-        // The .bb-package-info marker is definitive — only Blackboard's native
-        // packager writes it — so it identifies a native package on its own. The
-        // x-bb-* resource-type heuristic is softer, so it only concludes "native"
-        // when the package carries no importable Common Cartridge content at all; a
-        // package that mixes a few x-bb-* settings with real CC content is left to
-        // import what it can. Recognised first so a wholly-native package's x-bb-*
-        // resources don't fall through as unclassified and build nothing.
-        if ($bbmarker || ($hasxbb && !$hasccontent)) {
-            return self::BLACKBOARD_NATIVE;
+            $paths = $resource->getAttribute('href') !== '' ? [$resource->getAttribute('href')] : [];
+            foreach ($resource->getElementsByTagNameNS('*', 'file') as $file) {
+                if ($file instanceof DOMElement) {
+                    $paths[] = $file->getAttribute('href');
+                }
+            }
+            foreach ($paths as $path) {
+                if (preg_match('~(^|/)web_content\d+\.log$~i', (string) $path)) {
+                    $blackboardlog = true;
+                }
+                if (preg_match('~(^|/)(js/yahoo/|exe_)~i', (string) $path)) {
+                    $exe = true;
+                }
+            }
         }
         if ($d2l) {
             return self::D2L;
@@ -156,5 +118,32 @@ final class source_detector {
             return self::EXE;
         }
         return self::GENERIC;
+    }
+
+    /**
+     * Whether a package bears Blackboard Learn's native-export fingerprint: the
+     * .bb-package-info marker file, or any proprietary x-bb-* resource type
+     * (resource/x-bb-document, assessment/x-bb-qti-test, course/x-bb-*), which no
+     * Common Cartridge exporter uses.
+     *
+     * This is only the fingerprint. Whether the package is actually an unimportable
+     * native export is decided by the caller in combination with the build result
+     * (a native package the parser could build nothing from), so the conclusion
+     * never diverges from what classify() actually builds or suppresses.
+     *
+     * @param string $basedir Absolute path to the extracted package root.
+     * @param array $resourcetypes The raw resource type strings from the manifest.
+     * @return bool
+     */
+    public static function has_native_fingerprint(string $basedir, array $resourcetypes): bool {
+        if (is_file($basedir . '/.bb-package-info')) {
+            return true;
+        }
+        foreach ($resourcetypes as $type) {
+            if (stripos((string) $type, 'x-bb-') !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 }
