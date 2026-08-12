@@ -1347,6 +1347,124 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A setvar that omits varname targets SCORE by QTI default, so unequal additive scores
+     * written that way (25 vs 75) are still detected as uneven and the item is left
+     * unsupported rather than flattened to an even 1:1 Cloze.
+     *
+     * @return void
+     */
+    public function test_native_cloze_default_score_varname_is_honoured(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">A [b1] B [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE" maxvalue="100"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar action="Add">25</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
+            . '<setvar action="Add">75</setvar></respcondition></resprocessing>';
+        $item = '<item ident="dv1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+    }
+
+    /**
+     * A positive additive condition tied to no placed blank (e.g. an <other/> bonus) awards
+     * Canvas credit an even Cloze cannot reproduce, so the item is left unsupported even when
+     * the genuine per-blank conditions are individually even.
+     *
+     * @return void
+     */
+    public function test_native_cloze_bonus_condition_without_blank_is_unsupported(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">A [b1] B [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE" maxvalue="100"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><other/></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">10</setvar></respcondition></resprocessing>';
+        $item = '<item ident="bn1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+    }
+
+    /**
+     * A nonzero starting SCORE (decvar defaultval) shifts the whole grading scale, so even
+     * per-blank additions that reach the maximum no longer represent an even 0..max split;
+     * the item is left unsupported.
+     *
+     * @return void
+     */
+    public function test_native_cloze_nonzero_initial_score_is_unsupported(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">A [b1] B [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE" defaultval="10" maxvalue="100"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="iv1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+    }
+
+    /**
+     * When the SCORE decvar omits maxvalue the maximum falls back to 100 (as the rest of the
+     * parser reads it), so even additions that fall short of 100 (25+25) are treated as
+     * partial scoring and the item is left unsupported.
+     *
+     * @return void
+     */
+    public function test_native_cloze_undeclared_max_uses_fallback(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">A [b1] B [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">25</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">25</setvar></respcondition></resprocessing>';
+        $item = '<item ident="um1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with three free-text blanks (the shape
      * a real Canvas export uses: [blank] stem placeholders, response_lid per blank with
      * its accepted answers as response_labels, scored by varequal to the label idents).

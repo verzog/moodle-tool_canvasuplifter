@@ -646,8 +646,7 @@ class qti_parser {
             // fields); or when the marker survives only inside markup (e.g. an attribute
             // like <img alt="[b1]">), where a substituted field would sit in an attribute
             // rather than as a rendered answer control.
-            if ($accepted === [] || substr_count($stem, $marker) !== 1
-                    || strpos(strip_tags($stem), $marker) === false) {
+            if ($accepted === [] || substr_count($stem, $marker) !== 1 || strpos(strip_tags($stem), $marker) === false) {
                 continue;
             }
             $replacements[$marker] = $this->cloze_field($accepted);
@@ -840,7 +839,7 @@ class qti_parser {
      */
     protected function score_max(DOMElement $resprocessing): float {
         foreach ($resprocessing->getElementsByTagNameNS('*', 'decvar') as $decvar) {
-            if ($decvar instanceof DOMElement && strtoupper($decvar->getAttribute('varname')) === 'SCORE') {
+            if ($decvar instanceof DOMElement && $this->is_score_var($decvar->getAttribute('varname'))) {
                 $max = (float) $decvar->getAttribute('maxvalue');
                 return $max > 0 ? $max : 100.0;
             }
@@ -1577,6 +1576,18 @@ class qti_parser {
     }
 
     /**
+     * Whether a QTI variable name refers to the SCORE outcome. The varname attribute on a
+     * setvar/decvar is optional and defaults to SCORE, so an absent (empty) name counts as
+     * SCORE, as does an explicit SCORE in any case.
+     *
+     * @param string $varname The varname attribute value.
+     * @return bool
+     */
+    protected function is_score_var(string $varname): bool {
+        return $varname === '' || strtoupper($varname) === 'SCORE';
+    }
+
+    /**
      * The SCORE a respcondition sets, or 0 if it doesn't set a positive score.
      *
      * @param DOMElement $cond The respcondition element.
@@ -1584,7 +1595,7 @@ class qti_parser {
      */
     protected function condition_score(DOMElement $cond): float {
         foreach ($cond->getElementsByTagNameNS('*', 'setvar') as $setvar) {
-            if ($setvar instanceof DOMElement && strtoupper($setvar->getAttribute('varname')) === 'SCORE') {
+            if ($setvar instanceof DOMElement && $this->is_score_var($setvar->getAttribute('varname'))) {
                 return (float) trim($setvar->textContent);
             }
         }
@@ -1601,7 +1612,7 @@ class qti_parser {
      */
     protected function condition_is_additive(DOMElement $cond): bool {
         foreach ($cond->getElementsByTagNameNS('*', 'setvar') as $setvar) {
-            if ($setvar instanceof DOMElement && strtoupper($setvar->getAttribute('varname')) === 'SCORE') {
+            if ($setvar instanceof DOMElement && $this->is_score_var($setvar->getAttribute('varname'))) {
                 return strcasecmp($setvar->getAttribute('action'), 'Add') === 0;
             }
         }
@@ -1615,12 +1626,15 @@ class qti_parser {
      *
      * - no resprocessing, or none of its positive conditions name a blank, means there is
      *   no per-blank weighting to preserve, so an even split is the only assumption — safe;
-     * - a positive condition that names more than one blank (an <and>/<or> awarding points
-     *   only for a combination) can't be split into independent even fields — unsafe;
+     * - a positive condition that does not credit exactly one placed blank — several at once
+     *   (an <and>/<or> awarding points only for a combination), an <other> bonus, or a
+     *   condition on another response — can't be represented as independent even fields — unsafe;
      * - a placed blank that no positive condition scores would be granted credit Canvas
      *   withholds — unsafe;
      * - placed blanks scored with unequal positive values would have their ratio flattened
-     *   to 1:1 — unsafe.
+     *   to 1:1 — unsafe;
+     * - a nonzero initial SCORE, or per-blank additions that fall short of the SCORE maximum,
+     *   would let a fully-correct Cloze out-score the Canvas original — unsafe.
      *
      * @param DOMElement $item The item element.
      * @param array $placed The blank ids that produced a Cloze field.
@@ -1631,6 +1645,7 @@ class qti_parser {
         if ($resprocessing === null) {
             return true;
         }
+        $placedset = array_flip($placed);
         $scores = [];
         foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
             if (!($cond instanceof DOMElement)) {
@@ -1663,18 +1678,30 @@ class qti_parser {
                     $blanks[$blankid] = true;
                 }
             }
-            if (count($blanks) > 1) {
-                // A single condition scoring several blanks together (e.g. an <and>) can't
-                // be represented as independent even fields.
+            if (count($blanks) !== 1) {
+                // A positive condition must credit exactly one blank. Several at once (an
+                // <and>/<or>) can't be split into independent even fields, and none at all
+                // (an <other> bonus, or a condition on a different response) awards Canvas
+                // credit no placed Cloze field can reproduce.
                 return false;
             }
-            foreach (array_keys($blanks) as $blankid) {
-                $scores[$blankid] = max($scores[$blankid] ?? 0.0, $score);
+            $blankid = array_key_first($blanks);
+            if (!isset($placedset[$blankid])) {
+                // The credited blank is not one placed as a Cloze field, so an even split
+                // over the placed fields would drop this score.
+                return false;
             }
+            $scores[$blankid] = max($scores[$blankid] ?? 0.0, $score);
         }
         if ($scores === []) {
             // Resprocessing names no scored blank: nothing to preserve, even split is fine.
             return true;
+        }
+        if (abs($this->declared_score_default($resprocessing)) > 1e-9) {
+            // A nonzero starting SCORE (decvar defaultval) shifts the whole grading scale, so
+            // the per-blank additions no longer span 0..max evenly; leave the item unsupported
+            // rather than mis-weight it.
+            return false;
         }
         $values = [];
         foreach ($placed as $blankid) {
@@ -1688,35 +1715,34 @@ class qti_parser {
         if ($this->scores_are_uneven($values)) {
             return false;
         }
-        // Even per-blank scores must also sum to the declared SCORE maximum: if they fall
-        // short (e.g. two blanks adding 25 each against a max of 100), a fully-correct
-        // response earns only part of the item in Canvas while an even Cloze awards it in
-        // full, so such an item is left unsupported. A per-blank rounding tolerance keeps
-        // scores like 33.33×3 ≈ 100 convertible. When no maximum is declared there is
-        // nothing to compare against, so the even split stands.
-        $maxvalue = $this->declared_score_max($resprocessing);
-        if ($maxvalue !== null && abs(array_sum($values) - $maxvalue) > count($placed) * 0.01) {
+        // Even per-blank scores must also sum to the SCORE maximum: if they fall short (e.g.
+        // two blanks adding 25 each against a max of 100), a fully-correct response earns only
+        // part of the item in Canvas while an even Cloze awards it in full, so such an item is
+        // left unsupported. A per-blank rounding tolerance keeps scores like 33.33×3 ≈ 100
+        // convertible. An undeclared maximum falls back to 100, matching how the rest of the
+        // parser reads an omitted SCORE maximum ({@see score_max}).
+        $maxvalue = $this->score_max($resprocessing);
+        if (abs(array_sum($values) - $maxvalue) > count($placed) * 0.01) {
             return false;
         }
         return true;
     }
 
     /**
-     * The declared maximum of the SCORE outcome variable in a resprocessing block, or null
-     * when none is declared. Unlike {@see score_max} this does not substitute a default, so
-     * a caller can tell a missing maximum from a present one.
+     * The declared initial value of the SCORE outcome variable in a resprocessing block — the
+     * decvar defaultval — or 0 when none is declared. A nonzero baseline shifts the grading
+     * scale away from an even per-blank split.
      *
      * @param DOMElement $resprocessing The resprocessing element.
-     * @return float|null
+     * @return float
      */
-    protected function declared_score_max(DOMElement $resprocessing): ?float {
+    protected function declared_score_default(DOMElement $resprocessing): float {
         foreach ($resprocessing->getElementsByTagNameNS('*', 'decvar') as $decvar) {
-            if ($decvar instanceof DOMElement && strtoupper($decvar->getAttribute('varname')) === 'SCORE'
-                    && $decvar->getAttribute('maxvalue') !== '') {
-                return (float) $decvar->getAttribute('maxvalue');
+            if ($decvar instanceof DOMElement && $this->is_score_var($decvar->getAttribute('varname'))) {
+                return (float) $decvar->getAttribute('defaultval');
             }
         }
-        return null;
+        return 0.0;
     }
 
     /**
