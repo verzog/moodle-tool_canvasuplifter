@@ -2574,10 +2574,19 @@ class manifest_parser {
      */
     protected function mark_navigation_tools(array $resources, course_model $course): void {
         foreach ($this->read_tab_configuration_refs() as $ref) {
-            if (isset($resources[$ref]) || isset($this->externaltoolrefs[$ref])) {
-                // Already imported: a manifest resource with this id (placed or an
-                // orphan activity) or a ContextExternalTool module item built as a
-                // hidden mod_lti. Nothing missing, so do not flag it.
+            // Already imported, so do not flag it: a ContextExternalTool module item
+            // built as a hidden mod_lti (recorded only once its URL validated), or a
+            // manifest resource with this id that will build - it is placed or lands
+            // on the orphan list (kind != UNKNOWN, not suppressed), exactly the
+            // condition the orphan pass uses. Such a resource is always surfaced to
+            // the admin anyway (an LTI row in the analyse report, or an LTI skip note
+            // if its cartridge later fails to build), so it is never silently absent
+            // the way a nav-only tool with no resource at all is.
+            $resource = $resources[$ref] ?? null;
+            $importedasresource = $resource !== null
+                && $resource->kind !== item::KIND_UNKNOWN
+                && !$resource->suppressed;
+            if ($importedasresource || isset($this->externaltoolrefs[$ref])) {
                 continue;
             }
             $course->navtoolsunimported++;

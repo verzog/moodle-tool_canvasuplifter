@@ -3317,4 +3317,64 @@ XML;
         $this->assertCount(0, array_filter($course->all_items(), fn($i) => $i->kind === item::KIND_LTI));
         $this->assertSame(1, $course->navtoolsunimported);
     }
+
+    /**
+     * A nav tab that resolves to a manifest LTI resource is deduped (that tool is
+     * imported as an orphan mod_lti and, either way, surfaced to the admin); a tab
+     * that resolves to a resource which will not build (KIND_UNKNOWN) is not deduped
+     * and is flagged, as is one that resolves to no resource at all.
+     *
+     * @return void
+     */
+    public function test_navigation_tool_dedup_requires_a_buildable_resource(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/tool');
+        file_put_contents(
+            $dir . '/tool/basiclti.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p0"'
+            . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0">'
+            . '<blti:title>Publisher Tool</blti:title>'
+            . '<blti:launch_url>https://tool.example/launch</blti:launch_url>'
+            . '</cartridge_basiclti_link>'
+        );
+        // A learning-application-resource whose only payload is a non-HTML companion
+        // file classifies as KIND_UNKNOWN and never builds.
+        file_put_contents($dir . '/tool/meta.txt', 'metadata');
+        file_put_contents(
+            $dir . '/course_settings/course_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="c1">'
+            . '<title>Mixed Nav Tools</title>'
+            . '<tab_configuration>[{"id":0},{"id":"context_external_tool_navL"},'
+            . '{"id":"context_external_tool_navU"},{"id":"context_external_tool_navonly"}]</tab_configuration>'
+            . '</course>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="navL" type="imsbasiclti_xmlv1p0" href="tool/basiclti.xml">
+      <file href="tool/basiclti.xml"/>
+    </resource>
+    <resource identifier="navU" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="tool/meta.txt">
+      <file href="tool/meta.txt"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The navL resource (a real LTI) is deduped; navU (won't build) and navonly
+        // (no resource) are both flagged.
+        $this->assertSame(2, $course->navtoolsunimported);
+        // The LTI resource did build as an orphan mod_lti.
+        $ltis = array_filter($course->all_items(), fn($i) => $i->kind === item::KIND_LTI);
+        $this->assertCount(1, $ltis);
+        $this->assertSame('Publisher Tool', array_values($ltis)[0]->title);
+    }
 }
