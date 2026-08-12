@@ -211,9 +211,11 @@ class course_builder {
         foreach ($coursemodel->sections as $sectionmodel) {
             // A section whose every item routes to section 0 (a question bank) would leave an
             // empty visible topic section, since those items build into section 0 regardless.
-            // Only give a section a numbered topic when it has at least one placed item, and
-            // number the topics consecutively so skipping one leaves no gap.
-            $hasplaced = false;
+            // Only skip such a section; number the topics consecutively so skipping one leaves
+            // no gap. An explicitly authored empty section is preserved (it carries a title the
+            // parser and Analyze report keep), so only a NON-empty all-section-zero section is
+            // skipped.
+            $hasplaced = empty($sectionmodel->items);
             foreach ($sectionmodel->items as $sectionitem) {
                 if (!in_array($sectionitem->kind, self::SECTION_ZERO_KINDS, true)) {
                     $hasplaced = true;

@@ -871,7 +871,7 @@ XML;
         $dir = make_request_directory();
         mkdir($dir . '/non_cc_assessments', 0777, true);
         file_put_contents($dir . '/non_cc_assessments/pool.xml.qti', $this->objectbank('Section Bank'));
-        // "Week 1" is a topic section whose only item is the standalone bank.
+        // Section "Week 1" is a topic section whose only item is the standalone bank.
         $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
             . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
             . '<organizations><organization identifier="org1"><item identifier="root">'
@@ -894,6 +894,85 @@ XML;
         // The bank-only "Week 1" section is not created as an empty topic section.
         $sectionnames = $DB->get_fieldset_select('course_sections', 'name', 'course = ?', [$report['courseid']]);
         $this->assertNotContains('Week 1', $sectionnames);
+    }
+
+    /**
+     * Issue #146: an explicitly authored empty section (an organization module with no items)
+     * is still created — the bank-only-section skip must not drop deliberately empty sections
+     * nor renumber the sections that follow one.
+     *
+     * @return void
+     */
+    public function test_empty_authored_section_is_preserved(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content', 0777, true);
+        file_put_contents($dir . '/wiki_content/p.html', '<html><head><title>Hello</title></head><body>Hi</body></html>');
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Intro</title></item>'
+            . '<item identifier="m2"><title>Content</title>'
+            . '<item identifier="i_p" identifierref="r_p"><title>Hello</title></item></item>'
+            . '</item></organization></organizations><resources>'
+            . '<resource identifier="r_p" type="webcontent" href="wiki_content/p.html">'
+            . '<file href="wiki_content/p.html"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $sectionnames = $DB->get_fieldset_select('course_sections', 'name', 'course = ?', [$report['courseid']]);
+        // The deliberately empty "Intro" section survives alongside the "Content" section.
+        $this->assertContains('Intro', $sectionnames);
+        $this->assertContains('Content', $sectionnames);
+    }
+
+    /**
+     * Issue #146: when two standalone resources with different titles resolve to the same
+     * physical dump, the first title wins and stays put — a later duplicate does not rename
+     * the shared bank, so the activity name matches what the analysis counted first.
+     *
+     * @return void
+     */
+    public function test_duplicate_standalone_banks_keep_first_name(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        file_put_contents($dir . '/non_cc_assessments/pool.xml.qti', $this->objectbank('Question Pool'));
+        // Two orphan resources naming the same dump, but titled differently in the org tree.
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title>'
+            . '<item identifier="i_a" identifierref="r_a"><title>Alpha Bank</title></item>'
+            . '<item identifier="i_b" identifierref="r_b"><title>Beta Bank</title></item></item>'
+            . '</item></organization></organizations><resources>'
+            . '<resource identifier="r_a" type="associatedcontent/imscc_xmlv1p1/learning-application-resource">'
+            . '<file href="non_cc_assessments/pool.xml.qti"/></resource>'
+            . '<resource identifier="r_b" type="associatedcontent/imscc_xmlv1p1/learning-application-resource">'
+            . '<file href="non_cc_assessments/pool.xml.qti"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $banks = $modinfo->get_instances_of('qbank');
+        // The shared dump imports once, named after the first resource, not the last.
+        $this->assertCount(1, $banks);
+        $this->assertSame('Alpha Bank', reset($banks)->get_name());
     }
 
     /**

@@ -218,17 +218,28 @@ class questionbank_builder {
         if ($bank !== null) {
             return (int) $bank['cmid'];
         }
-        // Nothing importable: report the data loss (unsupported types, or bodies Canvas
-        // omitted) with the same summary the inline path uses. Read the exact matched dump.
+        // No bank built: report why. Read the exact matched dump and distinguish the two
+        // cases the inline path does — Moodle's importer rejecting an otherwise-convertible
+        // batch, versus questions that were never convertible (unsupported types, or bodies
+        // Canvas omitted) — so the skip reason isn't misreported as "zero importable".
         $file = $modelitem->objectbankpath !== ''
             ? safe_path::within($this->packageroot, $modelitem->objectbankpath)
             : $this->bank_dump_path($modelitem->objectbankid);
-        [$parsed, $supported] = $file !== null ? $this->parse_qti($file) : [['questions' => [], 'unresolved' => 0], []];
-        $this->skipreason = question_importer::describe_unconvertible(
-            $parsed['questions'] ?? [],
-            $supported,
-            (int) ($parsed['unresolved'] ?? 0)
-        );
+        [$parsed, $supported, $importable] = $file !== null
+            ? $this->parse_qti($file)
+            : [['questions' => [], 'unresolved' => 0], [], []];
+        if (!empty($importable)) {
+            $this->skipreason = sprintf(
+                "Moodle's importer rejected all %d convertible question(s)",
+                count($importable)
+            );
+        } else {
+            $this->skipreason = question_importer::describe_unconvertible(
+                $parsed['questions'] ?? [],
+                $supported,
+                (int) ($parsed['unresolved'] ?? 0)
+            );
+        }
         return null;
     }
 

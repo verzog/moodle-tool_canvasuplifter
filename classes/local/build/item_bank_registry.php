@@ -108,7 +108,7 @@ class item_bank_registry {
         // creating two banks for the same file. A standalone resource supplies its exact
         // matched path; a quiz draw naming the id alone falls back to a path registered for
         // that id (so a nested dump still resolves), else the non_cc_assessments lookup.
-        $path ??= $this->bankpaths[$bankid] ?? null;
+        $path ??= $this->registered_path($bankid);
         $file = $path !== null ? safe_path::within($this->packageroot, $path) : $this->bank_dump_path($bankid);
         if ($file !== null && !is_readable($file)) {
             $file = null;
@@ -116,13 +116,15 @@ class item_bank_registry {
         $key = $file !== null ? (realpath($file) ?: $file) : $bankid;
         if (array_key_exists($key, $this->banks)) {
             $existing = $this->banks[$key];
-            if ($existing !== null && $name !== null && $name !== '') {
-                // The bank was imported earlier (e.g. by a quiz draw) under its own
-                // <bank_title>; a standalone resource now supplies the authoritative
-                // (possibly disambiguated) name, so rename the module to match.
+            if ($existing !== null && empty($existing['named']) && $name !== null && $name !== '') {
+                // The bank was imported earlier without an authoritative name (e.g. by a quiz
+                // draw, under its own <bank_title>); the first resource to supply a real name
+                // wins, so adopt it once and mark it named. Later duplicates don't re-rename,
+                // keeping the activity name stable and matching what the report counted first.
                 $this->rename_bank($course, (int) $existing['cmid'], $name);
+                $this->banks[$key]['named'] = true;
             }
-            return $existing;
+            return $this->banks[$key];
         }
         $this->banks[$key] = null;
         if ($file === null) {
@@ -177,8 +179,33 @@ class item_bank_registry {
             // The resolved file identity, so draw-capacity callers can share one bank's
             // capacity across ids that differ only by case/prefix but name one dump.
             'key' => $key,
+            // Whether an authoritative name was applied, so a later duplicate resolving to the
+            // same dump doesn't rename the module out from under the first (report-counted) one.
+            'named' => $name !== null && $name !== '',
         ];
         return $this->banks[$key];
+    }
+
+    /**
+     * The registered exact dump path for a bank id, tolerating case: the id's own entry, else
+     * the sole case-insensitive match among registered ids (so a quiz `sourcebank_ref=pool`
+     * resolves a standalone dump registered under `Pool`). Null when none or ambiguous.
+     *
+     * @param string $bankid The bank id.
+     * @return string|null
+     */
+    private function registered_path(string $bankid): ?string {
+        if (isset($this->bankpaths[$bankid])) {
+            return $this->bankpaths[$bankid];
+        }
+        $wanted = strtolower($bankid);
+        $matches = [];
+        foreach ($this->bankpaths as $id => $registeredpath) {
+            if (strtolower((string) $id) === $wanted) {
+                $matches[$registeredpath] = true;
+            }
+        }
+        return count($matches) === 1 ? (string) array_key_first($matches) : null;
     }
 
     /**
