@@ -37,8 +37,16 @@ use DOMElement;
 final class source_detector {
     /** Canvas LMS export. */
     public const CANVAS = 'canvas';
-    /** Blackboard Learn export. */
+    /** Blackboard Learn export (a Common Cartridge Blackboard authored/exported). */
     public const BLACKBOARD = 'blackboard';
+    /**
+     * Blackboard Learn NATIVE export (not Common Cartridge): Blackboard's own
+     * IMS-CP variant, fingerprinted by a .bb-package-info marker or x-bb-* resource
+     * types, with content in resNNNNN.dat files. This tool imports Canvas Common
+     * Cartridge, not this format, so it builds nothing from such a package; detected
+     * so the report can say so instead of silently producing zero items.
+     */
+    public const BLACKBOARD_NATIVE = 'blackboard_native';
     /** D2L Brightspace export. */
     public const D2L = 'd2l';
     /** ANGEL LMS export (often carrying eXe learning modules). */
@@ -61,9 +69,17 @@ final class source_detector {
         $d2l = false;
         $exe = false;
         $blackboardlog = false;
+        $blackboardnative = is_file($basedir . '/.bb-package-info');
         foreach ($manifest->getElementsByTagNameNS('*', 'resource') as $resource) {
             if (!($resource instanceof DOMElement)) {
                 continue;
+            }
+            // Blackboard's native export declares proprietary x-bb-* resource types
+            // (resource/x-bb-document, assessment/x-bb-qti-test, course/x-bb-*), which
+            // no Common Cartridge exporter uses. Either these or the .bb-package-info
+            // marker identify the package as Blackboard-native (not importable here).
+            if (stripos($resource->getAttribute('type'), 'x-bb-') !== false) {
+                $blackboardnative = true;
             }
             $identifier = $resource->getAttribute('identifier');
             // ANGEL is recognised by its <system>ID_LM_/FOLD_/GLO_/FRM_/CRS_<n>
@@ -93,6 +109,12 @@ final class source_detector {
                     $exe = true;
                 }
             }
+        }
+        // A Blackboard-native package has a highly distinctive fingerprint that no
+        // Common Cartridge carries, so recognise it first — its resource types would
+        // otherwise fall through as unclassified content and build nothing.
+        if ($blackboardnative) {
+            return self::BLACKBOARD_NATIVE;
         }
         if ($d2l) {
             return self::D2L;

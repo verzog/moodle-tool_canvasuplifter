@@ -19,6 +19,7 @@ namespace tool_canvasuplifter;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\model\section_model;
+use tool_canvasuplifter\local\parser\source_detector;
 use tool_canvasuplifter\local\report\conversion_report;
 
 /**
@@ -101,6 +102,22 @@ final class conversion_report_test extends \advanced_testcase {
 
         $course->navtoolsunimported = 2;
         $this->assertContains('warnreportnavtools', (new conversion_report($course))->build()['warnings']);
+    }
+
+    /**
+     * A Blackboard-native package raises the warnblackboardnative warning so the
+     * report leads with a clear message; a Canvas package does not.
+     *
+     * @return void
+     */
+    public function test_blackboard_native_warning(): void {
+        $canvas = new course_model();
+        $canvas->source = source_detector::CANVAS;
+        $this->assertNotContains('warnblackboardnative', (new conversion_report($canvas))->build()['warnings']);
+
+        $bb = new course_model();
+        $bb->source = source_detector::BLACKBOARD_NATIVE;
+        $this->assertContains('warnblackboardnative', (new conversion_report($bb))->build()['warnings']);
     }
 
     public function test_subheader_reports_as_label(): void {

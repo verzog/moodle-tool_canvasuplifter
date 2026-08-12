@@ -352,6 +352,62 @@ XML;
     }
 
     /**
+     * A Blackboard Learn native export declares proprietary x-bb-* resource types
+     * (not Common Cartridge), so it is detected as blackboard_native and its content
+     * stays unclassified — the report then leads with a clear message rather than
+     * silently building zero items.
+     *
+     * @return void
+     */
+    public function test_blackboard_native_export_is_detected_from_resource_types(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/res00001.dat', '<content/>');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="toc00001"><item identifier="root"/></organization>
+  </organizations>
+  <resources>
+    <resource identifier="res00001" type="resource/x-bb-document" href="res00001.dat">
+      <file href="res00001.dat"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame(source_detector::BLACKBOARD_NATIVE, $course->source);
+        // The x-bb-document content is unclassified, so nothing builds from it.
+        $this->assertSame([], $course->orphans);
+    }
+
+    /**
+     * The .bb-package-info marker file alone (even with an otherwise unremarkable
+     * manifest) identifies a Blackboard-native package.
+     *
+     * @return void
+     */
+    public function test_blackboard_native_detected_by_marker_file(): void {
+        $dir = make_request_directory();
+        file_put_contents($dir . '/.bb-package-info', "version=1\n");
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="man00001" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="toc00001"><item identifier="root"/></organization></organizations>
+  <resources/>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame(source_detector::BLACKBOARD_NATIVE, $course->source);
+    }
+
+    /**
      * A file embedded inside a page body via a $IMS-CC-FILEBASE$ token (Canvas
      * stores these under web_resources/) is inlined into the page at build time,
      * so it must not also surface as a standalone orphan resource — while a file

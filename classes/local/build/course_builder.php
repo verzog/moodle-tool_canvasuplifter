@@ -386,6 +386,12 @@ class course_builder {
         rebuild_course_cache($course->id, true);
 
         $warnings = [];
+        // A Blackboard-native package is not Common Cartridge and builds nothing, so
+        // lead the build report with a clear message pointing at a Canvas CC re-export
+        // rather than a bare "everything skipped" list.
+        if ($coursemodel->source === source_detector::BLACKBOARD_NATIVE) {
+            $warnings[] = get_string('warnblackboardnative', 'tool_canvasuplifter');
+        }
         if ($skippedtotal > 0) {
             $warnings[] = get_string('warningskippedfornow', 'tool_canvasuplifter', $skippedtotal);
         }

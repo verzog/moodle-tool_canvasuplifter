@@ -213,6 +213,7 @@ $string['settings'] = 'Chunked upload settings';
 $string['skipreasonsheading'] = 'Skip reasons (debug)';
 $string['source_angel'] = 'ANGEL (eXe learning modules)';
 $string['source_blackboard'] = 'Blackboard Learn';
+$string['source_blackboard_native'] = 'Blackboard Learn (native export)';
 $string['source_canvas'] = 'Canvas';
 $string['source_d2l'] = 'D2L Brightspace';
 $string['source_exe'] = 'eXe';
@@ -237,6 +238,9 @@ $string['unresolvedmediatruncated'] = '... and {$a} more not listed here.';
 $string['untitledsection'] = 'Untitled section';
 $string['uploaded'] = 'File uploaded';
 $string['uploadnotfinished'] = 'Upload did not finish!';
+$string['warnblackboardnative'] = 'This looks like a Blackboard Learn native export, not a Common Cartridge, so this '
+    . 'Canvas-focused tool cannot import its content and builds nothing from it. Re-export the source course as Canvas '
+    . 'Common Cartridge (IMSCC) and import that instead.';
 $string['warningsheading'] = 'Notes and warnings';
 $string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';

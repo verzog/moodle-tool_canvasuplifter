@@ -21,6 +21,7 @@ use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\model\qti_question;
 use tool_canvasuplifter\local\parser\outcomes_parser;
 use tool_canvasuplifter\local\parser\qti_parser;
+use tool_canvasuplifter\local\parser\source_detector;
 
 /**
  * Builds a read-only "what is in this package" report from a course model.
@@ -395,6 +396,12 @@ class conversion_report {
 
         // Warnings are language string keys, resolved to text by the caller.
         $warnings = [];
+        // A Blackboard-native package is not Common Cartridge, so nothing builds from
+        // it; lead with a clear, actionable message rather than a wall of
+        // "unclassified" items so the user knows to re-export as Canvas CC.
+        if ($this->course->source === source_detector::BLACKBOARD_NATIVE) {
+            $warnings[] = 'warnblackboardnative';
+        }
         if (($counts[item::KIND_UNKNOWN] ?? 0) > 0) {
             $warnings[] = 'warnreportunclassified';
         }
