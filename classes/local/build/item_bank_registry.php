@@ -91,8 +91,8 @@ class item_bank_registry {
             return $existing;
         }
         $this->banks[$bankid] = null;
-        $file = safe_path::within($this->packageroot, 'non_cc_assessments/' . $bankid . '.xml.qti');
-        if ($file === null || !is_readable($file)) {
+        $file = $this->bank_dump_path($bankid);
+        if ($file === null) {
             return null;
         }
         [$parsed, $supported, $importable] = $this->parse_qti($file);

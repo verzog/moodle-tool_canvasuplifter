@@ -219,7 +219,7 @@ class questionbank_builder {
         }
         // Nothing importable: report the data loss (unsupported types, or bodies Canvas
         // omitted) with the same summary the inline path uses.
-        $file = safe_path::within($this->packageroot, 'non_cc_assessments/' . $modelitem->objectbankid . '.xml.qti');
+        $file = $this->bank_dump_path($modelitem->objectbankid);
         [$parsed, $supported] = $file !== null ? $this->parse_qti($file) : [['questions' => [], 'unresolved' => 0], []];
         $this->skipreason = question_importer::describe_unconvertible(
             $parsed['questions'] ?? [],

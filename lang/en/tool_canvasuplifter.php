@@ -156,6 +156,7 @@ $string['pagegrouping_help'] = 'Canvas wiki pages normally build as one Page act
 $string['pagegrouping_lesson'] = 'Into a lesson (mod_lesson)';
 $string['pagegrouping_none'] = 'No — one page activity each';
 $string['placement_extras'] = 'Additional resources section';
+$string['placement_section0'] = 'General (top) section';
 $string['placement_top'] = 'Top of course';
 $string['pluginname'] = 'Canvas Uplifter';
 $string['privacy:chunkspath'] = 'Chunked uploads';

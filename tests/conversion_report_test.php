@@ -136,6 +136,24 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * Issue #146: a question-bank orphan builds into section 0 (a course-bank activity),
+     * which the build never places in — nor creates — the Additional resources section,
+     * so the report advertises the section-zero placement rather than 'extras'.
+     *
+     * @return void
+     */
+    public function test_questionbank_orphan_placement_is_section_zero(): void {
+        $course = new course_model();
+        $bank = new item('r_bank', 'Question pool');
+        $bank->kind = item::KIND_QUESTIONBANK;
+        $course->orphans[] = $bank;
+
+        $report = (new conversion_report($course))->build();
+
+        $this->assertSame('section0', $report['orphans'][0]['placement']);
+    }
+
+    /**
      * An orphan assessment is reported as a question bank (mod_qbank), matching
      * the builder, while a referenced one stays a quiz (mod_quiz).
      *
@@ -574,7 +592,33 @@ final class conversion_report_test extends \advanced_testcase {
 
         $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
 
-        // bank1 (one importable + one unsupported) is tallied once, not doubled to 4.
+        // Bank bank1 (one importable + one unsupported) is tallied once, not doubled to 4.
+        $this->assertSame(2, $matrix['total']);
+        $this->assertSame(1, $matrix['supported']);
+    }
+
+    /**
+     * Issue #146: when the same standalone objectbank id ships as more than one resource
+     * (e.g. the resource is placed twice in the organization tree), the matrix still counts
+     * the one shared bank the build imports a single time, not once per resource.
+     *
+     * @return void
+     */
+    public function test_matrix_counts_repeated_standalone_bank_once(): void {
+        $dir = $this->write_bank_draw_package('2');
+        $course = new course_model();
+        // Two orphan resources naming the same bank id.
+        foreach (['r_bank_a', 'r_bank_b'] as $id) {
+            $bank = new item($id, 'Shared bank');
+            $bank->kind = item::KIND_QUESTIONBANK;
+            $bank->files = ['non_cc_assessments/bank1.xml.qti'];
+            $bank->objectbankid = 'bank1';
+            $course->orphans[] = $bank;
+        }
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        // Bank bank1 (one importable + one unsupported) is counted once, not doubled to 4.
         $this->assertSame(2, $matrix['total']);
         $this->assertSame(1, $matrix['supported']);
     }

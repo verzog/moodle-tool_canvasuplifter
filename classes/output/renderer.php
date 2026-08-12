@@ -249,8 +249,9 @@ class renderer extends plugin_renderer_base {
             get_string('colresourcetype', 'tool_canvasuplifter'),
             get_string('colplacement', 'tool_canvasuplifter'),
         ];
+        $placements = ['top' => 'placement_top', 'section0' => 'placement_section0', 'extras' => 'placement_extras'];
         foreach ($orphans as $orphan) {
-            $placement = ($orphan['placement'] ?? 'extras') === 'top' ? 'placement_top' : 'placement_extras';
+            $placement = $placements[$orphan['placement'] ?? 'extras'] ?? 'placement_extras';
             $table->data[] = [
                 s($orphan['title']),
                 s($orphan['kind']),

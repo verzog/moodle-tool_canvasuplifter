@@ -516,6 +516,22 @@ class conversion_report {
             if (!in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
                 continue;
             }
+            // A standalone objectbank builds through the shared registry from its own native
+            // dump, keyed by bank id and shared with any quiz that draws from it. Tally that
+            // exact dump — not resolve_qti()'s first XML, which may be an earlier sibling file
+            // in the same resource — once per bank id, and record the id so a repeated resource
+            // (or a quiz draw below) can't double-count the one shared bank the build imports.
+            if ($modelitem->kind === item::KIND_QUESTIONBANK && $modelitem->objectbankid !== '') {
+                if (isset($standalonebankids[$modelitem->objectbankid])) {
+                    continue;
+                }
+                $standalonebankids[$modelitem->objectbankid] = true;
+                [$questions] = $this->bank_questions($modelitem->objectbankid);
+                if (!empty($questions)) {
+                    $total += $this->tally_batch($acc, $questions, $this->display_title($modelitem, $referenced));
+                }
+                continue;
+            }
             // Only a referenced quiz takes the quiz_builder path, which alone adopts
             // the native dump for a pure bank draw and resolves <selection_ordering>.
             // An orphan quiz or any question bank builds through questionbank_builder,
@@ -540,11 +556,6 @@ class conversion_report {
             }
             if (!empty($parsed['questions'])) {
                 $total += $this->tally_batch($acc, $parsed['questions'], $this->display_title($modelitem, $referenced));
-            }
-            // A standalone objectbank item is tallied here from its own file; note its bank
-            // id so it isn't tallied a second time below when a quiz also draws from it.
-            if ($modelitem->kind === item::KIND_QUESTIONBANK && $modelitem->objectbankid !== '') {
-                $standalonebankids[$modelitem->objectbankid] = true;
             }
         }
         // Each referenced item bank is imported once by the build (shared across the
@@ -635,13 +646,41 @@ class conversion_report {
      * @return array [qti_question array, string bank name].
      */
     protected function bank_questions(string $bankid): array {
-        $path = $this->resolve_within('non_cc_assessments/' . $bankid . '.xml.qti');
+        $path = $this->resolve_bank_dump($bankid);
         if ($path === null) {
             return [[], ''];
         }
         $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
         $name = $parsed['title'] !== '' ? $parsed['title'] : $bankid;
         return [$parsed['questions'], $name];
+    }
+
+    /**
+     * Resolve a native item-bank dump (non_cc_assessments/<id>.xml.qti) by bank id,
+     * tolerating extension case so a dump Canvas exported as e.g. Pool.XML.QTI still
+     * resolves on a case-sensitive filesystem (the bank id strips the suffix
+     * case-insensitively). Mirrors the builders' resolver so the report reads the same
+     * file the build imports.
+     *
+     * @param string $bankid The bank id (basename minus the .xml.qti suffix).
+     * @return string|null Absolute path within the package, or null.
+     */
+    private function resolve_bank_dump(string $bankid): ?string {
+        $direct = $this->resolve_readable('non_cc_assessments/' . $bankid . '.xml.qti');
+        if ($direct !== null) {
+            return $direct;
+        }
+        $dir = $this->resolve_within('non_cc_assessments');
+        if ($dir === null || !is_dir($dir)) {
+            return null;
+        }
+        $target = strtolower($bankid . '.xml.qti');
+        foreach ((array) @scandir($dir) as $entry) {
+            if (strtolower((string) $entry) === $target && is_file($dir . '/' . $entry)) {
+                return $dir . '/' . $entry;
+            }
+        }
+        return null;
     }
 
     /**
@@ -1042,11 +1081,30 @@ class conversion_report {
                 'kind' => $modelitem->kind,
                 'target' => $entry['target'],
                 'resourcetype' => $modelitem->resourcetype,
-                // The syllabus is lifted to the course top, not the extras section.
-                'placement' => $modelitem->is_syllabus() ? 'top' : 'extras',
+                'placement' => $this->orphan_placement($modelitem),
             ];
         }
         return $orphans;
+    }
+
+    /**
+     * Where the build actually places an orphan, so the report's preview matches the
+     * course: the syllabus is lifted to the course top; a question bank builds into
+     * section 0 as a course-bank activity (never the Additional resources section, which
+     * the build won't even create for a bank-only package); everything else lands in the
+     * extras section.
+     *
+     * @param item $modelitem The orphan resource.
+     * @return string One of 'top', 'section0', 'extras'.
+     */
+    private function orphan_placement(item $modelitem): string {
+        if ($modelitem->is_syllabus()) {
+            return 'top';
+        }
+        if ($modelitem->kind === item::KIND_QUESTIONBANK) {
+            return 'section0';
+        }
+        return 'extras';
     }
 
     /**

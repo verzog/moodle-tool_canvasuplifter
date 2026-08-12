@@ -48,6 +48,37 @@ trait qti_source_locator {
     }
 
     /**
+     * Resolve a native item-bank dump (non_cc_assessments/<id>.xml.qti) by its bank id,
+     * tolerating extension case. A bank id is the file's basename with the .xml.qti
+     * suffix stripped case-insensitively, so a fixed-case reconstruction can miss a dump
+     * Canvas exported as e.g. Pool.XML.QTI on a case-sensitive filesystem; fall back to a
+     * case-insensitive directory match. The using class must expose a $packageroot property.
+     *
+     * @param string $bankid The bank id (basename minus the .xml.qti suffix).
+     * @return string|null Absolute path to the readable dump within the package, or null.
+     */
+    private function bank_dump_path(string $bankid): ?string {
+        $direct = safe_path::within($this->packageroot, 'non_cc_assessments/' . $bankid . '.xml.qti');
+        if ($direct !== null && is_readable($direct)) {
+            return $direct;
+        }
+        $dir = safe_path::within($this->packageroot, 'non_cc_assessments');
+        if ($dir === null || !is_dir($dir)) {
+            return null;
+        }
+        $target = strtolower($bankid . '.xml.qti');
+        foreach ((array) @scandir($dir) as $entry) {
+            if (strtolower((string) $entry) === $target) {
+                $candidate = $dir . '/' . $entry;
+                if (is_readable($candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Resolve the assessment source a builder should evaluate: parse the Common
      * Cartridge QTI, and when it yields nothing importable fall back to the native
      * non_cc_assessments dump — adopting it when it has inline questions or its own

@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026081233;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026081234;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Standalone objectbank dedup, title, and reporting fixes (#146).
-$plugin->release   = '0.62.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Standalone objectbank path, dedup, and placement fixes (#146).
+$plugin->release   = '0.63.0';
