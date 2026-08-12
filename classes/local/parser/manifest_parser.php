@@ -25,6 +25,7 @@ use tool_canvasuplifter\local\build\safe_path;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\section_model;
 use tool_canvasuplifter\local\model\item;
+use tool_canvasuplifter\local\model\qti_question;
 
 /**
  * Reads an extracted Canvas Common Cartridge package into a {@see course_model}.
@@ -319,7 +320,7 @@ class manifest_parser {
      * @return void
      */
     protected function suppress_embedded_page_assets(array $resources, array $placed): void {
-        $embedded = $this->collect_embedded_files($resources);
+        $embedded = $this->collect_embedded_files($resources, $placed);
         if (empty($embedded)) {
             return;
         }
@@ -398,19 +399,20 @@ class manifest_parser {
      * embed, so treating its tokens as embedded would drop a real standalone file.
      *
      * @param array $resources The resources keyed by identifier.
+     * @param array $placed Identifiers placed as their own activity in the organisation tree.
      * @return array Set keyed by absolute package path, each value true.
      */
-    protected function collect_embedded_files(array $resources): array {
+    protected function collect_embedded_files(array $resources, array $placed): array {
         $rewriter = new link_rewriter();
         $embedded = [];
-        foreach ($resources as $resourceitem) {
+        foreach ($resources as $identifier => $resourceitem) {
             // A resource suppressed elsewhere (e.g. a page whose prefer_variant()
             // selected an assignment instead) is never built, so it embeds nothing —
             // don't let its tokens suppress a real standalone file.
             if ($resourceitem->suppressed) {
                 continue;
             }
-            $source = $this->intro_embed_source($resourceitem);
+            $source = $this->intro_embed_source($resourceitem, isset($placed[$identifier]));
             if ($source === null) {
                 continue;
             }
@@ -433,15 +435,20 @@ class manifest_parser {
      * and owner directory mirror the matching builder exactly.
      *
      * @param item $resourceitem The resource.
+     * @param bool $placed Whether the resource is placed as its own activity in the organisation tree.
      * @return array|null [html, ownerdir], or null.
      */
-    protected function intro_embed_source(item $resourceitem): ?array {
+    protected function intro_embed_source(item $resourceitem, bool $placed): ?array {
         switch ($resourceitem->kind) {
             case item::KIND_PAGE:
                 $html = $this->rendered_page_html($resourceitem);
                 return $html === null ? null : [$html, page_payload::basedir($this->basedir, $resourceitem)];
             case item::KIND_QUIZ:
-                return $this->quiz_intro_source($resourceitem);
+                // Only a placed quiz builds through quiz_builder (which embeds its
+                // description); an orphan assessment is routed to questionbank_builder,
+                // whose bank has an empty intro and embeds nothing, so suppressing its
+                // description media would drop it. Leave orphan quizzes' media alone.
+                return $placed ? $this->quiz_intro_source($resourceitem) : null;
             case item::KIND_ASSIGNMENT:
                 return $this->assignment_intro_source($resourceitem);
             case item::KIND_DISCUSSION:
@@ -504,7 +511,41 @@ class manifest_parser {
         if ($settings->description === '') {
             return null;
         }
+        if (!$this->quiz_builds_as_quiz($resourceitem)) {
+            return null;
+        }
         return [$settings->description, safe_path::package_dir($this->basedir, $metapath)];
+    }
+
+    /**
+     * Whether a placed quiz will actually build as a runnable mod_quiz — and so
+     * quiz_builder will embed its assessment_meta.xml description — mirroring
+     * quiz_builder's build gate: it needs at least one importable question or a
+     * genuine but empty QTI 1.2 assessment shell (which builds a hidden placeholder
+     * that still carries and embeds the description). A quiz whose questions are all
+     * unsupported, or whose file is malformed / not QTI 1.2, is skipped by
+     * quiz_builder and embeds nothing, so its description media must stay a standalone
+     * download. Bank-only draws are treated conservatively as non-building here: at
+     * worst that leaves the media as a harmless duplicate rather than risk dropping it.
+     *
+     * @param item $resourceitem The quiz resource.
+     * @return bool
+     */
+    protected function quiz_builds_as_quiz(item $resourceitem): bool {
+        $qtipath = $this->locate_quiz_qti($resourceitem);
+        if ($qtipath === null) {
+            return false;
+        }
+        $parsed = (new qti_parser())->parse((string) @file_get_contents($qtipath));
+        $questions = $parsed['questions'] ?? [];
+        foreach ($questions as $question) {
+            if ($question->type !== qti_question::TYPE_UNSUPPORTED && $question->is_importable()) {
+                return true;
+            }
+        }
+        // A genuine but empty QTI 1.2 shell still builds a hidden placeholder that
+        // carries the description; a file with no readable assessment does not.
+        return empty($questions) && !empty($parsed['hasassessment']);
     }
 
     /**

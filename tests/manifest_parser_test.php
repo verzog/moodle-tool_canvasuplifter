@@ -488,6 +488,129 @@ XML;
     }
 
     /**
+     * An orphan assessment (absent from the organisation tree) is built as a
+     * question bank, whose activity has an empty intro and embeds nothing, so its
+     * assessment_meta.xml description media must be left as a standalone download
+     * rather than suppressed — only a placed quiz routes through quiz_builder.
+     *
+     * @return void
+     */
+    public function test_orphan_quiz_description_media_is_kept(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        mkdir($dir . '/web_resources/Banners', 0777, true);
+        file_put_contents(
+            $dir . '/quiz/qti.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Survey"><section ident="s1"/></assessment>'
+            . '</questestinterop>'
+        );
+        file_put_contents(
+            $dir . '/quiz/assessment_meta.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="a1">'
+            . '<title>Survey</title>'
+            . '<description>&lt;p&gt;&lt;img src="$IMS-CC-FILEBASE$/Banners/Banner.jpg"&gt;&lt;/p&gt;</description>'
+            . '</quiz>'
+        );
+        file_put_contents($dir . '/web_resources/Banners/Banner.jpg', 'JPG');
+        // The org tree references no resource, so the quiz is an orphan (bank).
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment" href="quiz/qti.xml">
+      <file href="quiz/qti.xml"/>
+    </resource>
+    <resource identifier="r_banner" type="webcontent" href="web_resources/Banners/Banner.jpg">
+      <file href="web_resources/Banners/Banner.jpg"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The banner is not suppressed: an orphan assessment builds as a bank that
+        // embeds nothing, so the media stays available as a standalone download.
+        $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
+        $this->assertContains('web_resources/Banners/Banner.jpg', $orphanhrefs);
+    }
+
+    /**
+     * A placed assessment whose questions are all unsupported (so quiz_builder
+     * skips it and builds nothing) embeds nothing, so its description media must be
+     * left as a standalone download rather than suppressed and lost.
+     *
+     * @return void
+     */
+    public function test_unbuildable_quiz_description_media_is_kept(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        mkdir($dir . '/web_resources/Banners', 0777, true);
+        // A QTI 1.2 assessment carrying one item of an unsupported question type:
+        // parsed as a question but not importable, and not an empty shell, so
+        // quiz_builder returns null without creating (or embedding) anything.
+        file_put_contents(
+            $dir . '/quiz/qti.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Ordering"><section ident="s1">'
+            . '<item ident="q1" title="Order these">'
+            . '<itemmetadata><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>question_type</fieldlabel><fieldentry>ordering_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>Put in order.</mattext></material></presentation>'
+            . '</item></section></assessment>'
+            . '</questestinterop>'
+        );
+        file_put_contents(
+            $dir . '/quiz/assessment_meta.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="a1">'
+            . '<title>Ordering</title>'
+            . '<description>&lt;p&gt;&lt;img src="$IMS-CC-FILEBASE$/Banners/Banner.jpg"&gt;&lt;/p&gt;</description>'
+            . '</quiz>'
+        );
+        file_put_contents($dir . '/web_resources/Banners/Banner.jpg', 'JPG');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="i_quiz" identifierref="r_quiz"><title>Ordering</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment" href="quiz/qti.xml">
+      <file href="quiz/qti.xml"/>
+    </resource>
+    <resource identifier="r_banner" type="webcontent" href="web_resources/Banners/Banner.jpg">
+      <file href="web_resources/Banners/Banner.jpg"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The quiz will not build, so its description media must stay a standalone
+        // download rather than being suppressed and lost.
+        $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
+        $this->assertContains('web_resources/Banners/Banner.jpg', $orphanhrefs);
+    }
+
+    /**
      * Media embedded only in an assignment's instructions (a CC 1.3 profile's
      * <text>, here with an owner-relative $IMS-CC-FILEBASE$ token) is inlined into
      * the assignment intro at build time, so it must not also surface as a standalone
