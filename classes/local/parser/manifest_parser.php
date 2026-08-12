@@ -2115,15 +2115,17 @@ class manifest_parser {
         // tool, synthesise a hidden mod_lti placeholder from the inline URL, just
         // as the cartridge-backed LTI path does.
         if ($contenttype === 'ContextExternalTool') {
-            // Record the Canvas tool identifierref so tab_configuration (which keys
-            // course-navigation tools by this ref) can tell a nav tool already placed
-            // as a module item from a genuinely nav-only one with no config to import.
-            if ($ref !== '') {
-                $this->externaltoolrefs[$ref] = true;
-            }
             $url = $this->child_text($node, 'url');
             if (preg_match('#^https?://#i', $url) !== 1) {
                 return null;
+            }
+            // Record the Canvas tool identifierref only now that the tool actually
+            // builds as a hidden mod_lti, so tab_configuration (which keys
+            // course-navigation tools by this ref) can tell a nav tool already placed
+            // here from a genuinely nav-only one with no config to import. Recording
+            // it before the URL check would dedup away a nav tab whose tool we dropped.
+            if ($ref !== '') {
+                $this->externaltoolrefs[$ref] = true;
             }
             $id = $node->getAttribute('identifier');
             $modelitem = new item($id, $title);

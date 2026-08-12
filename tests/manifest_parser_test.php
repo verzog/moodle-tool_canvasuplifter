@@ -3272,4 +3272,49 @@ XML;
 
         $this->assertSame(0, $course->navtoolsunimported);
     }
+
+    /**
+     * A ContextExternalTool module item with a missing or non-http(s) launch URL is
+     * not built (no mod_lti is created), so a navigation tab pointing at it must
+     * still be flagged rather than deduped away as "already imported".
+     *
+     * @return void
+     */
+    public function test_navigation_tool_for_unbuilt_module_item_is_flagged(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        // The tool's <url> is not http(s), so item_from_module_meta drops it.
+        file_put_contents(
+            $dir . '/course_settings/module_meta.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<module identifier="m1"><title>Tools</title><workflow_state>active</workflow_state>'
+            . '<items><item identifier="mi1"><content_type>ContextExternalTool</content_type>'
+            . '<workflow_state>active</workflow_state><title>Broken</title>'
+            . '<identifierref>toolB</identifierref><url>javascript:alert(1)</url></item></items>'
+            . '</module></modules>'
+        );
+        file_put_contents(
+            $dir . '/course_settings/course_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<course xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="c1">'
+            . '<title>Broken Tool Course</title>'
+            . '<tab_configuration>[{"id":0},{"id":"context_external_tool_toolB"}]</tab_configuration>'
+            . '</course>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources/>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // No LTI was built for toolB, and the nav tab is not deduped away.
+        $this->assertCount(0, array_filter($course->all_items(), fn($i) => $i->kind === item::KIND_LTI));
+        $this->assertSame(1, $course->navtoolsunimported);
+    }
 }
