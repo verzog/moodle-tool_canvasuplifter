@@ -637,16 +637,17 @@ class qti_parser {
         }
         $replacements = [];
         $placedblanks = [];
+        $rendered = $this->rendered_text($stem);
         foreach ($blanks as $blankid => $accepted) {
             $marker = '[' . $blankid . ']';
             // A blank we cannot place is left unsupported (the whole item is dropped,
             // reported by name) rather than importing a partial or malformed Cloze. It is
             // unplaceable when it has no accepted answer; when its [id] marker does not
             // appear in the stem exactly once (missing, or duplicated into two graded
-            // fields); or when the marker survives only inside markup (e.g. an attribute
-            // like <img alt="[b1]">), where a substituted field would sit in an attribute
-            // rather than as a rendered answer control.
-            if ($accepted === [] || substr_count($stem, $marker) !== 1 || strpos(strip_tags($stem), $marker) === false) {
+            // fields); or when the marker survives only inside markup (an attribute like
+            // <img alt="[b1]">, or inert content like <script>[b1]</script>), where a
+            // substituted field would not sit in ordinary rendered text.
+            if ($accepted === [] || substr_count($stem, $marker) !== 1 || strpos($rendered, $marker) === false) {
                 continue;
             }
             $replacements[$marker] = $this->cloze_field($accepted);
@@ -771,6 +772,20 @@ class qti_parser {
      */
     protected function collapse_ws(string $text): string {
         return trim((string) preg_replace('/[\s\x{00A0}]+/u', ' ', $text));
+    }
+
+    /**
+     * The visible text of a stem: the contents of elements that do not render as ordinary
+     * text (script, style, template, textarea, title) are removed first, then the remaining
+     * tags are stripped. A marker surviving here belongs to a real text node, not to inert
+     * or hidden content where a substituted Cloze field could not be answered.
+     *
+     * @param string $stem The stem HTML (or plain text).
+     * @return string
+     */
+    protected function rendered_text(string $stem): string {
+        $stripped = (string) preg_replace('#<(script|style|template|textarea|title)\b[^>]*>.*?</\1>#is', '', $stem);
+        return strip_tags($stripped);
     }
 
     /**
@@ -1603,6 +1618,24 @@ class qti_parser {
     }
 
     /**
+     * How many SCORE setvar updates a respcondition carries. More than one means the
+     * condition's net SCORE effect is not the single value {@see condition_score} reads
+     * (e.g. an Add of 50 followed by an Add of -10 nets 40, but only the 50 is seen).
+     *
+     * @param DOMElement $cond The respcondition element.
+     * @return int
+     */
+    protected function count_score_setvars(DOMElement $cond): int {
+        $count = 0;
+        foreach ($cond->getElementsByTagNameNS('*', 'setvar') as $setvar) {
+            if ($setvar instanceof DOMElement && $this->is_score_var($setvar->getAttribute('varname'))) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    /**
      * Whether a respcondition's SCORE setvar adds to the running total (action="Add")
      * rather than setting it. Additive scoring is what lets each blank's points be read as
      * an independent weight; a "Set" or action-less setvar is treated as non-additive.
@@ -1634,7 +1667,9 @@ class qti_parser {
      * - placed blanks scored with unequal positive values would have their ratio flattened
      *   to 1:1 — unsafe;
      * - a nonzero initial SCORE, or per-blank additions that fall short of the SCORE maximum,
-     *   would let a fully-correct Cloze out-score the Canvas original — unsafe.
+     *   would let a fully-correct Cloze out-score the Canvas original — unsafe;
+     * - a condition carrying more than one SCORE update has a net value the single-value read
+     *   cannot see, so it is not trusted — unsafe.
      *
      * @param DOMElement $item The item element.
      * @param array $placed The blank ids that produced a Cloze field.
@@ -1650,6 +1685,12 @@ class qti_parser {
         foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
             if (!($cond instanceof DOMElement)) {
                 continue;
+            }
+            if ($this->count_score_setvars($cond) > 1) {
+                // A condition with several SCORE updates (e.g. Add 50 then Add -10) has a net
+                // value condition_score() does not capture; leave the item unsupported rather
+                // than read only the first update.
+                return false;
             }
             $score = $this->condition_score($cond);
             if ($score < 0) {

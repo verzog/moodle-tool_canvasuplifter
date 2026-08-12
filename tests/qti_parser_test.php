@@ -1465,6 +1465,64 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A condition carrying more than one SCORE update (e.g. Add 50 then Add -10) has a net
+     * value the single-value read cannot see, so the item is left unsupported rather than
+     * treated as an even scheme built from the first update alone.
+     *
+     * @return void
+     */
+    public function test_native_cloze_multiple_score_updates_is_unsupported(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">A [b1] B [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE" maxvalue="100"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar>'
+            . '<setvar varname="SCORE" action="Add">-10</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="ms1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+    }
+
+    /**
+     * A marker surviving strip_tags only because it sits inside inert element content
+     * (e.g. <script>[b1]</script>) is not an ordinary rendered-text placeholder, so the
+     * blank cannot be placed and the item is left unsupported.
+     *
+     * @return void
+     */
+    public function test_native_cloze_marker_in_script_is_unsupported(): void {
+        // Canvas escapes HTML inside a text/html mattext, so the stem's textContent is the
+        // literal string "Answer <script>var x = "[b1]";</script> then [b2]." where the only
+        // occurrence of [b1] sits inside inert script content.
+        $pres = '<presentation><material><mattext texttype="text/html">Answer '
+            . '&lt;script&gt;var x = "[b1]";&lt;/script&gt; then [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $item = '<item ident="sc1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with three free-text blanks (the shape
      * a real Canvas export uses: [blank] stem placeholders, response_lid per blank with
      * its accepted answers as response_labels, scored by varequal to the label idents).
