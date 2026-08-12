@@ -2448,7 +2448,7 @@ final class qti_parser_test extends \basic_testcase {
         $this->assertSame([], $r['questions']);
         $this->assertTrue($r['hasassessment']);
         $this->assertSame(
-            [['bank' => 'gbank42', 'count' => 25, 'points' => 2.5]],
+            [['bank' => 'gbank42', 'count' => 25, 'points' => 2.5, 'hasfilter' => false]],
             $r['selections']
         );
 
@@ -2465,10 +2465,74 @@ final class qti_parser_test extends \basic_testcase {
             . '</selection_ordering></section></section></assessment></questestinterop>';
         $this->assertSame(
             [
-                ['bank' => 'b1', 'count' => null, 'points' => null],
-                ['bank' => 'b2', 'count' => 0, 'points' => null],
+                ['bank' => 'b1', 'count' => null, 'points' => null, 'hasfilter' => false],
+                ['bank' => 'b2', 'count' => 0, 'points' => null, 'hasfilter' => false],
             ],
             (new qti_parser())->parse($nonum)['selections']
+        );
+    }
+
+    /**
+     * A <selection_metadata> filter on a bank draw is flagged (hasfilter true) so the
+     * builder can treat the draw as not faithfully reproducible rather than drawing the
+     * whole bank.
+     *
+     * @return void
+     */
+    public function test_selection_metadata_filter_is_flagged(): void {
+        $xml = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="q3" title="Q"><section ident="root_section"><section ident="g">'
+            . '<selection_ordering><selection><sourcebank_ref>b9</sourcebank_ref>'
+            . '<selection_number>3</selection_number>'
+            . '<selection_metadata>{"filter":{"tags":["unit1"]}}</selection_metadata>'
+            . '</selection></selection_ordering></section></section></assessment></questestinterop>';
+        $this->assertSame(
+            [['bank' => 'b9', 'count' => 3, 'points' => null, 'hasfilter' => true]],
+            (new qti_parser())->parse($xml)['selections']
+        );
+    }
+
+    /**
+     * The parser records the authored order of inline items and bank-selection groups in
+     * 'sequence', interleaving a selection that sits between two inline items so the
+     * builder can add quiz slots in Canvas order rather than inline-first.
+     *
+     * @return void
+     */
+    public function test_captures_authored_sequence(): void {
+        $item = function (string $id): string {
+            return '<item ident="' . $id . '"><presentation><material>'
+                . '<mattext texttype="text/plain">Q ' . $id . '</mattext></material>'
+                . '<response_lid ident="r"><render_choice>'
+                . '<response_label ident="a"><material><mattext>A</mattext></material></response_label>'
+                . '<response_label ident="b"><material><mattext>B</mattext></material></response_label>'
+                . '</render_choice></response_lid></presentation>'
+                . '<resprocessing><respcondition><conditionvar><varequal respident="r">a</varequal>'
+                . '</conditionvar><setvar varname="SCORE" action="Set">100</setvar></respcondition>'
+                . '</resprocessing></item>';
+        };
+        $sel = '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>bx</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>';
+        $xml = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="q4" title="Q"><section ident="root_section">'
+            . $item('one') . $sel . $item('two')
+            . '</section></assessment></questestinterop>';
+
+        $r = (new qti_parser())->parse($xml);
+
+        $this->assertCount(2, $r['questions']);
+        $this->assertCount(1, $r['selections']);
+        // Authored order: inline #0, then the bank draw, then inline #1.
+        $this->assertSame(
+            [
+                ['kind' => 'inline', 'index' => 0],
+                ['kind' => 'selection', 'index' => 0],
+                ['kind' => 'inline', 'index' => 1],
+            ],
+            $r['sequence']
         );
     }
 }

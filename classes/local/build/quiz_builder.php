@@ -109,7 +109,7 @@ class quiz_builder {
         // when the Common Cartridge file is an empty shell, and read any item-bank
         // draws — a Canvas New Quiz can draw questions from a separate item bank via
         // <selection_ordering>, on its own or alongside inline questions.
-        [$parsed, $supported, $importable, $imagedir, $selections] =
+        [$parsed, $supported, $importable, $imagedir, $selections, $sequence] =
             $this->resolve_assessment_source($modelitem, $qtipath);
         $questions = $parsed['questions'];
         $hasbanks = !empty($selections);
@@ -202,10 +202,12 @@ class quiz_builder {
 
         $quiz = $DB->get_record('quiz', ['id' => $created->instance], '*', MUST_EXIST);
         $quiz->cmid = $cmid;
-        $slots = 0;
 
-        // Inline questions, when the assessment carries any (a New Quiz may still add
-        // bank draws below).
+        // Import the inline questions into the bank category up front (this does not add
+        // quiz slots), resolve the item-bank draws, then add the quiz slots — inline
+        // questions and bank draws together — in the order Canvas authored them, since a
+        // New Quiz can place a bank draw before or between inline items.
+        $questionids = [];
         if (!empty($importable)) {
             $questionids = (new question_importer())
                 ->import($course, $context, $supported, $imagedir, $this->packageroot, $localreport);
@@ -214,21 +216,16 @@ class quiz_builder {
                 // $WIKI_REFERENCE$/$CANVAS_OBJECT_REFERENCE$ links in their text once
                 // every activity exists (the URL map is incomplete during this build).
                 $this->importedquestionids = array_merge($this->importedquestionids, array_map('intval', $questionids));
-                foreach ($questionids as $questionid) {
-                    quiz_add_quiz_question((int) $questionid, $quiz);
-                }
-                $slots += count($questionids);
             }
         }
-
-        // Item-bank draws (Canvas New Quizzes), which can accompany inline questions.
         $incomplete = false;
+        $bankspecs = [];
         if ($hasbanks) {
-            [$drawn, $incomplete] = $this->populate_from_banks($course, $quiz, $selections);
-            if ($drawn > 0) {
-                $this->bankdrawcount++;
-            }
-            $slots += $drawn;
+            [$bankspecs, $incomplete] = $this->resolve_bank_draws($course, $selections);
+        }
+        [$slots, $bankdrawn] = $this->place_slots($quiz, $sequence, $questions, $questionids, $bankspecs);
+        if ($bankdrawn > 0) {
+            $this->bankdrawcount++;
         }
 
         if ($slots === 0) {
@@ -271,25 +268,35 @@ class quiz_builder {
     }
 
     /**
-     * Draw random questions for a New Quiz from each referenced Canvas item bank.
-     * Each bank is imported once (as a section-0 mod_qbank) and shared across quizzes;
-     * the number drawn is capped per bank at the questions it imported, tracked
-     * cumulatively so several groups sharing a bank never over-draw it.
+     * Resolve each Canvas item-bank draw to a concrete slot spec, without adding any
+     * slots yet, so the caller can place them in authored order. Each bank is imported
+     * once (as a section-0 mod_qbank) and shared across quizzes; the number drawn is
+     * capped per bank at the questions it imported, tracked cumulatively so several
+     * groups sharing a bank never over-draw it.
      *
      * @param stdClass $course Course record.
-     * @param stdClass $quiz Quiz record (with cmid set).
-     * @param array $selections Parsed selections: each ['bank' => id, 'count' => n|null, 'points' => p|null].
-     * @return array [total random questions added, whether any group was missing/short].
+     * @param array $selections Parsed selections: each ['bank', 'count', 'points', 'hasfilter'].
+     * @return array [specs, incomplete] where specs is indexed by selection position — each entry
+     *         is ['category' => int, 'number' => int, 'points' => float|null] or null (no draw) —
+     *         and incomplete is whether any group was missing, short or not reproducible.
      */
-    private function populate_from_banks(stdClass $course, stdClass $quiz, array $selections): array {
-        $drawn = 0;
+    private function resolve_bank_draws(stdClass $course, array $selections): array {
         $incomplete = false;
         $remaining = [];
-        foreach ($selections as $selection) {
+        $specs = [];
+        foreach ($selections as $i => $selection) {
+            $specs[$i] = null;
             $bankid = (string) $selection['bank'];
             if ($selection['count'] !== null && (int) $selection['count'] < 1) {
                 // Canvas authored an explicit zero-question draw — an empty group. Skip
                 // it without importing the bank or flagging the quiz incomplete.
+                continue;
+            }
+            if (!empty($selection['hasfilter'])) {
+                // The draw restricts the bank to a <selection_metadata> subset we can't
+                // reproduce against the whole imported category. Skip it rather than
+                // over-draw questions Canvas excluded, and flag the quiz for a grader.
+                $incomplete = true;
                 continue;
             }
             $bank = $this->bankregistry->import_bank($course, $bankid);
@@ -317,11 +324,67 @@ class quiz_builder {
                 // The bank holds fewer questions than this group asked for.
                 $incomplete = true;
             }
-            $this->add_bank_questions($quiz, $bank['category'], $number, $selection['points']);
+            $specs[$i] = ['category' => $bank['category'], 'number' => $number, 'points' => $selection['points']];
             $remaining[$bankid] -= $number;
-            $drawn += $number;
         }
-        return [$drawn, $incomplete];
+        return [$specs, $incomplete];
+    }
+
+    /**
+     * Add the quiz slots — imported inline questions and resolved bank draws — in the
+     * Canvas authored order given by $sequence. With no sequence (inline and draws came
+     * from different files, or none was recorded) it falls back to inline questions
+     * first, then bank draws. Imported ids are paired to the importable inline entries in
+     * order; a rare importer rejection only shifts the tail order, never a bank boundary.
+     *
+     * @param stdClass $quiz Quiz record (with cmid set).
+     * @param array $sequence Ordered [{kind:'inline'|'selection', index:int}], or empty.
+     * @param array $questions All parsed inline questions (for the importable check), 0-indexed.
+     * @param array $questionids The imported inline question ids, in authored order.
+     * @param array $bankspecs Bank-draw specs indexed by selection position (from resolve_bank_draws).
+     * @return array [total slots added, bank-draw slots added].
+     */
+    private function place_slots(stdClass $quiz, array $sequence, array $questions, array $questionids, array $bankspecs): array {
+        $slots = 0;
+        $bankdrawn = 0;
+        if (empty($sequence)) {
+            // No authored order: inline questions first, then bank draws (as before).
+            foreach ($questionids as $questionid) {
+                quiz_add_quiz_question((int) $questionid, $quiz);
+                $slots++;
+            }
+            foreach ($bankspecs as $spec) {
+                if ($spec !== null) {
+                    $this->add_bank_questions($quiz, $spec['category'], $spec['number'], $spec['points']);
+                    $slots += $spec['number'];
+                    $bankdrawn += $spec['number'];
+                }
+            }
+            return [$slots, $bankdrawn];
+        }
+        $inlineseen = 0;
+        foreach ($sequence as $entry) {
+            if (($entry['kind'] ?? '') === 'inline') {
+                $question = $questions[$entry['index']] ?? null;
+                if ($question === null || !$question->is_importable()) {
+                    // A non-importable inline item produced no imported id and no slot.
+                    continue;
+                }
+                if (isset($questionids[$inlineseen])) {
+                    quiz_add_quiz_question((int) $questionids[$inlineseen], $quiz);
+                    $slots++;
+                }
+                $inlineseen++;
+            } else if (($entry['kind'] ?? '') === 'selection') {
+                $spec = $bankspecs[$entry['index']] ?? null;
+                if ($spec !== null) {
+                    $this->add_bank_questions($quiz, $spec['category'], $spec['number'], $spec['points']);
+                    $slots += $spec['number'];
+                    $bankdrawn += $spec['number'];
+                }
+            }
+        }
+        return [$slots, $bankdrawn];
     }
 
     /**

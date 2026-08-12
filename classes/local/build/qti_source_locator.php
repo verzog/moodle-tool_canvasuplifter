@@ -58,7 +58,7 @@ trait qti_source_locator {
      *
      * @param item $modelitem The assessment item.
      * @param string $qtipath Absolute path of the resolved Common Cartridge QTI file.
-     * @return array [parsed, supported, importable, imagedir, selections].
+     * @return array [parsed, supported, importable, imagedir, selections, sequence].
      */
     private function resolve_assessment_source(item $modelitem, string $qtipath): array {
         [$parsed, $supported, $importable] = $this->parse_qti($qtipath);
@@ -95,7 +95,13 @@ trait qti_source_locator {
                 }
             }
         }
-        return [$parsed, $supported, $importable, $imagedir, $selections];
+        // The authored order of inline items vs. bank draws is meaningful only when both
+        // come from the same file. When the selections were taken from a different source
+        // than the questions (CC inline questions + native-dump draws), there is no shared
+        // order to preserve, so leave the sequence empty and the builder falls back to
+        // inline-questions-then-bank-draws.
+        $sequence = ($selections === ($parsed['selections'] ?? [])) ? ($parsed['sequence'] ?? []) : [];
+        return [$parsed, $supported, $importable, $imagedir, $selections, $sequence];
     }
 
     /**
