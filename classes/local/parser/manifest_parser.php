@@ -514,13 +514,15 @@ class manifest_parser {
     /**
      * Whether a placed quiz will actually build as a runnable mod_quiz — and so
      * quiz_builder will embed its assessment_meta.xml description — mirroring
-     * quiz_builder's build gate: it needs at least one importable question or a
-     * genuine but empty QTI 1.2 assessment shell (which builds a hidden placeholder
-     * that still carries and embeds the description). A quiz whose questions are all
-     * unsupported, or whose file is malformed / not QTI 1.2, is skipped by
-     * quiz_builder and embeds nothing, so its description media must stay a standalone
-     * download. Bank-only draws are treated conservatively as non-building here: at
-     * worst that leaves the media as a harmless duplicate rather than risk dropping it.
+     * quiz_builder's build gate via qti_source_locator::resolve_assessment_source():
+     * it builds when there is at least one importable question, a genuine but empty
+     * QTI 1.2 shell (a hidden placeholder that still carries the description), or
+     * item-bank draws. The Common Cartridge QTI is checked first; when it yields
+     * nothing buildable, the native non_cc_assessments dump quiz_builder adopts is
+     * consulted too, so a New Quiz whose real content lives only there is recognised.
+     * A quiz that is malformed / not QTI 1.2 with no such content is skipped by
+     * quiz_builder and embeds nothing, so its description media stays a standalone
+     * download.
      *
      * @param item $resourceitem The quiz resource.
      * @return bool
@@ -531,15 +533,90 @@ class manifest_parser {
             return false;
         }
         $parsed = (new qti_parser())->parse((string) @file_get_contents($qtipath));
-        $questions = $parsed['questions'] ?? [];
-        foreach ($questions as $question) {
+        if ($this->qti_builds($parsed)) {
+            return true;
+        }
+        // The quiz_builder native fallback: Canvas often exports a New Quiz's real
+        // importable questions or item-bank draws only to non_cc_assessments/<id>.
+        // xml.qti, which quiz_builder adopts. Adopt it only for importable questions
+        // or draws (never an empty native shell — quiz_builder does not), so this
+        // never suppresses media for a quiz that will not in fact build.
+        $native = $this->locate_native_quiz_qti($resourceitem, $qtipath);
+        if ($native === null) {
+            return false;
+        }
+        $nativeparsed = (new qti_parser())->parse((string) @file_get_contents($native));
+        return $this->qti_has_importable($nativeparsed)
+            || (!empty($nativeparsed['hasassessment']) && !empty($nativeparsed['selections']));
+    }
+
+    /**
+     * Whether a parsed QTI assessment makes quiz_builder create (and so embed the
+     * description of) a quiz: an importable question, an empty QTI 1.2 shell (built
+     * as a hidden placeholder), or item-bank draws.
+     *
+     * @param array $parsed A qti_parser::parse() result.
+     * @return bool
+     */
+    protected function qti_builds(array $parsed): bool {
+        if ($this->qti_has_importable($parsed)) {
+            return true;
+        }
+        if (empty($parsed['hasassessment'])) {
+            return false;
+        }
+        // An empty shell builds a placeholder; item-bank draws build a runnable or
+        // placeholder quiz — both carry and embed the description.
+        return empty($parsed['questions']) || !empty($parsed['selections']);
+    }
+
+    /**
+     * Whether a parsed QTI assessment carries at least one importable question, the
+     * same test quiz_builder applies to decide there is convertible content.
+     *
+     * @param array $parsed A qti_parser::parse() result.
+     * @return bool
+     */
+    protected function qti_has_importable(array $parsed): bool {
+        foreach (($parsed['questions'] ?? []) as $question) {
             if ($question->type !== qti_question::TYPE_UNSUPPORTED && $question->is_importable()) {
                 return true;
             }
         }
-        // A genuine but empty QTI 1.2 shell still builds a hidden placeholder that
-        // carries the description; a file with no readable assessment does not.
-        return empty($questions) && !empty($parsed['hasassessment']);
+        return false;
+    }
+
+    /**
+     * Locate the native Canvas question dump for a quiz, mirroring
+     * qti_source_locator::locate_native_qti: an explicit non_cc_assessments/<id>.
+     * xml.qti entry on the file list, else the dump keyed by the CC folder name or
+     * the resource identifier. Never returns the QTI file already parsed.
+     *
+     * @param item $resourceitem The quiz resource.
+     * @param string $qtipath Absolute path of the resolved Common Cartridge QTI file.
+     * @return string|null Absolute path within the package, or null.
+     */
+    protected function locate_native_quiz_qti(item $resourceitem, string $qtipath): ?string {
+        $already = realpath($qtipath);
+        foreach ($resourceitem->files as $relative) {
+            if (!preg_match('~(^|/)non_cc_assessments/[^/]+\.xml\.qti$~i', (string) $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute !== null && realpath($absolute) !== $already) {
+                return $absolute;
+            }
+        }
+        foreach ([basename(dirname($qtipath)), $resourceitem->identifier] as $id) {
+            if ($id === '' || $id === '.' || $id === '/') {
+                continue;
+            }
+            $absolute = $this->resolve_within('non_cc_assessments/' . $id . '.xml.qti');
+            if ($absolute !== null && realpath($absolute) !== $already) {
+                return $absolute;
+            }
+        }
+        return null;
     }
 
     /**
@@ -685,24 +762,35 @@ class manifest_parser {
             if ($absolute === null) {
                 continue;
             }
-            $body = $this->discussion_body((string) @file_get_contents($absolute));
-            if ($body !== null) {
-                return [$body, safe_path::package_dir($this->basedir, $absolute)];
+            $topic = $this->parse_discussion_topic((string) @file_get_contents($absolute));
+            if ($topic === null) {
+                // Not a topic document; forum_builder::read_topic() skips it too.
+                continue;
             }
+            // The first document that parses as a topic is the one forum_builder
+            // uses — it never looks past it. So stop here: an empty or plain-text
+            // body embeds nothing (return null and don't scan a later candidate the
+            // builder would never read), while an HTML body is the embedded content.
+            if ($topic['plain'] || $topic['text'] === '') {
+                return null;
+            }
+            return [$topic['text'], safe_path::package_dir($this->basedir, $absolute)];
         }
         return null;
     }
 
     /**
-     * Extract the HTML body of a Common Cartridge discussion-topic document, mirroring
-     * forum_builder's topic parse. Returns null when the document is not a topic, its
-     * body is empty, or the body is explicitly plain text (which the forum builder
-     * stores as FORMAT_PLAIN and never runs the embedder over).
+     * Parse a Common Cartridge discussion-topic document the way forum_builder's
+     * read_topic()/parse_topic() does, returning its body text and whether that body
+     * is plain text — or null when the document is not a topic at all. The caller
+     * distinguishes "not a topic" (keep looking, as the builder does) from a valid
+     * topic whose body is empty or plain text (the builder accepts it and embeds
+     * nothing, so no later candidate is scanned).
      *
-     * @param string $xml The topic XML.
-     * @return string|null The HTML body, or null.
+     * @param string $xml The candidate XML.
+     * @return array|null ['text' => string, 'plain' => bool], or null if not a topic.
      */
-    protected function discussion_body(string $xml): ?string {
+    protected function parse_discussion_topic(string $xml): ?array {
         if (trim($xml) === '') {
             return null;
         }
@@ -715,14 +803,14 @@ class manifest_parser {
             return null;
         }
         $text = $dom->getElementsByTagNameNS('*', 'text')->item(0);
-        if (!($text instanceof DOMElement)) {
-            return null;
-        }
-        if (strtolower(trim($text->getAttribute('texttype'))) === 'text/plain') {
-            return null;
-        }
-        $body = trim($text->textContent);
-        return $body === '' ? null : $body;
+        // A body is plain text only when the schema says so explicitly (texttype=
+        // text/plain), matching forum_builder; anything else is treated as HTML.
+        $plain = $text instanceof DOMElement
+            && strtolower(trim($text->getAttribute('texttype'))) === 'text/plain';
+        return [
+            'text' => $text !== null ? trim($text->textContent) : '',
+            'plain' => $plain,
+        ];
     }
 
     /**
@@ -738,7 +826,11 @@ class manifest_parser {
      * @return array|null [html, ownerdir], or null.
      */
     protected function lti_intro_source(item $resourceitem): ?array {
-        if ($resourceitem->launchurl === '') {
+        // Mirror lti_builder::cartridge_from_launchurl()/sanitise_url(): only an
+        // http(s) launch URL yields a built activity; a javascript:/data:/file:
+        // scheme is rejected, so nothing embeds its instructions — leave that media
+        // as a standalone download rather than suppressing it.
+        if (preg_match('#^https?://#i', trim($resourceitem->launchurl)) !== 1) {
             return null;
         }
         if ($resourceitem->launchdescription !== '') {

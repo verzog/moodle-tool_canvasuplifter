@@ -846,6 +846,197 @@ XML;
     }
 
     /**
+     * A re-homed external-tool assignment whose launch URL is not http(s) (a
+     * javascript:/data:/file: scheme) is rejected by lti_builder, which creates no
+     * activity, so media referenced by its instructions must stay a standalone
+     * download rather than being suppressed and lost.
+     *
+     * @return void
+     */
+    public function test_lti_non_http_launch_url_media_is_kept(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/lti');
+        file_put_contents(
+            $dir . '/lti/assignment_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="a1">'
+            . '<title>Bad Tool</title>'
+            . '<submission_types>external_tool</submission_types>'
+            . '<external_tool_url>javascript:alert(1)</external_tool_url>'
+            . '</assignment>'
+        );
+        file_put_contents(
+            $dir . '/lti/instructions.html',
+            '<p><img src="$IMS-CC-FILEBASE$banner.jpg"></p>'
+        );
+        file_put_contents($dir . '/lti/banner.jpg', 'JPG');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="i_lti" identifierref="r_lti"><title>Bad Tool</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_lti" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="lti/instructions.html">
+      <file href="lti/assignment_settings.xml"/>
+      <file href="lti/instructions.html"/>
+    </resource>
+    <resource identifier="r_banner" type="webcontent" href="lti/banner.jpg">
+      <file href="lti/banner.jpg"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The tool is rejected (non-http URL), so its instructions never build; the
+        // banner they reference stays available as a standalone download.
+        $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
+        $this->assertContains('lti/banner.jpg', $orphanhrefs);
+    }
+
+    /**
+     * When a discussion lists several topic XMLs, forum_builder uses the first that
+     * parses as a topic and never reads a later one. If that first topic has an
+     * empty/plain body (embeds nothing), media referenced only by a later topic file
+     * must not be suppressed — the builder never embeds it.
+     *
+     * @return void
+     */
+    public function test_discussion_later_topic_media_is_kept(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/disc');
+        // The first valid topic has an empty HTML body: forum_builder accepts it and
+        // embeds nothing, never reading topic_b.
+        file_put_contents(
+            $dir . '/disc/topic_a.xml',
+            '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Empty</title><text texttype="text/html"></text></topic>'
+        );
+        file_put_contents(
+            $dir . '/disc/topic_b.xml',
+            '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Later</title>'
+            . '<text texttype="text/html">&lt;p&gt;&lt;img src="$IMS-CC-FILEBASE$media.png"&gt;&lt;/p&gt;</text>'
+            . '</topic>'
+        );
+        file_put_contents($dir . '/disc/media.png', 'PNG');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="i_disc" identifierref="r_disc"><title>Discussion</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_disc" type="imsdt_xmlv1p1" href="disc/topic_a.xml">
+      <file href="disc/topic_a.xml"/>
+      <file href="disc/topic_b.xml"/>
+    </resource>
+    <resource identifier="r_media" type="webcontent" href="disc/media.png">
+      <file href="disc/media.png"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The builder embeds nothing (first topic empty), so the later topic's media
+        // is not suppressed and stays a standalone download.
+        $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
+        $this->assertContains('disc/media.png', $orphanhrefs);
+    }
+
+    /**
+     * A placed quiz whose Common Cartridge QTI has only unsupported questions but
+     * whose native non_cc_assessments dump carries importable questions still builds
+     * (quiz_builder adopts the dump) and embeds its description, so media embedded
+     * only in that description must be suppressed rather than left as a duplicate.
+     *
+     * @return void
+     */
+    public function test_native_qti_quiz_description_media_is_suppressed(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        mkdir($dir . '/web_resources/Banners', 0777, true);
+        // The Common Cartridge shell carries only an unsupported (ordering) question.
+        file_put_contents(
+            $dir . '/quiz/qti.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="New Quiz"><section ident="s1">'
+            . '<item ident="q1" title="Order"><itemmetadata><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>question_type</fieldlabel><fieldentry>ordering_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>Order.</mattext></material></presentation>'
+            . '</item></section></assessment>'
+            . '</questestinterop>'
+        );
+        // The native dump keyed by the CC folder name carries an importable question.
+        file_put_contents(
+            $dir . '/non_cc_assessments/quiz.xml.qti',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="New Quiz"><section ident="s1">'
+            . '<item ident="q2" title="Essay"><itemmetadata><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>question_type</fieldlabel><fieldentry>essay_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext>Write an essay.</mattext></material></presentation>'
+            . '</item></section></assessment>'
+            . '</questestinterop>'
+        );
+        file_put_contents(
+            $dir . '/quiz/assessment_meta.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="a1">'
+            . '<title>New Quiz</title>'
+            . '<description>&lt;p&gt;&lt;img src="$IMS-CC-FILEBASE$/Banners/Banner.jpg"&gt;&lt;/p&gt;</description>'
+            . '</quiz>'
+        );
+        file_put_contents($dir . '/web_resources/Banners/Banner.jpg', 'JPG');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="i_quiz" identifierref="r_quiz"><title>New Quiz</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment" href="quiz/qti.xml">
+      <file href="quiz/qti.xml"/>
+    </resource>
+    <resource identifier="r_banner" type="webcontent" href="web_resources/Banners/Banner.jpg">
+      <file href="web_resources/Banners/Banner.jpg"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        // The quiz builds via the native dump and embeds its description, so the
+        // banner referenced only there is suppressed from the orphan list.
+        $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
+        $this->assertNotContains('web_resources/Banners/Banner.jpg', $orphanhrefs);
+    }
+
+    /**
      * Discussion (imsdt) resources are XML, but their <title> element should be
      * recovered as the title rather than falling back to the file name.
      *
