@@ -550,24 +550,14 @@ class manifest_parser {
                 }
             }
         }
-        // A standalone item bank (non_cc_assessments/<id>.xml.qti) names itself in the
-        // objectbank's <bank_title> metadata rather than an <assessment title> or <title>,
-        // and the .xml.qti file was skipped above. Read the exact file classification chose
-        // — the one whose id equals objectbankid, not merely the first .xml.qti candidate,
-        // since classify() checks the href before the file list — so the report title, the
-        // built activity name, and duplicate-title disambiguation all use the same bank name.
-        if ($modelitem->objectbankid !== '') {
-            foreach ($candidates as $relative) {
-                if (!preg_match('#(^|/)non_cc_assessments/[^/]+\.xml\.qti$#i', (string) $relative)) {
-                    continue;
-                }
-                if ($this->objectbank_id_from_path((string) $relative) !== $modelitem->objectbankid) {
-                    continue;
-                }
-                $absolute = $this->resolve_within($relative);
-                if ($absolute === null) {
-                    continue;
-                }
+        // A standalone item bank names itself in the objectbank's <bank_title> metadata
+        // rather than an <assessment title> or <title>, and its .xml.qti file was skipped
+        // above. Read the exact dump classification matched (objectbankpath) so the report
+        // title, the built activity name, and duplicate-title disambiguation all use the same
+        // bank name — regardless of the candidate order or directory prefix here.
+        if ($modelitem->objectbankpath !== '') {
+            $absolute = $this->resolve_within($modelitem->objectbankpath);
+            if ($absolute !== null) {
                 $title = (new qti_parser())->parse((string) @file_get_contents($absolute))['title'] ?? '';
                 if ($title !== '') {
                     return $title;
@@ -658,6 +648,7 @@ class manifest_parser {
                 $bankpath = $this->standalone_objectbank_path($href, $modelitem->files);
                 if ($bankpath !== null) {
                     $modelitem->objectbankid = $this->objectbank_id_from_path($bankpath);
+                    $modelitem->objectbankpath = $bankpath;
                 }
             }
             // An external-link resource (a native D2L "contentlink", or any

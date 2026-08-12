@@ -213,13 +213,16 @@ class questionbank_builder {
      */
     private function build_standalone_bank(stdClass $course, item $modelitem): ?int {
         $name = $modelitem->title !== '' ? $modelitem->title : null;
-        $bank = $this->bankregistry->import_bank($course, $modelitem->objectbankid, $name);
+        $path = $modelitem->objectbankpath !== '' ? $modelitem->objectbankpath : null;
+        $bank = $this->bankregistry->import_bank($course, $modelitem->objectbankid, $name, $path);
         if ($bank !== null) {
             return (int) $bank['cmid'];
         }
         // Nothing importable: report the data loss (unsupported types, or bodies Canvas
-        // omitted) with the same summary the inline path uses.
-        $file = $this->bank_dump_path($modelitem->objectbankid);
+        // omitted) with the same summary the inline path uses. Read the exact matched dump.
+        $file = $modelitem->objectbankpath !== ''
+            ? safe_path::within($this->packageroot, $modelitem->objectbankpath)
+            : $this->bank_dump_path($modelitem->objectbankid);
         [$parsed, $supported] = $file !== null ? $this->parse_qti($file) : [['questions' => [], 'unresolved' => 0], []];
         $this->skipreason = question_importer::describe_unconvertible(
             $parsed['questions'] ?? [],
@@ -271,9 +274,13 @@ class questionbank_builder {
                 // Unsupported/unresolved candidates shrank the imported pool.
                 $incomplete = true;
             }
-            $imported[$bankid] = true;
-            if (!array_key_exists($bankid, $remaining)) {
-                $remaining[$bankid] = (int) $bank['count'];
+            // Count and charge capacity by the bank's resolved identity, so two groups whose
+            // sourcebank_ref differ only by case/prefix but name one dump count as one bank
+            // and share its pool rather than each spending a fresh full count.
+            $bankkey = $bank['key'] ?? $bankid;
+            $imported[$bankkey] = true;
+            if (!array_key_exists($bankkey, $remaining)) {
+                $remaining[$bankkey] = (int) $bank['count'];
             }
             // A missing selection_number requests the whole bank (its full count, like
             // quiz_builder::populate_from_banks); an explicit count requests that many.
@@ -282,10 +289,10 @@ class questionbank_builder {
             // including two draw-all groups — is flagged short even when every source
             // question imported (full === true).
             $want = ($selection['count'] ?? null) === null ? (int) $bank['count'] : (int) $selection['count'];
-            if ($want > $remaining[$bankid]) {
+            if ($want > $remaining[$bankkey]) {
                 $incomplete = true;
             }
-            $remaining[$bankid] = max(0, $remaining[$bankid] - $want);
+            $remaining[$bankkey] = max(0, $remaining[$bankkey] - $want);
         }
         $this->lastbankincomplete = $incomplete;
         return count($imported);

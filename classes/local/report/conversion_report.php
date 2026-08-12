@@ -522,21 +522,24 @@ class conversion_report {
             // in the same resource — once per bank id, and record the id so a repeated resource
             // (or a quiz draw below) can't double-count the one shared bank the build imports.
             if ($modelitem->kind === item::KIND_QUESTIONBANK && $modelitem->objectbankid !== '') {
-                $identity = $this->bank_identity($modelitem->objectbankid);
+                $path = $this->standalone_bank_path($modelitem);
+                $identity = $path !== null ? (realpath($path) ?: $path) : $modelitem->objectbankid;
                 if (isset($standalonebankids[$identity])) {
                     continue;
                 }
                 $standalonebankids[$identity] = true;
-                [$questions, , $unresolved] = $this->bank_questions($modelitem->objectbankid);
+                $parsed = $path !== null
+                    ? (new qti_parser())->parse((string) @file_get_contents($path))
+                    : ['questions' => [], 'unresolved' => 0];
                 $source = $this->display_title($modelitem, $referenced);
-                if (!empty($questions)) {
-                    $total += $this->tally_batch($acc, $questions, $source);
+                if (!empty($parsed['questions'])) {
+                    $total += $this->tally_batch($acc, $parsed['questions'], $source);
                 }
                 // A bank whose <item>s are only bare references (Canvas omitted their bodies)
                 // yields no questions but real data loss the build reports as a skip; surface
                 // it so Analyze doesn't advertise the bank as fully importable via an empty
                 // matrix.
-                $total += $this->tally_omitted($acc, $unresolved, $source);
+                $total += $this->tally_omitted($acc, (int) ($parsed['unresolved'] ?? 0), $source);
                 continue;
             }
             // Only a referenced quiz takes the quiz_builder path, which alone adopts
@@ -699,6 +702,21 @@ class conversion_report {
     private function bank_identity(string $bankid): string {
         $path = $this->resolve_bank_dump($bankid);
         return $path !== null ? (realpath($path) ?: $path) : $bankid;
+    }
+
+    /**
+     * The absolute dump path for a standalone objectbank item: its exact matched
+     * objectbankpath when set (so a nested or case-varied path resolves verbatim, matching
+     * the build), else the id resolved under non_cc_assessments. Null when unreadable.
+     *
+     * @param item $modelitem The standalone objectbank item.
+     * @return string|null
+     */
+    private function standalone_bank_path(item $modelitem): ?string {
+        if ($modelitem->objectbankpath !== '') {
+            return $this->resolve_readable($modelitem->objectbankpath);
+        }
+        return $this->resolve_bank_dump($modelitem->objectbankid);
     }
 
     /**

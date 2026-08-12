@@ -317,13 +317,17 @@ class quiz_builder {
                 // Moodle draws from is smaller than Canvas's; flag the shortfall.
                 $incomplete = true;
             }
-            if (!array_key_exists($bankid, $remaining)) {
-                $remaining[$bankid] = $bank['count'];
+            // Track remaining capacity by the bank's resolved identity, so two groups whose
+            // sourcebank_ref differ only by case/prefix but name one dump share its capacity
+            // rather than each drawing a fresh full pool from the same category.
+            $bankkey = $bank['key'] ?? $bankid;
+            if (!array_key_exists($bankkey, $remaining)) {
+                $remaining[$bankkey] = $bank['count'];
             }
             // A missing selection_number means "draw the whole bank"; an explicit count
             // caps the draw (and is honoured verbatim, including down to the bank size).
             $want = $selection['count'] === null ? $bank['count'] : (int) $selection['count'];
-            $number = min($want, $remaining[$bankid]);
+            $number = min($want, $remaining[$bankkey]);
             if ($number < 1) {
                 $incomplete = true;
                 continue;
@@ -333,7 +337,7 @@ class quiz_builder {
                 $incomplete = true;
             }
             $specs[$i] = ['category' => $bank['category'], 'number' => $number, 'points' => $selection['points']];
-            $remaining[$bankid] -= $number;
+            $remaining[$bankkey] -= $number;
         }
         return [$specs, $incomplete];
     }

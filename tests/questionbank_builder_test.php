@@ -818,6 +818,98 @@ XML;
     }
 
     /**
+     * Issue #146: a standalone objectbank whose file the manifest nests under a directory
+     * prefix (resources/non_cc_assessments/<id>.xml.qti) still imports — the builder resolves
+     * the exact matched path (objectbankpath), not a reconstructed package-root path.
+     *
+     * @return void
+     */
+    public function test_standalone_objectbank_under_nested_directory_imports(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/resources/non_cc_assessments', 0777, true);
+        file_put_contents($dir . '/resources/non_cc_assessments/pool.xml.qti', $this->objectbank('Unfiled Questions'));
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1">'
+            . '<item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>'
+            . '</organization></organizations><resources>'
+            . '<resource identifier="r_bank" type="associatedcontent/imscc_xmlv1p1/learning-application-resource">'
+            . '<file href="resources/non_cc_assessments/pool.xml.qti"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $banks = $modinfo->get_instances_of('qbank');
+        $this->assertCount(1, $banks);
+        $context = \context_module::instance(reset($banks)->id);
+        $cat = question_get_default_category($context->id);
+        $this->assertSame(2, $DB->count_records('question_bank_entries', ['questioncategoryid' => $cat->id]));
+    }
+
+    /**
+     * Issue #146: two draw groups in one quiz whose sourcebank_ref values differ only by case
+     * ("pool" and "Pool") resolve to the one physical dump, so they share its capacity —
+     * the quiz draws at most the bank's size and is flagged incomplete, rather than each
+     * alias scheduling a fresh full pool.
+     *
+     * @return void
+     */
+    public function test_case_variant_bank_refs_share_draw_capacity(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/gnq', 0777, true);
+        mkdir($dir . '/non_cc_assessments', 0777, true);
+        // One quiz, two groups drawing "all" from the same 2-question bank under aliased refs.
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnq" title="Aliased Draws"><section ident="root">'
+            . '<section ident="g1"><selection_ordering><selection>'
+            . '<sourcebank_ref>pool</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '<section ident="g2"><selection_ordering><selection>'
+            . '<sourcebank_ref>Pool</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/gnq/assessment_qti.xml', $shell);
+        file_put_contents($dir . '/non_cc_assessments/pool.xml.qti', $this->objectbank('Question Pool'));
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Aliased Draws</title></item></item>'
+            . '</item></organization></organizations><resources>'
+            . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="gnq/assessment_qti.xml"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $quizzes = $modinfo->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        // The shared 2-question pool fills the first group; the second alias finds it spent,
+        // so the quiz has two slots (not four) drawn from the one imported bank.
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => reset($quizzes)->instance]));
+        $this->assertCount(1, $modinfo->get_instances_of('qbank'));
+    }
+
+    /**
      * Issue #146: when a standalone objectbank resource and a New Quiz's sourcebank_ref
      * point at the same bank id, the shared registry imports it exactly once — the quiz
      * draws its slots from the same mod_qbank the standalone resource created.

@@ -73,18 +73,25 @@ class item_bank_registry {
      * @param string|null $name Preferred activity name (a standalone bank's disambiguated
      *        title); null keeps the bank's own <bank_title>. Renames the module if the
      *        bank was already imported under a different name.
-     * @return array|null ['cmid' => int, 'category' => int, 'count' => int, 'full' => bool], or null when unavailable.
+     * @param string|null $path Exact package-relative path of the dump (a standalone
+     *        resource's matched objectbank path); null resolves it from the bank id under
+     *        non_cc_assessments. Lets a nested or case-varied dump be found verbatim.
+     * @return array|null ['cmid' => int, 'category' => int, 'count' => int, 'full' => bool, 'key' => string], or null.
      */
-    public function import_bank(stdClass $course, string $bankid, ?string $name = null): ?array {
+    public function import_bank(stdClass $course, string $bankid, ?string $name = null, ?string $path = null): ?array {
         global $CFG, $DB;
         require_once($CFG->libdir . '/questionlib.php');
         require_once($CFG->dirroot . '/course/lib.php');
         require_once($CFG->dirroot . '/course/modlib.php');
         // Key the memo by the resolved dump's identity, not the raw bank id: a New Quiz's
         // sourcebank_ref and a standalone resource can name the same physical file under
-        // different casing (the lookup resolves case-insensitively), and both must reuse
-        // one import rather than creating two banks for the same file.
-        $file = $this->bank_dump_path($bankid);
+        // different casing or directory prefix, and both must reuse one import rather than
+        // creating two banks for the same file. A standalone resource supplies its exact
+        // matched path; a quiz draw resolves the id under non_cc_assessments.
+        $file = $path !== null ? safe_path::within($this->packageroot, $path) : $this->bank_dump_path($bankid);
+        if ($file !== null && !is_readable($file)) {
+            $file = null;
+        }
         $key = $file !== null ? (realpath($file) ?: $file) : $bankid;
         if (array_key_exists($key, $this->banks)) {
             $existing = $this->banks[$key];
@@ -146,6 +153,9 @@ class item_bank_registry {
             'category' => (int) $category->id,
             'count' => count($questionids),
             'full' => count($questionids) === count($parsed['questions']) && (int) ($parsed['unresolved'] ?? 0) === 0,
+            // The resolved file identity, so draw-capacity callers can share one bank's
+            // capacity across ids that differ only by case/prefix but name one dump.
+            'key' => $key,
         ];
         return $this->banks[$key];
     }

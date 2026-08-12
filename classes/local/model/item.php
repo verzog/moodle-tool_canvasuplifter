@@ -225,6 +225,15 @@ class item {
     public string $objectbankid = '';
 
     /**
+     * @var string For a standalone Canvas item bank, the exact package-relative path of the
+     *             objectbank dump that classification matched (e.g. non_cc_assessments/
+     *             pool.xml.qti, or a nested/case-varied path). Threaded to the builder and
+     *             report so they resolve the same physical file rather than reconstructing a
+     *             root-level path from the id. Empty for anything else.
+     */
+    public string $objectbankpath = '';
+
+    /**
      * Constructor.
      *
      * @param string $identifier Canvas resource identifier.
