@@ -1415,7 +1415,12 @@ class manifest_parser {
         if (str_contains($type, 'question-bank')) {
             return item::KIND_QUESTIONBANK;
         }
-        if (preg_match('#imsqti#', $type) || str_contains($type, 'assessment')) {
+        // A QTI assessment is an imsqti resource, or (defensively) a Common Cartridge
+        // assessment profile whose type ends in "/assessment" under an imscc namespace.
+        // The bare substring "assessment" is too broad: it also matches Blackboard's
+        // course/x-bb-courseassessment(creationsettings) and assessment/x-bb-qti-test
+        // resources, which carry no QTI and are not Canvas quizzes (issue #149).
+        if (preg_match('#imsqti#', $type) || (str_contains($type, 'imscc') && preg_match('#/assessment$#', $type))) {
             return item::KIND_QUIZ;
         }
         // Canvas "learning application" resources: assignments and pages live here,
