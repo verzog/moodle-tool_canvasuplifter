@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026081231;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026081232;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // New-Quiz item banks: authored slot order + filter safeguard (#144).
-$plugin->release   = '0.60.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Import standalone Canvas objectbank item banks (#146).
+$plugin->release   = '0.61.0';

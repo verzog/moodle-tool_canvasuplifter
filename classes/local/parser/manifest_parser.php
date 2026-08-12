@@ -1405,6 +1405,13 @@ class manifest_parser {
                     return item::KIND_ASSIGNMENT;
                 }
             }
+            // A learning-application-resource whose file is a native item-bank dump
+            // (non_cc_assessments/<id>.xml.qti rooted at <objectbank> with real questions)
+            // is a standalone Canvas question bank not wired to any quiz; import it as a
+            // mod_qbank instead of dropping it as a metadata-only companion.
+            if ($this->is_standalone_objectbank($href, $files)) {
+                return item::KIND_QUESTIONBANK;
+            }
             return $this->has_html($href, $files) ? item::KIND_PAGE : item::KIND_UNKNOWN;
         }
         // Plain web content: an HTML page under wiki_content is a page, else a file.
@@ -1456,6 +1463,33 @@ class manifest_parser {
     protected function has_html(string $href, array $files): bool {
         foreach (array_merge([$href], $files) as $path) {
             if ($path !== '' && preg_match('/\.html?$/i', $path)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a resource's file is a standalone Canvas item bank: a native
+     * non_cc_assessments/<id>.xml.qti dump rooted at an <objectbank> carrying real
+     * questions (not an <assessment>-rooted file, nor a non-QTI metadata companion),
+     * so it can be imported as a mod_qbank rather than dropped.
+     *
+     * @param string $href The primary href.
+     * @param string[] $files All file hrefs.
+     * @return bool
+     */
+    protected function is_standalone_objectbank(string $href, array $files): bool {
+        foreach (array_merge([$href], $files) as $path) {
+            if ($path === '' || !preg_match('#(^|/)non_cc_assessments/[^/]+\.xml\.qti$#i', $path)) {
+                continue;
+            }
+            $absolute = $this->resolve_within($path);
+            if ($absolute === null) {
+                continue;
+            }
+            $parsed = (new qti_parser())->parse((string) @file_get_contents($absolute));
+            if (!empty($parsed['hasobjectbank']) && !empty($parsed['questions'])) {
                 return true;
             }
         }

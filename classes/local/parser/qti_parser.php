@@ -59,13 +59,16 @@ class qti_parser {
      * selection groups (entries {kind: 'inline'|'selection', index: int} pointing into
      * 'questions'/'selections') so the builder can add quiz slots in Canvas order.
      *
+     * The 'hasobjectbank' flag is true when the document is rooted at a Canvas
+     * <objectbank> (a standalone item bank) rather than an <assessment>.
+     *
      * @param string $xml The QTI assessment document.
-     * @return array{title: string, questions: array, unresolved: int, hasassessment: bool, selections: array, sequence: array}
-     *         Parsed assessment.
+     * @return array Parsed assessment: title, questions, unresolved, hasassessment,
+     *         hasobjectbank, selections and sequence (as described above).
      */
     public function parse(string $xml): array {
         $result = ['title' => '', 'questions' => [], 'unresolved' => 0, 'hasassessment' => false,
-            'selections' => [], 'sequence' => []];
+            'hasobjectbank' => false, 'selections' => [], 'sequence' => []];
         if (trim($xml) === '') {
             return $result;
         }
@@ -87,13 +90,13 @@ class qti_parser {
             $result['hasassessment'] = $dom->getElementsByTagNameNS('*', 'section')->length > 0;
         }
         // A native item bank is rooted at <objectbank> and carries its name in a
-        // bank_title metadata field rather than a title attribute; use it so each
-        // imported bank keeps its Canvas name.
-        if ($result['title'] === '') {
-            $banks = $dom->getElementsByTagNameNS('*', 'objectbank');
-            if ($banks->length > 0 && $banks->item(0) instanceof DOMElement) {
-                $result['title'] = $this->metadata_field($banks->item(0), 'bank_title');
-            }
+        // bank_title metadata field rather than a title attribute; record the root and
+        // use its title so a standalone bank keeps its Canvas name and can be told apart
+        // from an <assessment>-rooted file (or a non-QTI assessment_meta sibling).
+        $banks = $dom->getElementsByTagNameNS('*', 'objectbank');
+        $result['hasobjectbank'] = $banks->length > 0 && $banks->item(0) instanceof DOMElement;
+        if ($result['title'] === '' && $result['hasobjectbank']) {
+            $result['title'] = $this->metadata_field($banks->item(0), 'bank_title');
         }
 
         foreach ($dom->getElementsByTagNameNS('*', 'item') as $itemnode) {

@@ -112,6 +112,24 @@ class questionbank_builder {
             $this->resolve_assessment_source($modelitem, $qtipath);
         $questions = $parsed['questions'];
 
+        // A standalone Canvas item bank (this resource's file is a
+        // non_cc_assessments/<id>.xml.qti rooted at <objectbank>) is imported through the
+        // shared registry keyed by its file basename, so a bank a New Quiz also draws from
+        // (sourcebank_ref = that id), or the same bank reached from another resource, is
+        // imported exactly once. The registry-created mod_qbank is this item's own module.
+        if (!empty($parsed['hasobjectbank']) && ($bankid = $this->objectbank_bankid($qtipath)) !== null) {
+            $bank = $this->bankregistry->import_bank($course, $bankid);
+            if ($bank === null) {
+                $this->skipreason = question_importer::describe_unconvertible(
+                    $questions,
+                    $supported,
+                    $parsed['unresolved'] ?? 0
+                );
+                return null;
+            }
+            return (int) $bank['cmid'];
+        }
+
         // A Canvas New Quiz that isn't linked from a module is routed here rather than
         // to quiz_builder; it can draw its questions from a separate item bank via
         // <selection_ordering>/<sourcebank_ref>. Import each referenced bank (once,
@@ -189,6 +207,22 @@ class questionbank_builder {
         // internal Canvas links in their text once every activity exists.
         $this->importedquestionids = array_merge($this->importedquestionids, array_map('intval', $questionids));
         return $cmid;
+    }
+
+    /**
+     * The bank id for a standalone item-bank file, or null when the file is not one the
+     * shared registry can key. The registry derives non_cc_assessments/<id>.xml.qti from
+     * the id, so only a file in that folder qualifies; its basename (minus .xml.qti) is
+     * the id, matching a New Quiz's sourcebank_ref so the two dedupe to one import.
+     *
+     * @param string $qtipath Absolute path of the located QTI file.
+     * @return string|null
+     */
+    private function objectbank_bankid(string $qtipath): ?string {
+        if (!preg_match('#(^|/)non_cc_assessments/[^/]+\.xml\.qti$#i', $qtipath)) {
+            return null;
+        }
+        return basename($qtipath, '.xml.qti');
     }
 
     /**

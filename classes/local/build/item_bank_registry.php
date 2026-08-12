@@ -47,7 +47,7 @@ class item_bank_registry {
     /** @var media_report|null Shared collector for unresolved question media references. */
     private ?media_report $mediareport;
 
-    /** @var array Memoised import result per bank id: [cmid, category, count, full] or null. */
+    /** @var array Memoised import result per bank id: ['cmid', 'category', 'count', 'full'] or null. */
     private array $banks = [];
 
     /**
@@ -70,7 +70,7 @@ class item_bank_registry {
      *
      * @param stdClass $course Course record.
      * @param string $bankid The Canvas sourcebank_ref (a package resource id).
-     * @return array|null ['category' => int, 'count' => int, 'full' => bool], or null when unavailable.
+     * @return array|null ['cmid' => int, 'category' => int, 'count' => int, 'full' => bool], or null when unavailable.
      */
     public function import_bank(stdClass $course, string $bankid): ?array {
         global $CFG, $DB;
@@ -126,6 +126,7 @@ class item_bank_registry {
         // pool is smaller than the one Canvas drew from, so a group sourcing this bank
         // must be reported as incomplete even when it can still fill its requested count.
         $this->banks[$bankid] = [
+            'cmid' => (int) $created->coursemodule,
             'category' => (int) $category->id,
             'count' => count($questionids),
             'full' => count($questionids) === count($parsed['questions']) && (int) ($parsed['unresolved'] ?? 0) === 0,
