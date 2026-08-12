@@ -639,12 +639,15 @@ class qti_parser {
         $placedblanks = [];
         foreach ($blanks as $blankid => $accepted) {
             $marker = '[' . $blankid . ']';
-            // A blank we cannot place — it has no accepted answer, or its [id] marker
-            // does not appear in the stem exactly once — would leave a silently truncated
-            // or duplicated Cloze, so the whole item is left unsupported (reported by name)
-            // rather than importing a partial question or grading one QTI response as two
-            // independent subquestions.
-            if ($accepted === [] || substr_count($stem, $marker) !== 1) {
+            // A blank we cannot place is left unsupported (the whole item is dropped,
+            // reported by name) rather than importing a partial or malformed Cloze. It is
+            // unplaceable when it has no accepted answer; when its [id] marker does not
+            // appear in the stem exactly once (missing, or duplicated into two graded
+            // fields); or when the marker survives only inside markup (e.g. an attribute
+            // like <img alt="[b1]">), where a substituted field would sit in an attribute
+            // rather than as a rendered answer control.
+            if ($accepted === [] || substr_count($stem, $marker) !== 1
+                    || strpos(strip_tags($stem), $marker) === false) {
                 continue;
             }
             $replacements[$marker] = $this->cloze_field($accepted);
@@ -1630,7 +1633,17 @@ class qti_parser {
         }
         $scores = [];
         foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
-            if (!($cond instanceof DOMElement) || $this->condition_score($cond) <= 0) {
+            if (!($cond instanceof DOMElement)) {
+                continue;
+            }
+            $score = $this->condition_score($cond);
+            if ($score < 0) {
+                // A penalty (negative SCORE adjustment for a wrong response) reduces the
+                // Canvas total but has no equivalent in an even Cloze split, so the item
+                // is left unsupported rather than over-credited.
+                return false;
+            }
+            if ($score <= 0) {
                 continue;
             }
             // Only additive scoring (SCORE action="Add") maps to independent per-blank
@@ -1655,7 +1668,6 @@ class qti_parser {
                 // be represented as independent even fields.
                 return false;
             }
-            $score = $this->condition_score($cond);
             foreach (array_keys($blanks) as $blankid) {
                 $scores[$blankid] = max($scores[$blankid] ?? 0.0, $score);
             }
@@ -1673,7 +1685,38 @@ class qti_parser {
             }
             $values[] = $scores[$blankid];
         }
-        return !$this->scores_are_uneven($values);
+        if ($this->scores_are_uneven($values)) {
+            return false;
+        }
+        // Even per-blank scores must also sum to the declared SCORE maximum: if they fall
+        // short (e.g. two blanks adding 25 each against a max of 100), a fully-correct
+        // response earns only part of the item in Canvas while an even Cloze awards it in
+        // full, so such an item is left unsupported. A per-blank rounding tolerance keeps
+        // scores like 33.33×3 ≈ 100 convertible. When no maximum is declared there is
+        // nothing to compare against, so the even split stands.
+        $maxvalue = $this->declared_score_max($resprocessing);
+        if ($maxvalue !== null && abs(array_sum($values) - $maxvalue) > count($placed) * 0.01) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * The declared maximum of the SCORE outcome variable in a resprocessing block, or null
+     * when none is declared. Unlike {@see score_max} this does not substitute a default, so
+     * a caller can tell a missing maximum from a present one.
+     *
+     * @param DOMElement $resprocessing The resprocessing element.
+     * @return float|null
+     */
+    protected function declared_score_max(DOMElement $resprocessing): ?float {
+        foreach ($resprocessing->getElementsByTagNameNS('*', 'decvar') as $decvar) {
+            if ($decvar instanceof DOMElement && strtoupper($decvar->getAttribute('varname')) === 'SCORE'
+                    && $decvar->getAttribute('maxvalue') !== '') {
+                return (float) $decvar->getAttribute('maxvalue');
+            }
+        }
+        return null;
     }
 
     /**

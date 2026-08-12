@@ -1236,6 +1236,117 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A blank whose [id] marker survives only inside markup (an attribute such as
+     * <img alt="[b1]">) has no rendered-text placeholder, so substituting a Cloze field
+     * there would embed it in an attribute; the item is left unsupported instead.
+     *
+     * @return void
+     */
+    public function test_native_cloze_marker_only_in_markup_is_unsupported(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">'
+            . '&lt;img alt="[b1]"/&gt; then [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $item = '<item ident="mk1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+    }
+
+    /**
+     * A negative SCORE adjustment (a penalty for a wrong blank) reduces the Canvas total
+     * but has no equivalent in an even Cloze split, so the item is left unsupported rather
+     * than over-credited.
+     *
+     * @return void
+     */
+    public function test_native_cloze_negative_score_is_unsupported(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">A [b1] B [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><not><varequal respident="response_b2">b2-0</varequal></not></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">-10</setvar></respcondition></resprocessing>';
+        $item = '<item ident="ng1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+    }
+
+    /**
+     * Even per-blank scores that fall short of the declared SCORE maximum (e.g. two blanks
+     * adding 25 each against a max of 100) award only part of the item for a fully-correct
+     * response in Canvas, so an even Cloze that awards it in full is left unsupported.
+     *
+     * @return void
+     */
+    public function test_native_cloze_scores_below_max_is_unsupported(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">A [b1] B [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE" maxvalue="100"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">25</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">25</setvar></respcondition></resprocessing>';
+        $item = '<item ident="sm1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+    }
+
+    /**
+     * Even per-blank scores that do sum to the declared SCORE maximum still convert (a
+     * full-credit response earns the whole item), including small rounding like 50+50=100.
+     *
+     * @return void
+     */
+    public function test_native_cloze_scores_reaching_max_convert(): void {
+        $pres = '<presentation><material><mattext texttype="text/html">A [b1] B [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice><response_label ident="b1-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">red</mattext></material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice><response_label ident="b2-0" answer_type="openEntry">'
+            . '<material><mattext texttype="text/plain">blue</mattext></material></response_label></render_choice>'
+            . '</response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE" maxvalue="100"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="sx1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>fill_in_multiple_blanks_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with three free-text blanks (the shape
      * a real Canvas export uses: [blank] stem placeholders, response_lid per blank with
      * its accepted answers as response_labels, scored by varequal to the label idents).
