@@ -175,6 +175,15 @@ class course_builder {
         // item bank a New Quiz draws from is imported once whether it's reached from a
         // linked quiz (quiz_builder) or an orphan quiz/bank (questionbank_builder).
         $bankregistry = new item_bank_registry($this->packageroot, $this->mediareport);
+        // A standalone bank's dump may sit under a directory prefix; register each id => path
+        // so a quiz draw that names the bank by id alone still resolves the same file.
+        $bankpaths = [];
+        foreach ($coursemodel->all_items() as $bankitem) {
+            if ($bankitem->objectbankid !== '' && $bankitem->objectbankpath !== '') {
+                $bankpaths[$bankitem->objectbankid] = $bankitem->objectbankpath;
+            }
+        }
+        $bankregistry->register_bank_paths($bankpaths);
         $builders = [
             item::KIND_PAGE => new page_builder($this->packageroot, $this->pathtoid, $this->mediareport),
             item::KIND_URL => new url_builder($this->packageroot),
@@ -198,9 +207,26 @@ class course_builder {
         $totalitems = max(1, count($coursemodel->all_items()));
         $processed = 0;
 
-        foreach ($coursemodel->sections as $index => $sectionmodel) {
-            $sectionnum = $index + 1;
-            $this->prepare_section($course, $sectionnum, $sectionmodel->title);
+        $builtsections = 0;
+        foreach ($coursemodel->sections as $sectionmodel) {
+            // A section whose every item routes to section 0 (a question bank) would leave an
+            // empty visible topic section, since those items build into section 0 regardless.
+            // Only skip such a section; number the topics consecutively so skipping one leaves
+            // no gap. An explicitly authored empty section is preserved (it carries a title the
+            // parser and Analyze report keep), so only a NON-empty all-section-zero section is
+            // skipped.
+            $hasplaced = empty($sectionmodel->items);
+            foreach ($sectionmodel->items as $sectionitem) {
+                if (!in_array($sectionitem->kind, self::SECTION_ZERO_KINDS, true)) {
+                    $hasplaced = true;
+                    break;
+                }
+            }
+            $sectionnum = 0;
+            if ($hasplaced) {
+                $sectionnum = ++$builtsections;
+                $this->prepare_section($course, $sectionnum, $sectionmodel->title);
+            }
             foreach ($this->segment_items($sectionmodel->items) as $segment) {
                 if ($segment['type'] === 'group') {
                     $this->build_page_group(
@@ -245,8 +271,20 @@ class course_builder {
 
         $orphansection = 0;
         if (!empty($extras)) {
-            $orphansection = count($coursemodel->sections) + 1;
-            $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
+            // Create the "Additional resources" section only when an orphan actually lands
+            // in it: a section-zero kind (a question bank) is forced into section 0, so a
+            // package whose only orphans are such banks must not gain an empty section.
+            $needssection = false;
+            foreach ($extras as $extraitem) {
+                if (!in_array($extraitem->kind, self::SECTION_ZERO_KINDS, true)) {
+                    $needssection = true;
+                    break;
+                }
+            }
+            if ($needssection) {
+                $orphansection = $builtsections + 1;
+                $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
+            }
             $orphantitle = get_string('additionalresources', 'tool_canvasuplifter');
             foreach ($this->segment_items($extras) as $segment) {
                 if ($segment['type'] === 'group') {
@@ -342,7 +380,7 @@ class course_builder {
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
         $skippedtotal = $itemcount - $createdtotal;
-        $sectioncount = count($coursemodel->sections) + ($orphansection > 0 ? 1 : 0);
+        $sectioncount = $builtsections + ($orphansection > 0 ? 1 : 0);
 
         // Make sure section caches reflect everything we just built.
         rebuild_course_cache($course->id, true);

@@ -2428,6 +2428,36 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * hasobjectbank marks a document rooted at a Canvas <objectbank> (a standalone item
+     * bank), letting a caller tell it apart from an <assessment>-rooted file, so a
+     * standalone bank can be imported as a mod_qbank.
+     *
+     * @return void
+     */
+    public function test_hasobjectbank_marks_standalone_item_bank(): void {
+        $bank = '<?xml version="1.0"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="b1"><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>bank_title</fieldlabel><fieldentry>Pool</fieldentry></qtimetadatafield></qtimetadata>'
+            . '<item ident="i1"><presentation><material><mattext texttype="text/plain">Q?</mattext></material>'
+            . '<response_lid ident="r"><render_choice>'
+            . '<response_label ident="a"><material><mattext>A</mattext></material></response_label>'
+            . '<response_label ident="b"><material><mattext>B</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><respcondition><conditionvar><varequal respident="r">a</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Set">100</setvar></respcondition></resprocessing></item>'
+            . '</objectbank></questestinterop>';
+        $r = (new qti_parser())->parse($bank);
+        $this->assertTrue($r['hasobjectbank']);
+        $this->assertFalse($r['hasassessment']);
+        $this->assertSame('Pool', $r['title']);
+        $this->assertCount(1, $r['questions']);
+
+        // An <assessment>-rooted file is not an objectbank.
+        $this->assertFalse((new qti_parser())->parse($this->assessment(''))['hasobjectbank']);
+    }
+
+    /**
      * A Canvas New Quiz that draws questions from an item bank is captured as a
      * selection: the bank id, how many to draw and the per-question points. A plain
      * assessment reports no selections.

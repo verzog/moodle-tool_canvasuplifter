@@ -59,13 +59,16 @@ class qti_parser {
      * selection groups (entries {kind: 'inline'|'selection', index: int} pointing into
      * 'questions'/'selections') so the builder can add quiz slots in Canvas order.
      *
+     * The 'hasobjectbank' flag is true when the document is rooted at a Canvas
+     * <objectbank> (a standalone item bank) rather than an <assessment>.
+     *
      * @param string $xml The QTI assessment document.
-     * @return array{title: string, questions: array, unresolved: int, hasassessment: bool, selections: array, sequence: array}
-     *         Parsed assessment.
+     * @return array Parsed assessment: title, questions, unresolved, hasassessment,
+     *         hasobjectbank, selections and sequence (as described above).
      */
     public function parse(string $xml): array {
         $result = ['title' => '', 'questions' => [], 'unresolved' => 0, 'hasassessment' => false,
-            'selections' => [], 'sequence' => []];
+            'hasobjectbank' => false, 'selections' => [], 'sequence' => []];
         if (trim($xml) === '') {
             return $result;
         }
@@ -86,14 +89,23 @@ class qti_parser {
             // / assessmentSection), so neither matches here.
             $result['hasassessment'] = $dom->getElementsByTagNameNS('*', 'section')->length > 0;
         }
-        // A native item bank is rooted at <objectbank> and carries its name in a
-        // bank_title metadata field rather than a title attribute; use it so each
-        // imported bank keeps its Canvas name.
-        if ($result['title'] === '') {
-            $banks = $dom->getElementsByTagNameNS('*', 'objectbank');
-            if ($banks->length > 0 && $banks->item(0) instanceof DOMElement) {
-                $result['title'] = $this->metadata_field($banks->item(0), 'bank_title');
+        // A native item bank is the document's root payload: an <objectbank> that is a
+        // direct child of <questestinterop>. It carries its name in a bank_title metadata
+        // field rather than a title attribute. An <assessment>-rooted dump can also contain
+        // a nested <objectbank>, so a descendant-wide match would misread it as a standalone
+        // bank; require the root child so only a genuine bank file sets the flag.
+        $rootbank = null;
+        if ($dom->documentElement !== null) {
+            foreach ($dom->documentElement->childNodes as $child) {
+                if ($child instanceof DOMElement && $child->localName === 'objectbank') {
+                    $rootbank = $child;
+                    break;
+                }
             }
+        }
+        $result['hasobjectbank'] = $rootbank !== null;
+        if ($result['title'] === '' && $rootbank !== null) {
+            $result['title'] = $this->metadata_field($rootbank, 'bank_title');
         }
 
         foreach ($dom->getElementsByTagNameNS('*', 'item') as $itemnode) {

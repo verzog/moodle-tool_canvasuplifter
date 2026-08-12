@@ -48,6 +48,70 @@ trait qti_source_locator {
     }
 
     /**
+     * Resolve a native item-bank dump (non_cc_assessments/<id>.xml.qti) by its bank id,
+     * tolerating extension case. A bank id is the file's basename with the .xml.qti
+     * suffix stripped case-insensitively, so a fixed-case reconstruction can miss a dump
+     * Canvas exported as e.g. Pool.XML.QTI on a case-sensitive filesystem; fall back to a
+     * case-insensitive directory match. The using class must expose a $packageroot property.
+     *
+     * @param string $bankid The bank id (basename minus the .xml.qti suffix).
+     * @return string|null Absolute path to the readable dump within the package, or null.
+     */
+    private function bank_dump_path(string $bankid): ?string {
+        $direct = safe_path::within($this->packageroot, 'non_cc_assessments/' . $bankid . '.xml.qti');
+        if ($direct !== null && is_readable($direct)) {
+            return $direct;
+        }
+        // The bank id strips the .xml.qti suffix case-insensitively and the manifest may
+        // vary the folder casing, so a fixed-case reconstruction can miss the dump on a
+        // case-sensitive filesystem; match both the directory and the file basename
+        // case-insensitively as a fallback.
+        $dir = $this->case_insensitive_dir('non_cc_assessments');
+        if ($dir === null) {
+            return null;
+        }
+        $target = strtolower($bankid . '.xml.qti');
+        foreach ((array) @scandir($dir) as $entry) {
+            if (strtolower((string) $entry) === $target) {
+                $candidate = $dir . '/' . $entry;
+                if (is_readable($candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolve a top-level package directory by name, tolerating case: the exact name when
+     * it exists, else a case-insensitive match among the package root's entries. Returns
+     * null when no such directory exists.
+     *
+     * @param string $name The directory name (no path separators).
+     * @return string|null Absolute path to the directory within the package, or null.
+     */
+    private function case_insensitive_dir(string $name): ?string {
+        $direct = safe_path::within($this->packageroot, $name);
+        if ($direct !== null && is_dir($direct)) {
+            return $direct;
+        }
+        $root = realpath($this->packageroot);
+        if ($root === false) {
+            return null;
+        }
+        $target = strtolower($name);
+        foreach ((array) @scandir($root) as $entry) {
+            if ($entry !== '.' && $entry !== '..' && strtolower((string) $entry) === $target) {
+                $candidate = $root . '/' . $entry;
+                if (is_dir($candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Resolve the assessment source a builder should evaluate: parse the Common
      * Cartridge QTI, and when it yields nothing importable fall back to the native
      * non_cc_assessments dump — adopting it when it has inline questions or its own

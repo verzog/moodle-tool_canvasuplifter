@@ -47,8 +47,11 @@ class item_bank_registry {
     /** @var media_report|null Shared collector for unresolved question media references. */
     private ?media_report $mediareport;
 
-    /** @var array Memoised import result per bank id: [cmid, category, count, full] or null. */
+    /** @var array Memoised import result per resolved dump identity: ['cmid', ...] or null. */
     private array $banks = [];
+
+    /** @var array Map of bank id => exact package-relative dump path, from standalone resources. */
+    private array $bankpaths = [];
 
     /**
      * Constructor.
@@ -62,6 +65,22 @@ class item_bank_registry {
     }
 
     /**
+     * Register the exact dump paths of standalone item-bank resources, keyed by bank id, so a
+     * quiz draw that names a bank by id alone (sourcebank_ref) can still resolve a dump the
+     * manifest stored under a directory prefix rather than at the package root.
+     *
+     * @param array $paths Map of bank id to package-relative objectbank path.
+     * @return void
+     */
+    public function register_bank_paths(array $paths): void {
+        foreach ($paths as $id => $path) {
+            if ((string) $id !== '' && (string) $path !== '') {
+                $this->bankpaths[(string) $id] = (string) $path;
+            }
+        }
+    }
+
+    /**
      * Import a Canvas item bank (non_cc_assessments/<id>.xml.qti) as a section-0
      * mod_qbank and return its course module id, default category id and the number
      * of questions imported. Memoised by bank id so a bank shared by several quizzes
@@ -70,19 +89,45 @@ class item_bank_registry {
      *
      * @param stdClass $course Course record.
      * @param string $bankid The Canvas sourcebank_ref (a package resource id).
-     * @return array|null ['category' => int, 'count' => int, 'full' => bool], or null when unavailable.
+     * @param string|null $name Preferred activity name (a standalone bank's disambiguated
+     *        title); null keeps the bank's own <bank_title>. Renames the module if the
+     *        bank was already imported under a different name.
+     * @param string|null $path Exact package-relative path of the dump (a standalone
+     *        resource's matched objectbank path); null resolves it from the bank id under
+     *        non_cc_assessments. Lets a nested or case-varied dump be found verbatim.
+     * @return array|null ['cmid' => int, 'category' => int, 'count' => int, 'full' => bool, 'key' => string], or null.
      */
-    public function import_bank(stdClass $course, string $bankid): ?array {
+    public function import_bank(stdClass $course, string $bankid, ?string $name = null, ?string $path = null): ?array {
         global $CFG, $DB;
         require_once($CFG->libdir . '/questionlib.php');
         require_once($CFG->dirroot . '/course/lib.php');
         require_once($CFG->dirroot . '/course/modlib.php');
-        if (array_key_exists($bankid, $this->banks)) {
-            return $this->banks[$bankid];
+        // Key the memo by the resolved dump's identity, not the raw bank id: a New Quiz's
+        // sourcebank_ref and a standalone resource can name the same physical file under
+        // different casing or directory prefix, and both must reuse one import rather than
+        // creating two banks for the same file. A standalone resource supplies its exact
+        // matched path; a quiz draw naming the id alone falls back to a path registered for
+        // that id (so a nested dump still resolves), else the non_cc_assessments lookup.
+        $path ??= $this->registered_path($bankid);
+        $file = $path !== null ? safe_path::within($this->packageroot, $path) : $this->bank_dump_path($bankid);
+        if ($file !== null && !is_readable($file)) {
+            $file = null;
         }
-        $this->banks[$bankid] = null;
-        $file = safe_path::within($this->packageroot, 'non_cc_assessments/' . $bankid . '.xml.qti');
-        if ($file === null || !is_readable($file)) {
+        $key = $file !== null ? (realpath($file) ?: $file) : $bankid;
+        if (array_key_exists($key, $this->banks)) {
+            $existing = $this->banks[$key];
+            if ($existing !== null && empty($existing['named']) && $name !== null && $name !== '') {
+                // The bank was imported earlier without an authoritative name (e.g. by a quiz
+                // draw, under its own <bank_title>); the first resource to supply a real name
+                // wins, so adopt it once and mark it named. Later duplicates don't re-rename,
+                // keeping the activity name stable and matching what the report counted first.
+                $this->rename_bank($course, (int) $existing['cmid'], $name);
+                $this->banks[$key]['named'] = true;
+            }
+            return $this->banks[$key];
+        }
+        $this->banks[$key] = null;
+        if ($file === null) {
             return null;
         }
         [$parsed, $supported, $importable] = $this->parse_qti($file);
@@ -101,7 +146,8 @@ class item_bank_registry {
             // questionbank_builder's, not scattered into a topic section.
             'section' => 0,
             'visible' => 1,
-            'name' => $parsed['title'] !== '' ? $parsed['title'] : $this->default_bank_name(),
+            'name' => $name !== null && $name !== '' ? $name
+                : ($parsed['title'] !== '' ? $parsed['title'] : $this->default_bank_name()),
             'intro' => '',
             'introformat' => FORMAT_HTML,
             'type' => \core_question\local\bank\question_bank_helper::TYPE_STANDARD,
@@ -125,12 +171,61 @@ class item_bank_registry {
         // When the bank holds unsupported types (or the importer rejects some), Moodle's
         // pool is smaller than the one Canvas drew from, so a group sourcing this bank
         // must be reported as incomplete even when it can still fill its requested count.
-        $this->banks[$bankid] = [
+        $this->banks[$key] = [
+            'cmid' => (int) $created->coursemodule,
             'category' => (int) $category->id,
             'count' => count($questionids),
             'full' => count($questionids) === count($parsed['questions']) && (int) ($parsed['unresolved'] ?? 0) === 0,
+            // The resolved file identity, so draw-capacity callers can share one bank's
+            // capacity across ids that differ only by case/prefix but name one dump.
+            'key' => $key,
+            // Whether an authoritative name was applied, so a later duplicate resolving to the
+            // same dump doesn't rename the module out from under the first (report-counted) one.
+            'named' => $name !== null && $name !== '',
         ];
-        return $this->banks[$bankid];
+        return $this->banks[$key];
+    }
+
+    /**
+     * The registered exact dump path for a bank id, tolerating case: the id's own entry, else
+     * the sole case-insensitive match among registered ids (so a quiz `sourcebank_ref=pool`
+     * resolves a standalone dump registered under `Pool`). Null when none or ambiguous.
+     *
+     * @param string $bankid The bank id.
+     * @return string|null
+     */
+    private function registered_path(string $bankid): ?string {
+        if (isset($this->bankpaths[$bankid])) {
+            return $this->bankpaths[$bankid];
+        }
+        $wanted = strtolower($bankid);
+        $matches = [];
+        foreach ($this->bankpaths as $id => $registeredpath) {
+            if (strtolower((string) $id) === $wanted) {
+                $matches[$registeredpath] = true;
+            }
+        }
+        return count($matches) === 1 ? (string) array_key_first($matches) : null;
+    }
+
+    /**
+     * Rename an already-imported bank's mod_qbank, so a bank first created by a quiz draw
+     * (under its own <bank_title>) adopts the authoritative name a standalone resource
+     * later supplies. A no-op when the module is gone or already named that.
+     *
+     * @param stdClass $course Course record.
+     * @param int $cmid The bank's course module id.
+     * @param string $name The new activity name.
+     * @return void
+     */
+    private function rename_bank(stdClass $course, int $cmid, string $name): void {
+        global $DB;
+        $cm = get_coursemodule_from_id('qbank', $cmid, 0, false, IGNORE_MISSING);
+        if ($cm === false || $cm->name === $name) {
+            return;
+        }
+        $DB->set_field('qbank', 'name', $name, ['id' => $cm->instance]);
+        rebuild_course_cache((int) $course->id, true);
     }
 
     /**

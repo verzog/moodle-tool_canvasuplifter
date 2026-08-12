@@ -100,6 +100,15 @@ class questionbank_builder {
         $this->lasthandledviabank = false;
         $this->lastbankselections = 0;
 
+        // A standalone Canvas item bank (a learning-application-resource whose file is a
+        // non_cc_assessments/<id>.xml.qti objectbank, recorded by the parser) is imported
+        // through the shared registry keyed by that id — which equals a New Quiz's
+        // sourcebank_ref — so the bank is imported once whether reached from this resource
+        // or a quiz draw. The registry-created mod_qbank is this item's own module.
+        if ($modelitem->objectbankid !== '') {
+            return $this->build_standalone_bank($course, $modelitem);
+        }
+
         $qtipath = $this->locate_qti($modelitem);
         if ($qtipath === null) {
             $this->skipreason = 'no QTI assessment file found';
@@ -192,6 +201,49 @@ class questionbank_builder {
     }
 
     /**
+     * Import a standalone objectbank item bank ({@see item::objectbankid}) as a mod_qbank
+     * through the shared registry, so a bank a New Quiz also draws from imports once. The
+     * bank takes this item's effective title (its disambiguated banktitle when set), and a
+     * bank that yields nothing importable — unsupported types, or bare references whose
+     * bodies Canvas didn't export — is reported as a skip rather than dropped silently.
+     *
+     * @param stdClass $course Course record.
+     * @param item $modelitem The standalone item-bank resource.
+     * @return int|null The created course module id, or null when nothing imported.
+     */
+    private function build_standalone_bank(stdClass $course, item $modelitem): ?int {
+        $name = $modelitem->title !== '' ? $modelitem->title : null;
+        $path = $modelitem->objectbankpath !== '' ? $modelitem->objectbankpath : null;
+        $bank = $this->bankregistry->import_bank($course, $modelitem->objectbankid, $name, $path);
+        if ($bank !== null) {
+            return (int) $bank['cmid'];
+        }
+        // No bank built: report why. Read the exact matched dump and distinguish the two
+        // cases the inline path does — Moodle's importer rejecting an otherwise-convertible
+        // batch, versus questions that were never convertible (unsupported types, or bodies
+        // Canvas omitted) — so the skip reason isn't misreported as "zero importable".
+        $file = $modelitem->objectbankpath !== ''
+            ? safe_path::within($this->packageroot, $modelitem->objectbankpath)
+            : $this->bank_dump_path($modelitem->objectbankid);
+        [$parsed, $supported, $importable] = $file !== null
+            ? $this->parse_qti($file)
+            : [['questions' => [], 'unresolved' => 0], [], []];
+        if (!empty($importable)) {
+            $this->skipreason = sprintf(
+                "Moodle's importer rejected all %d convertible question(s)",
+                count($importable)
+            );
+        } else {
+            $this->skipreason = question_importer::describe_unconvertible(
+                $parsed['questions'] ?? [],
+                $supported,
+                (int) ($parsed['unresolved'] ?? 0)
+            );
+        }
+        return null;
+    }
+
+    /**
      * Import the item banks a New Quiz draws from through the shared registry, so an
      * orphan bank-backed quiz's questions aren't lost. Each referenced bank is imported
      * once (shared across the whole build) as its own always-visible mod_qbank; an
@@ -233,9 +285,13 @@ class questionbank_builder {
                 // Unsupported/unresolved candidates shrank the imported pool.
                 $incomplete = true;
             }
-            $imported[$bankid] = true;
-            if (!array_key_exists($bankid, $remaining)) {
-                $remaining[$bankid] = (int) $bank['count'];
+            // Count and charge capacity by the bank's resolved identity, so two groups whose
+            // sourcebank_ref differ only by case/prefix but name one dump count as one bank
+            // and share its pool rather than each spending a fresh full count.
+            $bankkey = $bank['key'] ?? $bankid;
+            $imported[$bankkey] = true;
+            if (!array_key_exists($bankkey, $remaining)) {
+                $remaining[$bankkey] = (int) $bank['count'];
             }
             // A missing selection_number requests the whole bank (its full count, like
             // quiz_builder::populate_from_banks); an explicit count requests that many.
@@ -244,10 +300,10 @@ class questionbank_builder {
             // including two draw-all groups — is flagged short even when every source
             // question imported (full === true).
             $want = ($selection['count'] ?? null) === null ? (int) $bank['count'] : (int) $selection['count'];
-            if ($want > $remaining[$bankid]) {
+            if ($want > $remaining[$bankkey]) {
                 $incomplete = true;
             }
-            $remaining[$bankid] = max(0, $remaining[$bankid] - $want);
+            $remaining[$bankkey] = max(0, $remaining[$bankkey] - $want);
         }
         $this->lastbankincomplete = $incomplete;
         return count($imported);

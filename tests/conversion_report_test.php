@@ -136,6 +136,24 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * Issue #146: a question-bank orphan builds into section 0 (a course-bank activity),
+     * which the build never places in — nor creates — the Additional resources section,
+     * so the report advertises the section-zero placement rather than 'extras'.
+     *
+     * @return void
+     */
+    public function test_questionbank_orphan_placement_is_section_zero(): void {
+        $course = new course_model();
+        $bank = new item('r_bank', 'Question pool');
+        $bank->kind = item::KIND_QUESTIONBANK;
+        $course->orphans[] = $bank;
+
+        $report = (new conversion_report($course))->build();
+
+        $this->assertSame('section0', $report['orphans'][0]['placement']);
+    }
+
+    /**
      * An orphan assessment is reported as a question bank (mod_qbank), matching
      * the builder, while a referenced one stays a quiz (mod_quiz).
      *
@@ -546,6 +564,100 @@ final class conversion_report_test extends \advanced_testcase {
         $orphan->files = ['a1/assessment_qti.xml'];
         $orphancourse->orphans[] = $orphan;
         $this->assertSame([], (new conversion_report($orphancourse, $dir))->build()['questionmatrix']);
+    }
+
+    /**
+     * Issue #146: when the same bank is both a quiz's sourcebank_ref draw and a standalone
+     * objectbank resource, the matrix counts it once (the build imports one shared bank),
+     * not twice.
+     *
+     * @return void
+     */
+    public function test_matrix_counts_shared_standalone_bank_once(): void {
+        $dir = $this->write_bank_draw_package('2');
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        // A referenced quiz that draws from bank1...
+        $quiz = new item('q1', 'New quiz engine');
+        $quiz->kind = item::KIND_QUIZ;
+        $quiz->files = ['a1/assessment_qti.xml'];
+        $section->add_item($quiz);
+        $course->add_section($section);
+        // ...and the same bank shipped as a standalone objectbank resource.
+        $bank = new item('r_bank', 'Shared bank');
+        $bank->kind = item::KIND_QUESTIONBANK;
+        $bank->files = ['non_cc_assessments/bank1.xml.qti'];
+        $bank->objectbankid = 'bank1';
+        $course->orphans[] = $bank;
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        // Bank bank1 (one importable + one unsupported) is tallied once, not doubled to 4.
+        $this->assertSame(2, $matrix['total']);
+        $this->assertSame(1, $matrix['supported']);
+    }
+
+    /**
+     * Issue #146: when the same standalone objectbank id ships as more than one resource
+     * (e.g. the resource is placed twice in the organization tree), the matrix still counts
+     * the one shared bank the build imports a single time, not once per resource.
+     *
+     * @return void
+     */
+    public function test_matrix_counts_repeated_standalone_bank_once(): void {
+        $dir = $this->write_bank_draw_package('2');
+        $course = new course_model();
+        // Two orphan resources naming the same bank id.
+        foreach (['r_bank_a', 'r_bank_b'] as $id) {
+            $bank = new item($id, 'Shared bank');
+            $bank->kind = item::KIND_QUESTIONBANK;
+            $bank->files = ['non_cc_assessments/bank1.xml.qti'];
+            $bank->objectbankid = 'bank1';
+            $course->orphans[] = $bank;
+        }
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        // Bank bank1 (one importable + one unsupported) is counted once, not doubled to 4.
+        $this->assertSame(2, $matrix['total']);
+        $this->assertSame(1, $matrix['supported']);
+    }
+
+    /**
+     * Issue #146: a standalone objectbank whose only items are bare references (Canvas
+     * omitted their bodies) surfaces that data loss in the matrix as an 'omitted' unsupported
+     * row sourced to the bank, rather than the resource appearing buildable against an empty
+     * matrix while the build silently skips it.
+     *
+     * @return void
+     */
+    public function test_matrix_surfaces_unresolved_standalone_bank(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/non_cc_assessments');
+        $bank = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="empty"><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>bank_title</fieldlabel><fieldentry>Empty Pool</fieldentry>'
+            . '</qtimetadatafield></qtimetadata>'
+            . '<item ident="q1"/><item ident="q2"/></objectbank></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/empty.xml.qti', $bank);
+        $course = new course_model();
+        $bankitem = new item('r_bank', 'Empty Pool');
+        $bankitem->kind = item::KIND_QUESTIONBANK;
+        $bankitem->files = ['non_cc_assessments/empty.xml.qti'];
+        $bankitem->objectbankid = 'empty';
+        $course->orphans[] = $bankitem;
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        // Two omitted bodies are surfaced (not an empty matrix) with none convertible.
+        $this->assertSame(2, $matrix['total']);
+        $this->assertSame(0, $matrix['supported']);
+        $omitted = array_values(array_filter($matrix['rows'], fn($r) => $r['label'] === 'omitted'));
+        $this->assertCount(1, $omitted);
+        $this->assertSame(2, $omitted[0]['count']);
+        $this->assertSame('unsupported', $omitted[0]['status']);
+        $this->assertSame('Empty Pool', $omitted[0]['sources'][0]['name']);
     }
 
     /**
