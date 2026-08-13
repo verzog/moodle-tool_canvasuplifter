@@ -102,6 +102,7 @@ final class bundle_assets {
      * @param string $filearea File area, e.g. "content" or "chapter".
      * @param int $itemid File area item id (0 for content areas, the record id for chapter/page areas).
      * @param array $bundleassets List of ['source','relpath'] entries.
+     * @param media_report|null $mediareport Collector to record embedded bundle files into (null to skip).
      * @return void
      */
     public static function import(
@@ -110,7 +111,8 @@ final class bundle_assets {
         string $component,
         string $filearea,
         int $itemid,
-        array $bundleassets
+        array $bundleassets,
+        ?media_report $mediareport = null
     ): void {
         $packageroot = rtrim($packageroot, '/');
         $fs = get_file_storage();
@@ -131,6 +133,12 @@ final class bundle_assets {
             $dir = dirname($relpath);
             $filepath = ($dir === '' || $dir === '.') ? '/' : '/' . trim($dir, '/') . '/';
             if ($fs->file_exists($contextid, $component, $filearea, $itemid, $filepath, $filename)) {
+                // A file already occupies this area path — either this same asset (recorded
+                // when first stored) or a different source that resolved to the same path
+                // (e.g. a rooted token's web_resources/images/foo.png versus a relative
+                // bundle ref's pages/images/foo.png, both landing at /images/foo.png). Don't
+                // record it against this source: its bytes were not stored by this call, so
+                // recording could wrongly suppress recovery of the colliding asset.
                 continue;
             }
             $fs->create_file_from_pathname([
@@ -141,6 +149,12 @@ final class bundle_assets {
                 'filepath' => $filepath,
                 'filename' => $filename,
             ], $absolute);
+            // Record the folded asset as embedded only after this call stored its bytes, so
+            // course_builder's reconciliation does not recover a file bundled into this built
+            // activity as a duplicate standalone download.
+            if ($mediareport !== null) {
+                $mediareport->record_embedded($absolute);
+            }
         }
     }
 }

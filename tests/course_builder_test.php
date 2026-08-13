@@ -251,6 +251,407 @@ XML;
     }
 
     /**
+     * A standalone file the parser suppressed because a page embeds it is not also
+     * recovered as a download when that page builds: the build-time reconciliation
+     * sees the page actually embedded it, so no duplicate mod_resource is created and
+     * the report notes no recovery.
+     *
+     * @return void
+     */
+    public function test_embedded_asset_not_recovered_when_owner_builds(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/web_resources');
+        file_put_contents($dir . '/web_resources/badge.png', 'PNG');
+        mkdir($dir . '/wiki_content');
+        file_put_contents(
+            $dir . '/wiki_content/page.html',
+            '<p><img src="$IMS-CC-FILEBASE$/web_resources/badge.png"></p>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i1" identifierref="r_page"><title>Lesson</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_page" type="webcontent" href="wiki_content/page.html">
+      <file href="wiki_content/page.html"/>
+    </resource>
+    <resource identifier="r_badge" type="webcontent" href="web_resources/badge.png">
+      <file href="web_resources/badge.png"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The parser predicted the page embeds the badge and suppressed the standalone
+        // file (it never reaches the orphan list), so this exercises the reconciliation.
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        // The page built and embedded the badge, so nothing is recovered.
+        $this->assertSame(0, $report['recoveredassets']);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $pages = $modinfo->get_instances_of('page');
+        $this->assertCount(1, $pages);
+        // No duplicate standalone download for the embedded badge.
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
+        $pagecm = reset($pages);
+        $page = $DB->get_record('page', ['id' => $pagecm->instance]);
+        $this->assertStringContainsString('@@PLUGINFILE@@/web_resources/badge.png', $page->content);
+    }
+
+    /**
+     * When the activity a suppressed asset was meant to be embedded in fails to build
+     * at runtime, the asset is recovered as a standalone download rather than lost.
+     *
+     * The parser predicts an inline external-tool LTI will embed its instructions image
+     * (an http(s) launch URL), so the standalone image resource is suppressed. At build
+     * the launch URL is a Common Cartridge (.xml) on an unresolvable host, so mod_lti's
+     * cartridge fetch fails, add_moduleinfo throws and the activity is not created — the
+     * exact runtime gap the parse-time prediction cannot foresee. The reconciliation then
+     * imports the image into "Additional resources" and the report notes it.
+     *
+     * @return void
+     */
+    public function test_embedded_asset_recovered_when_owner_activity_fails(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/a1', 0777, true);
+        mkdir($dir . '/web_resources', 0777, true);
+        file_put_contents($dir . '/web_resources/badge.png', 'PNG');
+        // A Common Cartridge launch URL (.xml) on the reserved .invalid TLD: mod_lti
+        // treats it as a cartridge and tries to fetch it, which fails fast (the host can
+        // never resolve), so the LTI is not created.
+        $settings = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment identifier="ra" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Publisher Tool</title>'
+            . '<submission_types>external_tool</submission_types>'
+            . '<external_tool_url>https://tool.invalid/config.xml</external_tool_url>'
+            . '<workflow_state>published</workflow_state>'
+            . '</assignment>';
+        file_put_contents($dir . '/a1/assignment_settings.xml', $settings);
+        file_put_contents(
+            $dir . '/a1/instructions.html',
+            '<p>Do the activity. <img src="$IMS-CC-FILEBASE$/web_resources/badge.png"></p>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i1" identifierref="ra"><title>Publisher Tool</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="ra" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="a1/instructions.html">
+      <file href="a1/instructions.html"/>
+      <file href="a1/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="r_badge" type="webcontent" href="web_resources/badge.png">
+      <file href="web_resources/badge.png"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The parser suppressed the badge, predicting the LTI would embed it.
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The cartridge could not be fetched, so no mod_lti was created ...
+        $this->assertCount(0, $modinfo->get_instances_of('lti'));
+        // ... and the image is recovered as a standalone download rather than lost.
+        $this->assertSame(1, $report['recoveredassets']);
+        $resources = $modinfo->get_instances_of('resource');
+        $this->assertCount(1, $resources);
+        // It lands in the "Additional resources" section and carries the file bytes.
+        $rescm = reset($resources);
+        $section = $modinfo->get_section_info($rescm->sectionnum);
+        $this->assertSame(get_string('additionalresources', 'tool_canvasuplifter'), $section->name);
+        $fs = get_file_storage();
+        $context = \context_module::instance($rescm->id);
+        $this->assertNotEmpty($fs->get_area_files($context->id, 'mod_resource', 'content', false, '', false));
+        // The build report notes the recovery.
+        $this->assertContains(
+            get_string('noterecoveredassets', 'tool_canvasuplifter', 1),
+            $report['warnings']
+        );
+    }
+
+    /**
+     * Write a package with a placed quiz whose single question's stem embeds an image
+     * declared as the quiz's Common Cartridge <dependency>. When $rejectable the question
+     * is a single-option multiple-choice, which Moodle rejects (an MC needs 2+ answers),
+     * so the quiz is deleted at build; otherwise it is a valid two-option question.
+     *
+     * @param bool $rejectable Whether the sole question is one Moodle will reject.
+     * @return string Path to the package root.
+     */
+    protected function build_quiz_with_dependency_image_fixture(bool $rejectable): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        mkdir($dir . '/web_resources', 0777, true);
+        file_put_contents($dir . '/web_resources/pic.png', 'PNG');
+        $stem = htmlspecialchars('<p>Pick <img src="$IMS-CC-FILEBASE$/web_resources/pic.png"></p>');
+        $choices = '<response_label ident="A"><material><mattext>Alpha</mattext></material></response_label>';
+        if (!$rejectable) {
+            $choices .= '<response_label ident="B"><material><mattext>Beta</mattext></material></response_label>';
+        }
+        $item = '<item ident="q1" title="Q"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>cc_profile</fieldlabel><fieldentry>cc.multiple_choice.v0p1</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">' . $stem . '</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>' . $choices
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Quiz"><section ident="s1">' . $item
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/a1/qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/a1/qti.xml"/>
+      <dependency identifierref="r_pic"/>
+    </resource>
+    <resource identifier="r_pic" type="webcontent" href="web_resources/pic.png">
+      <file href="web_resources/pic.png"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A quiz-dependency image inlined into a question stem is not also recovered as a
+     * standalone download when the quiz builds: the QTI writer records the file it
+     * actually embedded, so the reconciliation sees it was inlined.
+     *
+     * @return void
+     */
+    public function test_dependency_stem_image_not_recovered_when_quiz_builds(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = $this->build_quiz_with_dependency_image_fixture(false);
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The parser suppressed the dependency image, predicting the quiz embeds it.
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The quiz built and inlined the image, so nothing is recovered or duplicated.
+        $this->assertCount(1, $modinfo->get_instances_of('quiz'));
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
+        $this->assertSame(0, $report['recoveredassets']);
+    }
+
+    /**
+     * When a quiz whose question stem embeds a dependency image is rejected at build
+     * (Moodle rejects its only question, so the zero-slot quiz is deleted), the image
+     * is recovered as a standalone download rather than lost — the exact quiz-rejection
+     * gap #158 targets.
+     *
+     * @return void
+     */
+    public function test_dependency_stem_image_recovered_when_quiz_rejected(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = $this->build_quiz_with_dependency_image_fixture(true);
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The only question was rejected, so no quiz survived ...
+        $this->assertCount(0, $modinfo->get_instances_of('quiz'));
+        // ... and its stem image is recovered as a standalone download.
+        $this->assertSame(1, $report['recoveredassets']);
+        $this->assertCount(1, $modinfo->get_instances_of('resource'));
+    }
+
+    /**
+     * A discussion attachment that is a suppressed dependency resource, imported into
+     * the forum post attachment area (not via a $IMS-CC-FILEBASE$ token), is recorded as
+     * embedded, so a discussion that builds fine does not spuriously recover the
+     * attachment as a duplicate standalone download with a misleading owner-failure note.
+     *
+     * @return void
+     */
+    public function test_discussion_attachment_dependency_not_recovered_when_forum_builds(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/discussion', 0777, true);
+        mkdir($dir . '/web_resources', 0777, true);
+        file_put_contents($dir . '/web_resources/brief.pdf', '%PDF-1.4');
+        file_put_contents(
+            $dir . '/discussion/d1.xml',
+            '<?xml version="1.0"?><topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Week 1 Discussion</title><text texttype="text/html">Discuss.</text>'
+            . '<attachments><attachment href="web_resources/brief.pdf"/></attachments></topic>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_d" identifierref="r_disc"><title>Discussion</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_disc" type="imsdt_xmlv1p1">
+      <file href="discussion/d1.xml"/>
+      <dependency identifierref="r_pdf"/>
+    </resource>
+    <resource identifier="r_pdf" type="webcontent" href="web_resources/brief.pdf">
+      <file href="web_resources/brief.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The parser suppressed the attachment, predicting the discussion embeds it.
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The discussion built and imported the attachment, so nothing is recovered.
+        $this->assertNotEmpty($modinfo->get_instances_of('forum'));
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
+        $this->assertSame(0, $report['recoveredassets']);
+    }
+
+    /**
+     * An asset folded into a successfully-built self-contained HTML bundle is recorded as
+     * embedded, so when the same file is also a suppressed dependency of a rejected quiz
+     * it is not recovered as a duplicate standalone download alongside the bundle that
+     * already carries it.
+     *
+     * @return void
+     */
+    public function test_bundled_asset_not_recovered_when_also_a_failed_quiz_dependency(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/web_resources/assets/images', 0777, true);
+        mkdir($dir . '/quiz/a1', 0777, true);
+        file_put_contents(
+            $dir . '/web_resources/index.html',
+            '<!DOCTYPE html><html><head><title>Exercise</title></head>'
+            . '<body><img id="face" src="assets/images/human-head.png"/></body></html>'
+        );
+        file_put_contents($dir . '/web_resources/assets/images/human-head.png', 'PNG-HEAD');
+        // A quiz whose only question is a single-option multiple-choice (Moodle rejects it,
+        // so the zero-slot quiz is deleted) that depends on the folded image.
+        $item = '<item ident="qbad" title="Bad"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>cc_profile</fieldlabel><fieldentry>cc.multiple_choice.v0p1</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">'
+            . htmlspecialchars('<p>Only <img src="$IMS-CC-FILEBASE$/web_resources/assets/images/human-head.png"></p>')
+            . '</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext>Only</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+        file_put_contents(
+            $dir . '/quiz/a1/qti.xml',
+            '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Quiz"><section ident="s1">' . $item
+            . '</section></assessment></questestinterop>'
+        );
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_ex" identifierref="res_index"><title>Exercise</title></item>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource type="webcontent" identifier="res_index" href="web_resources/index.html">'
+            . '<file href="web_resources/index.html"/></resource>'
+            . '<resource type="webcontent" identifier="r_img" href="web_resources/assets/images/human-head.png">'
+            . '<file href="web_resources/assets/images/human-head.png"/></resource>'
+            . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="quiz/a1/qti.xml"/><dependency identifierref="r_img"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The image is suppressed as the quiz's dependency.
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The quiz was rejected, but the image was folded into the built HTML bundle, so it
+        // is not recovered: exactly one resource (the bundle), nothing duplicated.
+        $this->assertCount(0, $modinfo->get_instances_of('quiz'));
+        $this->assertCount(1, $modinfo->get_instances_of('resource'));
+        $this->assertSame(0, $report['recoveredassets']);
+    }
+
+    /**
      * A page that references an embedded asset absent from the package (e.g. a
      * stale cross-course image) leaves the reference untouched but records it, so
      * the build report carries a warning and the list of missing references.

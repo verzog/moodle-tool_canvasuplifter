@@ -35,13 +35,18 @@ class file_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var media_report|null Collector to record the package files this resource embeds. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param media_report|null $mediareport Collector to record embedded files into (null to skip).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -105,6 +110,11 @@ class file_builder {
             'filename' => clean_param($mainname, PARAM_FILE),
             'sortorder' => 1,
         ], $sourcepath);
+        // The package files this resource carries (its own file plus any folded bundle
+        // assets), recorded into the media report only once add_moduleinfo() below has
+        // actually created the module — so a resource whose creation throws leaves no
+        // phantom embed that would wrongly suppress recovery of a colliding suppressed asset.
+        $embedded = [$sourcepath];
 
         // A self-contained HTML file (an interactive exercise) folds its assets
         // (js/css/images) in alongside it, each at its path relative to the HTML
@@ -133,6 +143,7 @@ class file_builder {
                 'sortorder' => 0,
             ], $assetabs);
             $display = RESOURCELIB_DISPLAY_EMBED;
+            $embedded[] = $assetabs;
         }
 
         $moduleinfo = (object) [
@@ -162,6 +173,14 @@ class file_builder {
         ];
 
         $created = add_moduleinfo($moduleinfo, $course);
+        // The module now exists, so its files are genuinely embedded: record them, so
+        // course_builder's reconciliation does not recover any that are also a suppressed
+        // embedded asset of a separate failed owner as a duplicate standalone download.
+        if ($this->mediareport !== null) {
+            foreach ($embedded as $packagepath) {
+                $this->mediareport->record_embedded($packagepath);
+            }
+        }
         return (int) $created->coursemodule;
     }
 

@@ -124,6 +124,8 @@ $string['noteoutcomesimported'] = 'Imported {$a} Canvas learning outcome(s) as c
     . 'setting is turned on.';
 $string['notequizbankdraw'] = 'Populated {$a} New Quiz(zes) by drawing random questions from their Canvas item '
     . 'bank(s); each such quiz selects its questions from the imported bank rather than carrying a fixed set.';
+$string['noterecoveredassets'] = 'Imported {$a} embedded asset(s) as standalone downloads in "Additional resources": '
+    . 'the activity each was meant to be embedded in could not be built, so the asset was kept as a file rather than lost.';
 $string['noterubricsunlinked'] = 'Found {$a} rubric(s) in the package not linked to any activity, so they could '
     . 'not be imported; recreate them on the relevant activities if needed.';
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';

@@ -78,4 +78,46 @@ final class media_report_test extends \basic_testcase {
         // The scrubbed set survives JSON encoding (the persisted-report path).
         $this->assertNotFalse(json_encode($report->references()));
     }
+
+    /**
+     * The embedded-file set records the package paths a build actually inlined, is
+     * queried by exact path, ignores a blank path, and is independent of the
+     * unresolved-reference set (recording an embed adds no unresolved reference).
+     *
+     * @return void
+     */
+    public function test_records_embedded_paths(): void {
+        $report = new media_report();
+        $this->assertFalse($report->was_embedded('/pkg/web_resources/logo.png'));
+
+        $report->record_embedded('/pkg/web_resources/logo.png');
+        $report->record_embedded('/pkg/web_resources/logo.png');
+        $report->record_embedded('');
+
+        $this->assertTrue($report->was_embedded('/pkg/web_resources/logo.png'));
+        $this->assertFalse($report->was_embedded('/pkg/web_resources/other.png'));
+        $this->assertFalse($report->was_embedded(''));
+        // Embeds are a separate channel from unresolved references.
+        $this->assertSame(0, $report->count());
+    }
+
+    /**
+     * merge() folds a provisional report's embedded-file records into the shared one,
+     * so an asset embedded by a kept activity is seen as embedded after promotion,
+     * alongside the unresolved references it already merged.
+     *
+     * @return void
+     */
+    public function test_merge_carries_embedded_paths(): void {
+        $shared = new media_report();
+        $provisional = new media_report();
+        $provisional->record('web_resources/missing.png');
+        $provisional->record_embedded('/pkg/web_resources/inlined.png');
+
+        $this->assertFalse($shared->was_embedded('/pkg/web_resources/inlined.png'));
+        $shared->merge($provisional);
+
+        $this->assertTrue($shared->was_embedded('/pkg/web_resources/inlined.png'));
+        $this->assertSame(['web_resources/missing.png'], $shared->references());
+    }
 }

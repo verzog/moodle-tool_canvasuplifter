@@ -98,6 +98,11 @@ class file_embedder {
                 $file['filename']
             );
             if ($exists) {
+                // A file already occupies this area path: either this same asset (recorded
+                // when first stored) or a different source that resolved to the same
+                // filepath/filename. Either way don't record it against this source — its
+                // bytes were not stored by this call, so recording could wrongly suppress
+                // recovery of a colliding suppressed asset whose bytes never landed.
                 continue;
             }
             $fs->create_file_from_pathname([
@@ -108,6 +113,15 @@ class file_embedder {
                 'filepath' => $file['filepath'],
                 'filename' => $file['filename'],
             ], $file['package']);
+            // Record the embed only after this call stored the file's bytes, so course_builder
+            // can tell a genuinely inlined asset from one whose owner activity failed to build.
+            // Recording after the store means a create_file_from_pathname() that throws (caught
+            // by build_one for a non-provisional page/assignment/forum/LTI builder) leaves no
+            // phantom embed that would wrongly suppress recovery. Recorded provisionally on the
+            // owner's report and promoted only when the owner survives.
+            if ($this->mediareport !== null) {
+                $this->mediareport->record_embedded($file['package']);
+            }
         }
 
         return $result['html'];

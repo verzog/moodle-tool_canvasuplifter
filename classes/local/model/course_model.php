@@ -44,6 +44,19 @@ class course_model {
     public array $orphans = [];
 
     /**
+     * @var array Standalone file resources the parser predicted a built activity would
+     * embed — via $IMS-CC-FILEBASE$ tokens in a page/intro, or as a quiz/discussion
+     * Common Cartridge <dependency> inlined into a question stem or forum post — and so
+     * suppressed from the orphan list, keyed by the absolute package path of the file each
+     * builds from. The build reconciles these against what activities actually embedded:
+     * any whose predicted owner failed to build — so the file was never inlined — is
+     * recovered as a standalone download rather than lost. The analyse report ignores this
+     * list (it keeps the parse-time prediction), so its output is unchanged. Values are
+     * the suppressed {@see item}s.
+     */
+    public array $embeddedassets = [];
+
+    /**
      * @var array<int, array{identifier: string, title: string, position: int, weight: float}>
      * Canvas assignment groups, ordered by position. Each entry maps to one
      * Moodle grade category. Empty when the package has no assignment_groups.xml.

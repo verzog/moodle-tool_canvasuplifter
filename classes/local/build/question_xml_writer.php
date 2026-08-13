@@ -707,6 +707,13 @@ class question_xml_writer {
      * @return string The @@PLUGINFILE@@ URL.
      */
     protected function collect_file(string $abs, string $base, string $suffix, array &$files): string {
+        // Record the package file this question embeds (as base64), so course_builder can
+        // tell a dependency image genuinely inlined into a kept question from one whose
+        // owner quiz/bank was rejected and deleted. Recorded on the quiz/bank's provisional
+        // report and promoted only when the owner survives, matching file_embedder.
+        if ($this->mediareport !== null) {
+            $this->mediareport->record_embedded($abs);
+        }
         $root = realpath($base);
         $relcanon = str_replace('\\', '/', ltrim(substr($abs, strlen((string) $root)), '/\\'));
         $name = basename($relcanon);

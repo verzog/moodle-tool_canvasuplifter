@@ -32,6 +32,15 @@ namespace tool_canvasuplifter\local\build;
  * referenced from many pages is counted once. This class has no Moodle
  * dependencies so it can be unit-tested in isolation.
  *
+ * It also records the package files a build *actually* embedded (the absolute
+ * paths {@see file_embedder} imported), so course_builder can reconcile the
+ * parser's parse-time embedded-asset prediction against the real build outcome:
+ * a standalone file the parser suppressed because it was predicted to be embedded
+ * is recovered as a download when no kept activity in fact embedded it (its owner
+ * activity was rejected at build time). Recorded into a builder's provisional
+ * report and promoted with {@see merge()} only when the owning activity survives,
+ * so a rejected-and-deleted activity contributes no phantom embeds.
+ *
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -39,6 +48,9 @@ namespace tool_canvasuplifter\local\build;
 class media_report {
     /** @var array Distinct unresolved reference paths, kept as a set (path => true). */
     private array $unresolved = [];
+
+    /** @var array Distinct absolute package paths actually embedded into kept content (path => true). */
+    private array $embedded = [];
 
     /**
      * Record one unresolved $IMS-CC-FILEBASE$ reference (decoded, root-relative
@@ -65,17 +77,49 @@ class media_report {
     }
 
     /**
-     * Fold another report's references into this one. Used to promote a builder's
-     * provisional report into the shared build report only once the owning activity
-     * is confirmed kept, so media belonging to a rejected-and-deleted activity is not
-     * reported against a course that never received it.
+     * Record one package file the build actually embedded, by the absolute package
+     * path {@see file_embedder} imported it from. Blank paths are ignored; duplicates
+     * collapse to one entry.
      *
-     * @param media_report $other The report whose references to absorb.
+     * @param string $packagepath Absolute path within the package of the embedded file.
+     * @return void
+     */
+    public function record_embedded(string $packagepath): void {
+        if ($packagepath === '') {
+            return;
+        }
+        $this->embedded[$packagepath] = true;
+    }
+
+    /**
+     * Whether the build embedded the file at the given absolute package path into
+     * kept content. Used by course_builder to decide a suppressed embedded asset was
+     * genuinely inlined (so no duplicate standalone download is needed) versus lost
+     * to a failed owner activity (so it must be recovered).
+     *
+     * @param string $packagepath Absolute path within the package.
+     * @return bool
+     */
+    public function was_embedded(string $packagepath): bool {
+        return isset($this->embedded[$packagepath]);
+    }
+
+    /**
+     * Fold another report's references and embedded-file records into this one. Used
+     * to promote a builder's provisional report into the shared build report only once
+     * the owning activity is confirmed kept, so both missing-media references and
+     * actual embeds belonging to a rejected-and-deleted activity are not reported
+     * against a course that never received it.
+     *
+     * @param media_report $other The report whose records to absorb.
      * @return void
      */
     public function merge(media_report $other): void {
         foreach ($other->references() as $reference) {
             $this->record($reference);
+        }
+        foreach (array_keys($other->embedded) as $packagepath) {
+            $this->record_embedded($packagepath);
         }
     }
 

@@ -160,7 +160,15 @@ class book_builder {
             // Copy the folded bundle's sibling files into this chapter's file
             // area so the @@PLUGINFILE@@ refs rewritten above resolve.
             if (!empty($bundleassets)) {
-                bundle_assets::import($this->packageroot, $context->id, 'mod_book', 'chapter', $chapterid, $bundleassets);
+                bundle_assets::import(
+                    $this->packageroot,
+                    $context->id,
+                    'mod_book',
+                    'chapter',
+                    $chapterid,
+                    $bundleassets,
+                    $this->mediareport
+                );
             }
 
             $url = (new \moodle_url('/mod/book/view.php', ['id' => $cmid, 'chapterid' => $chapterid]))->out(false);
