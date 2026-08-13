@@ -89,13 +89,6 @@ class file_embedder {
 
         $fs = get_file_storage();
         foreach ($result['files'] as $file) {
-            // Record every file this HTML embeds (whether the storage import is new or the
-            // file already existed), so course_builder can tell a genuinely inlined asset
-            // from one whose owner activity failed to build. Recorded provisionally on the
-            // owner's report and promoted only when the owner survives.
-            if ($this->mediareport !== null) {
-                $this->mediareport->record_embedded($file['package']);
-            }
             $exists = $fs->file_exists(
                 $contextid,
                 $component,
@@ -104,17 +97,27 @@ class file_embedder {
                 $file['filepath'],
                 $file['filename']
             );
-            if ($exists) {
-                continue;
+            if (!$exists) {
+                $fs->create_file_from_pathname([
+                    'contextid' => $contextid,
+                    'component' => $component,
+                    'filearea' => $filearea,
+                    'itemid' => $itemid,
+                    'filepath' => $file['filepath'],
+                    'filename' => $file['filename'],
+                ], $file['package']);
             }
-            $fs->create_file_from_pathname([
-                'contextid' => $contextid,
-                'component' => $component,
-                'filearea' => $filearea,
-                'itemid' => $itemid,
-                'filepath' => $file['filepath'],
-                'filename' => $file['filename'],
-            ], $file['package']);
+            // Record the embed only once the file is confirmed in the destination area —
+            // already present, or just created above — so course_builder can tell a
+            // genuinely inlined asset from one whose owner activity failed to build.
+            // Recording after storage means a create_file_from_pathname() that throws
+            // (caught by build_one for a non-provisional page/assignment/forum/LTI builder)
+            // leaves no phantom embed that would wrongly suppress recovery of a suppressed
+            // asset. Recorded provisionally on the owner's report and promoted only when
+            // the owner survives.
+            if ($this->mediareport !== null) {
+                $this->mediareport->record_embedded($file['package']);
+            }
         }
 
         return $result['html'];
