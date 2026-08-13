@@ -405,6 +405,119 @@ XML;
     }
 
     /**
+     * Write a package with a placed quiz whose single question's stem embeds an image
+     * declared as the quiz's Common Cartridge <dependency>. When $rejectable the question
+     * is a single-option multiple-choice, which Moodle rejects (an MC needs 2+ answers),
+     * so the quiz is deleted at build; otherwise it is a valid two-option question.
+     *
+     * @param bool $rejectable Whether the sole question is one Moodle will reject.
+     * @return string Path to the package root.
+     */
+    protected function build_quiz_with_dependency_image_fixture(bool $rejectable): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        mkdir($dir . '/web_resources', 0777, true);
+        file_put_contents($dir . '/web_resources/pic.png', 'PNG');
+        $stem = htmlspecialchars('<p>Pick <img src="$IMS-CC-FILEBASE$/web_resources/pic.png"></p>');
+        $choices = '<response_label ident="A"><material><mattext>Alpha</mattext></material></response_label>';
+        if (!$rejectable) {
+            $choices .= '<response_label ident="B"><material><mattext>Beta</mattext></material></response_label>';
+        }
+        $item = '<item ident="q1" title="Q"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>cc_profile</fieldlabel><fieldentry>cc.multiple_choice.v0p1</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">' . $stem . '</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>' . $choices
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Quiz"><section ident="s1">' . $item
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/a1/qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/a1/qti.xml"/>
+      <dependency identifierref="r_pic"/>
+    </resource>
+    <resource identifier="r_pic" type="webcontent" href="web_resources/pic.png">
+      <file href="web_resources/pic.png"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * A quiz-dependency image inlined into a question stem is not also recovered as a
+     * standalone download when the quiz builds: the QTI writer records the file it
+     * actually embedded, so the reconciliation sees it was inlined.
+     *
+     * @return void
+     */
+    public function test_dependency_stem_image_not_recovered_when_quiz_builds(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = $this->build_quiz_with_dependency_image_fixture(false);
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The parser suppressed the dependency image, predicting the quiz embeds it.
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The quiz built and inlined the image, so nothing is recovered or duplicated.
+        $this->assertCount(1, $modinfo->get_instances_of('quiz'));
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
+        $this->assertSame(0, $report['recoveredassets']);
+    }
+
+    /**
+     * When a quiz whose question stem embeds a dependency image is rejected at build
+     * (Moodle rejects its only question, so the zero-slot quiz is deleted), the image
+     * is recovered as a standalone download rather than lost — the exact quiz-rejection
+     * gap #158 targets.
+     *
+     * @return void
+     */
+    public function test_dependency_stem_image_recovered_when_quiz_rejected(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = $this->build_quiz_with_dependency_image_fixture(true);
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The only question was rejected, so no quiz survived ...
+        $this->assertCount(0, $modinfo->get_instances_of('quiz'));
+        // ... and its stem image is recovered as a standalone download.
+        $this->assertSame(1, $report['recoveredassets']);
+        $this->assertCount(1, $modinfo->get_instances_of('resource'));
+    }
+
+    /**
      * A page that references an embedded asset absent from the package (e.g. a
      * stale cross-course image) leaves the reference untouched but records it, so
      * the build report carries a warning and the list of missing references.

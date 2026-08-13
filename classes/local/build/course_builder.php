@@ -564,6 +564,10 @@ class course_builder {
                 $orphansection = $builtsections + 1;
                 $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
             }
+            // Every embedded asset is a standalone file by construction (a page-embedded
+            // asset keeps KIND_FILE; a dependency asset was relabelled KIND_UNKNOWN when
+            // suppressed), so build each as the file it is.
+            $modelitem->kind = item::KIND_FILE;
             $cmid = $this->build_one(
                 $course,
                 $orphansection,
