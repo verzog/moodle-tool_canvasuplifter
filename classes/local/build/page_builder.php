@@ -155,7 +155,7 @@ class page_builder {
         // Import bundle siblings (CSS/JS/images referenced by relative URL).
         if (!empty($bundleassets)) {
             $contextid = \context_module::instance($cmid)->id;
-            bundle_assets::import($this->packageroot, $contextid, 'mod_page', 'content', 0, $bundleassets);
+            bundle_assets::import($this->packageroot, $contextid, 'mod_page', 'content', 0, $bundleassets, $this->mediareport);
         }
 
         return $cmid;

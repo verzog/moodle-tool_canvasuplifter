@@ -35,13 +35,18 @@ class file_builder {
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
+    /** @var media_report|null Collector to record the package files this resource embeds. */
+    private ?media_report $mediareport;
+
     /**
      * Constructor.
      *
      * @param string $packageroot Absolute path to the extracted package directory.
+     * @param media_report|null $mediareport Collector to record embedded files into (null to skip).
      */
-    public function __construct(string $packageroot) {
+    public function __construct(string $packageroot, ?media_report $mediareport = null) {
         $this->packageroot = rtrim($packageroot, '/');
+        $this->mediareport = $mediareport;
     }
 
     /**
@@ -105,6 +110,12 @@ class file_builder {
             'filename' => clean_param($mainname, PARAM_FILE),
             'sortorder' => 1,
         ], $sourcepath);
+        // Record the file this resource carries, so course_builder's reconciliation does not
+        // recover a suppressed asset that is in fact this built resource (or folded into its
+        // HTML bundle below) as a duplicate standalone download.
+        if ($this->mediareport !== null) {
+            $this->mediareport->record_embedded($sourcepath);
+        }
 
         // A self-contained HTML file (an interactive exercise) folds its assets
         // (js/css/images) in alongside it, each at its path relative to the HTML
@@ -133,6 +144,9 @@ class file_builder {
                 'sortorder' => 0,
             ], $assetabs);
             $display = RESOURCELIB_DISPLAY_EMBED;
+            if ($this->mediareport !== null) {
+                $this->mediareport->record_embedded($assetabs);
+            }
         }
 
         $moduleinfo = (object) [

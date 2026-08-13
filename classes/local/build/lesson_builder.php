@@ -169,7 +169,15 @@ class lesson_builder {
             // Copy the folded bundle's sibling files into this page's file area
             // so the @@PLUGINFILE@@ refs rewritten above resolve.
             if (!empty($bundleassets)) {
-                bundle_assets::import($this->packageroot, $context->id, 'mod_lesson', 'page_contents', $pageid, $bundleassets);
+                bundle_assets::import(
+                    $this->packageroot,
+                    $context->id,
+                    'mod_lesson',
+                    'page_contents',
+                    $pageid,
+                    $bundleassets,
+                    $this->mediareport
+                );
             }
 
             // A content (branch table) page needs at least one navigation button;

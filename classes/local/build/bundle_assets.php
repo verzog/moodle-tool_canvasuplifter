@@ -102,6 +102,7 @@ final class bundle_assets {
      * @param string $filearea File area, e.g. "content" or "chapter".
      * @param int $itemid File area item id (0 for content areas, the record id for chapter/page areas).
      * @param array $bundleassets List of ['source','relpath'] entries.
+     * @param media_report|null $mediareport Collector to record embedded bundle files into (null to skip).
      * @return void
      */
     public static function import(
@@ -110,7 +111,8 @@ final class bundle_assets {
         string $component,
         string $filearea,
         int $itemid,
-        array $bundleassets
+        array $bundleassets,
+        ?media_report $mediareport = null
     ): void {
         $packageroot = rtrim($packageroot, '/');
         $fs = get_file_storage();
@@ -130,17 +132,22 @@ final class bundle_assets {
             // a top-level file (dirname ".") maps to the filearea root.
             $dir = dirname($relpath);
             $filepath = ($dir === '' || $dir === '.') ? '/' : '/' . trim($dir, '/') . '/';
-            if ($fs->file_exists($contextid, $component, $filearea, $itemid, $filepath, $filename)) {
-                continue;
+            if (!$fs->file_exists($contextid, $component, $filearea, $itemid, $filepath, $filename)) {
+                $fs->create_file_from_pathname([
+                    'contextid' => $contextid,
+                    'component' => $component,
+                    'filearea' => $filearea,
+                    'itemid' => $itemid,
+                    'filepath' => $filepath,
+                    'filename' => $filename,
+                ], $absolute);
             }
-            $fs->create_file_from_pathname([
-                'contextid' => $contextid,
-                'component' => $component,
-                'filearea' => $filearea,
-                'itemid' => $itemid,
-                'filepath' => $filepath,
-                'filename' => $filename,
-            ], $absolute);
+            // Record the folded asset as embedded (once it is confirmed in the area, already
+            // present or just created), so course_builder's reconciliation does not recover a
+            // file bundled into this built activity as a duplicate standalone download.
+            if ($mediareport !== null) {
+                $mediareport->record_embedded($absolute);
+            }
         }
     }
 }

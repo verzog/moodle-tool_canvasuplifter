@@ -187,7 +187,7 @@ class course_builder {
         $builders = [
             item::KIND_PAGE => new page_builder($this->packageroot, $this->pathtoid, $this->mediareport),
             item::KIND_URL => new url_builder($this->packageroot),
-            item::KIND_FILE => new file_builder($this->packageroot),
+            item::KIND_FILE => new file_builder($this->packageroot, $this->mediareport),
             item::KIND_ASSIGNMENT => new assign_builder($this->packageroot, $this->mediareport),
             item::KIND_QUIZ => new quiz_builder($this->packageroot, $this->mediareport, $bankregistry),
             item::KIND_QUESTIONBANK => new questionbank_builder($this->packageroot, $this->mediareport, $bankregistry),

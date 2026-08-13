@@ -579,6 +579,79 @@ XML;
     }
 
     /**
+     * An asset folded into a successfully-built self-contained HTML bundle is recorded as
+     * embedded, so when the same file is also a suppressed dependency of a rejected quiz
+     * it is not recovered as a duplicate standalone download alongside the bundle that
+     * already carries it.
+     *
+     * @return void
+     */
+    public function test_bundled_asset_not_recovered_when_also_a_failed_quiz_dependency(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/web_resources/assets/images', 0777, true);
+        mkdir($dir . '/quiz/a1', 0777, true);
+        file_put_contents(
+            $dir . '/web_resources/index.html',
+            '<!DOCTYPE html><html><head><title>Exercise</title></head>'
+            . '<body><img id="face" src="assets/images/human-head.png"/></body></html>'
+        );
+        file_put_contents($dir . '/web_resources/assets/images/human-head.png', 'PNG-HEAD');
+        // A quiz whose only question is a single-option multiple-choice (Moodle rejects it,
+        // so the zero-slot quiz is deleted) that depends on the folded image.
+        $item = '<item ident="qbad" title="Bad"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>cc_profile</fieldlabel><fieldentry>cc.multiple_choice.v0p1</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">'
+            . htmlspecialchars('<p>Only <img src="$IMS-CC-FILEBASE$/web_resources/assets/images/human-head.png"></p>')
+            . '</mattext></material>'
+            . '<response_lid ident="r1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="A"><material><mattext>Only</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="r1">A</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+        file_put_contents(
+            $dir . '/quiz/a1/qti.xml',
+            '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Quiz"><section ident="s1">' . $item
+            . '</section></assessment></questestinterop>'
+        );
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_ex" identifierref="res_index"><title>Exercise</title></item>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource type="webcontent" identifier="res_index" href="web_resources/index.html">'
+            . '<file href="web_resources/index.html"/></resource>'
+            . '<resource type="webcontent" identifier="r_img" href="web_resources/assets/images/human-head.png">'
+            . '<file href="web_resources/assets/images/human-head.png"/></resource>'
+            . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="quiz/a1/qti.xml"/><dependency identifierref="r_img"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The image is suppressed as the quiz's dependency.
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The quiz was rejected, but the image was folded into the built HTML bundle, so it
+        // is not recovered: exactly one resource (the bundle), nothing duplicated.
+        $this->assertCount(0, $modinfo->get_instances_of('quiz'));
+        $this->assertCount(1, $modinfo->get_instances_of('resource'));
+        $this->assertSame(0, $report['recoveredassets']);
+    }
+
+    /**
      * A page that references an embedded asset absent from the package (e.g. a
      * stale cross-course image) leaves the reference untouched but records it, so
      * the build report carries a warning and the list of missing references.
