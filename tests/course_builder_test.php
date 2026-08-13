@@ -251,6 +251,160 @@ XML;
     }
 
     /**
+     * A standalone file the parser suppressed because a page embeds it is not also
+     * recovered as a download when that page builds: the build-time reconciliation
+     * sees the page actually embedded it, so no duplicate mod_resource is created and
+     * the report notes no recovery.
+     *
+     * @return void
+     */
+    public function test_embedded_asset_not_recovered_when_owner_builds(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/web_resources');
+        file_put_contents($dir . '/web_resources/badge.png', 'PNG');
+        mkdir($dir . '/wiki_content');
+        file_put_contents(
+            $dir . '/wiki_content/page.html',
+            '<p><img src="$IMS-CC-FILEBASE$/web_resources/badge.png"></p>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i1" identifierref="r_page"><title>Lesson</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_page" type="webcontent" href="wiki_content/page.html">
+      <file href="wiki_content/page.html"/>
+    </resource>
+    <resource identifier="r_badge" type="webcontent" href="web_resources/badge.png">
+      <file href="web_resources/badge.png"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The parser predicted the page embeds the badge and suppressed the standalone
+        // file (it never reaches the orphan list), so this exercises the reconciliation.
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        // The page built and embedded the badge, so nothing is recovered.
+        $this->assertSame(0, $report['recoveredassets']);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $pages = $modinfo->get_instances_of('page');
+        $this->assertCount(1, $pages);
+        // No duplicate standalone download for the embedded badge.
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
+        $pagecm = reset($pages);
+        $page = $DB->get_record('page', ['id' => $pagecm->instance]);
+        $this->assertStringContainsString('@@PLUGINFILE@@/web_resources/badge.png', $page->content);
+    }
+
+    /**
+     * When the activity a suppressed asset was meant to be embedded in fails to build
+     * at runtime, the asset is recovered as a standalone download rather than lost.
+     *
+     * The parser predicts an inline external-tool LTI will embed its instructions image
+     * (an http(s) launch URL), so the standalone image resource is suppressed. At build
+     * the launch URL is a Common Cartridge (.xml) on an unresolvable host, so mod_lti's
+     * cartridge fetch fails, add_moduleinfo throws and the activity is not created — the
+     * exact runtime gap the parse-time prediction cannot foresee. The reconciliation then
+     * imports the image into "Additional resources" and the report notes it.
+     *
+     * @return void
+     */
+    public function test_embedded_asset_recovered_when_owner_activity_fails(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/a1', 0777, true);
+        mkdir($dir . '/web_resources', 0777, true);
+        file_put_contents($dir . '/web_resources/badge.png', 'PNG');
+        // A Common Cartridge launch URL (.xml) on the reserved .invalid TLD: mod_lti
+        // treats it as a cartridge and tries to fetch it, which fails fast (the host can
+        // never resolve), so the LTI is not created.
+        $settings = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment identifier="ra" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Publisher Tool</title>'
+            . '<submission_types>external_tool</submission_types>'
+            . '<external_tool_url>https://tool.invalid/config.xml</external_tool_url>'
+            . '<workflow_state>published</workflow_state>'
+            . '</assignment>';
+        file_put_contents($dir . '/a1/assignment_settings.xml', $settings);
+        file_put_contents(
+            $dir . '/a1/instructions.html',
+            '<p>Do the activity. <img src="$IMS-CC-FILEBASE$/web_resources/badge.png"></p>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i1" identifierref="ra"><title>Publisher Tool</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="ra" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="a1/instructions.html">
+      <file href="a1/instructions.html"/>
+      <file href="a1/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="r_badge" type="webcontent" href="web_resources/badge.png">
+      <file href="web_resources/badge.png"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The parser suppressed the badge, predicting the LTI would embed it.
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The cartridge could not be fetched, so no mod_lti was created ...
+        $this->assertCount(0, $modinfo->get_instances_of('lti'));
+        // ... and the image is recovered as a standalone download rather than lost.
+        $this->assertSame(1, $report['recoveredassets']);
+        $resources = $modinfo->get_instances_of('resource');
+        $this->assertCount(1, $resources);
+        // It lands in the "Additional resources" section and carries the file bytes.
+        $rescm = reset($resources);
+        $section = $modinfo->get_section_info($rescm->sectionnum);
+        $this->assertSame(get_string('additionalresources', 'tool_canvasuplifter'), $section->name);
+        $fs = get_file_storage();
+        $context = \context_module::instance($rescm->id);
+        $this->assertNotEmpty($fs->get_area_files($context->id, 'mod_resource', 'content', false, '', false));
+        // The build report notes the recovery.
+        $this->assertContains(
+            get_string('noterecoveredassets', 'tool_canvasuplifter', 1),
+            $report['warnings']
+        );
+    }
+
+    /**
      * A page that references an embedded asset absent from the package (e.g. a
      * stale cross-course image) leaves the reference untouched but records it, so
      * the build report carries a warning and the list of missing references.

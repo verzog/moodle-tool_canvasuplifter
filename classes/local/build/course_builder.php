@@ -367,6 +367,23 @@ class course_builder {
             }
         }
 
+        // Reconcile the parser's parse-time embedded-asset prediction against the real
+        // build. A standalone file suppressed because it was predicted to be embedded is
+        // recovered as a download when no activity in fact embedded it — its predicted
+        // owner (a quiz whose questions Moodle rejected, an LTI cartridge that failed to
+        // load) was deleted at build time, so the asset would otherwise be lost. Runs
+        // after every activity is built, so the embedded set is complete.
+        $recoveredassets = $this->recover_unembedded_assets(
+            $course,
+            $coursemodel,
+            $builders,
+            $orphansection,
+            $builtsections,
+            $urlmap,
+            $builtpagecmids,
+            $skipreasons
+        );
+
         // Second pass: rewrite internal page links now that every target exists.
         $this->rewrite_internal_links($builtpagecmids, $urlmap);
         $this->rewrite_grouped_content($rewritetargets, $urlmap);
@@ -471,6 +488,13 @@ class course_builder {
         if ($coursemodel->navtoolsunimported > 0) {
             $warnings[] = get_string('warnreportnavtools', 'tool_canvasuplifter');
         }
+        // Assets the parser expected an activity to embed but which no activity actually
+        // embedded (its owner was rejected at build time) were recovered as standalone
+        // downloads rather than lost; note the count so an editor knows they landed in
+        // "Additional resources" instead of inline.
+        if ($recoveredassets > 0) {
+            $warnings[] = get_string('noterecoveredassets', 'tool_canvasuplifter', $recoveredassets);
+        }
 
         return [
             'courseid' => (int) $course->id,
@@ -485,8 +509,76 @@ class course_builder {
             'unresolvedmedia' => array_slice($unresolvedmedia, 0, 50),
             'unresolvedmediacount' => count($unresolvedmedia),
             'extraquizzes' => $extraquizzes,
+            'recoveredassets' => $recoveredassets,
             'warnings' => $warnings,
         ];
+    }
+
+    /**
+     * Recover embedded assets no activity actually embedded.
+     *
+     * The parser predicts which standalone file resources a built activity will embed
+     * via $IMS-CC-FILEBASE$ tokens and suppresses them so they don't also import as
+     * duplicate "Additional resources" downloads. That prediction matches the builders'
+     * static gates but cannot foresee a runtime rejection — a quiz whose questions
+     * Moodle's importer rejects wholesale, an LTI cartridge that fails to load — after
+     * which the owner activity is deleted and its predicted media is neither inlined nor
+     * available as a download. Each builder records into the shared media report the
+     * files it actually embedded (promoted only when the owner survives), so here, once
+     * every activity is built, any suppressed asset absent from that set is imported as a
+     * standalone file into the Additional resources section (created lazily if none
+     * exists yet) rather than lost.
+     *
+     * @param \stdClass $course Course record.
+     * @param course_model $coursemodel Parsed package (its embeddedassets map drives this).
+     * @param array $builders Map of kind => builder object.
+     * @param int $orphansection Additional-resources section number, or 0 (created and updated here if needed).
+     * @param int $builtsections Count of numbered content sections built so far.
+     * @param array $urlmap Link map (modified in place).
+     * @param int[] $builtpagecmids Page cmids for the link pass (recovered files add none, passed through).
+     * @param string[] $skipreasons Diagnostic messages (modified in place).
+     * @return int Number of assets recovered as standalone downloads.
+     */
+    private function recover_unembedded_assets(
+        \stdClass $course,
+        course_model $coursemodel,
+        array $builders,
+        int &$orphansection,
+        int $builtsections,
+        array &$urlmap,
+        array &$builtpagecmids,
+        array &$skipreasons
+    ): int {
+        if (empty($coursemodel->embeddedassets) || !isset($builders[item::KIND_FILE])) {
+            return 0;
+        }
+        $recovered = 0;
+        foreach ($coursemodel->embeddedassets as $packagepath => $modelitem) {
+            // An activity that survived actually inlined it — no duplicate download needed.
+            if ($this->mediareport->was_embedded((string) $packagepath)) {
+                continue;
+            }
+            // Create the Additional resources section only when the first recovered asset
+            // lands, so a build with nothing to recover gains no empty section.
+            if ($orphansection === 0) {
+                $orphansection = $builtsections + 1;
+                $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
+            }
+            $cmid = $this->build_one(
+                $course,
+                $orphansection,
+                $modelitem,
+                $builders,
+                $urlmap,
+                $builtpagecmids,
+                $skipreasons,
+                false
+            );
+            if ($cmid !== null) {
+                $recovered++;
+            }
+        }
+        return $recovered;
     }
 
     /**

@@ -89,6 +89,13 @@ class file_embedder {
 
         $fs = get_file_storage();
         foreach ($result['files'] as $file) {
+            // Record every file this HTML embeds (whether the storage import is new or the
+            // file already existed), so course_builder can tell a genuinely inlined asset
+            // from one whose owner activity failed to build. Recorded provisionally on the
+            // owner's report and promoted only when the owner survives.
+            if ($this->mediareport !== null) {
+                $this->mediareport->record_embedded($file['package']);
+            }
             $exists = $fs->file_exists(
                 $contextid,
                 $component,

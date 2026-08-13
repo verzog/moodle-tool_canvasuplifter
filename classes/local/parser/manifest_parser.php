@@ -215,7 +215,7 @@ class manifest_parser {
         // page at build time, so an unplaced one must not also import as a
         // standalone resource. Only unplaced files are suppressed, so an explicitly
         // placed activity is never dropped.
-        $this->suppress_embedded_page_assets($resources, $placed);
+        $this->suppress_embedded_page_assets($course, $resources, $placed);
         // A resource declared only as another (placed) resource's <dependency> is an
         // embedded asset — question-stem images, discussion media — not a standalone
         // download. Its media is embedded into the owning content at build time, so
@@ -359,11 +359,18 @@ class manifest_parser {
      * so case and dot segments resolve the way the builder resolves them and a
      * genuinely standalone (or explicitly placed) file is never dropped.
      *
+     * The suppression is a parse-time prediction the analyse report consumes as-is.
+     * Each suppressed file is also recorded on the model (keyed by the package path it
+     * builds from) so the build can reconcile the prediction against what activities
+     * actually embedded — recovering an asset as a standalone download when its predicted
+     * owner activity was rejected at build time and never inlined it.
+     *
+     * @param course_model $course The course model (receives the suppressed-asset map).
      * @param array $resources The resources keyed by identifier.
      * @param array $placed Identifiers already placed as their own activity.
      * @return void
      */
-    protected function suppress_embedded_page_assets(array $resources, array $placed): void {
+    protected function suppress_embedded_page_assets(course_model $course, array $resources, array $placed): void {
         $embedded = $this->collect_embedded_files($resources, $placed);
         if (empty($embedded)) {
             return;
@@ -378,6 +385,9 @@ class manifest_parser {
             $built = $this->built_file_payload($resourceitem);
             if ($built !== null && isset($embedded[$built])) {
                 $resourceitem->suppressed = true;
+                // Remember it (keyed by the path a builder embeds and file_builder would
+                // build from) so the build can recover it if no activity actually embeds it.
+                $course->embeddedassets[$built] = $resourceitem;
             }
         }
     }
