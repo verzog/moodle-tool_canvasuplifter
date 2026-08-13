@@ -518,6 +518,67 @@ XML;
     }
 
     /**
+     * A discussion attachment that is a suppressed dependency resource, imported into
+     * the forum post attachment area (not via a $IMS-CC-FILEBASE$ token), is recorded as
+     * embedded, so a discussion that builds fine does not spuriously recover the
+     * attachment as a duplicate standalone download with a misleading owner-failure note.
+     *
+     * @return void
+     */
+    public function test_discussion_attachment_dependency_not_recovered_when_forum_builds(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/discussion', 0777, true);
+        mkdir($dir . '/web_resources', 0777, true);
+        file_put_contents($dir . '/web_resources/brief.pdf', '%PDF-1.4');
+        file_put_contents(
+            $dir . '/discussion/d1.xml',
+            '<?xml version="1.0"?><topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Week 1 Discussion</title><text texttype="text/html">Discuss.</text>'
+            . '<attachments><attachment href="web_resources/brief.pdf"/></attachments></topic>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i_d" identifierref="r_disc"><title>Discussion</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_disc" type="imsdt_xmlv1p1">
+      <file href="discussion/d1.xml"/>
+      <dependency identifierref="r_pdf"/>
+    </resource>
+    <resource identifier="r_pdf" type="webcontent" href="web_resources/brief.pdf">
+      <file href="web_resources/brief.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The parser suppressed the attachment, predicting the discussion embeds it.
+        $this->assertCount(1, $coursemodel->embeddedassets);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The discussion built and imported the attachment, so nothing is recovered.
+        $this->assertNotEmpty($modinfo->get_instances_of('forum'));
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
+        $this->assertSame(0, $report['recoveredassets']);
+    }
+
+    /**
      * A page that references an embedded asset absent from the package (e.g. a
      * stale cross-course image) leaves the reference untouched but records it, so
      * the build report carries a warning and the list of missing references.

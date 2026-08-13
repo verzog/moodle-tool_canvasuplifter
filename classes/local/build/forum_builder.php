@@ -246,6 +246,12 @@ class forum_builder {
                 'filepath' => '/',
                 'filename' => $filename,
             ], $absolute);
+            // Record the attachment as embedded so course_builder's reconciliation does not
+            // mistake a suppressed dependency attachment on a discussion that built fine for
+            // a lost owner-failure asset and recover it as a duplicate download.
+            if ($this->mediareport !== null) {
+                $this->mediareport->record_embedded($absolute);
+            }
             $stored++;
         }
         if ($stored > 0) {
