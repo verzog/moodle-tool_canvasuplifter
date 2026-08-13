@@ -110,12 +110,11 @@ class file_builder {
             'filename' => clean_param($mainname, PARAM_FILE),
             'sortorder' => 1,
         ], $sourcepath);
-        // Record the file this resource carries, so course_builder's reconciliation does not
-        // recover a suppressed asset that is in fact this built resource (or folded into its
-        // HTML bundle below) as a duplicate standalone download.
-        if ($this->mediareport !== null) {
-            $this->mediareport->record_embedded($sourcepath);
-        }
+        // The package files this resource carries (its own file plus any folded bundle
+        // assets), recorded into the media report only once add_moduleinfo() below has
+        // actually created the module — so a resource whose creation throws leaves no
+        // phantom embed that would wrongly suppress recovery of a colliding suppressed asset.
+        $embedded = [$sourcepath];
 
         // A self-contained HTML file (an interactive exercise) folds its assets
         // (js/css/images) in alongside it, each at its path relative to the HTML
@@ -144,9 +143,7 @@ class file_builder {
                 'sortorder' => 0,
             ], $assetabs);
             $display = RESOURCELIB_DISPLAY_EMBED;
-            if ($this->mediareport !== null) {
-                $this->mediareport->record_embedded($assetabs);
-            }
+            $embedded[] = $assetabs;
         }
 
         $moduleinfo = (object) [
@@ -176,6 +173,14 @@ class file_builder {
         ];
 
         $created = add_moduleinfo($moduleinfo, $course);
+        // The module now exists, so its files are genuinely embedded: record them, so
+        // course_builder's reconciliation does not recover any that are also a suppressed
+        // embedded asset of a separate failed owner as a duplicate standalone download.
+        if ($this->mediareport !== null) {
+            foreach ($embedded as $packagepath) {
+                $this->mediareport->record_embedded($packagepath);
+            }
+        }
         return (int) $created->coursemodule;
     }
 

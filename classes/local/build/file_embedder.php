@@ -97,24 +97,28 @@ class file_embedder {
                 $file['filepath'],
                 $file['filename']
             );
-            if (!$exists) {
-                $fs->create_file_from_pathname([
-                    'contextid' => $contextid,
-                    'component' => $component,
-                    'filearea' => $filearea,
-                    'itemid' => $itemid,
-                    'filepath' => $file['filepath'],
-                    'filename' => $file['filename'],
-                ], $file['package']);
+            if ($exists) {
+                // A file already occupies this area path: either this same asset (recorded
+                // when first stored) or a different source that resolved to the same
+                // filepath/filename. Either way don't record it against this source — its
+                // bytes were not stored by this call, so recording could wrongly suppress
+                // recovery of a colliding suppressed asset whose bytes never landed.
+                continue;
             }
-            // Record the embed only once the file is confirmed in the destination area —
-            // already present, or just created above — so course_builder can tell a
-            // genuinely inlined asset from one whose owner activity failed to build.
-            // Recording after storage means a create_file_from_pathname() that throws
-            // (caught by build_one for a non-provisional page/assignment/forum/LTI builder)
-            // leaves no phantom embed that would wrongly suppress recovery of a suppressed
-            // asset. Recorded provisionally on the owner's report and promoted only when
-            // the owner survives.
+            $fs->create_file_from_pathname([
+                'contextid' => $contextid,
+                'component' => $component,
+                'filearea' => $filearea,
+                'itemid' => $itemid,
+                'filepath' => $file['filepath'],
+                'filename' => $file['filename'],
+            ], $file['package']);
+            // Record the embed only after this call stored the file's bytes, so course_builder
+            // can tell a genuinely inlined asset from one whose owner activity failed to build.
+            // Recording after the store means a create_file_from_pathname() that throws (caught
+            // by build_one for a non-provisional page/assignment/forum/LTI builder) leaves no
+            // phantom embed that would wrongly suppress recovery. Recorded provisionally on the
+            // owner's report and promoted only when the owner survives.
             if ($this->mediareport !== null) {
                 $this->mediareport->record_embedded($file['package']);
             }

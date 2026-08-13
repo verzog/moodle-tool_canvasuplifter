@@ -132,19 +132,26 @@ final class bundle_assets {
             // a top-level file (dirname ".") maps to the filearea root.
             $dir = dirname($relpath);
             $filepath = ($dir === '' || $dir === '.') ? '/' : '/' . trim($dir, '/') . '/';
-            if (!$fs->file_exists($contextid, $component, $filearea, $itemid, $filepath, $filename)) {
-                $fs->create_file_from_pathname([
-                    'contextid' => $contextid,
-                    'component' => $component,
-                    'filearea' => $filearea,
-                    'itemid' => $itemid,
-                    'filepath' => $filepath,
-                    'filename' => $filename,
-                ], $absolute);
+            if ($fs->file_exists($contextid, $component, $filearea, $itemid, $filepath, $filename)) {
+                // A file already occupies this area path — either this same asset (recorded
+                // when first stored) or a different source that resolved to the same path
+                // (e.g. a rooted token's web_resources/images/foo.png versus a relative
+                // bundle ref's pages/images/foo.png, both landing at /images/foo.png). Don't
+                // record it against this source: its bytes were not stored by this call, so
+                // recording could wrongly suppress recovery of the colliding asset.
+                continue;
             }
-            // Record the folded asset as embedded (once it is confirmed in the area, already
-            // present or just created), so course_builder's reconciliation does not recover a
-            // file bundled into this built activity as a duplicate standalone download.
+            $fs->create_file_from_pathname([
+                'contextid' => $contextid,
+                'component' => $component,
+                'filearea' => $filearea,
+                'itemid' => $itemid,
+                'filepath' => $filepath,
+                'filename' => $filename,
+            ], $absolute);
+            // Record the folded asset as embedded only after this call stored its bytes, so
+            // course_builder's reconciliation does not recover a file bundled into this built
+            // activity as a duplicate standalone download.
             if ($mediareport !== null) {
                 $mediareport->record_embedded($absolute);
             }
