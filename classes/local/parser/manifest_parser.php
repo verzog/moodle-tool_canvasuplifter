@@ -70,6 +70,12 @@ class manifest_parser {
      *               recovered multi-file resource can drop its hidden members. */
     private array $hiddenfolderprefixes = [];
 
+    /** @var array Canonical package-relative paths owned by files that files_meta.xml
+     *             marks hidden by their own identifier (not just by folder), stored as a
+     *             path=>true set so a recovered multi-file resource drops a member that a
+     *             separate hidden file resource keeps out of view. */
+    private array $hiddenfilepaths = [];
+
     /**
      * Constructor.
      *
@@ -511,7 +517,10 @@ class manifest_parser {
             $canonrel = $root !== false
                 ? str_replace('\\', '/', ltrim(substr($absolute, strlen($root)), '/\\'))
                 : (string) $relative;
-            if ($canonrel === '' || isset($visible[$canonrel]) || $this->path_in_hidden_folder($canonrel)) {
+            if (
+                $canonrel === '' || isset($visible[$canonrel])
+                || $this->path_in_hidden_folder($canonrel) || isset($this->hiddenfilepaths[$canonrel])
+            ) {
                 continue;
             }
             $visible[$canonrel] = true;
@@ -533,6 +542,27 @@ class manifest_parser {
             }
         }
         return false;
+    }
+
+    /**
+     * Canonicalise a package-relative path (collapse dot segments, normalise slashes) to
+     * the form {@see visible_dependency_files} keys members by, so hidden-file bookkeeping
+     * and the visible-member filter compare like against like. Returns null when the path
+     * escapes the package root.
+     *
+     * @param string $relative The raw package-relative path.
+     * @return string|null The canonical package-relative path, or null.
+     */
+    protected function canonical_relative(string $relative): ?string {
+        $absolute = $this->resolve_within($relative);
+        if ($absolute === null) {
+            return null;
+        }
+        $root = realpath($this->basedir);
+        $canon = $root !== false
+            ? str_replace('\\', '/', ltrim(substr($absolute, strlen($root)), '/\\'))
+            : ltrim(str_replace('\\', '/', $relative), '/');
+        return $canon === '' ? null : $canon;
     }
 
     /**
@@ -1924,6 +1954,18 @@ class manifest_parser {
             // whatever its kind.
             if (isset($hiddenids[$identifier])) {
                 $resourceitem->isvisible = false;
+                // Remember every canonical path this hidden file owns, so a visible
+                // multi-file dependency that also lists one of them drops it rather than
+                // resurfacing content the standalone hidden resource keeps out of view.
+                $owned = $resourceitem->href !== ''
+                    ? array_merge([$resourceitem->href], $resourceitem->files)
+                    : $resourceitem->files;
+                foreach ($owned as $ownedpath) {
+                    $canon = $this->canonical_relative((string) $ownedpath);
+                    if ($canon !== null) {
+                        $this->hiddenfilepaths[$canon] = true;
+                    }
+                }
                 continue;
             }
             // Folder-level hiding applies only to standalone file resources,

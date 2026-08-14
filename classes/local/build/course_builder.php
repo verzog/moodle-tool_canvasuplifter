@@ -554,12 +554,19 @@ class course_builder {
         if (empty($coursemodel->embeddedassets) || !isset($builders[item::KIND_FILE])) {
             return 0;
         }
-        $recovered = 0;
+        // Decide what to recover up front, from the embed state surviving activities left
+        // behind — before any recovery builds. A recovery records its own files as embedded
+        // when it is created, so selecting as we build would let one recovery suppress a
+        // second, overlapping record whose primary is a file the first also carried.
+        $pending = [];
         foreach ($coursemodel->embeddedassets as $packagepath => $modelitem) {
             // An activity that survived actually inlined it — no duplicate download needed.
-            if ($this->mediareport->was_embedded((string) $packagepath)) {
-                continue;
+            if (!$this->mediareport->was_embedded((string) $packagepath)) {
+                $pending[$packagepath] = $modelitem;
             }
+        }
+        $recovered = 0;
+        foreach ($pending as $packagepath => $modelitem) {
             // Create the Additional resources section only when the first recovered asset
             // lands, so a build with nothing to recover gains no empty section.
             if ($orphansection === 0) {

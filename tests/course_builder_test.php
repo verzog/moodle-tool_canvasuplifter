@@ -2321,4 +2321,119 @@ XML;
         $this->assertCount(0, $modinfo->get_instances_of('resource'));
         $this->assertCount(0, $modinfo->get_instances_of('folder'));
     }
+
+    /**
+     * Two overlapping dependencies (r1 owns [a, b], r2 owns [b, c]) both recover: selecting
+     * the records to recover up front means r1 recording the shared file b as embedded when
+     * it builds does not suppress r2's record, so c is not lost and r2's link resolves.
+     *
+     * @return void
+     */
+    public function test_overlapping_recovery_records_both_recover(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        mkdir($dir . '/web_resources', 0777, true);
+        file_put_contents($dir . '/web_resources/a.png', 'A');
+        file_put_contents($dir . '/web_resources/b.png', 'B');
+        file_put_contents($dir . '/web_resources/c.png', 'C');
+        file_put_contents($dir . '/quiz/a1/qti.xml', $this->rejected_quiz_qti());
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="quiz/a1/qti.xml"/>'
+            . '<dependency identifierref="r1"/><dependency identifierref="r2"/></resource>'
+            . '<resource identifier="r1" type="webcontent" href="web_resources/a.png">'
+            . '<file href="web_resources/a.png"/><file href="web_resources/b.png"/></resource>'
+            . '<resource identifier="r2" type="webcontent" href="web_resources/b.png">'
+            . '<file href="web_resources/b.png"/><file href="web_resources/c.png"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // Both overlapping records recover — one does not suppress the other.
+        $this->assertSame(2, $report['recoveredassets']);
+        $folders = $modinfo->get_instances_of('folder');
+        $this->assertCount(2, $folders);
+        $fs = get_file_storage();
+        $names = [];
+        foreach ($folders as $foldercm) {
+            $context = \context_module::instance($foldercm->id);
+            foreach ($fs->get_area_files($context->id, 'mod_folder', 'content', 0, 'id', false) as $file) {
+                $names[$file->get_filename()] = true;
+            }
+        }
+        ksort($names);
+        // Every member survives across the two folders — c.png in particular is not lost.
+        $this->assertSame(['a.png', 'b.png', 'c.png'], array_keys($names));
+    }
+
+    /**
+     * A dependency member that is also a standalone resource files_meta.xml hides by its own
+     * identifier (not merely by folder) is dropped from the recovered container, so hidden
+     * content does not resurface even though the dependency itself is visible.
+     *
+     * @return void
+     */
+    public function test_recovered_dependency_drops_member_hidden_by_file_identifier(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        mkdir($dir . '/web_resources', 0777, true);
+        mkdir($dir . '/course_settings', 0777, true);
+        file_put_contents($dir . '/web_resources/a.png', 'A');
+        file_put_contents($dir . '/web_resources/secret.png', 'SECRET');
+        file_put_contents($dir . '/web_resources/c.png', 'C');
+        file_put_contents(
+            $dir . '/course_settings/files_meta.xml',
+            '<?xml version="1.0"?><fileMeta xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<files><file identifier="r_hidden"><hidden>true</hidden></file></files></fileMeta>'
+        );
+        file_put_contents($dir . '/quiz/a1/qti.xml', $this->rejected_quiz_qti());
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="quiz/a1/qti.xml"/><dependency identifierref="r_multi"/></resource>'
+            . '<resource identifier="r_multi" type="webcontent" href="web_resources/a.png">'
+            . '<file href="web_resources/a.png"/><file href="web_resources/secret.png"/>'
+            . '<file href="web_resources/c.png"/></resource>'
+            . '<resource identifier="r_hidden" type="webcontent" href="web_resources/secret.png">'
+            . '<file href="web_resources/secret.png"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // The recovered folder holds the visible members but not the hidden-by-identifier one.
+        $folders = $modinfo->get_instances_of('folder');
+        $this->assertCount(1, $folders);
+        $foldercm = reset($folders);
+        $fs = get_file_storage();
+        $context = \context_module::instance($foldercm->id);
+        $names = [];
+        foreach ($fs->get_area_files($context->id, 'mod_folder', 'content', 0, 'id', false) as $file) {
+            $names[] = $file->get_filename();
+        }
+        sort($names);
+        $this->assertSame(['a.png', 'c.png'], $names);
+    }
 }
