@@ -2207,4 +2207,58 @@ XML;
         $this->assertContains('/icon.png', $paths);
         $this->assertContains('/web_resources/attachments/icon.png', $paths);
     }
+
+    /**
+     * Two dependency resources that share the same primary payload but carry different
+     * secondary files both contribute their members to the one recovered resource, rather
+     * than the second overwriting the first in the map keyed by that shared primary.
+     *
+     * @return void
+     */
+    public function test_recovered_dependencies_sharing_a_primary_merge_their_members(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        mkdir($dir . '/web_resources', 0777, true);
+        file_put_contents($dir . '/web_resources/shared.png', 'SHARED');
+        file_put_contents($dir . '/web_resources/x.png', 'X');
+        file_put_contents($dir . '/web_resources/y.png', 'Y');
+        file_put_contents($dir . '/quiz/a1/qti.xml', $this->rejected_quiz_qti());
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="quiz/a1/qti.xml"/>'
+            . '<dependency identifierref="r_d1"/><dependency identifierref="r_d2"/></resource>'
+            . '<resource identifier="r_d1" type="webcontent" href="web_resources/shared.png">'
+            . '<file href="web_resources/shared.png"/><file href="web_resources/x.png"/></resource>'
+            . '<resource identifier="r_d2" type="webcontent" href="web_resources/shared.png">'
+            . '<file href="web_resources/shared.png"/><file href="web_resources/y.png"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // One recovered resource that holds the union of both dependencies' members —
+        // neither x.png nor y.png is lost to the shared-primary map collision.
+        $resources = $modinfo->get_instances_of('resource');
+        $this->assertCount(1, $resources);
+        $resourcecm = reset($resources);
+        $fs = get_file_storage();
+        $context = \context_module::instance($resourcecm->id);
+        $names = [];
+        foreach ($fs->get_area_files($context->id, 'mod_resource', 'content', 0, 'id', false) as $file) {
+            $names[] = $file->get_filename();
+        }
+        sort($names);
+        $this->assertSame(['shared.png', 'x.png', 'y.png'], $names);
+    }
 }

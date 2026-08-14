@@ -450,9 +450,19 @@ class manifest_parser {
                     // so a secondary file in a hidden folder is not surfaced.
                     $built = $this->built_file_payload($dependency);
                     if ($built !== null) {
-                        $dependency->files = $this->visible_dependency_files($dependency);
-                        $dependency->recoverallfiles = true;
-                        $course->embeddedassets[$built] = $dependency;
+                        $visible = $this->visible_dependency_files($dependency);
+                        if (isset($course->embeddedassets[$built])) {
+                            // A second dependency shares this primary payload: fold its visible
+                            // members into the already-recorded recovery so neither resource's
+                            // secondary files are lost when the map key (the primary path) collides.
+                            $existing = $course->embeddedassets[$built];
+                            $existing->files = array_values(array_unique(array_merge($existing->files, $visible)));
+                            $existing->recoverallfiles = true;
+                        } else {
+                            $dependency->files = $visible;
+                            $dependency->recoverallfiles = true;
+                            $course->embeddedassets[$built] = $dependency;
+                        }
                     }
                     $dependency->kind = item::KIND_UNKNOWN;
                     $dependency->suppressed = true;
