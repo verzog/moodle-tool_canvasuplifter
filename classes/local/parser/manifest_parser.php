@@ -462,11 +462,12 @@ class manifest_parser {
     }
 
     /**
-     * The package-relative paths of a dependency resource's files that Canvas did not hide,
-     * deduplicated and in href-then-files order. Used when recording the resource for
-     * recovery so file_builder rebuilds only its visible members into one mod_resource; a
-     * file whose folder files_meta.xml marks hidden is dropped, so it never becomes a
-     * student-visible download when the resource is otherwise visible.
+     * The canonical package-relative paths of a dependency resource's files that Canvas did
+     * not hide, deduplicated and in href-then-files order. Used when recording the resource
+     * for recovery so file_builder rebuilds only its visible members into one mod_resource.
+     * Each path is canonicalised (dot segments collapsed) before the hidden test, so a
+     * member that reaches a hidden folder through a ../ climb is still dropped; the
+     * canonical path also keeps file_builder's per-file subdirectory placement clean.
      *
      * @param item $dependency The dependency resource.
      * @return array
@@ -477,24 +478,29 @@ class manifest_parser {
             $candidates[] = $dependency->href;
         }
         $candidates = array_merge($candidates, $dependency->files);
+        $root = realpath($this->basedir);
         $visible = [];
         foreach ($candidates as $relative) {
-            $rel = (string) $relative;
-            if ($rel === '' || isset($visible[$rel]) || $this->path_in_hidden_folder($rel)) {
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute === null || !is_file($absolute)) {
                 continue;
             }
-            if ($this->resolve_within($rel) === null) {
+            $canonrel = $root !== false
+                ? str_replace('\\', '/', ltrim(substr($absolute, strlen($root)), '/\\'))
+                : (string) $relative;
+            if ($canonrel === '' || isset($visible[$canonrel]) || $this->path_in_hidden_folder($canonrel)) {
                 continue;
             }
-            $visible[$rel] = true;
+            $visible[$canonrel] = true;
         }
         return array_keys($visible);
     }
 
     /**
-     * Whether a package-relative path sits under a folder files_meta.xml marks hidden.
+     * Whether a canonical package-relative path sits under a folder files_meta.xml marks
+     * hidden.
      *
-     * @param string $relative The package-relative file path.
+     * @param string $relative The canonical package-relative file path.
      * @return bool
      */
     protected function path_in_hidden_folder(string $relative): bool {

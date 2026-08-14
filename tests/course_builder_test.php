@@ -2150,4 +2150,61 @@ XML;
         }
         $this->assertSame(['a.png'], $names);
     }
+
+    /**
+     * Two dependency members that share a basename in different folders both survive
+     * recovery under their own subdirectory, rather than one clobbering the other at a
+     * flattened root path.
+     *
+     * @return void
+     */
+    public function test_recovered_multi_file_dependency_keeps_same_basename_in_distinct_folders(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        mkdir($dir . '/web_resources/images', 0777, true);
+        mkdir($dir . '/web_resources/attachments', 0777, true);
+        file_put_contents($dir . '/web_resources/images/icon.png', 'IMAGES-ICON');
+        file_put_contents($dir . '/web_resources/attachments/icon.png', 'ATTACH-ICON');
+        file_put_contents($dir . '/quiz/a1/qti.xml', $this->rejected_quiz_qti());
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="quiz/a1/qti.xml"/><dependency identifierref="r_multi"/></resource>'
+            . '<resource identifier="r_multi" type="webcontent" href="web_resources/images/icon.png">'
+            . '<file href="web_resources/images/icon.png"/>'
+            . '<file href="web_resources/attachments/icon.png"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        $resources = $modinfo->get_instances_of('resource');
+        $this->assertCount(1, $resources);
+        $resourcecm = reset($resources);
+        // Both icon.png members are kept under distinct filearea paths — the recovered
+        // secondary keeps its own subdirectory instead of clobbering the primary at the
+        // root, so neither is flattened away.
+        $fs = get_file_storage();
+        $context = \context_module::instance($resourcecm->id);
+        $paths = [];
+        foreach ($fs->get_area_files($context->id, 'mod_resource', 'content', 0, 'id', false) as $file) {
+            $paths[] = $file->get_filepath() . $file->get_filename();
+        }
+        sort($paths);
+        $this->assertCount(2, $paths);
+        $this->assertSame($paths, array_unique($paths));
+        $this->assertSame(['icon.png', 'icon.png'], array_map('basename', $paths));
+        $this->assertContains('/icon.png', $paths);
+        $this->assertContains('/web_resources/attachments/icon.png', $paths);
+    }
 }
