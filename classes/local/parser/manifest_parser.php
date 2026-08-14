@@ -442,26 +442,39 @@ class manifest_parser {
                 }
                 $dependency = $resources[$dependencyref];
                 if ($dependency->kind === item::KIND_FILE && !$dependency->suppressed) {
-                    // Remember the resource (keyed by the path file_builder builds from)
-                    // before relabelling it, so the build can recover it if its owner
-                    // activity fails and never embeds it. Flag it so file_builder recovers
-                    // every on-disk file it carries as one mod_resource, not just the
-                    // primary — and narrow its file list to the members Canvas did not hide,
-                    // so a secondary file in a hidden folder is not surfaced.
-                    $built = $this->built_file_payload($dependency);
-                    if ($built !== null) {
+                    // Remember the resource before relabelling it, so the build can recover
+                    // it as one mod_resource if its owner activity fails and never embeds it.
+                    // Only a dependency Canvas itself leaves visible is recoverable: one it
+                    // hid (unpublished, or whose payload sits under a files_meta-hidden folder)
+                    // must not resurface as a standalone download. Its file list is narrowed to
+                    // the canonical members Canvas did not hide, and the resource is keyed by
+                    // and served from the first of those — so a primary that reaches a hidden
+                    // folder (even through a ../ climb, which file_builder's href-first lookup
+                    // would otherwise re-import) is dropped with the rest.
+                    if ($dependency->isvisible) {
                         $visible = $this->visible_dependency_files($dependency);
-                        if (isset($course->embeddedassets[$built])) {
-                            // A second dependency shares this primary payload: fold its visible
-                            // members into the already-recorded recovery so neither resource's
-                            // secondary files are lost when the map key (the primary path) collides.
-                            $existing = $course->embeddedassets[$built];
-                            $existing->files = array_values(array_unique(array_merge($existing->files, $visible)));
-                            $existing->recoverallfiles = true;
-                        } else {
+                        $primary = $visible === [] ? null : $this->resolve_within($visible[0]);
+                        if ($primary !== null) {
+                            $dependency->href = $visible[0];
                             $dependency->files = $visible;
                             $dependency->recoverallfiles = true;
-                            $course->embeddedassets[$built] = $dependency;
+                            if (isset($course->embeddedassets[$primary])) {
+                                // A second dependency shares this primary payload: fold its visible
+                                // members and its identifier into the already-recorded recovery, so
+                                // neither resource's secondary files nor its object-reference links
+                                // are lost when the map key (the primary path) collides.
+                                $existing = $course->embeddedassets[$primary];
+                                $existing->files = array_values(array_unique(array_merge($existing->files, $visible)));
+                                if (
+                                    $dependency->identifier !== ''
+                                    && !in_array($dependency->identifier, $existing->aliasids, true)
+                                ) {
+                                    $existing->aliasids[] = $dependency->identifier;
+                                }
+                                $existing->recoverallfiles = true;
+                            } else {
+                                $course->embeddedassets[$primary] = $dependency;
+                            }
                         }
                     }
                     $dependency->kind = item::KIND_UNKNOWN;

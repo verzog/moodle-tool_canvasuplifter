@@ -2216,22 +2216,32 @@ XML;
      * @return void
      */
     public function test_recovered_dependencies_sharing_a_primary_merge_their_members(): void {
+        global $DB;
         $this->resetAfterTest(true);
         $this->setAdminUser();
 
         $dir = make_request_directory();
         mkdir($dir . '/quiz/a1', 0777, true);
         mkdir($dir . '/web_resources', 0777, true);
+        mkdir($dir . '/wiki_content', 0777, true);
         file_put_contents($dir . '/web_resources/shared.png', 'SHARED');
         file_put_contents($dir . '/web_resources/x.png', 'X');
         file_put_contents($dir . '/web_resources/y.png', 'Y');
         file_put_contents($dir . '/quiz/a1/qti.xml', $this->rejected_quiz_qti());
+        file_put_contents(
+            $dir . '/wiki_content/page.html',
+            '<p><a href="$CANVAS_OBJECT_REFERENCE$/files/r_d1">one</a>'
+            . '<a href="$CANVAS_OBJECT_REFERENCE$/files/r_d2">two</a></p>'
+        );
         $manifest = '<?xml version="1.0"?>'
             . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
             . '<organizations><organization identifier="o"><item identifier="root">'
             . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_p" identifierref="r_page"><title>Page</title></item>'
             . '<item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item>'
             . '</item></item></organization></organizations><resources>'
+            . '<resource identifier="r_page" type="webcontent" href="wiki_content/page.html">'
+            . '<file href="wiki_content/page.html"/></resource>'
             . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
             . '<file href="quiz/a1/qti.xml"/>'
             . '<dependency identifierref="r_d1"/><dependency identifierref="r_d2"/></resource>'
@@ -2260,5 +2270,54 @@ XML;
         }
         sort($names);
         $this->assertSame(['shared.png', 'x.png', 'y.png'], $names);
+        // Object-reference links to both merged identifiers resolve to that one resource,
+        // so folding the second dependency in does not strand its links.
+        $page = $DB->get_record('page', []);
+        $this->assertSame(2, substr_count($page->content, '/mod/resource/view.php?id=' . $resourcecm->id));
+    }
+
+    /**
+     * A dependency Canvas itself hides (its own payload sits under a files_meta-hidden
+     * folder) is not recovered as a standalone download when its owner activity fails —
+     * hidden content stays hidden rather than resurfacing through recovery.
+     *
+     * @return void
+     */
+    public function test_hidden_dependency_is_not_recovered(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        mkdir($dir . '/web_resources/secret', 0777, true);
+        mkdir($dir . '/course_settings', 0777, true);
+        file_put_contents($dir . '/web_resources/secret/a.png', 'PNG-A');
+        file_put_contents(
+            $dir . '/course_settings/files_meta.xml',
+            '<?xml version="1.0"?><fileMeta xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<folders><folder path="secret"><hidden>true</hidden></folder></folders></fileMeta>'
+        );
+        file_put_contents($dir . '/quiz/a1/qti.xml', $this->rejected_quiz_qti());
+        $manifest = '<?xml version="1.0"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="o"><item identifier="root">'
+            . '<item identifier="m1"><title>Module 1</title>'
+            . '<item identifier="i_q" identifierref="r_quiz"><title>Quiz</title></item>'
+            . '</item></item></organization></organizations><resources>'
+            . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">'
+            . '<file href="quiz/a1/qti.xml"/><dependency identifierref="r_hidden"/></resource>'
+            . '<resource identifier="r_hidden" type="webcontent" href="web_resources/secret/a.png">'
+            . '<file href="web_resources/secret/a.png"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+
+        // Nothing recovered: the hidden dependency stays hidden.
+        $this->assertSame(0, $report['recoveredassets']);
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
     }
 }
