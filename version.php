@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026081245;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026081451;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Recover embedded assets whose activity fails to build, not lose them (#158).
-$plugin->release   = '0.73.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Recover a multi-file dependency as one mod_folder listing every file (#163).
+$plugin->release   = '0.73.2';

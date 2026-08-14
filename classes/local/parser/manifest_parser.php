@@ -65,6 +65,17 @@ class manifest_parser {
      */
     private array $externaltoolrefs = [];
 
+    /** @var string[] web_resources-relative folder path prefixes Canvas marks hidden in
+     *               files_meta.xml, populated by mark_hidden_from_files_meta() so a
+     *               recovered multi-file resource can drop its hidden members. */
+    private array $hiddenfolderprefixes = [];
+
+    /** @var array Canonical package-relative paths owned by files that files_meta.xml
+     *             marks hidden by their own identifier (not just by folder), stored as a
+     *             path=>true set so a recovered multi-file resource drops a member that a
+     *             separate hidden file resource keeps out of view. */
+    private array $hiddenfilepaths = [];
+
     /**
      * Constructor.
      *
@@ -437,18 +448,121 @@ class manifest_parser {
                 }
                 $dependency = $resources[$dependencyref];
                 if ($dependency->kind === item::KIND_FILE && !$dependency->suppressed) {
-                    // Remember the file (by the path a builder embeds and file_builder would
-                    // build from) before relabelling it, so the build can recover it if its
-                    // owner activity fails and never embeds it.
-                    $built = $this->built_file_payload($dependency);
-                    if ($built !== null) {
-                        $course->embeddedassets[$built] = $dependency;
+                    // Remember the resource before relabelling it, so the build can recover
+                    // it as one mod_resource if its owner activity fails and never embeds it.
+                    // Only a dependency Canvas itself leaves visible is recoverable: one it
+                    // hid (unpublished, or whose payload sits under a files_meta-hidden folder)
+                    // must not resurface as a standalone download. Its file list is narrowed to
+                    // the canonical members Canvas did not hide, and the resource is keyed by
+                    // and served from the first of those — so a primary that reaches a hidden
+                    // folder (even through a ../ climb, which file_builder's href-first lookup
+                    // would otherwise re-import) is dropped with the rest.
+                    if ($dependency->isvisible) {
+                        $visible = $this->visible_dependency_files($dependency);
+                        $primary = $visible === [] ? null : $this->resolve_within($visible[0]);
+                        if ($primary !== null) {
+                            $dependency->href = $visible[0];
+                            $dependency->files = $visible;
+                            $dependency->recoverallfiles = true;
+                            if (isset($course->embeddedassets[$primary])) {
+                                // A second dependency shares this primary payload: fold its visible
+                                // members and its identifier into the already-recorded recovery, so
+                                // neither resource's secondary files nor its object-reference links
+                                // are lost when the map key (the primary path) collides.
+                                $existing = $course->embeddedassets[$primary];
+                                $existing->files = array_values(array_unique(array_merge($existing->files, $visible)));
+                                if (
+                                    $dependency->identifier !== ''
+                                    && !in_array($dependency->identifier, $existing->aliasids, true)
+                                ) {
+                                    $existing->aliasids[] = $dependency->identifier;
+                                }
+                                $existing->recoverallfiles = true;
+                            } else {
+                                $course->embeddedassets[$primary] = $dependency;
+                            }
+                        }
                     }
                     $dependency->kind = item::KIND_UNKNOWN;
                     $dependency->suppressed = true;
                 }
             }
         }
+    }
+
+    /**
+     * The canonical package-relative paths of a dependency resource's files that Canvas did
+     * not hide, deduplicated and in href-then-files order. Used when recording the resource
+     * for recovery so file_builder rebuilds only its visible members into one mod_resource.
+     * Each path is canonicalised (dot segments collapsed) before the hidden test, so a
+     * member that reaches a hidden folder through a ../ climb is still dropped; the
+     * canonical path also keeps file_builder's per-file subdirectory placement clean.
+     *
+     * @param item $dependency The dependency resource.
+     * @return array
+     */
+    protected function visible_dependency_files(item $dependency): array {
+        $candidates = [];
+        if ($dependency->href !== '') {
+            $candidates[] = $dependency->href;
+        }
+        $candidates = array_merge($candidates, $dependency->files);
+        $root = realpath($this->basedir);
+        $visible = [];
+        foreach ($candidates as $relative) {
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute === null || !is_file($absolute)) {
+                continue;
+            }
+            $canonrel = $root !== false
+                ? str_replace('\\', '/', ltrim(substr($absolute, strlen($root)), '/\\'))
+                : (string) $relative;
+            if (
+                $canonrel === '' || isset($visible[$canonrel])
+                || $this->path_in_hidden_folder($canonrel) || isset($this->hiddenfilepaths[$canonrel])
+            ) {
+                continue;
+            }
+            $visible[$canonrel] = true;
+        }
+        return array_keys($visible);
+    }
+
+    /**
+     * Whether a canonical package-relative path sits under a folder files_meta.xml marks
+     * hidden.
+     *
+     * @param string $relative The canonical package-relative file path.
+     * @return bool
+     */
+    protected function path_in_hidden_folder(string $relative): bool {
+        foreach ($this->hiddenfolderprefixes as $prefix) {
+            if (strncmp($relative, $prefix, strlen($prefix)) === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Canonicalise a package-relative path (collapse dot segments, normalise slashes) to
+     * the form {@see visible_dependency_files} keys members by, so hidden-file bookkeeping
+     * and the visible-member filter compare like against like. Returns null when the path
+     * escapes the package root.
+     *
+     * @param string $relative The raw package-relative path.
+     * @return string|null The canonical package-relative path, or null.
+     */
+    protected function canonical_relative(string $relative): ?string {
+        $absolute = $this->resolve_within($relative);
+        if ($absolute === null) {
+            return null;
+        }
+        $root = realpath($this->basedir);
+        $canon = $root !== false
+            ? str_replace('\\', '/', ltrim(substr($absolute, strlen($root)), '/\\'))
+            : ltrim(str_replace('\\', '/', $relative), '/');
+        return $canon === '' ? null : $canon;
     }
 
     /**
@@ -1824,6 +1938,10 @@ class manifest_parser {
                 $hiddenprefixes[] = 'web_resources/' . trim($path, '/') . '/';
             }
         }
+        // Remember the hidden folder prefixes so a recovered multi-file resource can drop
+        // members Canvas hid (a secondary file in a hidden folder must not become a
+        // student-visible download when the whole resource is otherwise visible).
+        $this->hiddenfolderprefixes = $hiddenprefixes;
         if ($hiddenids === [] && $hiddenprefixes === []) {
             return;
         }
@@ -1836,6 +1954,18 @@ class manifest_parser {
             // whatever its kind.
             if (isset($hiddenids[$identifier])) {
                 $resourceitem->isvisible = false;
+                // Remember every canonical path this hidden file owns, so a visible
+                // multi-file dependency that also lists one of them drops it rather than
+                // resurfacing content the standalone hidden resource keeps out of view.
+                $owned = $resourceitem->href !== ''
+                    ? array_merge([$resourceitem->href], $resourceitem->files)
+                    : $resourceitem->files;
+                foreach ($owned as $ownedpath) {
+                    $canon = $this->canonical_relative((string) $ownedpath);
+                    if ($canon !== null) {
+                        $this->hiddenfilepaths[$canon] = true;
+                    }
+                }
                 continue;
             }
             // Folder-level hiding applies only to standalone file resources,
