@@ -49,6 +49,7 @@ class course_builder {
         item::KIND_DISCUSSION => 'forum',
         item::KIND_SUBHEADER => 'label',
         item::KIND_LTI => 'lti',
+        item::KIND_FOLDER => 'folder',
     ];
 
     /** @var int Course category for the new course. */
@@ -194,6 +195,7 @@ class course_builder {
             item::KIND_DISCUSSION => new forum_builder($this->packageroot, $this->mediareport),
             item::KIND_SUBHEADER => new label_builder(),
             item::KIND_LTI => new lti_builder($this->packageroot, $this->mediareport),
+            item::KIND_FOLDER => new folder_builder($this->packageroot, $this->mediareport),
         ];
 
         $createdcounts = [];
@@ -566,8 +568,16 @@ class course_builder {
             }
             // Every embedded asset is a standalone file by construction (a page-embedded
             // asset keeps KIND_FILE; a dependency asset was relabelled KIND_UNKNOWN when
-            // suppressed), so build each as the file it is.
-            $modelitem->kind = item::KIND_FILE;
+            // suppressed), so build each as the file it is — except a dependency that
+            // carries more than one reachable member, which becomes a mod_folder so every
+            // file is listed rather than lost behind mod_resource's single-file view. A
+            // folded HTML bundle stays a mod_resource: its siblings render inline via the
+            // embedded HTML, not as a download list.
+            $multifile = $modelitem->recoverallfiles
+                && $modelitem->bundleassets === []
+                && $modelitem->bundlehtmlpath === ''
+                && count($modelitem->files) > 1;
+            $modelitem->kind = $multifile ? item::KIND_FOLDER : item::KIND_FILE;
             $cmid = $this->build_one(
                 $course,
                 $orphansection,

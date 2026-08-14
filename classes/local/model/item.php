@@ -31,6 +31,11 @@ class item {
     public const KIND_PAGE = 'page';
     /** File / web resource -> course files / mod_resource. */
     public const KIND_FILE = 'file';
+    /** Recovered multi-file dependency -> mod_folder. Synthetic: the parser never
+     * classifies a resource as this; course_builder's reconciliation assigns it when
+     * recovering a suppressed dependency that carries more than one reachable file, so
+     * every member is listed rather than hidden behind mod_resource's single-file view. */
+    public const KIND_FOLDER = 'folder';
     /** Web link -> mod_url. */
     public const KIND_URL = 'url';
     /** Assignment -> mod_assign. */
@@ -80,10 +85,11 @@ class item {
     /** @var string[] All file paths belonging to this resource. */
     public array $files = [];
 
-    /** @var bool When set, file_builder copies every file in {@see $files} into the one
-     * mod_resource it builds, not just the primary payload — used when recovering a
-     * suppressed multi-file dependency resource so a secondary image/attachment is not
-     * lost with the primary. The parser narrows {@see $files} to the visible members first. */
+    /** @var bool Marks a suppressed dependency the build may recover as a whole. When it
+     * carries more than one reachable member, course_builder recovers it as a mod_folder
+     * (via {@see \tool_canvasuplifter\local\build\folder_builder}) so every file in
+     * {@see $files} is listed, rather than a mod_resource that would serve only the
+     * primary. The parser narrows {@see $files} to the visible members first. */
     public bool $recoverallfiles = false;
 
     /** @var string[] Identifiers of resources this one declares as a Common Cartridge dependency

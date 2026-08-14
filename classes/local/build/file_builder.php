@@ -146,46 +146,6 @@ class file_builder {
             $embedded[] = $assetabs;
         }
 
-        // A recovered multi-file dependency keeps every file it carries in this one
-        // download, so a secondary image/attachment is not lost with the primary. The
-        // parser narrowed the file list to the visible members and set the flag; skipped
-        // for a folded HTML bundle, whose siblings are already added above.
-        if ($modelitem->recoverallfiles && $modelitem->bundleassets === [] && $modelitem->bundlehtmlpath === '') {
-            foreach ($modelitem->files as $relative) {
-                $rel = ltrim((string) $relative, '/');
-                $fileabs = safe_path::within($this->packageroot, $rel);
-                if ($fileabs === null || $fileabs === $sourcepath || !is_file($fileabs) || !is_readable($fileabs)) {
-                    continue;
-                }
-                // A surviving owner activity already embedded this member; leave it there rather
-                // than duplicate it here, mirroring course_builder's reconciliation contract.
-                if ($this->mediareport !== null && $this->mediareport->was_embedded($fileabs)) {
-                    continue;
-                }
-                // Preserve the member's subdirectory so images/icon.png and attachments/icon.png
-                // stay distinct rather than colliding on a flattened basename at the root.
-                $slash = strrpos($rel, '/');
-                $filepath = clean_param($slash === false ? '/' : '/' . substr($rel, 0, $slash + 1), PARAM_PATH);
-                $filename = clean_param($slash === false ? $rel : substr($rel, $slash + 1), PARAM_FILE);
-                if (
-                    $filename === ''
-                    || $fs->file_exists($usercontext->id, 'user', 'draft', $draftitemid, $filepath, $filename)
-                ) {
-                    continue;
-                }
-                $fs->create_file_from_pathname([
-                    'contextid' => $usercontext->id,
-                    'component' => 'user',
-                    'filearea' => 'draft',
-                    'itemid' => $draftitemid,
-                    'filepath' => $filepath,
-                    'filename' => $filename,
-                    'sortorder' => 0,
-                ], $fileabs);
-                $embedded[] = $fileabs;
-            }
-        }
-
         $moduleinfo = (object) [
             'modulename' => 'resource',
             'module' => $module->id,

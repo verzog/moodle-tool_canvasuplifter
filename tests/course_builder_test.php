@@ -2035,12 +2035,12 @@ XML;
 
     /**
      * A multi-file dependency resource whose owner quiz is rejected recovers as a single
-     * mod_resource holding every file it carries (not just the primary), and an internal
-     * object-reference link to that resource resolves to it.
+     * mod_folder listing every file it carries (not just the primary, which a mod_resource
+     * would serve alone), and an internal object-reference link to it resolves to the folder.
      *
      * @return void
      */
-    public function test_multi_file_dependency_recovers_all_files_in_one_resource(): void {
+    public function test_multi_file_dependency_recovers_all_files_in_one_folder(): void {
         global $DB;
         $this->resetAfterTest(true);
         $this->setAdminUser();
@@ -2077,24 +2077,25 @@ XML;
         $report = (new course_builder($category->id, $dir))->build($coursemodel);
         $modinfo = get_fast_modinfo($report['courseid']);
 
-        // The rejected quiz's dependency recovers as exactly one resource ...
+        // The rejected quiz's dependency recovers as exactly one folder ...
         $this->assertCount(0, $modinfo->get_instances_of('quiz'));
         $this->assertSame(1, $report['recoveredassets']);
-        $resources = $modinfo->get_instances_of('resource');
-        $this->assertCount(1, $resources);
-        $resourcecm = reset($resources);
-        // ... that holds both files ...
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
+        $folders = $modinfo->get_instances_of('folder');
+        $this->assertCount(1, $folders);
+        $foldercm = reset($folders);
+        // ... that lists both files (both reachable, unlike a single-file mod_resource) ...
         $fs = get_file_storage();
-        $context = \context_module::instance($resourcecm->id);
+        $context = \context_module::instance($foldercm->id);
         $names = [];
-        foreach ($fs->get_area_files($context->id, 'mod_resource', 'content', 0, 'id', false) as $file) {
+        foreach ($fs->get_area_files($context->id, 'mod_folder', 'content', 0, 'id', false) as $file) {
             $names[] = $file->get_filename();
         }
         sort($names);
         $this->assertSame(['a.png', 'b.png'], $names);
-        // ... and the object-reference link resolves to that resource.
+        // ... and the object-reference link resolves to that folder.
         $page = $DB->get_record('page', []);
-        $this->assertStringContainsString('/mod/resource/view.php?id=' . $resourcecm->id, $page->content);
+        $this->assertStringContainsString('/mod/folder/view.php?id=' . $foldercm->id, $page->content);
     }
 
     /**
@@ -2188,23 +2189,22 @@ XML;
         $report = (new course_builder($category->id, $dir))->build($coursemodel);
         $modinfo = get_fast_modinfo($report['courseid']);
 
-        $resources = $modinfo->get_instances_of('resource');
-        $this->assertCount(1, $resources);
-        $resourcecm = reset($resources);
-        // Both icon.png members are kept under distinct filearea paths — the recovered
-        // secondary keeps its own subdirectory instead of clobbering the primary at the
-        // root, so neither is flattened away.
+        $folders = $modinfo->get_instances_of('folder');
+        $this->assertCount(1, $folders);
+        $foldercm = reset($folders);
+        // Both icon.png members are kept under distinct filearea paths — each stays under
+        // its own subdirectory instead of one clobbering the other at a flattened root.
         $fs = get_file_storage();
-        $context = \context_module::instance($resourcecm->id);
+        $context = \context_module::instance($foldercm->id);
         $paths = [];
-        foreach ($fs->get_area_files($context->id, 'mod_resource', 'content', 0, 'id', false) as $file) {
+        foreach ($fs->get_area_files($context->id, 'mod_folder', 'content', 0, 'id', false) as $file) {
             $paths[] = $file->get_filepath() . $file->get_filename();
         }
         sort($paths);
         $this->assertCount(2, $paths);
         $this->assertSame($paths, array_unique($paths));
         $this->assertSame(['icon.png', 'icon.png'], array_map('basename', $paths));
-        $this->assertContains('/icon.png', $paths);
+        $this->assertContains('/web_resources/images/icon.png', $paths);
         $this->assertContains('/web_resources/attachments/icon.png', $paths);
     }
 
@@ -2257,23 +2257,23 @@ XML;
         $report = (new course_builder($category->id, $dir))->build($coursemodel);
         $modinfo = get_fast_modinfo($report['courseid']);
 
-        // One recovered resource that holds the union of both dependencies' members —
+        // One recovered folder that holds the union of both dependencies' members —
         // neither x.png nor y.png is lost to the shared-primary map collision.
-        $resources = $modinfo->get_instances_of('resource');
-        $this->assertCount(1, $resources);
-        $resourcecm = reset($resources);
+        $folders = $modinfo->get_instances_of('folder');
+        $this->assertCount(1, $folders);
+        $foldercm = reset($folders);
         $fs = get_file_storage();
-        $context = \context_module::instance($resourcecm->id);
+        $context = \context_module::instance($foldercm->id);
         $names = [];
-        foreach ($fs->get_area_files($context->id, 'mod_resource', 'content', 0, 'id', false) as $file) {
+        foreach ($fs->get_area_files($context->id, 'mod_folder', 'content', 0, 'id', false) as $file) {
             $names[] = $file->get_filename();
         }
         sort($names);
         $this->assertSame(['shared.png', 'x.png', 'y.png'], $names);
-        // Object-reference links to both merged identifiers resolve to that one resource,
+        // Object-reference links to both merged identifiers resolve to that one folder,
         // so folding the second dependency in does not strand its links.
         $page = $DB->get_record('page', []);
-        $this->assertSame(2, substr_count($page->content, '/mod/resource/view.php?id=' . $resourcecm->id));
+        $this->assertSame(2, substr_count($page->content, '/mod/folder/view.php?id=' . $foldercm->id));
     }
 
     /**
@@ -2319,5 +2319,6 @@ XML;
         // Nothing recovered: the hidden dependency stays hidden.
         $this->assertSame(0, $report['recoveredassets']);
         $this->assertCount(0, $modinfo->get_instances_of('resource'));
+        $this->assertCount(0, $modinfo->get_instances_of('folder'));
     }
 }
