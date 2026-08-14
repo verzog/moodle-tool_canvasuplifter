@@ -80,6 +80,12 @@ class item {
     /** @var string[] All file paths belonging to this resource. */
     public array $files = [];
 
+    /** @var bool When set, file_builder copies every file in {@see $files} into the one
+     * mod_resource it builds, not just the primary payload — used when recovering a
+     * suppressed multi-file dependency resource so a secondary image/attachment is not
+     * lost with the primary. The parser narrows {@see $files} to the visible members first. */
+    public bool $recoverallfiles = false;
+
     /** @var string[] Identifiers of resources this one declares as a Common Cartridge dependency
      * (embedded assets: question-stem images, discussion media). Their media is embedded into
      * this resource's content at build time, so an unplaced dependency target is not surfaced

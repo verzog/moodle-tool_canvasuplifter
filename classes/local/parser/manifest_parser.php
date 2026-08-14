@@ -65,6 +65,11 @@ class manifest_parser {
      */
     private array $externaltoolrefs = [];
 
+    /** @var string[] web_resources-relative folder path prefixes Canvas marks hidden in
+     *               files_meta.xml, populated by mark_hidden_from_files_meta() so a
+     *               recovered multi-file resource can drop its hidden members. */
+    private array $hiddenfolderprefixes = [];
+
     /**
      * Constructor.
      *
@@ -437,11 +442,16 @@ class manifest_parser {
                 }
                 $dependency = $resources[$dependencyref];
                 if ($dependency->kind === item::KIND_FILE && !$dependency->suppressed) {
-                    // Remember the file (by the path a builder embeds and file_builder would
-                    // build from) before relabelling it, so the build can recover it if its
-                    // owner activity fails and never embeds it.
+                    // Remember the resource (keyed by the path file_builder builds from)
+                    // before relabelling it, so the build can recover it if its owner
+                    // activity fails and never embeds it. Flag it so file_builder recovers
+                    // every on-disk file it carries as one mod_resource, not just the
+                    // primary — and narrow its file list to the members Canvas did not hide,
+                    // so a secondary file in a hidden folder is not surfaced.
                     $built = $this->built_file_payload($dependency);
                     if ($built !== null) {
+                        $dependency->files = $this->visible_dependency_files($dependency);
+                        $dependency->recoverallfiles = true;
                         $course->embeddedassets[$built] = $dependency;
                     }
                     $dependency->kind = item::KIND_UNKNOWN;
@@ -449,6 +459,51 @@ class manifest_parser {
                 }
             }
         }
+    }
+
+    /**
+     * The package-relative paths of a dependency resource's files that Canvas did not hide,
+     * deduplicated and in href-then-files order. Used when recording the resource for
+     * recovery so file_builder rebuilds only its visible members into one mod_resource; a
+     * file whose folder files_meta.xml marks hidden is dropped, so it never becomes a
+     * student-visible download when the resource is otherwise visible.
+     *
+     * @param item $dependency The dependency resource.
+     * @return array
+     */
+    protected function visible_dependency_files(item $dependency): array {
+        $candidates = [];
+        if ($dependency->href !== '') {
+            $candidates[] = $dependency->href;
+        }
+        $candidates = array_merge($candidates, $dependency->files);
+        $visible = [];
+        foreach ($candidates as $relative) {
+            $rel = (string) $relative;
+            if ($rel === '' || isset($visible[$rel]) || $this->path_in_hidden_folder($rel)) {
+                continue;
+            }
+            if ($this->resolve_within($rel) === null) {
+                continue;
+            }
+            $visible[$rel] = true;
+        }
+        return array_keys($visible);
+    }
+
+    /**
+     * Whether a package-relative path sits under a folder files_meta.xml marks hidden.
+     *
+     * @param string $relative The package-relative file path.
+     * @return bool
+     */
+    protected function path_in_hidden_folder(string $relative): bool {
+        foreach ($this->hiddenfolderprefixes as $prefix) {
+            if (strncmp($relative, $prefix, strlen($prefix)) === 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1824,6 +1879,10 @@ class manifest_parser {
                 $hiddenprefixes[] = 'web_resources/' . trim($path, '/') . '/';
             }
         }
+        // Remember the hidden folder prefixes so a recovered multi-file resource can drop
+        // members Canvas hid (a secondary file in a hidden folder must not become a
+        // student-visible download when the whole resource is otherwise visible).
+        $this->hiddenfolderprefixes = $hiddenprefixes;
         if ($hiddenids === [] && $hiddenprefixes === []) {
             return;
         }

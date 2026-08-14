@@ -146,6 +146,36 @@ class file_builder {
             $embedded[] = $assetabs;
         }
 
+        // A recovered multi-file dependency keeps every file it carries in this one
+        // download, so a secondary image/attachment is not lost with the primary. The
+        // parser narrowed the file list to the visible members and set the flag; skipped
+        // for a folded HTML bundle, whose siblings are already added above.
+        if ($modelitem->recoverallfiles && $modelitem->bundleassets === [] && $modelitem->bundlehtmlpath === '') {
+            foreach ($modelitem->files as $relative) {
+                $fileabs = safe_path::within($this->packageroot, (string) $relative);
+                if ($fileabs === null || $fileabs === $sourcepath || !is_file($fileabs) || !is_readable($fileabs)) {
+                    continue;
+                }
+                $filename = clean_param(basename((string) $relative), PARAM_FILE);
+                if (
+                    $filename === '' || $filename === $mainname
+                    || $fs->file_exists($usercontext->id, 'user', 'draft', $draftitemid, '/', $filename)
+                ) {
+                    continue;
+                }
+                $fs->create_file_from_pathname([
+                    'contextid' => $usercontext->id,
+                    'component' => 'user',
+                    'filearea' => 'draft',
+                    'itemid' => $draftitemid,
+                    'filepath' => '/',
+                    'filename' => $filename,
+                    'sortorder' => 0,
+                ], $fileabs);
+                $embedded[] = $fileabs;
+            }
+        }
+
         $moduleinfo = (object) [
             'modulename' => 'resource',
             'module' => $module->id,
