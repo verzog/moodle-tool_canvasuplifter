@@ -958,6 +958,54 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A dropdown blank whose scoring awards the same credit to two options marks both
+     * correct in the Cloze (either answer earns full marks), rather than only the last
+     * scored one; and the scored value is resolved by ident before text, so an option whose
+     * text equals another option's ident is not mis-credited, and feedback media is flattened.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_multi_correct_ident_first_and_flattened_feedback(): void {
+        $plain = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        // Blank 1 accepts both cat (a1) and dog (a2); fish (a3) is a distractor with feedback.
+        // Blank 2's first option's TEXT is literally "b2" while the scored ident is b2 (text
+        // "ok"), so ident resolution must beat the text collision.
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $plain('a1', 'cat') . $plain('a2', 'dog') . $plain('a3', 'fish') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $plain('b1', 'b2') . $plain('b2', 'ok') . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a3</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">0</setvar><displayfeedback linkrefid="fbf"/></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>'
+            . '<itemfeedback ident="fbf"><material>'
+            . '<mattext texttype="text/html">' . htmlspecialchars('<p>Not <img src="x.png"/> a pet</p>')
+            . '</mattext></material></itemfeedback>';
+        $item = '<item ident="d6" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // Both accepted options are credited; the distractor's feedback is flattened (no img).
+        $this->assertStringContainsString('{1:MULTICHOICE:=cat~=dog~fish#Not a pet}', $q->questiontext);
+        // The scored ident b2 credits the "ok" option, not the earlier option whose text is "b2".
+        $this->assertStringContainsString('{1:MULTICHOICE:b2~=ok}', $q->questiontext);
+        $this->assertStringNotContainsString('<img', $q->questiontext);
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with two or more free-text blanks
      * becomes a Moodle Cloze: each [blank] placeholder in the stem is replaced by a
      * SHORTANSWER field built from that blank's accepted answers (its varequal values
