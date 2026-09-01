@@ -197,7 +197,7 @@ class qti_question {
             // needs at least one embedded field — a SHORTANSWER (free-text blank) or a
             // MULTICHOICE (inline dropdown) — or qtype_multianswer rejects it on import
             // and rolls back the whole batch.
-            return (bool) preg_match('/\{[0-9]*:(SHORTANSWER|MULTICHOICE):/', $this->questiontext);
+            return (bool) preg_match('/\{[0-9]*:(SHORTANSWER|MULTICHOICE(?:_[A-Z]+)?):/', $this->questiontext);
         }
         // Multichoice and multianswer import as Moodle multichoice; both need at
         // least two answers.

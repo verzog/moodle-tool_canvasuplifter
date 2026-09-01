@@ -844,6 +844,42 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A dropdown blank whose render_choice asks Canvas to shuffle its options (shuffle="Yes")
+     * becomes a shuffled MULTICHOICE_S field so Moodle randomises the option order too, while a
+     * blank without the flag stays a fixed-order MULTICHOICE. The item still imports as a Cloze.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_honors_shuffled_choice_sets(): void {
+        $label = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice shuffle="Yes">'
+            . $label('a1', 'cat') . $label('a2', 'dog') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice shuffle="No">'
+            . $label('b1', 'blue') . $label('b2', 'red') . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="d4" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // The shuffled blank uses MULTICHOICE_S; the fixed one keeps plain MULTICHOICE.
+        $this->assertStringContainsString('{1:MULTICHOICE_S:=cat~dog}', $q->questiontext);
+        $this->assertStringContainsString('{1:MULTICHOICE:=blue~red}', $q->questiontext);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
      * A dropdown blank left with fewer than two usable options can't be a Moodle
      * multichoice (which needs at least two answers), so the whole item is reported
      * unsupported rather than emitting a one-answer field that would roll back the import.

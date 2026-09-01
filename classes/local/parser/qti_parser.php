@@ -1112,7 +1112,32 @@ class qti_parser {
         if (!$correctemitted || $usable < 2) {
             return '';
         }
-        return '{1:MULTICHOICE:' . implode('~', $options) . '}';
+        // Canvas can randomise a dropdown's option order (render_choice shuffle="Yes"); mirror
+        // that with Moodle's shuffled MULTICHOICE_S so the imported blank presents its options
+        // in the same random order rather than the fixed author order MULTICHOICE would keep.
+        $type = $this->render_choice_shuffles($lid) ? 'MULTICHOICE_S' : 'MULTICHOICE';
+        return '{1:' . $type . ':' . implode('~', $options) . '}';
+    }
+
+    /**
+     * Whether a blank's render_choice asks for its options to be shuffled. QTI 1.2 carries this
+     * as a shuffle attribute on render_choice (Canvas emits "Yes"); tolerate the rshuffle spelling
+     * some exporters use and any truthy value. Kept string-based so the parser stays Moodle-free.
+     *
+     * @param DOMElement $lid The response_lid element for the blank.
+     * @return bool
+     */
+    protected function render_choice_shuffles(DOMElement $lid): bool {
+        foreach ($lid->getElementsByTagNameNS('*', 'render_choice') as $choice) {
+            if (!($choice instanceof DOMElement)) {
+                continue;
+            }
+            $flag = strtolower(trim($choice->getAttribute('shuffle') . $choice->getAttribute('rshuffle')));
+            if ($flag === 'yes' || $flag === 'true' || $flag === '1') {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
