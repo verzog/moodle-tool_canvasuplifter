@@ -759,6 +759,49 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A Canvas multiple_dropdowns_question whose blanks offer different per-blank choice
+     * sets (or no per-blank stem) can't be a Moodle match — one blank's options would be
+     * offered for another — so it becomes a Cloze: each [id] marker in the prompt is
+     * replaced by a MULTICHOICE field carrying that blank's own options, the scored label
+     * flagged correct.
+     *
+     * @return void
+     */
+    public function test_native_dropdowns_with_per_blank_choices_become_cloze(): void {
+        $blank = function (string $ident, string $c1, string $t1, string $c2, string $t2): string {
+            return '<response_lid ident="' . $ident . '"><render_choice>'
+                . '<response_label ident="' . $c1 . '"><material><mattext texttype="text/plain">' . $t1
+                . '</mattext></material></response_label>'
+                . '<response_label ident="' . $c2 . '"><material><mattext texttype="text/plain">' . $t2
+                . '</mattext></material></response_label></render_choice></response_lid>';
+        };
+        $pres = '<presentation><material>'
+            . '<mattext texttype="text/html">A [1] is furry; the sky is [2].</mattext></material>'
+            . $blank('response_1', 'a1', 'cat', 'a2', 'dog')
+            . $blank('response_2', 'b1', 'blue', 'b2', 'red') . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="d1" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // Each blank embeds its own options at its marker, scored label flagged with =.
+        $this->assertStringContainsString('{1:MULTICHOICE:=cat~dog}', $q->questiontext);
+        $this->assertStringContainsString('{1:MULTICHOICE:=blue~red}', $q->questiontext);
+        // The bracketed markers are consumed by the substituted fields.
+        $this->assertStringNotContainsString('[1]', $q->questiontext);
+        $this->assertStringNotContainsString('[2]', $q->questiontext);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with two or more free-text blanks
      * becomes a Moodle Cloze: each [blank] placeholder in the stem is replaced by a
      * SHORTANSWER field built from that blank's accepted answers (its varequal values

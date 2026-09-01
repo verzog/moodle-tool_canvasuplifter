@@ -194,9 +194,10 @@ class qti_question {
         }
         if ($this->type === self::TYPE_CLOZE) {
             // A Moodle Cloze carries its sub-questions inline in the question text; it
-            // needs at least one embedded SHORTANSWER field, or qtype_multianswer
-            // rejects it on import and rolls back the whole batch.
-            return (bool) preg_match('/\{[0-9]*:SHORTANSWER:/', $this->questiontext);
+            // needs at least one embedded field — a SHORTANSWER (free-text blank) or a
+            // MULTICHOICE (inline dropdown) — or qtype_multianswer rejects it on import
+            // and rolls back the whole batch.
+            return (bool) preg_match('/\{[0-9]*:(SHORTANSWER|MULTICHOICE):/', $this->questiontext);
         }
         // Multichoice and multianswer import as Moodle multichoice; both need at
         // least two answers.
