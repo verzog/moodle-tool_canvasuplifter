@@ -982,11 +982,12 @@ class qti_parser {
      * is not always shown first); the scored option is fully credited with =, the rest are
      * zero-credit distractors. The scored value is resolved to an option by its
      * response_label ident first, then — for exporters that score by displayed text — by
-     * its normalised text. Response feedback linked to the scored option is appended after
-     * a # separator. Returns '' (so {@see fill_cloze} drops the whole item, reported by
-     * name) when no scored option resolves or fewer than two usable options remain, since a
-     * Moodle multichoice needs a correct answer and at least two choices or the import rolls
-     * back the whole bank.
+     * its normalised text. Response feedback authored for any option (correct or distractor)
+     * is appended after a # separator. Returns '' (so {@see fill_cloze} drops the whole item,
+     * reported by name) when no credited option is actually emitted (none resolved, or the
+     * correct option's text flattened to empty) or fewer than two usable options remain,
+     * since a Moodle multichoice needs a correct answer and at least two choices or the
+     * import rolls back the whole bank.
      *
      * @param DOMElement $lid The response_lid element for the blank.
      * @param string $scored The scored value for the blank (a response_label ident or text).
@@ -994,36 +995,38 @@ class qti_parser {
      * @return string The Cloze field, or '' if it cannot be built.
      */
     protected function cloze_dropdown_field(DOMElement $lid, string $scored, array $feedback): string {
-        $choices = $this->choice_label_map($lid);
-        // Resolve the correct option: an exact ident match, else the option whose normalised
-        // text equals the scored value (some exporters score a dropdown by displayed text).
-        $correctident = '';
-        if (isset($choices[$scored])) {
-            $correctident = $scored;
-        } else {
-            $target = $this->normalise_answer_value($scored);
-            foreach ($choices as $ident => $text) {
-                if ($target !== '' && $this->normalise_answer_value($text) === $target) {
-                    $correctident = $ident;
-                    break;
-                }
-            }
+        // Index the feedback map by normalised text too, so an option scored/keyed by its
+        // displayed text (not its ident) still resolves its response feedback.
+        $feedbackbytext = [];
+        foreach ($feedback as $key => $text) {
+            $feedbackbytext[$this->normalise_answer_value((string) $key)] = $text;
         }
-        $correctfeedback = (string) ($feedback[$scored] ?? '');
+        $scorednorm = $this->normalise_answer_value($scored);
         $options = [];
         $usable = 0;
-        foreach ($choices as $ident => $text) {
-            $plain = $this->plain_answer($text);
+        $correctemitted = false;
+        foreach ($lid->getElementsByTagNameNS('*', 'response_label') as $label) {
+            if (!($label instanceof DOMElement)) {
+                continue;
+            }
+            $ident = $label->getAttribute('ident');
+            // Flatten block-aware so an HTML option keeps its rendered word boundaries
+            // (<p>New</p><p>York</p> -> "New York"), not a run-together "NewYork".
+            $plain = $this->label_answer_text($label);
             if ($plain === '') {
                 continue;
             }
             $usable++;
+            // The correct option matches the scored value by ident first, else by normalised
+            // displayed text (some exporters score a dropdown by text). Only the first match
+            // is credited, so a duplicate option text can't produce two correct answers.
+            $iscorrect = (!$correctemitted)
+                && (($ident !== '' && $ident === $scored)
+                    || ($scorednorm !== '' && $this->normalise_answer_value($plain) === $scorednorm));
             $escaped = $this->cloze_escape($plain);
-            if ($ident === $correctident) {
+            if ($iscorrect) {
                 $option = '=' . $escaped;
-                if ($correctfeedback !== '') {
-                    $option .= '#' . $this->cloze_escape($correctfeedback);
-                }
+                $correctemitted = true;
             } else {
                 // A distractor whose text would begin with a Cloze credit token (= full
                 // credit, % percentage) is given an explicit %0% so Moodle can't read it
@@ -1031,9 +1034,18 @@ class qti_parser {
                 $prefix = ($escaped !== '' && ($escaped[0] === '=' || $escaped[0] === '%')) ? '%0%' : '';
                 $option = $prefix . $escaped;
             }
+            // Preserve response feedback authored for any option (correct or distractor),
+            // keyed by its ident or — for text-scored feedback — its normalised text.
+            $optfeedback = (string) ($feedback[$ident] ?? ($feedbackbytext[$this->normalise_answer_value($plain)] ?? ''));
+            if ($optfeedback !== '') {
+                $option .= '#' . $this->cloze_escape($optfeedback);
+            }
             $options[] = $option;
         }
-        if ($correctident === '' || $usable < 2) {
+        // A Moodle multichoice needs a credited option actually emitted (a correct option
+        // whose text flattened to empty leaves none) and at least two usable options, or the
+        // import rolls back the whole bank; short of that the blank is left unplaceable.
+        if (!$correctemitted || $usable < 2) {
             return '';
         }
         return '{1:MULTICHOICE:' . implode('~', $options) . '}';

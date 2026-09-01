@@ -877,6 +877,87 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A dropdown Cloze flattens an HTML option with block boundaries (so New/York stays two
+     * words) and carries feedback authored for a distractor option, not only the correct one.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_flattens_block_html_and_keeps_distractor_feedback(): void {
+        $htmllabel = function (string $ident, string $markup): string {
+            return '<response_label ident="' . $ident . '"><material>'
+                . '<mattext texttype="text/html">' . htmlspecialchars($markup) . '</mattext></material></response_label>';
+        };
+        $plain = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $htmllabel('a1', '<p>New</p><p>York</p>') . $plain('a2', 'Boston') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $plain('b1', 'p') . $plain('b2', 'q') . '</render_choice></response_lid></presentation>';
+        // Blank 1: a1 (New York) is correct; a2 (Boston) is a distractor carrying feedback.
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">0</setvar><displayfeedback linkrefid="fbw"/></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>'
+            . '<itemfeedback ident="fbw"><material><mattext texttype="text/plain">Wrong city</mattext></material>'
+            . '</itemfeedback>';
+        $item = '<item ident="d4" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // The HTML block option keeps its word boundary, and the distractor keeps its feedback.
+        $this->assertStringContainsString('{1:MULTICHOICE:=New York~Boston#Wrong city}', $q->questiontext);
+    }
+
+    /**
+     * A dropdown whose scored option has no plain text (e.g. an image-only HTML option) has
+     * no credited answer, so the whole item is reported unsupported rather than emitting a
+     * MULTICHOICE field Moodle would import as unanswerable.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_with_empty_correct_option_is_unsupported(): void {
+        $htmllabel = function (string $ident, string $markup): string {
+            return '<response_label ident="' . $ident . '"><material>'
+                . '<mattext texttype="text/html">' . htmlspecialchars($markup) . '</mattext></material></response_label>';
+        };
+        $plain = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $htmllabel('a1', '<img src="x.png"/>') . $plain('a2', 'cat') . $plain('a3', 'dog')
+            . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $plain('b1', 'p') . $plain('b2', 'q') . '</render_choice></response_lid></presentation>';
+        // The scored option for blank 1 (a1) is the image-only one, which flattens to empty.
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="d5" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with two or more free-text blanks
      * becomes a Moodle Cloze: each [blank] placeholder in the stem is replaced by a
      * SHORTANSWER field built from that blank's accepted answers (its varequal values
