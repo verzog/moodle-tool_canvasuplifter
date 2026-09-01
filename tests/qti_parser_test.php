@@ -880,6 +880,43 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A dropdown option's HTML feedback with adjacent block elements keeps its rendered word
+     * boundary when flattened into the Cloze `#` feedback — `<p>Try this</p><p>Then retry</p>`
+     * becomes `Try this Then retry`, not `Try thisThen retry`.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_flattens_block_html_feedback_with_boundaries(): void {
+        $label = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $label('a1', 'cat') . $label('a2', 'dog') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $label('b1', 'blue') . $label('b2', 'red') . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar><displayfeedback linkrefid="fb1"/></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '</resprocessing>'
+            . '<itemfeedback ident="fb1"><material><mattext texttype="text/html">'
+            . '&lt;p&gt;Try this&lt;/p&gt;&lt;p&gt;Then retry&lt;/p&gt;</mattext></material></itemfeedback>';
+        $item = '<item ident="d5" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        // The two paragraphs keep a space between them rather than being run together.
+        $this->assertStringContainsString('#Try this Then retry', $q->questiontext);
+        $this->assertStringNotContainsString('thisThen', $q->questiontext);
+    }
+
+    /**
      * A dropdown blank left with fewer than two usable options can't be a Moodle
      * multichoice (which needs at least two answers), so the whole item is reported
      * unsupported rather than emitting a one-answer field that would roll back the import.

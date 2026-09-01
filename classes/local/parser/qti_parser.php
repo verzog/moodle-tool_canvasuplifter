@@ -813,7 +813,27 @@ class qti_parser {
      * @return string
      */
     protected function flatten_feedback(string $html): string {
-        return $this->collapse_ws(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5));
+        // Feedback is authored HTML, so a block or break element renders as a word boundary;
+        // replace it with a space before stripping tags so "<p>Try this</p><p>Then retry</p>"
+        // flattens to "Try this Then retry", not "Try thisThen retry" (the same block-aware
+        // treatment label_answer_text() gives dropdown option labels).
+        $spaced = $this->space_block_boundaries($html);
+        return $this->collapse_ws(html_entity_decode(strip_tags($spaced), ENT_QUOTES | ENT_HTML5));
+    }
+
+    /**
+     * Replace each block or line-break element with a space so its rendered word boundary
+     * survives a subsequent strip_tags(); inline elements are left for strip_tags() to remove
+     * without a boundary. Shared by the HTML flatteners so labels and feedback treat block
+     * boundaries the same way.
+     *
+     * @param string $html The HTML to space.
+     * @return string
+     */
+    protected function space_block_boundaries(string $html): string {
+        $block = '/<\s*\/?\s*(?:p|div|br|li|tr|td|th|thead|tbody|table|ul|ol|dl|dd|dt'
+            . '|h[1-6]|blockquote|section|article|header|footer|hr|pre|figure|figcaption)\b[^>]*>/i';
+        return (string) preg_replace($block, ' ', $html);
     }
 
     /**
@@ -833,9 +853,7 @@ class qti_parser {
             // space (<p>New</p><p>York</p> -> "New York"); an inline element (<b>, <sub>…)
             // renders with no boundary, so strip it without a space (<b>New</b>York ->
             // "NewYork", H<sub>2</sub>O -> "H2O"). Then decode entities and collapse.
-            $block = '/<\s*\/?\s*(?:p|div|br|li|tr|td|th|thead|tbody|table|ul|ol|dl|dd|dt'
-                . '|h[1-6]|blockquote|section|article|header|footer|hr|pre|figure|figcaption)\b[^>]*>/i';
-            $spaced = (string) preg_replace($block, ' ', $raw);
+            $spaced = $this->space_block_boundaries($raw);
             return $this->collapse_ws(html_entity_decode(strip_tags($spaced), ENT_QUOTES | ENT_HTML5));
         }
         return $this->collapse_ws($raw);
