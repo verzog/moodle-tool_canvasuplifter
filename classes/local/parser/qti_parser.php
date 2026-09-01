@@ -1098,7 +1098,11 @@ class qti_parser {
             // text-keyed feedback — its normalised text, flattened to plain text.
             $optfeedback = (string) ($feedback[$ident] ?? ($feedbackbytext[$this->normalise_answer_value($plain)] ?? ''));
             if ($optfeedback !== '') {
-                $option .= '#' . $this->cloze_escape($this->flatten_feedback($optfeedback));
+                // HTML-encode the flattened feedback for the same reason as the option text:
+                // it is appended into HTML question text, so a literal < & in it must not be
+                // read as markup.
+                $flat = htmlspecialchars($this->flatten_feedback($optfeedback), ENT_QUOTES | ENT_HTML5);
+                $option .= '#' . $this->cloze_escape($flat);
             }
             $options[] = $option;
         }

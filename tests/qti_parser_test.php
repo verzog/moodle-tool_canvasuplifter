@@ -1028,9 +1028,11 @@ final class qti_parser_test extends \basic_testcase {
             . $plain('b1', 'p') . $plain('b2', 'q') . '</render_choice></response_lid></presentation>';
         $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
             . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
-            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<setvar varname="SCORE" action="Add">50</setvar><displayfeedback linkrefid="fb1"/></respcondition>'
             . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
-            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>'
+            . '<itemfeedback ident="fb1"><material><mattext texttype="text/plain">'
+            . htmlspecialchars('Use x < y') . '</mattext></material></itemfeedback>';
         $item = '<item ident="d7" title="Dropdowns"><itemmetadata><qtimetadata>'
             . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
             . '<fieldentry>multiple_dropdowns_question</fieldentry>'
@@ -1039,9 +1041,10 @@ final class qti_parser_test extends \basic_testcase {
         $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
 
         $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
-        // The < and & are HTML-encoded so they render as literal text, not markup.
-        $this->assertStringContainsString('{1:MULTICHOICE:=a &lt; b~H&amp;M}', $q->questiontext);
+        // The < and & in both option text and feedback are HTML-encoded, not read as markup.
+        $this->assertStringContainsString('{1:MULTICHOICE:=a &lt; b#Use x &lt; y~H&amp;M}', $q->questiontext);
         $this->assertStringNotContainsString('a < b', $q->questiontext);
+        $this->assertStringNotContainsString('x < y', $q->questiontext);
     }
 
     /**
