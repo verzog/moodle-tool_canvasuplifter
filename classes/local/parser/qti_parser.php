@@ -1080,7 +1080,10 @@ class qti_parser {
                 continue;
             }
             $usable++;
-            $escaped = $this->cloze_escape($plain);
+            // The field is embedded in HTML question text and the option is rendered in a
+            // dropdown, so a literal < & > in the label (e.g. "a < b", "H&M") is HTML-encoded
+            // before the Cloze metacharacters are escaped, or Moodle would read it as markup.
+            $escaped = $this->cloze_escape(htmlspecialchars($plain, ENT_QUOTES | ENT_HTML5));
             if ($ident !== '' && isset($correctidents[$ident])) {
                 $option = '=' . $escaped;
                 $correctemitted = true;

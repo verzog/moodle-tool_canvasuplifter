@@ -1010,6 +1010,41 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A dropdown option whose text contains HTML metacharacters (e.g. "a < b") is HTML-encoded
+     * in the emitted field, since the Cloze is embedded in HTML question text and rendered in a
+     * dropdown — otherwise Moodle would read the option as markup.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_html_encodes_option_text(): void {
+        $plain = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . htmlspecialchars($text) . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $plain('a1', 'a < b') . $plain('a2', 'H&M') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $plain('b1', 'p') . $plain('b2', 'q') . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="d7" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // The < and & are HTML-encoded so they render as literal text, not markup.
+        $this->assertStringContainsString('{1:MULTICHOICE:=a &lt; b~H&amp;M}', $q->questiontext);
+        $this->assertStringNotContainsString('a < b', $q->questiontext);
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with two or more free-text blanks
      * becomes a Moodle Cloze: each [blank] placeholder in the stem is replaced by a
      * SHORTANSWER field built from that blank's accepted answers (its varequal values
