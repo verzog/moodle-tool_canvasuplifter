@@ -651,19 +651,22 @@ class qti_parser {
     }
 
     /**
-     * Populate a Canvas fill-in-multiple-blanks question as a Moodle Cloze.
+     * Populate a Canvas fill-in-multiple-blanks or inline-dropdown question as a Moodle
+     * Cloze.
      *
-     * Each blank is a <response_lid ident="response_<id>"> whose <render_choice>
-     * lists the acceptable answers as <response_label>s, and the stem carries a
-     * [<id>] placeholder per blank. The accepted answers for a blank are the scoring
-     * <varequal respident="response_<id>"> values, each resolved to the matching
-     * response_label's display text. Each placeholder is replaced in the stem with a
-     * Moodle SHORTANSWER Cloze field listing that blank's answers, so the whole
-     * question becomes a single multianswer item.
+     * Each blank is a <response_lid ident="response_<id>"> whose <render_choice> lists the
+     * options as <response_label>s, and the stem carries a [<id>] placeholder per blank.
+     * Each placeholder is replaced in the stem with a Cloze field so the whole question
+     * becomes a single multianswer item: a SHORTANSWER field listing the accepted answers
+     * for a free-text blank, or (when $dropdown is set) a MULTICHOICE field carrying that
+     * blank's fixed options with the scored <varequal respident="response_<id>"> value
+     * flagged correct.
      *
      * @param DOMElement $item The item element.
      * @param DOMElement|null $presentation The presentation element.
      * @param qti_question $question The question being built (modified in place).
+     * @param bool $dropdown Whether the source is an inline-dropdown item (MULTICHOICE
+     *                       fields) rather than a free-text one (SHORTANSWER fields).
      * @return void
      */
     protected function fill_cloze(
