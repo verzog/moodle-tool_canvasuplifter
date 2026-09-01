@@ -759,6 +759,368 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A Canvas multiple_dropdowns_question whose blanks offer different per-blank choice
+     * sets (or no per-blank stem) can't be a Moodle match — one blank's options would be
+     * offered for another — so it becomes a Cloze: each [id] marker in the prompt is
+     * replaced by a MULTICHOICE field carrying that blank's own options, the scored label
+     * flagged correct.
+     *
+     * @return void
+     */
+    public function test_native_dropdowns_with_per_blank_choices_become_cloze(): void {
+        $blank = function (string $ident, string $c1, string $t1, string $c2, string $t2): string {
+            return '<response_lid ident="' . $ident . '"><render_choice>'
+                . '<response_label ident="' . $c1 . '"><material><mattext texttype="text/plain">' . $t1
+                . '</mattext></material></response_label>'
+                . '<response_label ident="' . $c2 . '"><material><mattext texttype="text/plain">' . $t2
+                . '</mattext></material></response_label></render_choice></response_lid>';
+        };
+        $pres = '<presentation><material>'
+            . '<mattext texttype="text/html">A [1] is furry; the sky is [2].</mattext></material>'
+            . $blank('response_1', 'a1', 'cat', 'a2', 'dog')
+            . $blank('response_2', 'b1', 'blue', 'b2', 'red') . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="d1" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // Each blank embeds its own options at its marker, scored label flagged with =.
+        $this->assertStringContainsString('{1:MULTICHOICE:=cat~dog}', $q->questiontext);
+        $this->assertStringContainsString('{1:MULTICHOICE:=blue~red}', $q->questiontext);
+        // The bracketed markers are consumed by the substituted fields.
+        $this->assertStringNotContainsString('[1]', $q->questiontext);
+        $this->assertStringNotContainsString('[2]', $q->questiontext);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A dropdown Cloze keeps options in author order (the correct one isn't forced first),
+     * resolves a text-scored answer (varequal carries the displayed text, not the ident),
+     * carries the correct option's response feedback, and gives a distractor whose text
+     * begins with a Cloze credit token (= or %) an explicit %0% so it can't read as correct.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_order_text_scoring_feedback_and_credit_escaping(): void {
+        $label = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $label('a1', 'dog') . $label('a2', 'cat') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $label('b1', '= 5') . $label('b2', 'y') . '</render_choice></response_lid></presentation>';
+        // Blank 1 is scored by displayed text ("Cat", different case) and links feedback;
+        // blank 2 is scored by ident (b2), leaving "= 5" as a leading-credit distractor.
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">Cat</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar><displayfeedback linkrefid="fb1"/></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>'
+            . '<itemfeedback ident="fb1"><material><mattext texttype="text/plain">Nice</mattext></material></itemfeedback>';
+        $item = '<item ident="d2" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // The dog option stays first (authored order); the text-scored cat is the correct
+        // answer and carries its feedback after the # separator.
+        $this->assertStringContainsString('{1:MULTICHOICE:dog~=cat#Nice}', $q->questiontext);
+        // The "= 5" distractor is neutralised with %0% so Moodle can't read it as correct.
+        $this->assertStringContainsString('{1:MULTICHOICE:%0%= 5~=y}', $q->questiontext);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A dropdown blank whose render_choice asks Canvas to shuffle its options (shuffle="Yes")
+     * becomes a shuffled MULTICHOICE_S field so Moodle randomises the option order too, while a
+     * blank without the flag stays a fixed-order MULTICHOICE. The item still imports as a Cloze.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_honors_shuffled_choice_sets(): void {
+        $label = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice shuffle="Yes">'
+            . $label('a1', 'cat') . $label('a2', 'dog') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice shuffle="No">'
+            . $label('b1', 'blue') . $label('b2', 'red') . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="d4" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // The shuffled blank uses MULTICHOICE_S; the fixed one keeps plain MULTICHOICE.
+        $this->assertStringContainsString('{1:MULTICHOICE_S:=cat~dog}', $q->questiontext);
+        $this->assertStringContainsString('{1:MULTICHOICE:=blue~red}', $q->questiontext);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A dropdown option's HTML feedback with adjacent block elements keeps its rendered word
+     * boundary when flattened into the Cloze `#` feedback — `<p>Try this</p><p>Then retry</p>`
+     * becomes `Try this Then retry`, not `Try thisThen retry`.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_flattens_block_html_feedback_with_boundaries(): void {
+        $label = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $label('a1', 'cat') . $label('a2', 'dog') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $label('b1', 'blue') . $label('b2', 'red') . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar><displayfeedback linkrefid="fb1"/></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '</resprocessing>'
+            . '<itemfeedback ident="fb1"><material><mattext texttype="text/html">'
+            . '&lt;p&gt;Try this&lt;/p&gt;&lt;p&gt;Then retry&lt;/p&gt;</mattext></material></itemfeedback>';
+        $item = '<item ident="d5" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        // The two paragraphs keep a space between them rather than being run together.
+        $this->assertStringContainsString('#Try this Then retry', $q->questiontext);
+        $this->assertStringNotContainsString('thisThen', $q->questiontext);
+    }
+
+    /**
+     * A dropdown blank left with fewer than two usable options can't be a Moodle
+     * multichoice (which needs at least two answers), so the whole item is reported
+     * unsupported rather than emitting a one-answer field that would roll back the import.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_with_a_single_option_blank_is_unsupported(): void {
+        $label = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $label('a1', 'cat') . $label('a2', 'dog') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $label('b1', 'blue') . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="d3" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * A dropdown Cloze flattens an HTML option with block boundaries (so New/York stays two
+     * words) and carries feedback authored for a distractor option, not only the correct one.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_flattens_block_html_and_keeps_distractor_feedback(): void {
+        $htmllabel = function (string $ident, string $markup): string {
+            return '<response_label ident="' . $ident . '"><material>'
+                . '<mattext texttype="text/html">' . htmlspecialchars($markup) . '</mattext></material></response_label>';
+        };
+        $plain = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $htmllabel('a1', '<p>New</p><p>York</p>') . $plain('a2', 'Boston') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $plain('b1', 'p') . $plain('b2', 'q') . '</render_choice></response_lid></presentation>';
+        // Blank 1: a1 (New York) is correct; a2 (Boston) is a distractor carrying feedback.
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">0</setvar><displayfeedback linkrefid="fbw"/></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>'
+            . '<itemfeedback ident="fbw"><material><mattext texttype="text/plain">Wrong city</mattext></material>'
+            . '</itemfeedback>';
+        $item = '<item ident="d4" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // The HTML block option keeps its word boundary, and the distractor keeps its feedback.
+        $this->assertStringContainsString('{1:MULTICHOICE:=New York~Boston#Wrong city}', $q->questiontext);
+    }
+
+    /**
+     * A dropdown whose scored option has no plain text (e.g. an image-only HTML option) has
+     * no credited answer, so the whole item is reported unsupported rather than emitting a
+     * MULTICHOICE field Moodle would import as unanswerable.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_with_empty_correct_option_is_unsupported(): void {
+        $htmllabel = function (string $ident, string $markup): string {
+            return '<response_label ident="' . $ident . '"><material>'
+                . '<mattext texttype="text/html">' . htmlspecialchars($markup) . '</mattext></material></response_label>';
+        };
+        $plain = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $htmllabel('a1', '<img src="x.png"/>') . $plain('a2', 'cat') . $plain('a3', 'dog')
+            . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $plain('b1', 'p') . $plain('b2', 'q') . '</render_choice></response_lid></presentation>';
+        // The scored option for blank 1 (a1) is the image-only one, which flattens to empty.
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="d5" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
+     * A dropdown blank whose scoring awards the same credit to two options marks both
+     * correct in the Cloze (either answer earns full marks), rather than only the last
+     * scored one; and the scored value is resolved by ident before text, so an option whose
+     * text equals another option's ident is not mis-credited, and feedback media is flattened.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_multi_correct_ident_first_and_flattened_feedback(): void {
+        $plain = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        };
+        // Blank 1 accepts both cat (a1) and dog (a2); fish (a3) is a distractor with feedback.
+        // Blank 2's first option's TEXT is literally "b2" while the scored ident is b2 (text
+        // "ok"), so ident resolution must beat the text collision.
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $plain('a1', 'cat') . $plain('a2', 'dog') . $plain('a3', 'fish') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $plain('b1', 'b2') . $plain('b2', 'ok') . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a3</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">0</setvar><displayfeedback linkrefid="fbf"/></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar><displayfeedback linkrefid="fbok"/></respcondition>'
+            . '</resprocessing>'
+            . '<itemfeedback ident="fbf"><material>'
+            . '<mattext texttype="text/html">' . htmlspecialchars('<p>Not <img src="x.png"/> a pet</p>')
+            . '</mattext></material></itemfeedback>'
+            . '<itemfeedback ident="fbok"><material><mattext texttype="text/plain">Yes</mattext></material></itemfeedback>';
+        $item = '<item ident="d6" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // Both accepted options are credited; the distractor's feedback is flattened (no img).
+        $this->assertStringContainsString('{1:MULTICHOICE:=cat~=dog~fish#Not a pet}', $q->questiontext);
+        // The scored ident b2 credits the "ok" option, not the earlier option whose text is "b2";
+        // and b2's ident-keyed feedback lands on "ok", not on the distractor whose text is "b2".
+        $this->assertStringContainsString('{1:MULTICHOICE:b2~=ok#Yes}', $q->questiontext);
+        $this->assertStringNotContainsString('b2#Yes', $q->questiontext);
+        $this->assertStringNotContainsString('<img', $q->questiontext);
+    }
+
+    /**
+     * A dropdown option whose text contains HTML metacharacters (e.g. "a < b") is HTML-encoded
+     * in the emitted field, since the Cloze is embedded in HTML question text and rendered in a
+     * dropdown — otherwise Moodle would read the option as markup.
+     *
+     * @return void
+     */
+    public function test_dropdown_cloze_html_encodes_option_text(): void {
+        $plain = function (string $ident, string $text): string {
+            return '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . htmlspecialchars($text) . '</mattext></material></response_label>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">One [1]; two [2].</mattext></material>'
+            . '<response_lid ident="response_1"><render_choice>'
+            . $plain('a1', 'a < b') . $plain('a2', 'H&M') . '</render_choice></response_lid>'
+            . '<response_lid ident="response_2"><render_choice>'
+            . $plain('b1', 'p') . $plain('b2', 'q') . '</render_choice></response_lid></presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_1">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar><displayfeedback linkrefid="fb1"/></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_2">b1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>'
+            . '<itemfeedback ident="fb1"><material><mattext texttype="text/plain">'
+            . htmlspecialchars('Use x < y') . '</mattext></material></itemfeedback>';
+        $item = '<item ident="d7" title="Dropdowns"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        // The < and & in both option text and feedback are HTML-encoded, not read as markup.
+        $this->assertStringContainsString('{1:MULTICHOICE:=a &lt; b#Use x &lt; y~H&amp;M}', $q->questiontext);
+        $this->assertStringNotContainsString('a < b', $q->questiontext);
+        $this->assertStringNotContainsString('x < y', $q->questiontext);
+    }
+
+    /**
      * A Canvas fill_in_multiple_blanks_question with two or more free-text blanks
      * becomes a Moodle Cloze: each [blank] placeholder in the stem is replaced by a
      * SHORTANSWER field built from that blank's accepted answers (its varequal values

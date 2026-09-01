@@ -492,6 +492,100 @@ XML;
     }
 
     /**
+     * #166: a Canvas multiple_dropdowns_question with per-blank (differing) choice sets is
+     * imported end-to-end as a real Moodle multianswer (Cloze) question — Moodle's own
+     * qformat_xml accepts the emitted XML — with a MULTICHOICE sub-question per blank.
+     *
+     * @return void
+     */
+    public function test_build_imports_multiple_dropdowns_question(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Dropdowns Quiz"><section ident="s1">'
+            . $this->mcitem() . $this->dropdownitem()
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/a1/qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/a1/qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $banks = $modinfo->get_instances_of('qbank');
+        $bank = reset($banks);
+        $context = \context_module::instance($bank->id);
+        $cat = question_get_default_category($context->id);
+
+        // The dropdown question imported as a multianswer (Moodle accepted our Cloze).
+        $sql = "SELECT q.id, q.qtype
+                  FROM {question} q
+                  JOIN {question_versions} qv ON qv.questionid = q.id
+                  JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                 WHERE qbe.questioncategoryid = ? AND q.qtype = ?";
+        $cloze = $DB->get_records_sql($sql, [$cat->id, 'multianswer']);
+        $this->assertCount(1, $cloze);
+        $clozeid = (int) reset($cloze)->id;
+        // Both embedded fields — one per blank — imported as inline-dropdown multichoice
+        // sub-questions (not shortanswer), keeping each blank's own option set.
+        $sequence = $DB->get_field('question_multianswer', 'sequence', ['question' => $clozeid]);
+        $subids = explode(',', $sequence);
+        $this->assertCount(2, $subids);
+        [$insql, $inparams] = $DB->get_in_or_equal($subids);
+        $subtypes = $DB->get_fieldset_select('question', 'qtype', "id $insql", $inparams);
+        $this->assertSame(['multichoice', 'multichoice'], $subtypes);
+    }
+
+    /**
+     * A native Canvas multiple_dropdowns_question with two blanks whose choice sets
+     * differ (cat/dog vs blue/red), so it converts to a Cloze rather than a match.
+     *
+     * @return string
+     */
+    private function dropdownitem(): string {
+        return '<item ident="dd1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>multiple_dropdowns_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material>'
+            . '<mattext texttype="text/html">A [b1] is furry; the sky is [b2].</mattext></material>'
+            . '<response_lid ident="response_b1"><render_choice>'
+            . '<response_label ident="b1-0"><material><mattext texttype="text/plain">cat</mattext></material>'
+            . '</response_label><response_label ident="b1-1"><material><mattext texttype="text/plain">dog</mattext>'
+            . '</material></response_label></render_choice></response_lid>'
+            . '<response_lid ident="response_b2"><render_choice>'
+            . '<response_label ident="b2-0"><material><mattext texttype="text/plain">blue</mattext></material>'
+            . '</response_label><response_label ident="b2-1"><material><mattext texttype="text/plain">red</mattext>'
+            . '</material></response_label></render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_b1">b1-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_b2">b2-0</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
      * A native Canvas calculated_question over two variables (a, b) with formula
      * "a^2+b" (a caret exponent, to exercise the ** translation), a fixed two-decimal
      * rounding and two pre-generated value rows.

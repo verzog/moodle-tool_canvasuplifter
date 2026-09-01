@@ -250,7 +250,7 @@ class qti_parser {
                 $this->fill_calculated($item, $question);
                 break;
             case qti_question::TYPE_CLOZE:
-                $this->fill_cloze($item, $presentation, $question);
+                $this->fill_cloze($item, $presentation, $question, $canvastype === 'multiple_dropdowns_question');
                 break;
             case qti_question::TYPE_ESSAY:
             default:
@@ -339,18 +339,21 @@ class qti_parser {
                 break;
             case 'multiple_dropdowns_question':
                 // Inline dropdowns: each blank is a response_lid with a fixed choice
-                // set. Two or more become a Moodle match (one stem/answer pair per
-                // blank) — but only when every blank offers the same choice set,
-                // because Moodle match has a single global answer pool; with per-blank
-                // choices one blank's options would wrongly be offered for another, so
-                // leave it unsupported. A single dropdown is a pick-from-list multiple
-                // choice and falls through to the cardinality fallback.
+                // set. When every blank offers the same choice set and carries its own
+                // stem text, the item is structurally a matching question and becomes a
+                // Moodle match (one stem/answer pair per blank). Otherwise — per-blank
+                // (differing) choice sets, or blanks referenced only by an [id] marker in
+                // the prompt with no per-blank stem — it becomes a Moodle Cloze: one
+                // MULTICHOICE field per blank, embedded inline at its [id] marker, which
+                // keeps each blank's own option set (unlike Moodle match's single global
+                // pool). A single dropdown falls through to the cardinality fallback.
                 $lidcount = $presentation !== null
                     ? $presentation->getElementsByTagNameNS('*', 'response_lid')->length : 0;
                 if ($lidcount >= 2) {
-                    return $this->blanks_share_choices($presentation) && $this->blanks_have_stems($presentation)
-                        ? qti_question::TYPE_MATCHING
-                        : qti_question::TYPE_UNSUPPORTED;
+                    if ($this->blanks_share_choices($presentation) && $this->blanks_have_stems($presentation)) {
+                        return qti_question::TYPE_MATCHING;
+                    }
+                    return qti_question::TYPE_CLOZE;
                 }
                 break;
         }
@@ -648,31 +651,46 @@ class qti_parser {
     }
 
     /**
-     * Populate a Canvas fill-in-multiple-blanks question as a Moodle Cloze.
+     * Populate a Canvas fill-in-multiple-blanks or inline-dropdown question as a Moodle
+     * Cloze.
      *
-     * Each blank is a <response_lid ident="response_<id>"> whose <render_choice>
-     * lists the acceptable answers as <response_label>s, and the stem carries a
-     * [<id>] placeholder per blank. The accepted answers for a blank are the scoring
-     * <varequal respident="response_<id>"> values, each resolved to the matching
-     * response_label's display text. Each placeholder is replaced in the stem with a
-     * Moodle SHORTANSWER Cloze field listing that blank's answers, so the whole
-     * question becomes a single multianswer item.
+     * Each blank is a <response_lid ident="response_<id>"> whose <render_choice> lists the
+     * options as <response_label>s, and the stem carries a [<id>] placeholder per blank.
+     * Each placeholder is replaced in the stem with a Cloze field so the whole question
+     * becomes a single multianswer item: a SHORTANSWER field listing the accepted answers
+     * for a free-text blank, or (when $dropdown is set) a MULTICHOICE field carrying that
+     * blank's fixed options with the scored <varequal respident="response_<id>"> value
+     * flagged correct.
      *
      * @param DOMElement $item The item element.
      * @param DOMElement|null $presentation The presentation element.
      * @param qti_question $question The question being built (modified in place).
+     * @param bool $dropdown Whether the source is an inline-dropdown item (MULTICHOICE
+     *                       fields) rather than a free-text one (SHORTANSWER fields).
      * @return void
      */
-    protected function fill_cloze(DOMElement $item, ?DOMElement $presentation, qti_question $question): void {
+    protected function fill_cloze(
+        DOMElement $item,
+        ?DOMElement $presentation,
+        qti_question $question,
+        bool $dropdown = false
+    ): void {
         if ($presentation === null) {
             return;
         }
         $stem = $question->questiontext;
-        $blanks = $this->cloze_blank_answers($presentation, $this->label_feedback_map($item));
-        // Count every response_lid the presentation declares, including any that
-        // cloze_blank_answers skipped for a missing ident: completeness is measured
-        // against the source blanks, not the already-filtered map, so a blank that was
-        // dropped there still fails the whole item rather than silently vanishing.
+        // Each blank becomes one Cloze field embedded at its [id] marker: a MULTICHOICE
+        // field (the fixed dropdown options, one flagged correct) for an inline-dropdown
+        // item, or a SHORTANSWER field (the accepted spellings) for a free-text one. Both
+        // return a blank id => field-string map, empty string for a blank with no usable
+        // answer so the completeness check below fails the whole item rather than gap it.
+        $fields = $dropdown
+            ? $this->cloze_dropdown_fields($item, $presentation)
+            : $this->cloze_text_fields($presentation, $this->label_feedback_map($item));
+        // Count every response_lid the presentation declares, including any that the
+        // field builders skipped for a missing ident: completeness is measured against the
+        // source blanks, not the already-filtered map, so a blank that was dropped there
+        // still fails the whole item rather than silently vanishing.
         $sourceblanks = 0;
         foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
             if ($lid instanceof DOMElement) {
@@ -682,19 +700,20 @@ class qti_parser {
         $replacements = [];
         $placedblanks = [];
         $rendered = $this->rendered_text($stem);
-        foreach ($blanks as $blankid => $accepted) {
+        foreach ($fields as $blankid => $field) {
             $marker = '[' . $blankid . ']';
             // A blank we cannot place is left unsupported (the whole item is dropped,
             // reported by name) rather than importing a partial or malformed Cloze. It is
-            // unplaceable when it has no accepted answer; when its [id] marker does not
-            // appear in the stem exactly once (missing, or duplicated into two graded
-            // fields); or when the marker survives only inside markup (an attribute like
-            // <img alt="[b1]">, or inert content like <script>[b1]</script>), where a
-            // substituted field would not sit in ordinary rendered text.
-            if ($accepted === [] || substr_count($stem, $marker) !== 1 || strpos($rendered, $marker) === false) {
+            // unplaceable when it produced no field (no accepted answer / no scored correct
+            // option); when its [id] marker does not appear in the stem exactly once
+            // (missing, or duplicated into two graded fields); or when the marker survives
+            // only inside markup (an attribute like <img alt="[b1]">, or inert content like
+            // <script>[b1]</script>), where a substituted field would not sit in ordinary
+            // rendered text.
+            if ($field === '' || substr_count($stem, $marker) !== 1 || strpos($rendered, $marker) === false) {
                 continue;
             }
-            $replacements[$marker] = $this->cloze_field($accepted);
+            $replacements[$marker] = $field;
             $placedblanks[] = $blankid;
         }
         // Every source blank must have produced exactly one placed field; a skipped or
@@ -727,7 +746,7 @@ class qti_parser {
         // reads as prose. A titled item keeps its title (derive_name prefers it).
         if (trim($item->getAttribute('title')) === '') {
             $gaps = [];
-            foreach (array_keys($blanks) as $blankid) {
+            foreach (array_keys($fields) as $blankid) {
                 $gaps['[' . $blankid . ']'] = ' ____ ';
             }
             $question->name = $this->derive_name($item, strtr($stem, $gaps));
@@ -794,7 +813,27 @@ class qti_parser {
      * @return string
      */
     protected function flatten_feedback(string $html): string {
-        return $this->collapse_ws(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5));
+        // Feedback is authored HTML, so a block or break element renders as a word boundary;
+        // replace it with a space before stripping tags so "<p>Try this</p><p>Then retry</p>"
+        // flattens to "Try this Then retry", not "Try thisThen retry" (the same block-aware
+        // treatment label_answer_text() gives dropdown option labels).
+        $spaced = $this->space_block_boundaries($html);
+        return $this->collapse_ws(html_entity_decode(strip_tags($spaced), ENT_QUOTES | ENT_HTML5));
+    }
+
+    /**
+     * Replace each block or line-break element with a space so its rendered word boundary
+     * survives a subsequent strip_tags(); inline elements are left for strip_tags() to remove
+     * without a boundary. Shared by the HTML flatteners so labels and feedback treat block
+     * boundaries the same way.
+     *
+     * @param string $html The HTML to space.
+     * @return string
+     */
+    protected function space_block_boundaries(string $html): string {
+        $block = '/<\s*\/?\s*(?:p|div|br|li|tr|td|th|thead|tbody|table|ul|ol|dl|dd|dt'
+            . '|h[1-6]|blockquote|section|article|header|footer|hr|pre|figure|figcaption)\b[^>]*>/i';
+        return (string) preg_replace($block, ' ', $html);
     }
 
     /**
@@ -814,9 +853,7 @@ class qti_parser {
             // space (<p>New</p><p>York</p> -> "New York"); an inline element (<b>, <sub>…)
             // renders with no boundary, so strip it without a space (<b>New</b>York ->
             // "NewYork", H<sub>2</sub>O -> "H2O"). Then decode entities and collapse.
-            $block = '/<\s*\/?\s*(?:p|div|br|li|tr|td|th|thead|tbody|table|ul|ol|dl|dd|dt'
-                . '|h[1-6]|blockquote|section|article|header|footer|hr|pre|figure|figcaption)\b[^>]*>/i';
-            $spaced = (string) preg_replace($block, ' ', $raw);
+            $spaced = $this->space_block_boundaries($raw);
             return $this->collapse_ws(html_entity_decode(strip_tags($spaced), ENT_QUOTES | ENT_HTML5));
         }
         return $this->collapse_ws($raw);
@@ -909,6 +946,216 @@ class qti_parser {
             ['\\\\', '\\{', '\\}', '\\#', '\\~', '\\*'],
             $text
         );
+    }
+
+    /**
+     * The Cloze field for each free-text blank, keyed by blank id: a SHORTANSWER field
+     * built from that blank's accepted answers, or '' when the blank has no accepted
+     * answer so {@see fill_cloze} drops the whole item rather than gapping it.
+     *
+     * @param DOMElement $presentation The presentation element.
+     * @param array $feedback Map of response_label ident to its Canvas feedback HTML.
+     * @return array Map of blank id to the Cloze field string.
+     */
+    protected function cloze_text_fields(DOMElement $presentation, array $feedback = []): array {
+        $fields = [];
+        foreach ($this->cloze_blank_answers($presentation, $feedback) as $blankid => $accepted) {
+            $fields[$blankid] = $accepted === [] ? '' : $this->cloze_field($accepted);
+        }
+        return $fields;
+    }
+
+    /**
+     * The Cloze field for each inline-dropdown blank, keyed by blank id: a MULTICHOICE
+     * field carrying that blank's fixed options with the scored answer flagged correct,
+     * or '' when the blank has no scored correct option so {@see fill_cloze} drops the
+     * whole item. The blank id is the response_lid ident with the "response_" prefix
+     * removed, matching the [id] marker in the prompt.
+     *
+     * @param DOMElement $item The item element.
+     * @param DOMElement $presentation The presentation element.
+     * @return array Map of blank id to the Cloze field string.
+     */
+    protected function cloze_dropdown_fields(DOMElement $item, DOMElement $presentation): array {
+        $correct = $this->dropdown_correct_values($item);
+        $feedback = $this->label_feedback_map($item);
+        $fields = [];
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if (!($lid instanceof DOMElement) || $lid->getAttribute('ident') === '') {
+                continue;
+            }
+            $blankid = (string) preg_replace('/^response_/', '', $lid->getAttribute('ident'));
+            $fields[$blankid] = $this->cloze_dropdown_field(
+                $lid,
+                $correct[$lid->getAttribute('ident')] ?? [],
+                $feedback
+            );
+        }
+        return $fields;
+    }
+
+    /**
+     * Every positively-scored value for each dropdown blank, keyed by respident. Unlike
+     * {@see matching_correct_map} (one value per respident, for a single-answer match row) a
+     * dropdown blank may award the same score to more than one acceptable option, so each is
+     * collected — the Cloze field credits them all. A value is a response_label ident or, for
+     * exporters that score by text, the displayed text.
+     *
+     * @param DOMElement $item The item element.
+     * @return array Map of respident to a list of positively-scored values.
+     */
+    protected function dropdown_correct_values(DOMElement $item): array {
+        $map = [];
+        $resprocessing = $this->first_child_element($item, 'resprocessing');
+        if ($resprocessing === null) {
+            return $map;
+        }
+        foreach ($resprocessing->getElementsByTagNameNS('*', 'respcondition') as $cond) {
+            if (!($cond instanceof DOMElement) || $this->condition_score($cond) <= 0) {
+                continue;
+            }
+            foreach ($cond->getElementsByTagNameNS('*', 'varequal') as $ve) {
+                if (!($ve instanceof DOMElement) || $this->within($ve, 'not')) {
+                    continue;
+                }
+                $respident = $ve->getAttribute('respident');
+                $value = trim($ve->textContent);
+                if ($respident !== '' && $value !== '') {
+                    $map[$respident][] = $value;
+                }
+            }
+        }
+        return $map;
+    }
+
+    /**
+     * Build a Moodle MULTICHOICE Cloze field from an inline dropdown's options, e.g.
+     * {1:MULTICHOICE:=Sensory~Motor}. Options are kept in author order (so a correct one is
+     * not always shown first); every option a scoring condition credits is fully credited
+     * with =, the rest are zero-credit distractors. Each scored value is resolved to an
+     * option by response_label ident first, and only when it matches no ident by normalised
+     * displayed text (mirroring {@see fill_choice_answers}), so an option whose text happens
+     * to equal another's ident can't be mis-credited. Response feedback authored for any
+     * option is flattened to plain text (as the SHORTANSWER path does, so media inside it is
+     * not left as an un-rewritten reference) and appended after a # separator. Returns '' (so
+     * {@see fill_cloze} drops the whole item, reported by name) when no credited option is
+     * actually emitted (none resolved, or every correct option's text flattened to empty) or
+     * fewer than two usable options remain, since a Moodle multichoice needs a correct answer
+     * and at least two choices or the import rolls back the whole bank.
+     *
+     * @param DOMElement $lid The response_lid element for the blank.
+     * @param array $scoredvalues The positively-scored values for the blank (idents or texts).
+     * @param array $feedback Map of scored value to its Canvas feedback HTML.
+     * @return string The Cloze field, or '' if it cannot be built.
+     */
+    protected function cloze_dropdown_field(DOMElement $lid, array $scoredvalues, array $feedback): string {
+        // The options in author order: [ident, block-aware flattened text].
+        $labels = [];
+        foreach ($lid->getElementsByTagNameNS('*', 'response_label') as $label) {
+            if ($label instanceof DOMElement) {
+                $labels[] = [$label->getAttribute('ident'), $this->label_answer_text($label)];
+            }
+        }
+        // Resolve each scored value to the ident(s) it credits: an exact ident match if the
+        // value names one, otherwise every option whose normalised text equals it.
+        $identset = [];
+        foreach ($labels as [$ident, $plain]) {
+            if ($ident !== '') {
+                $identset[$ident] = true;
+            }
+        }
+        $correctidents = [];
+        foreach ($scoredvalues as $value) {
+            if (isset($identset[$value])) {
+                $correctidents[$value] = true;
+                continue;
+            }
+            $vnorm = $this->normalise_answer_value((string) $value);
+            if ($vnorm === '') {
+                continue;
+            }
+            foreach ($labels as [$ident, $plain]) {
+                if ($ident !== '' && $this->normalise_answer_value($plain) === $vnorm) {
+                    $correctidents[$ident] = true;
+                }
+            }
+        }
+        // Index the feedback map by normalised text too, so an option whose feedback is keyed
+        // by displayed text (not its ident) still resolves it — but only for keys that are not
+        // themselves a label ident, so ident-keyed feedback is never re-attached to a different
+        // option whose displayed text merely equals that ident.
+        $feedbackbytext = [];
+        foreach ($feedback as $key => $text) {
+            if (!isset($identset[$key])) {
+                $feedbackbytext[$this->normalise_answer_value((string) $key)] = $text;
+            }
+        }
+        $options = [];
+        $usable = 0;
+        $correctemitted = false;
+        foreach ($labels as [$ident, $plain]) {
+            if ($plain === '') {
+                continue;
+            }
+            $usable++;
+            // The field is embedded in HTML question text and the option is rendered in a
+            // dropdown, so a literal < & > in the label (e.g. "a < b", "H&M") is HTML-encoded
+            // before the Cloze metacharacters are escaped, or Moodle would read it as markup.
+            $escaped = $this->cloze_escape(htmlspecialchars($plain, ENT_QUOTES | ENT_HTML5));
+            if ($ident !== '' && isset($correctidents[$ident])) {
+                $option = '=' . $escaped;
+                $correctemitted = true;
+            } else {
+                // A distractor whose text would begin with a Cloze credit token (= full
+                // credit, % percentage) is given an explicit %0% so Moodle can't read it
+                // as a correct answer; an ordinary distractor carries no prefix (0%).
+                $prefix = ($escaped !== '' && ($escaped[0] === '=' || $escaped[0] === '%')) ? '%0%' : '';
+                $option = $prefix . $escaped;
+            }
+            // Preserve response feedback authored for any option, keyed by its ident or — for
+            // text-keyed feedback — its normalised text, flattened to plain text.
+            $optfeedback = (string) ($feedback[$ident] ?? ($feedbackbytext[$this->normalise_answer_value($plain)] ?? ''));
+            if ($optfeedback !== '') {
+                // HTML-encode the flattened feedback for the same reason as the option text:
+                // it is appended into HTML question text, so a literal < & in it must not be
+                // read as markup.
+                $flat = htmlspecialchars($this->flatten_feedback($optfeedback), ENT_QUOTES | ENT_HTML5);
+                $option .= '#' . $this->cloze_escape($flat);
+            }
+            $options[] = $option;
+        }
+        // A Moodle multichoice needs a credited option actually emitted (a correct option
+        // whose text flattened to empty leaves none) and at least two usable options, or the
+        // import rolls back the whole bank; short of that the blank is left unplaceable.
+        if (!$correctemitted || $usable < 2) {
+            return '';
+        }
+        // Canvas can randomise a dropdown's option order (render_choice shuffle="Yes"); mirror
+        // that with Moodle's shuffled MULTICHOICE_S so the imported blank presents its options
+        // in the same random order rather than the fixed author order MULTICHOICE would keep.
+        $type = $this->render_choice_shuffles($lid) ? 'MULTICHOICE_S' : 'MULTICHOICE';
+        return '{1:' . $type . ':' . implode('~', $options) . '}';
+    }
+
+    /**
+     * Whether a blank's render_choice asks for its options to be shuffled. QTI 1.2 carries this
+     * as a shuffle attribute on render_choice (Canvas emits "Yes"); tolerate the rshuffle spelling
+     * some exporters use and any truthy value. Kept string-based so the parser stays Moodle-free.
+     *
+     * @param DOMElement $lid The response_lid element for the blank.
+     * @return bool
+     */
+    protected function render_choice_shuffles(DOMElement $lid): bool {
+        foreach ($lid->getElementsByTagNameNS('*', 'render_choice') as $choice) {
+            if (!($choice instanceof DOMElement)) {
+                continue;
+            }
+            $flag = strtolower(trim($choice->getAttribute('shuffle') . $choice->getAttribute('rshuffle')));
+            if ($flag === 'yes' || $flag === 'true' || $flag === '1') {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
