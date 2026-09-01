@@ -77,6 +77,18 @@ class qti_question {
     /** @var string General feedback (HTML), shown after answering. */
     public string $generalfeedback = '';
 
+    /** @var string Essay response format (TYPE_ESSAY only): 'editor', 'noinline', etc. */
+    public string $responseformat = 'editor';
+
+    /** @var int Whether an online text response is required for an essay (1) or not (0). */
+    public int $responserequired = 1;
+
+    /** @var int Number of file attachments an essay allows: 0, 1, 2, 3, or -1 for unlimited. */
+    public int $attachments = 0;
+
+    /** @var int Number of file attachments an essay requires (0..3, not exceeding attachments). */
+    public int $attachmentsrequired = 0;
+
     /** @var string Calculated formula (TYPE_CALCULATED only), in Moodle {var} syntax. */
     public string $formula = '';
 
@@ -104,6 +116,13 @@ class qti_question {
 
     /** @var string The raw CC profile, e.g. "cc.fib.v0p1" (for the support matrix). */
     public string $profile = '';
+
+    /**
+     * @var string The Canvas score_method for items whose grading mode matters to the
+     *             conversion, e.g. 'all_or_nothing' for a categorization mapped to a
+     *             partial-credit Moodle match. Empty when not applicable.
+     */
+    public string $scoremethod = '';
 
     /**
      * Whether Moodle's question importer can save this question as it stands.

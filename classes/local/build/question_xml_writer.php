@@ -111,7 +111,7 @@ class question_xml_writer {
                 $body .= $this->answers_xml($q, $imagedir, 'moodle_auto_format');
                 break;
             case 'essay':
-                $body .= $this->essay_xml();
+                $body .= $this->essay_xml($q);
                 break;
             case 'description':
                 // A description displays only its question text — no answers, no
@@ -383,14 +383,25 @@ class question_xml_writer {
     }
 
     /**
-     * Essay-specific fields.
+     * Essay-specific fields. The response format and attachment counts come from the
+     * question so a Canvas file-upload item (mapped to an essay) can drop the online
+     * text box and require a file, while a plain essay keeps the editor and no files.
      *
+     * @param qti_question $q The question.
      * @return string
      */
-    protected function essay_xml(): string {
-        return "    <responseformat>editor</responseformat>\n    <responserequired>1</responserequired>\n"
-            . "    <responsefieldlines>10</responsefieldlines>\n    <attachments>0</attachments>\n"
-            . "    <attachmentsrequired>0</attachmentsrequired>\n"
+    protected function essay_xml(qti_question $q): string {
+        $format = in_array($q->responseformat, ['editor', 'editorfilepicker', 'plain', 'monospaced', 'noinline'], true)
+            ? $q->responseformat : 'editor';
+        $required = $q->responserequired ? 1 : 0;
+        // Attachments may be -1 (unlimited) or 0..3; attachmentsrequired cannot exceed the
+        // number allowed, and unlimited (-1) permits any required count.
+        $attachments = ($q->attachments === -1 || ($q->attachments >= 0 && $q->attachments <= 3)) ? $q->attachments : 0;
+        $maxrequired = $attachments === -1 ? 3 : $attachments;
+        $attachmentsrequired = max(0, min($q->attachmentsrequired, $maxrequired));
+        return "    <responseformat>$format</responseformat>\n    <responserequired>$required</responserequired>\n"
+            . "    <responsefieldlines>10</responsefieldlines>\n    <attachments>$attachments</attachments>\n"
+            . "    <attachmentsrequired>$attachmentsrequired</attachmentsrequired>\n"
             . "    <graderinfo format=\"html\"><text></text></graderinfo>\n"
             . "    <responsetemplate format=\"html\"><text></text></responsetemplate>\n";
     }

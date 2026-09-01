@@ -241,7 +241,14 @@ class qti_parser {
                 }
                 break;
             case qti_question::TYPE_MATCHING:
-                $this->fill_matching($item, $presentation, $question);
+                if ($canvastype === 'categorization_question') {
+                    // Record Canvas's grading mode: an all-or-nothing categorization becomes a
+                    // partial-credit Moodle match, a fidelity gap the report flags for review.
+                    $question->scoremethod = $this->metadata_field($item, 'score_method');
+                    $this->fill_categorization($item, $presentation, $question);
+                } else {
+                    $this->fill_matching($item, $presentation, $question);
+                }
                 break;
             case qti_question::TYPE_NUMERICAL:
                 $this->fill_numerical_answers($item, $question);
@@ -253,6 +260,15 @@ class qti_parser {
                 $this->fill_cloze($item, $presentation, $question, $canvastype === 'multiple_dropdowns_question');
                 break;
             case qti_question::TYPE_ESSAY:
+                if ($canvastype === 'file_upload_question') {
+                    // A file-upload item takes a file, not typed text: drop the online
+                    // response box and require one attachment (allowing up to three).
+                    $question->responseformat = 'noinline';
+                    $question->responserequired = 0;
+                    $question->attachments = 3;
+                    $question->attachmentsrequired = 1;
+                }
+                break;
             default:
                 break;
         }
@@ -314,12 +330,22 @@ class qti_parser {
             case 'matching_question':
                 return qti_question::TYPE_MATCHING;
             case 'categorization_question':
+                // New Quizzes categorization: each response_lid is a category (its
+                // material names the bucket), its render_choice repeats the full item
+                // pool, and resprocessing lists which items belong in each category.
+                // That maps to a Moodle match — one stem/answer pair per categorised
+                // item (item -> category), many items sharing a category answer.
+                return qti_question::TYPE_MATCHING;
+            case 'file_upload_question':
+                // Canvas file-upload: the learner submits a file rather than typing a
+                // response. Moodle's closest equivalent is an essay configured to take
+                // (and require) a file attachment; the essay dispatch sets those fields.
+                return qti_question::TYPE_ESSAY;
             case 'ordering_question':
-                // New Quizzes categorization/ordering items carry a response_lid
-                // per bucket/position, so the cardinality fallback below would
-                // mis-read them as multichoice/multianswer. Moodle has no faithful
-                // equivalent (ddmarker/ordering are not core question types here),
-                // so name them explicitly and leave them unsupported.
+                // New Quizzes ordering items carry a response_lid per position, so the
+                // cardinality fallback below would mis-read them as multichoice/multianswer.
+                // Moodle has no faithful core equivalent (ordering is not a core question
+                // type here), so name it explicitly and leave it unsupported.
                 return qti_question::TYPE_UNSUPPORTED;
             case 'fill_in_multiple_blanks_question':
                 // Free-text blanks: each blank is a response_lid whose render_choice
@@ -1731,6 +1757,63 @@ class qti_parser {
             if ($plain !== '' && !isset($usedanswers[$plain])) {
                 $usedanswers[$plain] = true;
                 $question->subquestions[] = ['text' => '', 'answer' => $plain];
+            }
+        }
+    }
+
+    /**
+     * Populate the stem/answer pairs for a Canvas categorization question, mapped to a
+     * Moodle match.
+     *
+     * Canvas authors each category as a <response_lid>: its own <material> names the
+     * category (the match answer), its <render_choice> repeats the full pool of items,
+     * and <resprocessing> lists — via one <varequal> per item — which items belong in
+     * that category. Each categorised item becomes one Moodle subquestion whose stem is
+     * the item text and whose answer is the category name, so several items can share a
+     * category. Items in no positive condition (Canvas "distractor" items that belong to
+     * no bucket) are dropped, since Moodle's match has no unmatched-item concept.
+     *
+     * @param DOMElement $item The item element.
+     * @param DOMElement|null $presentation The presentation element.
+     * @param qti_question $question The question being built (modified in place).
+     * @return void
+     */
+    protected function fill_categorization(DOMElement $item, ?DOMElement $presentation, qti_question $question): void {
+        if ($presentation === null) {
+            return;
+        }
+        // Each category respident maps to the list of item idents scored into it.
+        $members = $this->dropdown_correct_values($item);
+        // The item pool is repeated in every category's render_choice with stable idents,
+        // so one map (ident => item text) resolves every scored item; and each category's
+        // own material names the answer.
+        $itemtext = [];
+        $categoryname = [];
+        foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
+            if (!($lid instanceof DOMElement) || $lid->getAttribute('ident') === '') {
+                continue;
+            }
+            $material = $this->first_child_element($lid, 'material');
+            $categoryname[$lid->getAttribute('ident')] = $material !== null
+                ? $this->plain_answer($this->mattext($material)) : '';
+            foreach ($this->choice_label_map($lid) as $ident => $text) {
+                $itemtext[$ident] = $text;
+            }
+        }
+        foreach ($members as $respident => $idents) {
+            $answer = $categoryname[$respident] ?? '';
+            if ($answer === '') {
+                continue;
+            }
+            foreach ($idents as $ident) {
+                // Keep the item's own HTML as the match stem (as fill_matching does), so a
+                // formatted or image-only label survives — the matching writer embeds its
+                // media. Only the category name (the answer) is flattened to plain text.
+                $stem = $itemtext[$ident] ?? '';
+                if (trim($stem) === '') {
+                    continue;
+                }
+                $question->subquestions[] = ['text' => $stem, 'answer' => $answer];
             }
         }
     }
