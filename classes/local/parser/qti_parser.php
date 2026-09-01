@@ -960,6 +960,7 @@ class qti_parser {
      */
     protected function cloze_dropdown_fields(DOMElement $item, DOMElement $presentation): array {
         $correct = $this->matching_correct_map($item);
+        $feedback = $this->label_feedback_map($item);
         $fields = [];
         foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
             if (!($lid instanceof DOMElement) || $lid->getAttribute('ident') === '') {
@@ -967,8 +968,9 @@ class qti_parser {
             }
             $blankid = (string) preg_replace('/^response_/', '', $lid->getAttribute('ident'));
             $fields[$blankid] = $this->cloze_dropdown_field(
-                $this->choice_label_map($lid),
-                $correct[$lid->getAttribute('ident')] ?? ''
+                $lid,
+                $correct[$lid->getAttribute('ident')] ?? '',
+                $feedback
             );
         }
         return $fields;
@@ -976,29 +978,63 @@ class qti_parser {
 
     /**
      * Build a Moodle MULTICHOICE Cloze field from an inline dropdown's options, e.g.
-     * {1:MULTICHOICE:=Sensory~Motor}. The scored option (its response_label ident) is the
-     * fully-credited answer (=); the rest are zero-credit distractors kept in author
-     * order. Returns '' when the scored ident is missing or its text is empty, so the
-     * blank is treated as unplaceable rather than emitting a field with no correct answer.
+     * {1:MULTICHOICE:=Sensory~Motor}. Options are kept in author order (so the correct one
+     * is not always shown first); the scored option is fully credited with =, the rest are
+     * zero-credit distractors. The scored value is resolved to an option by its
+     * response_label ident first, then — for exporters that score by displayed text — by
+     * its normalised text. Response feedback linked to the scored option is appended after
+     * a # separator. Returns '' (so {@see fill_cloze} drops the whole item, reported by
+     * name) when no scored option resolves or fewer than two usable options remain, since a
+     * Moodle multichoice needs a correct answer and at least two choices or the import rolls
+     * back the whole bank.
      *
-     * @param array $choices Map of response_label ident to its display text.
-     * @param string $correctident The response_label ident scored correct for the blank.
-     * @return string The Cloze field, or '' if no scored option resolves.
+     * @param DOMElement $lid The response_lid element for the blank.
+     * @param string $scored The scored value for the blank (a response_label ident or text).
+     * @param array $feedback Map of scored value to its Canvas feedback HTML.
+     * @return string The Cloze field, or '' if it cannot be built.
      */
-    protected function cloze_dropdown_field(array $choices, string $correctident): string {
-        $correcttext = isset($choices[$correctident]) ? $this->plain_answer($choices[$correctident]) : '';
-        if ($correcttext === '') {
-            return '';
+    protected function cloze_dropdown_field(DOMElement $lid, string $scored, array $feedback): string {
+        $choices = $this->choice_label_map($lid);
+        // Resolve the correct option: an exact ident match, else the option whose normalised
+        // text equals the scored value (some exporters score a dropdown by displayed text).
+        $correctident = '';
+        if (isset($choices[$scored])) {
+            $correctident = $scored;
+        } else {
+            $target = $this->normalise_answer_value($scored);
+            foreach ($choices as $ident => $text) {
+                if ($target !== '' && $this->normalise_answer_value($text) === $target) {
+                    $correctident = $ident;
+                    break;
+                }
+            }
         }
-        $options = ['=' . $this->cloze_escape($correcttext)];
+        $correctfeedback = (string) ($feedback[$scored] ?? '');
+        $options = [];
+        $usable = 0;
         foreach ($choices as $ident => $text) {
-            if ($ident === $correctident) {
+            $plain = $this->plain_answer($text);
+            if ($plain === '') {
                 continue;
             }
-            $plain = $this->plain_answer($text);
-            if ($plain !== '') {
-                $options[] = $this->cloze_escape($plain);
+            $usable++;
+            $escaped = $this->cloze_escape($plain);
+            if ($ident === $correctident) {
+                $option = '=' . $escaped;
+                if ($correctfeedback !== '') {
+                    $option .= '#' . $this->cloze_escape($correctfeedback);
+                }
+            } else {
+                // A distractor whose text would begin with a Cloze credit token (= full
+                // credit, % percentage) is given an explicit %0% so Moodle can't read it
+                // as the correct answer; an ordinary distractor carries no prefix (0%).
+                $prefix = ($escaped !== '' && ($escaped[0] === '=' || $escaped[0] === '%')) ? '%0%' : '';
+                $option = $prefix . $escaped;
             }
+            $options[] = $option;
+        }
+        if ($correctident === '' || $usable < 2) {
+            return '';
         }
         return '{1:MULTICHOICE:' . implode('~', $options) . '}';
     }
