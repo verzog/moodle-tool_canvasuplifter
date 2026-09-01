@@ -242,6 +242,9 @@ class qti_parser {
                 break;
             case qti_question::TYPE_MATCHING:
                 if ($canvastype === 'categorization_question') {
+                    // Record Canvas's grading mode: an all-or-nothing categorization becomes a
+                    // partial-credit Moodle match, a fidelity gap the report flags for review.
+                    $question->scoremethod = $this->metadata_field($item, 'score_method');
                     $this->fill_categorization($item, $presentation, $question);
                 } else {
                     $this->fill_matching($item, $presentation, $question);
@@ -1803,8 +1806,11 @@ class qti_parser {
                 continue;
             }
             foreach ($idents as $ident) {
-                $stem = $this->plain_answer($itemtext[$ident] ?? '');
-                if ($stem === '') {
+                // Keep the item's own HTML as the match stem (as fill_matching does), so a
+                // formatted or image-only label survives — the matching writer embeds its
+                // media. Only the category name (the answer) is flattened to plain text.
+                $stem = $itemtext[$ident] ?? '';
+                if (trim($stem) === '') {
                     continue;
                 }
                 $question->subquestions[] = ['text' => $stem, 'answer' => $answer];

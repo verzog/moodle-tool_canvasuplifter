@@ -13,7 +13,10 @@ quickly.
   `<resprocessing>` listing each category's member items — is imported as a Moodle match: one
   stem/answer pair per categorised item (item → category), so several items can share a
   category answer. Items belonging to no category (Canvas distractor items) are dropped, as
-  Moodle's match has no unmatched-item concept. A `file_upload_question` is imported as a
+  Moodle's match has no unmatched-item concept. Because Canvas categorization uses all-or-nothing
+  scoring while a Moodle match awards partial credit per correct item, a converted all-or-nothing
+  categorization is flagged in the conversion report so a grader can review its grading. A
+  `file_upload_question` is imported as a
   Moodle essay configured to take a file rather than typed text (`noinline` response format,
   one required attachment, three allowed). Both are verified end-to-end through Moodle's own
   `qformat_xml` importer, and the analyse question-type matrix counts them among the supported

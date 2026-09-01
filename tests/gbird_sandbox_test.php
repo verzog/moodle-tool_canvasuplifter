@@ -507,6 +507,17 @@ final class gbird_sandbox_test extends \advanced_testcase {
     }
 
     /**
+     * The fixture's categorization questions use Canvas all-or-nothing scoring, which imports
+     * as a partial-credit Moodle match; the report raises the warnreportcategorization warning
+     * so a grader knows to review those questions' grading (#169).
+     *
+     * @return void
+     */
+    public function test_gbird_sandbox_warns_about_categorization_scoring(): void {
+        $this->assertContains('warnreportcategorization', $this->fixture_report()['warnings']);
+    }
+
+    /**
      * Regression guard for issue #125: the fixture's unpublished "Accredible"
      * ContextExternalTool (a Canvas external tool with an inline LTI launch URL,
      * whose module_meta item references a CC resource no manifest resource

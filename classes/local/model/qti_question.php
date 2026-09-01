@@ -118,6 +118,13 @@ class qti_question {
     public string $profile = '';
 
     /**
+     * @var string The Canvas score_method for items whose grading mode matters to the
+     *             conversion, e.g. 'all_or_nothing' for a categorization mapped to a
+     *             partial-credit Moodle match. Empty when not applicable.
+     */
+    public string $scoremethod = '';
+
+    /**
      * Whether Moodle's question importer can save this question as it stands.
      *
      * Moodle rejects — and rolls the whole import batch back on — choice

@@ -67,6 +67,13 @@ class conversion_report {
     protected bool $quizfrombank;
 
     /**
+     * @var bool Set while tallying the question matrix when at least one all-or-nothing
+     *           categorization was converted to a partial-credit match, so the report can
+     *           warn that those questions' grading should be reviewed.
+     */
+    private bool $categorizationapprox = false;
+
+    /**
      * Constructor.
      *
      * @param course_model $course The parsed course model.
@@ -394,6 +401,10 @@ class conversion_report {
             }
         }
 
+        // Build the question-type matrix first: it sets $this->categorizationapprox as a
+        // side effect, which the warnings below read.
+        $questionmatrix = $this->question_type_matrix();
+
         // Warnings are language string keys, resolved to text by the caller.
         $warnings = [];
         // A Blackboard-native package is not Common Cartridge, so nothing builds from
@@ -428,6 +439,12 @@ class conversion_report {
         if ($this->duplicate_file_count() > 0) {
             $warnings[] = 'warnreportduplicates';
         }
+        // A Canvas all-or-nothing categorization imports as a partial-credit Moodle match,
+        // so partially-correct responses score higher than Canvas would award; flag it so a
+        // grader can review the converted questions' grading.
+        if ($this->categorizationapprox) {
+            $warnings[] = 'warnreportcategorization';
+        }
 
         return [
             'coursename' => $this->course->fullname,
@@ -441,7 +458,7 @@ class conversion_report {
             'orphans' => $this->orphan_detail(),
             'warnings' => $warnings,
             'unknowntypes' => $this->counts_by_resourcetype(item::KIND_UNKNOWN),
-            'questionmatrix' => $this->question_type_matrix(),
+            'questionmatrix' => $questionmatrix,
             'outcomes' => $this->outcomes_summary(),
         ];
     }
@@ -634,6 +651,12 @@ class conversion_report {
         foreach ($questions as $question) {
             if ($question->is_importable()) {
                 $acc['supported'][$question->type] = ($acc['supported'][$question->type] ?? 0) + 1;
+                // An all-or-nothing categorization imports as a partial-credit match, which
+                // grades partial responses more leniently than Canvas; note it so the report
+                // warns the grading should be reviewed.
+                if ($question->type === qti_question::TYPE_MATCHING && $question->scoremethod === 'all_or_nothing') {
+                    $this->categorizationapprox = true;
+                }
             } else if ($question->type === qti_question::TYPE_UNSUPPORTED) {
                 $label = $question->profile !== '' ? $question->profile : '(unknown)';
                 $acc['unsupported'][$label] = ($acc['unsupported'][$label] ?? 0) + 1;
