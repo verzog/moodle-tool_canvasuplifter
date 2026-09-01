@@ -5,6 +5,21 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.76.0] - 2026-09-01
+
+- **Canvas calendar events now import** (#168). A Canvas package's
+  `course_settings/events.xml` calendar events are created as Moodle **course** calendar
+  events (`calendar_event`, event type `course`), carrying each event's title,
+  description, start time and duration. Canvas stores start/end as ISO-8601 UTC, which the
+  parser resolves to Unix timestamps; an all-day event pins to its date's midnight with
+  zero duration, and a non-active (e.g. deleted) event is skipped. Event descriptions are
+  fed through the same second-pass link rewriting and `$IMS-CC-FILEBASE$` media embedding
+  as page/outcome content, so internal `$WIKI_REFERENCE$`/`$CANVAS_OBJECT_REFERENCE$`
+  links and inline images resolve. The build report notes the number of events imported
+  (and any skipped for lack of a start time). Assignment/quiz due dates are not in
+  `events.xml` — Canvas attaches them to the activity — so there is nothing to
+  de-duplicate against the activities' own dates.
+
 ## [0.75.0] - 2026-09-01
 
 - **Categorization and file-upload questions now convert** (#169). A Canvas

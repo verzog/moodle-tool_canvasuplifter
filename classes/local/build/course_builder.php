@@ -162,6 +162,10 @@ class course_builder {
         // and hidden until the site's "Enable outcomes" advanced setting is on.
         $outcomebuilder = new outcome_builder($this->packageroot, $this->mediareport);
         $outcomecount = $outcomebuilder->build($course);
+        // Import Canvas calendar events as course calendar events. Descriptions are
+        // link-rewritten in the second pass once every internal target exists.
+        $calendarbuilder = new calendar_builder($this->packageroot, $this->mediareport);
+        $eventcount = $calendarbuilder->build($course);
         // Hold the rubric library so attach_rubric() can look up by Canvas id
         // when each assignment is built.
         $this->rubrics = $coursemodel->rubrics;
@@ -395,6 +399,7 @@ class course_builder {
         $this->rewrite_lti_links((int) $course->id, $urlmap);
         $this->rewrite_question_links($this->imported_question_ids($builders, $bankregistry), $urlmap);
         $this->rewrite_outcome_links($outcomebuilder->createdids, $urlmap);
+        $this->rewrite_event_links($calendarbuilder->createdids, $urlmap);
 
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
@@ -456,6 +461,15 @@ class course_builder {
         }
         if ($outcomebuilder->malformedfile) {
             $warnings[] = get_string('warnoutcomesmalformed', 'tool_canvasuplifter');
+        }
+        if ($eventcount > 0) {
+            $warnings[] = get_string('noteeventsimported', 'tool_canvasuplifter', $eventcount);
+        }
+        if ($calendarbuilder->skippedcount > 0) {
+            $warnings[] = get_string('warneventsskipped', 'tool_canvasuplifter', $calendarbuilder->skippedcount);
+        }
+        if ($calendarbuilder->malformedfile) {
+            $warnings[] = get_string('warneventsmalformed', 'tool_canvasuplifter');
         }
         if ($coursemodel->canvasboilerplatedropped > 0) {
             $warnings[] = get_string(
@@ -1212,6 +1226,34 @@ class course_builder {
             $newdesc = $rewriter->rewrite_internal_links((string) $record->description, $urlmap);
             if ($newdesc !== $record->description) {
                 $DB->set_field('grade_outcomes', 'description', $newdesc, ['id' => $record->id]);
+            }
+        }
+    }
+
+    /**
+     * Rewrite internal Canvas links in imported calendar-event descriptions once every
+     * link target exists. Events are created up front (before the URL map is complete),
+     * so any $WIKI_REFERENCE$/$CANVAS_OBJECT_REFERENCE$ tokens in their descriptions are
+     * resolved here in the same second pass as pages and outcomes.
+     *
+     * @param array $eventids Ids of the calendar events to process.
+     * @param array $urlmap Canvas reference key => URL.
+     * @return void
+     */
+    private function rewrite_event_links(array $eventids, array $urlmap): void {
+        global $DB;
+        if (empty($eventids) || empty($urlmap)) {
+            return;
+        }
+        $rewriter = new link_rewriter();
+        foreach ($eventids as $id) {
+            $record = $DB->get_record('event', ['id' => (int) $id], 'id, description');
+            if (!$record) {
+                continue;
+            }
+            $newdesc = $rewriter->rewrite_internal_links((string) $record->description, $urlmap);
+            if ($newdesc !== $record->description) {
+                $DB->set_field('event', 'description', $newdesc, ['id' => $record->id]);
             }
         }
     }
