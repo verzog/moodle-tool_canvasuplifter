@@ -986,10 +986,12 @@ final class qti_parser_test extends \basic_testcase {
             . '<respcondition><conditionvar><varequal respident="response_1">a3</varequal></conditionvar>'
             . '<setvar varname="SCORE" action="Add">0</setvar><displayfeedback linkrefid="fbf"/></respcondition>'
             . '<respcondition><conditionvar><varequal respident="response_2">b2</varequal></conditionvar>'
-            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>'
+            . '<setvar varname="SCORE" action="Add">50</setvar><displayfeedback linkrefid="fbok"/></respcondition>'
+            . '</resprocessing>'
             . '<itemfeedback ident="fbf"><material>'
             . '<mattext texttype="text/html">' . htmlspecialchars('<p>Not <img src="x.png"/> a pet</p>')
-            . '</mattext></material></itemfeedback>';
+            . '</mattext></material></itemfeedback>'
+            . '<itemfeedback ident="fbok"><material><mattext texttype="text/plain">Yes</mattext></material></itemfeedback>';
         $item = '<item ident="d6" title="Dropdowns"><itemmetadata><qtimetadata>'
             . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
             . '<fieldentry>multiple_dropdowns_question</fieldentry>'
@@ -1000,8 +1002,10 @@ final class qti_parser_test extends \basic_testcase {
         $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
         // Both accepted options are credited; the distractor's feedback is flattened (no img).
         $this->assertStringContainsString('{1:MULTICHOICE:=cat~=dog~fish#Not a pet}', $q->questiontext);
-        // The scored ident b2 credits the "ok" option, not the earlier option whose text is "b2".
-        $this->assertStringContainsString('{1:MULTICHOICE:b2~=ok}', $q->questiontext);
+        // The scored ident b2 credits the "ok" option, not the earlier option whose text is "b2";
+        // and b2's ident-keyed feedback lands on "ok", not on the distractor whose text is "b2".
+        $this->assertStringContainsString('{1:MULTICHOICE:b2~=ok#Yes}', $q->questiontext);
+        $this->assertStringNotContainsString('b2#Yes', $q->questiontext);
         $this->assertStringNotContainsString('<img', $q->questiontext);
     }
 

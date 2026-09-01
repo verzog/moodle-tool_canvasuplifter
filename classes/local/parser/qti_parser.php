@@ -1063,10 +1063,14 @@ class qti_parser {
             }
         }
         // Index the feedback map by normalised text too, so an option whose feedback is keyed
-        // by displayed text (not its ident) still resolves it.
+        // by displayed text (not its ident) still resolves it — but only for keys that are not
+        // themselves a label ident, so ident-keyed feedback is never re-attached to a different
+        // option whose displayed text merely equals that ident.
         $feedbackbytext = [];
         foreach ($feedback as $key => $text) {
-            $feedbackbytext[$this->normalise_answer_value((string) $key)] = $text;
+            if (!isset($identset[$key])) {
+                $feedbackbytext[$this->normalise_answer_value((string) $key)] = $text;
+            }
         }
         $options = [];
         $usable = 0;
