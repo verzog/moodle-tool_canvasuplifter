@@ -5,6 +5,20 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.75.0] - 2026-09-01
+
+- **Categorization and file-upload questions now convert** (#169). A Canvas
+  `categorization_question` — authored as one `<response_lid>` per category (its `<material>`
+  names the bucket), the full item pool repeated in every `<render_choice>`, and
+  `<resprocessing>` listing each category's member items — is imported as a Moodle match: one
+  stem/answer pair per categorised item (item → category), so several items can share a
+  category answer. Items belonging to no category (Canvas distractor items) are dropped, as
+  Moodle's match has no unmatched-item concept. A `file_upload_question` is imported as a
+  Moodle essay configured to take a file rather than typed text (`noinline` response format,
+  one required attachment, three allowed). Both are verified end-to-end through Moodle's own
+  `qformat_xml` importer, and the analyse question-type matrix counts them among the supported
+  types; `ordering_question` and `hot_spot_question` remain unsupported.
+
 ## [0.59.0] - 2026-08-12
 
 - **Free-text multi-blank questions now convert** (roadmap Phase 8, final type). A Canvas

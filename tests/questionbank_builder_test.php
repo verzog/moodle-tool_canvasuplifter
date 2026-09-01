@@ -586,6 +586,127 @@ XML;
     }
 
     /**
+     * A native Canvas categorization_question imports as a Moodle match (item -> category)
+     * and a file_upload_question imports as a Moodle essay requiring a file attachment.
+     *
+     * @return void
+     */
+    public function test_build_imports_categorization_and_file_upload(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/questionlib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz/a1', 0777, true);
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Mixed Quiz"><section ident="s1">'
+            . $this->categorizationitem() . $this->fileuploaditem()
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/a1/qti.xml', $qti);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p3/assessment">
+      <file href="quiz/a1/qti.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $banks = $modinfo->get_instances_of('qbank');
+        $bank = reset($banks);
+        $context = \context_module::instance($bank->id);
+        $cat = question_get_default_category($context->id);
+        $sql = "SELECT q.id, q.qtype
+                  FROM {question} q
+                  JOIN {question_versions} qv ON qv.questionid = q.id
+                  JOIN {question_bank_entries} qbe ON qbe.id = qv.questionbankentryid
+                 WHERE qbe.questioncategoryid = ? AND q.qtype = ?";
+
+        // The categorization imported as a match with one subquestion per categorised item.
+        $match = $DB->get_records_sql($sql, [$cat->id, 'match']);
+        $this->assertCount(1, $match);
+        $matchid = (int) reset($match)->id;
+        $subs = $DB->get_records('qtype_match_subquestions', ['questionid' => $matchid], '', 'id, questiontext, answertext');
+        $pairs = [];
+        foreach ($subs as $sub) {
+            $pairs[trim(strip_tags($sub->questiontext))] = $sub->answertext;
+        }
+        $this->assertSame('Animals', $pairs['Hamster']);
+        $this->assertSame('Animals', $pairs['Cat']);
+        $this->assertSame('Plants', $pairs['Rose']);
+
+        // The file upload imported as an essay requiring one file, no online text box.
+        $essay = $DB->get_records_sql($sql, [$cat->id, 'essay']);
+        $this->assertCount(1, $essay);
+        $essayid = (int) reset($essay)->id;
+        $options = $DB->get_record('qtype_essay_options', ['questionid' => $essayid]);
+        $this->assertSame('noinline', $options->responseformat);
+        $this->assertSame(3, (int) $options->attachments);
+        $this->assertSame(1, (int) $options->attachmentsrequired);
+    }
+
+    /**
+     * A native Canvas categorization_question: two categories (Animals, Plants), the full
+     * item pool repeated in each category's render_choice, and resprocessing listing each
+     * category's member items.
+     *
+     * @return string
+     */
+    private function categorizationitem(): string {
+        $labels = ['i1' => 'Hamster', 'i2' => 'Cat', 'i3' => 'Rose', 'i4' => 'Thistle'];
+        $pool = '';
+        foreach ($labels as $ident => $text) {
+            $pool .= '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        }
+        $category = function (string $ident, string $name) use ($pool): string {
+            return '<response_lid ident="' . $ident . '" rcardinality="Multiple">'
+                . '<material><mattext texttype="text/plain">' . $name . '</mattext></material>'
+                . '<render_choice>' . $pool . '</render_choice></response_lid>';
+        };
+        return '<item ident="cat1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>categorization_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">Organise these.</mattext></material>'
+            . $category('cA', 'Animals') . $category('cB', 'Plants') . '</presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition><conditionvar>'
+            . '<varequal respident="cA">i1</varequal><varequal respident="cA">i2</varequal>'
+            . '</conditionvar><setvar varname="SCORE" action="Add">50.00</setvar></respcondition>'
+            . '<respcondition><conditionvar>'
+            . '<varequal respident="cB">i3</varequal><varequal respident="cB">i4</varequal>'
+            . '</conditionvar><setvar varname="SCORE" action="Add">50.00</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
+     * A native Canvas file_upload_question, which imports as an essay requiring a file.
+     *
+     * @return string
+     */
+    private function fileuploaditem(): string {
+        return '<item ident="fu1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>file_upload_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">Upload your essay.</mattext>'
+            . '</material></presentation></item>';
+    }
+
+    /**
      * A native Canvas calculated_question over two variables (a, b) with formula
      * "a^2+b" (a caret exponent, to exercise the ** translation), a fixed two-decimal
      * rounding and two pre-generated value rows.

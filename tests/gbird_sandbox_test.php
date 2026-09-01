@@ -42,8 +42,9 @@ use tool_canvasuplifter\local\report\conversion_report;
  * LTI placeholder instead of being dropped (issue #125), orphan activities whose
  * unpublished state is derived from their own metadata (#126), external-tool
  * assignments re-homed as LTI placeholders (#128), quiz grade items routed to
- * their Canvas assignment group (#130), categorization/ordering questions marked
- * unsupported rather than mis-counted (#129), and files_meta hidden files imported
+ * their Canvas assignment group (#130), ordering questions marked unsupported
+ * rather than mis-counted (#129; categorization now converts to a match, #169),
+ * and files_meta hidden files imported
  * hidden (#131). questionbank_builder's native-QTI fallback (#127) is exercised by
  * questionbank_builder_test; here the two orphan banks still report as mod_qbank.
  *
@@ -140,10 +141,11 @@ final class gbird_sandbox_test extends \advanced_testcase {
         // 16 questions across the referenced "New quiz engine" (12) and the orphan
         // "New quiz engine (question bank)" (4) - both read through the native-QTI
         // fallback now that questionbank_builder has it too (#127), so the report
-        // mirrors what builds. Since #129, categorization_question and
-        // ordering_question are unsupported rather than mis-read as choice questions.
+        // mirrors what builds. Since #169, categorization_question converts to a Moodle
+        // match and file_upload_question to an essay; ordering_question and
+        // hot_spot_question remain unsupported (no faithful core equivalent).
         $this->assertSame(16, $matrix['total']);
-        $this->assertSame(11, $matrix['supported']);
+        $this->assertSame(14, $matrix['supported']);
 
         // A supported row (importable type, no dropped-source attribution).
         $supported = static fn(string $label, int $count): array => [
@@ -164,17 +166,14 @@ final class gbird_sandbox_test extends \advanced_testcase {
             $supported('calculated', 1),
             $supported('cloze', 1),
             $supported('description', 2),
-            $supported('essay', 1),
-            $supported('matching', 2),
+            // The referenced quiz's essay plus the file_upload_question, now imported as
+            // an essay requiring a file attachment (#169).
+            $supported('essay', 2),
+            // The two matching_question items plus the two categorization items, now
+            // imported as matches (item -> category) (#169).
+            $supported('matching', 4),
             $supported('multianswer', 3),
             $supported('numerical', 1),
-            // The orphan bank and the referenced quiz each contribute one
-            // categorization item, so it carries two source attributions.
-            $newquiz('categorization_question', 2, [
-                ['name' => 'New quiz engine (question bank)', 'count' => 1],
-                ['name' => 'New quiz engine', 'count' => 1],
-            ]),
-            $newquiz('file_upload_question', 1, $engine),
             $newquiz('ordering_question', 1, $engine),
             $newquiz('hot_spot_question', 1, $engine),
         ], $matrix['rows']);
@@ -474,16 +473,17 @@ final class gbird_sandbox_test extends \advanced_testcase {
     }
 
     /**
-     * Regression guard for issue #129: the native QTI carries a
-     * categorization_question and an ordering_question, which qti_parser::map_type()
-     * once left to the response-cardinality heuristic - silently mis-counting them
-     * as supported multi-answer / multiple-choice questions. They are now mapped to
-     * TYPE_UNSUPPORTED, so each appears as its own unsupported row in the matrix,
-     * attributed to the "New quiz engine" assessment they came from.
+     * The native QTI carries a categorization_question and an ordering_question, which
+     * qti_parser::map_type() once left to the response-cardinality heuristic - silently
+     * mis-counting them as multi-answer / multiple-choice questions (issue #129). Since
+     * #169 categorization converts to a Moodle match, so it no longer appears as its own
+     * unsupported row (it is folded into the supported "matching" row); ordering has no
+     * faithful core equivalent, so it stays TYPE_UNSUPPORTED as its own named row - the
+     * guard that neither is mis-read as a choice question.
      *
      * @return void
      */
-    public function test_gbird_sandbox_categorization_ordering_are_unsupported(): void {
+    public function test_gbird_sandbox_categorization_converts_ordering_unsupported(): void {
         $qti = '';
         foreach (glob(__DIR__ . '/fixtures/gbird_sandbox/non_cc_assessments/*.qti') as $file) {
             $qti .= file_get_contents($file);
@@ -496,19 +496,14 @@ final class gbird_sandbox_test extends \advanced_testcase {
         foreach ($rows as $row) {
             $byid[$row['label']] = $row;
         }
-        foreach (['categorization_question', 'ordering_question'] as $label) {
-            $this->assertArrayHasKey($label, $byid, "$label should be its own matrix row");
-            $this->assertFalse($byid[$label]['supported'], "$label must be unsupported");
-            $this->assertSame('unsupported', $byid[$label]['status']);
-        }
-        // Ordering appears only in the referenced quiz; categorization appears in
-        // both it and the orphan bank (whose native questions the report now reads
-        // through the same fallback the builder uses), so it carries two sources.
+        // Categorization is no longer an unsupported row - it converts to a match.
+        $this->assertArrayNotHasKey('categorization_question', $byid);
+        // Ordering has no faithful core equivalent, so it stays its own unsupported row,
+        // attributed to the referenced quiz it came from (not mis-read as a choice type).
+        $this->assertArrayHasKey('ordering_question', $byid);
+        $this->assertFalse($byid['ordering_question']['supported']);
+        $this->assertSame('unsupported', $byid['ordering_question']['status']);
         $this->assertSame([['name' => 'New quiz engine', 'count' => 1]], $byid['ordering_question']['sources']);
-        $this->assertSame([
-            ['name' => 'New quiz engine (question bank)', 'count' => 1],
-            ['name' => 'New quiz engine', 'count' => 1],
-        ], $byid['categorization_question']['sources']);
     }
 
     /**

@@ -77,6 +77,18 @@ class qti_question {
     /** @var string General feedback (HTML), shown after answering. */
     public string $generalfeedback = '';
 
+    /** @var string Essay response format (TYPE_ESSAY only): 'editor', 'noinline', etc. */
+    public string $responseformat = 'editor';
+
+    /** @var int Whether an online text response is required for an essay (1) or not (0). */
+    public int $responserequired = 1;
+
+    /** @var int Number of file attachments an essay allows: 0, 1, 2, 3, or -1 for unlimited. */
+    public int $attachments = 0;
+
+    /** @var int Number of file attachments an essay requires (0..3, not exceeding attachments). */
+    public int $attachmentsrequired = 0;
+
     /** @var string Calculated formula (TYPE_CALCULATED only), in Moodle {var} syntax. */
     public string $formula = '';
 

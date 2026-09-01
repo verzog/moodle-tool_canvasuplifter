@@ -759,6 +759,104 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A Canvas categorization_question authors each category as a response_lid (its
+     * material names the bucket), repeats the whole item pool in every render_choice,
+     * and lists the member items per category in resprocessing. It maps to a Moodle
+     * match: one stem/answer pair per categorised item (item -> category), several items
+     * sharing a category answer; an item in no category is dropped.
+     *
+     * @return void
+     */
+    public function test_native_categorization_becomes_matching(): void {
+        $labels = [
+            'i1' => 'Hamster', 'i2' => 'Cat', 'i3' => 'Rose', 'i4' => 'Thistle', 'i5' => 'Trumpet',
+        ];
+        $pool = '';
+        foreach ($labels as $ident => $text) {
+            $pool .= '<response_label ident="' . $ident . '"><material><mattext texttype="text/plain">'
+                . $text . '</mattext></material></response_label>';
+        }
+        $category = function (string $ident, string $name) use ($pool): string {
+            return '<response_lid ident="' . $ident . '" rcardinality="Multiple">'
+                . '<material><mattext texttype="text/plain">' . $name . '</mattext></material>'
+                . '<render_choice>' . $pool . '</render_choice></response_lid>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">Organise these.</mattext></material>'
+            . $category('cA', 'Animals') . $category('cB', 'Plants') . '</presentation>';
+        // Animals := Hamster, Cat; Plants := Rose, Thistle; Trumpet belongs to no category.
+        $resp = '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition><conditionvar>'
+            . '<varequal respident="cA">i1</varequal><varequal respident="cA">i2</varequal>'
+            . '</conditionvar><setvar varname="SCORE" action="Add">50.00</setvar></respcondition>'
+            . '<respcondition><conditionvar>'
+            . '<varequal respident="cB">i3</varequal><varequal respident="cB">i4</varequal>'
+            . '</conditionvar><setvar varname="SCORE" action="Add">50.00</setvar></respcondition></resprocessing>';
+        $item = '<item ident="cat1" title="Sort"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>categorization_question</fieldentry></qtimetadatafield>'
+            . '</qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_MATCHING, $q->type);
+        $pairs = [];
+        foreach ($q->subquestions as $sub) {
+            $pairs[$this->plain($sub['text'])] = $sub['answer'];
+        }
+        // Four categorised items map to their bucket; Trumpet (no category) is absent.
+        $this->assertSame(['Hamster' => 'Animals', 'Cat' => 'Animals', 'Rose' => 'Plants', 'Thistle' => 'Plants'], $pairs);
+        $this->assertArrayNotHasKey('Trumpet', $pairs);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A Canvas essay_question maps to a Moodle essay that takes a typed response and no
+     * file attachments.
+     *
+     * @return void
+     */
+    public function test_native_essay_question(): void {
+        $item = '<item ident="e1" title="Explain"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>essay_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">Explain photosynthesis.</mattext>'
+            . '</material></presentation></item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_ESSAY, $q->type);
+        $this->assertSame('editor', $q->responseformat);
+        $this->assertSame(1, $q->responserequired);
+        $this->assertSame(0, $q->attachments);
+        $this->assertSame(0, $q->attachmentsrequired);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A Canvas file_upload_question maps to a Moodle essay configured to take a file
+     * rather than typed text: no online response box, one required attachment (three
+     * allowed).
+     *
+     * @return void
+     */
+    public function test_native_file_upload_becomes_essay_with_attachment(): void {
+        $item = '<item ident="f1" title="Submit"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>file_upload_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">Upload your essay.</mattext>'
+            . '</material></presentation></item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_ESSAY, $q->type);
+        $this->assertSame('noinline', $q->responseformat);
+        $this->assertSame(0, $q->responserequired);
+        $this->assertSame(3, $q->attachments);
+        $this->assertSame(1, $q->attachmentsrequired);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
      * A Canvas multiple_dropdowns_question whose blanks offer different per-blank choice
      * sets (or no per-blank stem) can't be a Moodle match — one blank's options would be
      * offered for another — so it becomes a Cloze: each [id] marker in the prompt is
@@ -2245,23 +2343,28 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
-     * A recognised-but-unconvertible Canvas type (e.g. file_upload_question) is
-     * left UNSUPPORTED and reported by its Canvas type name, rather than being
-     * coerced into a wrong Moodle type by the cardinality fallback.
+     * A recognised-but-unconvertible Canvas type (e.g. ordering_question, which has no
+     * faithful core Moodle equivalent) is left UNSUPPORTED and reported by its Canvas
+     * type name, rather than being coerced into a wrong Moodle type by the cardinality
+     * fallback.
      *
      * @return void
      */
     public function test_native_unconvertible_type_stays_unsupported_but_named(): void {
-        $item = '<item ident="f1" title="Upload"><itemmetadata><qtimetadata>'
-            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>file_upload_question</fieldentry>'
+        $item = '<item ident="o1" title="Order"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>ordering_question</fieldentry>'
             . '</qtimetadatafield></qtimetadata></itemmetadata>'
-            . '<presentation><material><mattext>Upload your work</mattext></material></presentation>'
+            . '<presentation><material><mattext>Put these in order</mattext></material>'
+            . '<response_lid ident="r1"><render_choice>'
+            . '<response_label ident="l1"><material><mattext>First</mattext></material></response_label>'
+            . '<response_label ident="l2"><material><mattext>Second</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
             . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes></resprocessing></item>';
 
         $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
 
         $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
-        $this->assertSame('file_upload_question', $q->profile);
+        $this->assertSame('ordering_question', $q->profile);
         $this->assertFalse($q->is_importable());
     }
 

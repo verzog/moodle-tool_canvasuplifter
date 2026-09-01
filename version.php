@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026081460;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026081461;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Block-aware flattening of dropdown Cloze option feedback (#166).
-$plugin->release   = '0.74.2';
+$plugin->maturity  = MATURITY_ALPHA;  // Categorization -> match; file-upload -> essay with attachment (#169).
+$plugin->release   = '0.75.0';
