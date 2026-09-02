@@ -90,14 +90,12 @@ class events_parser {
                 // all_day_date read as UTC midnight only when start_at is absent.
                 $date = trim($this->direct_child_text($node, 'all_day_date'));
                 $model->timestart = $start ?? ($date !== '' ? ($this->timestamp($date) ?? 0) : 0);
-                // A single-day all-day event is instantaneous, but a multi-day one carries a
-                // later end_at (beyond the following midnight); preserve that span so Moodle
-                // shows the event across all its days rather than only the first.
-                $end = $this->timestamp($this->direct_child_text($node, 'end_at'));
-                $span = ($end !== null && $model->timestart > 0 && $end > $model->timestart) ? $end - $model->timestart : 0;
-                // 86400 = one day in seconds (a literal, not Moodle's DAYSECS, so the parser
-                // stays Moodle-free): a span within a single day stays instantaneous.
-                $model->timeduration = $span > 86400 ? $span : 0;
+                // An all-day event is placed on its day with no duration. A multi-day all-day
+                // span would need the event's timezone to classify by calendar date (an
+                // elapsed-seconds boundary misfires across a DST transition, where consecutive
+                // local midnights are 23 or 25 hours apart), which this Moodle-free parser does
+                // not have, so the span is left for a future change with that context.
+                $model->timeduration = 0;
             } else {
                 $end = $this->timestamp($this->direct_child_text($node, 'end_at'));
                 $model->timestart = $start ?? 0;

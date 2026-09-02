@@ -86,27 +86,6 @@ final class events_parser_test extends \basic_testcase {
     }
 
     /**
-     * A multi-day all-day event keeps its span: with an end_at beyond the following midnight,
-     * the duration covers all its days rather than collapsing to the first.
-     *
-     * @return void
-     */
-    public function test_multi_day_all_day_event_keeps_span(): void {
-        $xml = $this->events(
-            '<event identifier="e2m"><title>Spring break</title>'
-            . '<start_at>2026-10-01T04:00:00Z</start_at><end_at>2026-10-04T04:00:00Z</end_at>'
-            . '<all_day>true</all_day><all_day_date>2026-10-01</all_day_date>'
-            . '<workflow_state>active</workflow_state></event>'
-        );
-
-        $events = (new events_parser())->parse($xml);
-
-        $this->assertCount(1, $events);
-        $this->assertSame(strtotime('2026-10-01T04:00:00Z'), $events[0]->timestart);
-        $this->assertSame(3 * 86400, $events[0]->timeduration);
-    }
-
-    /**
      * An all-day event with only an all_day_date (no start_at) falls back to that date read
      * as UTC midnight.
      *
