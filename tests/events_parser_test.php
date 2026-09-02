@@ -179,6 +179,25 @@ final class events_parser_test extends \basic_testcase {
     }
 
     /**
+     * A non-ISO-8601 relative expression (e.g. "next Thursday") is rejected rather than
+     * resolved against the run date, so the event carries a zero start for the builder to
+     * skip instead of landing on an arbitrary day.
+     *
+     * @return void
+     */
+    public function test_relative_date_expression_is_rejected(): void {
+        $xml = $this->events(
+            '<event identifier="e7"><title>Relative</title>'
+            . '<start_at>next Thursday</start_at><all_day>false</all_day></event>'
+        );
+
+        $events = (new events_parser())->parse($xml);
+
+        $this->assertCount(1, $events);
+        $this->assertSame(0, $events[0]->timestart);
+    }
+
+    /**
      * Non-empty content that will not parse as XML is flagged malformed (so the loss is
      * surfaced) rather than treated as simply having no events.
      *

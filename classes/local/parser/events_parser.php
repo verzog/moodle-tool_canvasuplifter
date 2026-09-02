@@ -123,6 +123,14 @@ class events_parser {
         if ($value === '') {
             return null;
         }
+        // Canvas exports strict ISO-8601 (a plain date, or a date-time with optional
+        // fractional seconds and an optional Z/offset). DateTimeImmutable otherwise accepts
+        // relative expressions like "next Thursday" without warning and would resolve them
+        // against the run date, so only accept the documented shapes and treat anything else
+        // as an unusable value the caller reports as skipped.
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/', $value)) {
+            return null;
+        }
         try {
             $datetime = new DateTimeImmutable($value, new DateTimeZone('UTC'));
         } catch (Exception $e) {
