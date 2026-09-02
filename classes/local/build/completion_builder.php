@@ -46,6 +46,9 @@ class completion_builder {
     /** @var int Canvas prerequisites that referenced a module with no built, gateable activity. */
     public int $unresolvedprereqs = 0;
 
+    /** @var bool Whether gating was skipped because the site's completion tracking is disabled. */
+    public bool $sitecompletiondisabled = false;
+
     /**
      * Apply the gating. Both inputs come from course_builder's build pass.
      *
@@ -59,6 +62,17 @@ class completion_builder {
     public function apply(stdClass $course, array $sections, array $itemcompletions): int {
         global $DB, $CFG;
         require_once($CFG->libdir . '/completionlib.php');
+
+        // Completion tracking must be enabled site-wide, or a course's completion never
+        // produces records and every gate would stay permanently locked. Skip gating and
+        // report the prerequisites as unapplied rather than writing rules that can't be met.
+        if (empty($CFG->enablecompletion)) {
+            foreach ($sections as $row) {
+                $this->unresolvedprereqs += count($row['prerequisites']);
+            }
+            $this->sitecompletiondisabled = $this->unresolvedprereqs > 0;
+            return 0;
+        }
 
         // Map each Canvas module id to the section number it built into, so a prerequisite
         // (which names a module) resolves to that module's section and its activities.
@@ -90,21 +104,23 @@ class completion_builder {
             if (empty($row['prerequisites'])) {
                 continue;
             }
-            // Collect the completion-trackable activities of every prerequisite module.
+            // Collect the completion-trackable activities of every prerequisite module,
+            // counting each prerequisite that resolves to none (missing module, or a module
+            // with no gateable activity — e.g. only labels or hidden items) once.
             $prereqcmids = [];
             foreach ($row['prerequisites'] as $prereqid) {
-                if (!isset($sectionbycanvasid[$prereqid])) {
+                $cmids = isset($sectionbycanvasid[$prereqid])
+                    ? $this->gateable_cmids($modinfo, $sectionbycanvasid[$prereqid]) : [];
+                if (empty($cmids)) {
                     $this->unresolvedprereqs++;
                     continue;
                 }
-                foreach ($this->gateable_cmids($modinfo, $sectionbycanvasid[$prereqid]) as $cmid) {
+                foreach ($cmids as $cmid) {
                     $prereqcmids[$cmid] = true;
                 }
             }
             if (empty($prereqcmids)) {
-                // Nothing to gate on (e.g. the prerequisite module held only labels); skip
-                // rather than write an empty restriction.
-                $this->unresolvedprereqs++;
+                // Every prerequisite was unresolvable (already counted above); write no rule.
                 continue;
             }
             // Give each prerequisite activity automatic view-completion (unless it already has
@@ -138,9 +154,10 @@ class completion_builder {
     }
 
     /**
-     * The completion-trackable course-module ids in a section: activities whose module can
-     * track completion by view (so a completion condition on them is meaningful). A module that
-     * cannot (e.g. a label) is skipped so it is not written into a restriction it can never meet.
+     * The completion-trackable course-module ids in a section: visible activities whose module
+     * can track completion by view (so a completion condition on them is meaningful). A hidden
+     * activity (students can't complete it) or a module that can't track view completion (e.g. a
+     * label) is skipped so it is not written into a restriction it can never meet.
      *
      * @param \course_modinfo $modinfo The course's module info.
      * @param int $sectionnum The section number.
@@ -150,7 +167,10 @@ class completion_builder {
         $cmids = [];
         foreach ($modinfo->get_sections()[$sectionnum] ?? [] as $cmid) {
             $cm = $modinfo->get_cm((int) $cmid);
-            if (plugin_supports('mod', $cm->modname, FEATURE_COMPLETION_TRACKS_VIEWS, false)) {
+            // A hidden (unpublished) activity can never be viewed or completed by students, so
+            // gating a section on its completion would lock that section permanently. Only gate
+            // on visible activities whose module can track view-completion.
+            if ($cm->visible && plugin_supports('mod', $cm->modname, FEATURE_COMPLETION_TRACKS_VIEWS, false)) {
                 $cmids[] = (int) $cmid;
             }
         }

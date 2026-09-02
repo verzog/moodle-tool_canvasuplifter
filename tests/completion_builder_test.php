@@ -127,6 +127,93 @@ XML;
     }
 
     /**
+     * A prerequisite module whose only activity is unpublished (hidden) cannot be gated on —
+     * students could never complete a hidden activity — so no restriction is written and the
+     * prerequisite is reported unresolved rather than locking the dependent section forever.
+     *
+     * @return void
+     */
+    public function test_hidden_prerequisite_activity_is_not_gated(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        set_config('enablecompletion', 1);
+
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/a.html', '<html><head><title>A</title></head><body>A</body></html>');
+        file_put_contents($dir . '/wiki_content/b.html', '<html><head><title>B</title></head><body>B</body></html>');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_a" type="webcontent" href="wiki_content/a.html"><file href="wiki_content/a.html"/></resource>
+    <resource identifier="r_b" type="webcontent" href="wiki_content/b.html"><file href="wiki_content/b.html"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        // Module A's page is unpublished (hidden); module B requires module A.
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="modA"><title>Module A</title><workflow_state>active</workflow_state>
+    <items><item identifier="mi_a"><content_type>WikiPage</content_type><workflow_state>unpublished</workflow_state>
+      <title>Page A</title><identifierref>r_a</identifierref></item></items>
+  </module>
+  <module identifier="modB"><title>Module B</title><workflow_state>active</workflow_state>
+    <prerequisites><prerequisite type="context_module"><title>Module A</title>
+      <identifierref>modA</identifierref></prerequisite></prerequisites>
+    <items><item identifier="mi_b"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+      <title>Page B</title><identifierref>r_b</identifierref></item></items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo((int) $report['courseid']);
+        $bsectionid = (int) $modinfo->get_section_info(2)->id;
+        $this->assertEmpty($DB->get_field('course_sections', 'availability', ['id' => $bsectionid]));
+        $this->assertStringContainsString(
+            get_string('warngatingunresolved', 'tool_canvasuplifter', 1),
+            implode("\n", $report['warnings'])
+        );
+    }
+
+    /**
+     * When completion tracking is disabled site-wide, gating is skipped (a rule could never be
+     * met) and reported, rather than enabling the course flag and writing dead restrictions.
+     *
+     * @return void
+     */
+    public function test_site_completion_disabled_skips_gating(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        set_config('enablecompletion', 0);
+
+        $dir = $this->two_module_package();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $courseid = (int) $report['courseid'];
+        $this->assertEquals(0, $DB->get_field('course', 'enablecompletion', ['id' => $courseid]));
+        $bsectionid = (int) get_fast_modinfo($courseid)->get_section_info(2)->id;
+        $this->assertEmpty($DB->get_field('course_sections', 'availability', ['id' => $bsectionid]));
+        $this->assertStringContainsString(
+            get_string('warngatingsitecompletion', 'tool_canvasuplifter'),
+            implode("\n", $report['warnings'])
+        );
+    }
+
+    /**
      * A package with no module prerequisites gates nothing and does not enable course completion.
      *
      * @return void

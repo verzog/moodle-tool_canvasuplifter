@@ -237,7 +237,11 @@ class course_builder {
             }
             // Record the Canvas module id -> section and its prerequisites so the completion
             // pass can gate this section behind the completion of its prerequisite modules.
-            if ($sectionmodel->canvasid !== '') {
+            // Only a module that got its own topic section (sectionnum > 0) can carry — or be —
+            // a gate; a module whose items all route to section 0 (e.g. a question bank) has no
+            // section of its own to restrict, so it is not enqueued (which would otherwise write
+            // the restriction onto the General section).
+            if ($sectionmodel->canvasid !== '' && $sectionnum > 0) {
                 $gatingsections[] = [
                     'canvasid' => $sectionmodel->canvasid,
                     'sectionnum' => $sectionnum,
@@ -497,7 +501,9 @@ class course_builder {
         if ($gatedsections > 0) {
             $warnings[] = get_string('notegatingimported', 'tool_canvasuplifter', $gatedsections);
         }
-        if ($completionbuilder->unresolvedprereqs > 0) {
+        if ($completionbuilder->sitecompletiondisabled) {
+            $warnings[] = get_string('warngatingsitecompletion', 'tool_canvasuplifter');
+        } else if ($completionbuilder->unresolvedprereqs > 0) {
             $warnings[] = get_string('warngatingunresolved', 'tool_canvasuplifter', $completionbuilder->unresolvedprereqs);
         }
         if ($coursemodel->canvasboilerplatedropped > 0) {

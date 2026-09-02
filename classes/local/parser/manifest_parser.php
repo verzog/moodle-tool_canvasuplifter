@@ -2368,6 +2368,7 @@ class manifest_parser {
             $modelitem->kind = item::KIND_LTI;
             $modelitem->launchurl = $url;
             $modelitem->isvisible = $isvisible;
+            $this->apply_completion_requirement($node, $modelitem);
             if ($id !== '') {
                 $resources[$id] = $modelitem;
             }

@@ -255,8 +255,11 @@ $string['warnblackboardnative'] = 'This looks like a Blackboard Learn native exp
     . 'Cartridge (IMSCC) and import that package instead.';
 $string['warneventsmalformed'] = 'The Canvas calendar events file could not be read, so its events were not imported.';
 $string['warneventsskipped'] = 'Skipped {$a} Canvas calendar event(s) that carried no usable start time.';
-$string['warngatingunresolved'] = 'Could not apply {$a} Canvas module prerequisite(s): the required module had no built '
-    . 'activity to gate on. Set up any needed "Restrict access" rules by hand.';
+$string['warngatingsitecompletion'] = 'Canvas module prerequisites were not applied because completion tracking is '
+    . 'disabled site-wide. Ask an administrator to enable "Enable completion tracking" (Advanced features), then set up '
+    . 'the "Restrict access" rules, or re-import.';
+$string['warngatingunresolved'] = 'Could not apply {$a} Canvas module prerequisite(s): the required module had no built, '
+    . 'visible activity to gate on. Set up any needed "Restrict access" rules by hand.';
 $string['warningsheading'] = 'Notes and warnings';
 $string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';
