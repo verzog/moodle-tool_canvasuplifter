@@ -249,11 +249,17 @@ class completion_builder {
             return false;
         }
         $update = (object) ['id' => $cm->id, 'completion' => COMPLETION_TRACKING_AUTOMATIC];
-        if (
-            $requirement === 'min_score'
-            && plugin_supports('mod', $cm->modname, FEATURE_GRADE_HAS_GRADE, false)
-            && $this->set_grade_pass($cm, $minscore, $maxscore)
-        ) {
+        if ($requirement === 'min_score') {
+            if (
+                !plugin_supports('mod', $cm->modname, FEATURE_GRADE_HAS_GRADE, false)
+                || !$this->set_grade_pass($cm, $minscore, $maxscore)
+            ) {
+                // A score requirement can't be enforced without a gradeable item, and must not be
+                // downgraded to view completion (merely opening the activity would then satisfy a
+                // score requirement). course_builder already drops such items so they don't gate;
+                // guard here too so nothing else turns one into a view rule.
+                return false;
+            }
             // Require a passing grade: the activity's grade item now carries a gradepass scaled
             // from Canvas's min_score, and completionpassgrade tells Moodle to compare against it.
             $update->completiongradeitemnumber = 0;
@@ -261,9 +267,7 @@ class completion_builder {
             $this->passgradecmids[(int) $cm->id] = true;
         } else {
             // The must_view requirement, and the submit/contribute ones (whose module-specific
-            // rules vary), map to "must view" — the closest uniform Moodle equivalent. A min_score
-            // on an ungraded activity (no grade item to compare) also lands here: without a grade
-            // item a passing-grade rule can't be enforced, so view-completion is the safe fallback.
+            // rules vary), map to "must view" — the closest uniform Moodle equivalent.
             $update->completionview = 1;
         }
         $DB->update_record('course_modules', $update);

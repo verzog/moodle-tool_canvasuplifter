@@ -452,12 +452,14 @@ XML;
     }
 
     /**
-     * When consecutive pages are combined into a single book, a must_view completion requirement
-     * on one of the grouped pages is carried onto the resulting book activity rather than lost.
+     * A per-page must_view requirement can't be faithfully represented once pages are folded into
+     * one book (the book's view completion tracks the whole container, not the specific page), so
+     * even a visible grouped page's requirement is treated as dropped and its module's prerequisite
+     * reported unresolved rather than under-enforced.
      *
      * @return void
      */
-    public function test_grouped_page_completion_requirement_tracked(): void {
+    public function test_grouped_page_requirement_marks_prerequisite_unresolved(): void {
         global $DB;
         $this->resetAfterTest(true);
         $this->setAdminUser();
@@ -466,30 +468,39 @@ XML;
         $dir = make_request_directory();
         mkdir($dir . '/course_settings');
         mkdir($dir . '/wiki_content');
-        file_put_contents($dir . '/wiki_content/a.html', '<html><head><title>A</title></head><body>Page A</body></html>');
-        file_put_contents($dir . '/wiki_content/b.html', '<html><head><title>B</title></head><body>Page B</body></html>');
+        file_put_contents($dir . '/wiki_content/a1.html', '<html><head><title>A1</title></head><body>A1</body></html>');
+        file_put_contents($dir . '/wiki_content/a2.html', '<html><head><title>A2</title></head><body>A2</body></html>');
+        file_put_contents($dir . '/wiki_content/b.html', '<html><head><title>B</title></head><body>B</body></html>');
         $manifest = <<<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
   <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
   <resources>
-    <resource identifier="r_a" type="webcontent" href="wiki_content/a.html"><file href="wiki_content/a.html"/></resource>
+    <resource identifier="r_a1" type="webcontent" href="wiki_content/a1.html"><file href="wiki_content/a1.html"/></resource>
+    <resource identifier="r_a2" type="webcontent" href="wiki_content/a2.html"><file href="wiki_content/a2.html"/></resource>
     <resource identifier="r_b" type="webcontent" href="wiki_content/b.html"><file href="wiki_content/b.html"/></resource>
   </resources>
 </manifest>
 XML;
         file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        // Module A groups two visible pages, the second carrying a must_view requirement.
         $modulemeta = <<<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
   <module identifier="modA"><title>Reading</title><workflow_state>active</workflow_state>
     <items>
-      <item identifier="mi_a"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
-        <title>Page A</title><identifierref>r_a</identifierref></item>
-      <item identifier="mi_b"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
-        <title>Page B</title><identifierref>r_b</identifierref>
+      <item identifier="mi_a1"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+        <title>Page A1</title><identifierref>r_a1</identifierref></item>
+      <item identifier="mi_a2"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+        <title>Required page</title><identifierref>r_a2</identifierref>
         <completion_requirement><type>must_view</type></completion_requirement></item>
     </items>
+  </module>
+  <module identifier="modB"><title>Module B</title><workflow_state>active</workflow_state>
+    <prerequisites><prerequisite type="context_module"><title>Reading</title>
+      <identifierref>modA</identifierref></prerequisite></prerequisites>
+    <items><item identifier="mi_b"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+      <title>Page B</title><identifierref>r_b</identifierref></item></items>
   </module>
 </modules>
 XML;
@@ -501,11 +512,91 @@ XML;
         $report = (new course_builder($category->id, $dir, null, 0, false, 'book'))->build($coursemodel);
         $courseid = (int) $report['courseid'];
 
+        // The book is not turned into a completion gate, and module B's section is left ungated.
         $book = $DB->get_record('book', ['course' => $courseid], '*', MUST_EXIST);
         $cm = get_coursemodule_from_instance('book', $book->id, $courseid, false, MUST_EXIST);
-        $record = $DB->get_record('course_modules', ['id' => $cm->id], 'completion, completionview');
-        $this->assertEquals(COMPLETION_TRACKING_AUTOMATIC, (int) $record->completion);
-        $this->assertEquals(1, (int) $record->completionview);
+        $this->assertEquals(COMPLETION_TRACKING_NONE, (int) $DB->get_field('course_modules', 'completion', ['id' => $cm->id]));
+
+        $modinfo = get_fast_modinfo($courseid);
+        $bsectionid = (int) $modinfo->get_section_info(2)->id;
+        $this->assertEmpty($DB->get_field('course_sections', 'availability', ['id' => $bsectionid]));
+        $this->assertStringContainsString(
+            get_string('warngatingunresolved', 'tool_canvasuplifter', 1),
+            implode("\n", $report['warnings'])
+        );
+    }
+
+    /**
+     * A min_score requirement on an activity that was built ungraded — a Canvas-graded discussion
+     * becomes an unassessed Moodle forum, with no grade item to compare against — can't be
+     * enforced. It must not be downgraded to view completion (opening the forum would satisfy a
+     * score requirement); the module's prerequisite is reported unresolved instead.
+     *
+     * @return void
+     */
+    public function test_min_score_on_ungraded_activity_marks_prerequisite_unresolved(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        set_config('enablecompletion', 1);
+
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/discussion');
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/b.html', '<html><head><title>B</title></head><body>B</body></html>');
+        $topic = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1">'
+            . '<title>Graded discussion</title><text texttype="text/html">&lt;p&gt;Discuss.&lt;/p&gt;</text></topic>';
+        file_put_contents($dir . '/discussion/d1.xml', $topic);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_disc" type="imsdt_xmlv1p1"><file href="discussion/d1.xml"/></resource>
+    <resource identifier="r_b" type="webcontent" href="wiki_content/b.html"><file href="wiki_content/b.html"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        // Module A's only activity is a discussion carrying a min_score requirement it can't meet.
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="modA"><title>Module A</title><workflow_state>active</workflow_state>
+    <items><item identifier="mi_a"><content_type>DiscussionTopic</content_type><workflow_state>active</workflow_state>
+      <title>Graded discussion</title><identifierref>r_disc</identifierref>
+      <completion_requirement><type>min_score</type><min_score>5</min_score></completion_requirement></item></items>
+  </module>
+  <module identifier="modB"><title>Module B</title><workflow_state>active</workflow_state>
+    <prerequisites><prerequisite type="context_module"><title>Module A</title>
+      <identifierref>modA</identifierref></prerequisite></prerequisites>
+    <items><item identifier="mi_b"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+      <title>Page B</title><identifierref>r_b</identifierref></item></items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo((int) $report['courseid']);
+        // The forum was built and is visible, but its unenforceable score requirement is dropped.
+        $acmid = (int) reset($modinfo->get_sections()[1]);
+        $this->assertSame('forum', $modinfo->get_cm($acmid)->modname);
+        $this->assertEquals(
+            COMPLETION_TRACKING_NONE,
+            (int) $DB->get_field('course_modules', 'completion', ['id' => $acmid])
+        );
+        $bsectionid = (int) $modinfo->get_section_info(2)->id;
+        $this->assertEmpty($DB->get_field('course_sections', 'availability', ['id' => $bsectionid]));
+        $this->assertStringContainsString(
+            get_string('warngatingunresolved', 'tool_canvasuplifter', 1),
+            implode("\n", $report['warnings'])
+        );
     }
 
     /**

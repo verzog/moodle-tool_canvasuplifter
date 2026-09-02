@@ -269,7 +269,7 @@ class course_builder {
                     // valid cmid the completion pass later excludes as non-viewable), can never
                     // be completed by a student, so the module's prerequisite is under-enforced
                     // unless it is treated as dropped.
-                    if ($cmid && $this->is_gateable_cmid($cmid)) {
+                    if ($cmid && $this->is_gateable_cmid($cmid) && $this->requirement_enforceable($cmid, $modelitem)) {
                         $itemcompletions[] = [
                             'cmid' => $cmid,
                             'requirement' => $modelitem->completionrequirement,
@@ -864,6 +864,38 @@ class course_builder {
     }
 
     /**
+     * Whether a Canvas completion requirement can actually be enforced on a built activity. A
+     * min_score needs a gradeable grade item to compare against — a grade-capable module that was
+     * built ungraded (e.g. a Canvas-graded discussion becomes an unassessed Moodle forum, or an
+     * assignment with zero points) has none, so its score requirement can't be met and view
+     * completion would under-enforce it. Non-score requirements (must_view and friends) map to
+     * view completion, which any gateable activity supports.
+     *
+     * @param int $cmid The built course-module id.
+     * @param item $modelitem The model item carrying the requirement.
+     * @return bool
+     */
+    private function requirement_enforceable(int $cmid, item $modelitem): bool {
+        global $DB;
+        if ($modelitem->completionrequirement !== 'min_score') {
+            return true;
+        }
+        $cm = $DB->get_record('course_modules', ['id' => $cmid], 'course, module, instance', IGNORE_MISSING);
+        if (!$cm) {
+            return false;
+        }
+        $modname = $DB->get_field('modules', 'name', ['id' => $cm->module]);
+        if (!$modname) {
+            return false;
+        }
+        return $DB->record_exists_select(
+            'grade_items',
+            "courseid = ? AND itemtype = 'mod' AND itemmodule = ? AND iteminstance = ? AND itemnumber = 0 AND grademax > 0",
+            [$cm->course, $modname, $cm->instance]
+        );
+    }
+
+    /**
      * The unrounded Canvas maximum a min_score requirement is out of, for a built activity, or ''
      * when unknown. Currently only assignments (whose Moodle max grade is integer-rounded) record
      * it; other graded modules keep a matching maximum, so an empty value leaves the completion
@@ -961,29 +993,15 @@ class course_builder {
             $rewritetargets[] = $entry['rewrite'];
             $this->tally((int) $result['cmid'], item::KIND_PAGE, $createdcounts, $skippedcounts);
         }
-        // The run collapsed into one activity (the book/lesson), so a completion requirement on
-        // any grouped page maps to that single course module. Record it once; a run rarely mixes
-        // distinct requirements, and the group is a single activity that can carry only one. A
-        // required page that did not build, or a group activity that isn't gateable, is dropped.
-        $groupgateable = $this->is_gateable_cmid((int) $result['cmid']);
-        $groupcompletionrecorded = false;
+        // The run collapsed into one activity (the book/lesson). A per-page Canvas completion
+        // requirement can't be faithfully represented on it: the container's completion tracks
+        // viewing the whole activity (any chapter/page), not the specific required page, and a
+        // graded per-page requirement has no per-page grade item. So a grouped page carrying a
+        // requirement is treated as dropped, and its module's prerequisite reported unresolved
+        // rather than under-enforced.
         foreach ($pages as $page) {
-            if ($page->completionrequirement === '') {
-                continue;
-            }
-            // Drop the requirement when the required page didn't build, when the group activity
-            // isn't gateable, or when the required page itself is hidden: an unpublished page
-            // folded into a visible book/lesson becomes a hidden chapter, so completing the
-            // visible group would satisfy it without the student ever seeing the required page.
-            if (empty($built[spl_object_id($page)]) || !$groupgateable || !$page->isvisible) {
+            if ($page->completionrequirement !== '') {
                 $requireddropped = true;
-            } else if (!$groupcompletionrecorded) {
-                $itemcompletions[] = [
-                    'cmid' => (int) $result['cmid'],
-                    'requirement' => $page->completionrequirement,
-                    'minscore' => $page->completionminscore,
-                ];
-                $groupcompletionrecorded = true;
             }
         }
         foreach ($pages as $page) {
