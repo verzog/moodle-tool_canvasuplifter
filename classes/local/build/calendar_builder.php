@@ -153,6 +153,9 @@ class calendar_builder {
      */
     private function event_name(course_event $model): string {
         $name = trim($model->title);
-        return $name !== '' ? $name : get_string('eventuntitled', 'tool_canvasuplifter');
+        $name = $name !== '' ? $name : get_string('eventuntitled', 'tool_canvasuplifter');
+        // Moodle's event.name column is 255 chars; a longer Canvas title would overflow it
+        // and abort the whole course build, so cap it as the other builders cap their names.
+        return shorten_text($name, 255);
     }
 }

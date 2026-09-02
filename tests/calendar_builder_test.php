@@ -84,6 +84,28 @@ final class calendar_builder_test extends \advanced_testcase {
     }
 
     /**
+     * A Canvas event title longer than Moodle's 255-char event.name column is truncated so
+     * the insert succeeds and one long title does not abort the whole course build.
+     *
+     * @return void
+     */
+    public function test_long_event_title_is_truncated(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+
+        $title = str_repeat('A', 400);
+        $dir = $this->package('<event identifier="e1"><title>' . $title . '</title>'
+            . '<start_at>2026-09-15T10:00:00Z</start_at>'
+            . '<all_day>false</all_day><workflow_state>active</workflow_state></event>');
+
+        $this->assertSame(1, (new calendar_builder($dir))->build($course));
+        $name = $DB->get_field('event', 'name', ['courseid' => (int) $course->id]);
+        $this->assertLessThanOrEqual(255, \core_text::strlen($name));
+    }
+
+    /**
      * A package with no events.xml imports nothing and does not error.
      *
      * @return void
