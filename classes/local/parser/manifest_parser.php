@@ -2220,6 +2220,12 @@ class manifest_parser {
                     $modelitem = $this->item_from_module_meta($itemnode, $resources, $moduleisvisible);
                     if ($modelitem !== null) {
                         $section->add_item($modelitem);
+                    } else if ($this->first_child_named($itemnode, 'completion_requirement') !== null) {
+                        // A required item the parser can't represent (missing/suppressed resource,
+                        // or an unsupported inline type) never reaches the build, so flag the module
+                        // as having a dropped required item — the completion pass then reports its
+                        // prerequisite unresolved rather than gating dependents on the survivors.
+                        $section->droppedrequired = true;
                     }
                 }
             }

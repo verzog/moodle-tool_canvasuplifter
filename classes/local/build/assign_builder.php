@@ -36,6 +36,11 @@ use tool_canvasuplifter\local\parser\assignment_settings;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class assign_builder {
+    /** @var array Built course-module id => unrounded Canvas points_possible, for a graded
+     * assignment. Lets the completion pass rescale a min_score threshold to the (integer-rounded)
+     * grade item without losing the intended proportion. Only graded assignments are recorded. */
+    public array $completionmaxscore = [];
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -113,6 +118,11 @@ class assign_builder {
         $moduleinfo = $this->moduleinfo($course, $sectionnum, $module->id, $name, $intro, $settings);
         $created = add_moduleinfo($moduleinfo, $course);
         $cmid = (int) $created->coursemodule;
+        // Record the unrounded Canvas maximum so a min_score completion requirement can be scaled
+        // to the rounded grade item (mod_assign stores an integer max grade).
+        if ($settings->pointsraw > 0) {
+            $this->completionmaxscore[$cmid] = $settings->pointsraw;
+        }
 
         // Import description images/files and rewrite the intro to pluginfile refs.
         if ($intro !== '') {
