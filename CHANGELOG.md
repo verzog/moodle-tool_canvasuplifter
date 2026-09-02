@@ -17,8 +17,10 @@ quickly.
   absent — with zero duration, and a non-active (e.g. deleted) event is skipped. Event descriptions are
   fed through the same second-pass link rewriting and `$IMS-CC-FILEBASE$` media embedding
   as page/outcome content, so internal `$WIKI_REFERENCE$`/`$CANVAS_OBJECT_REFERENCE$`
-  links and inline images resolve. The build report notes the number of events imported
-  (and any skipped for lack of a start time). Assignment/quiz due dates are not in
+  links and inline images resolve. A multi-day all-day event keeps its span (rather than
+  collapsing to its first day). The **Analyse package** preview summarises the events it
+  will import (and any skipped for lack of a start time), and the build report notes the
+  number imported. Assignment/quiz due dates are not in
   `events.xml` — Canvas attaches them to the activity — so there is nothing to
   de-duplicate against the activities' own dates.
 

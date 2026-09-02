@@ -80,6 +80,11 @@ $string['errornotzip'] = 'That file could not be opened as a Common Cartridge (z
 $string['errorpackagetoolarge'] = 'That package is too large to extract safely (it expands past the allowed size or file count).';
 $string['erroruploadfailed'] = 'The upload could not be completed after several attempts. Check your connection and try '
     . 'uploading the package again.';
+$string['eventsheading'] = 'Calendar events';
+$string['eventsmalformed'] = 'The events.xml file is present but could not be read (it appears truncated or malformed), '
+    . 'so its calendar events will not be imported.';
+$string['eventssummary'] = '{$a->total} Canvas calendar event(s) found; {$a->importable} will import as course '
+    . 'calendar events, {$a->skipped} skipped (no usable start time).';
 $string['eventuntitled'] = 'Untitled event';
 $string['extraquizzesbuilt'] = 'Also built {$a} runnable quiz(zes) from standalone question banks (in "Additional resources").';
 $string['itemcount'] = 'Content items';

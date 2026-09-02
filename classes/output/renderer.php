@@ -88,6 +88,7 @@ class renderer extends plugin_renderer_base {
         $out .= $this->mapping_table($report['rows'] ?? []);
         $out .= $this->question_matrix($report['questionmatrix'] ?? []);
         $out .= $this->outcomes($report['outcomes'] ?? []);
+        $out .= $this->events($report['events'] ?? []);
         $out .= $this->section_detail($report['sections'] ?? []);
         $out .= $this->orphans($report['orphans'] ?? []);
         if (debugging() && !empty($report['unknowntypes'])) {
@@ -200,6 +201,28 @@ class renderer extends plugin_renderer_base {
             'total' => (int) ($outcomes['total'] ?? 0),
             'importable' => (int) ($outcomes['importable'] ?? 0),
             'skipped' => (int) ($outcomes['skipped'] ?? 0),
+        ]));
+        return $out;
+    }
+
+    /**
+     * The calendar-events summary, or '' when the package has none.
+     *
+     * @param array $events The events sub-report.
+     * @return string HTML.
+     */
+    private function events(array $events): string {
+        if (empty($events)) {
+            return '';
+        }
+        $out = $this->output->heading(get_string('eventsheading', 'tool_canvasuplifter'), 4);
+        if (!empty($events['malformed'])) {
+            return $out . html_writer::tag('p', get_string('eventsmalformed', 'tool_canvasuplifter'));
+        }
+        $out .= html_writer::tag('p', get_string('eventssummary', 'tool_canvasuplifter', [
+            'total' => (int) ($events['total'] ?? 0),
+            'importable' => (int) ($events['importable'] ?? 0),
+            'skipped' => (int) ($events['skipped'] ?? 0),
         ]));
         return $out;
     }
