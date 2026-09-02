@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026081469;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026081472;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Import Canvas calendar events as course calendar events (#168).
-$plugin->release   = '0.76.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Map Canvas module prerequisites to availability + completion (#167).
+$plugin->release   = '0.77.0';
