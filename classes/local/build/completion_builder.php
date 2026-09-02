@@ -196,8 +196,8 @@ class completion_builder {
             $update->completiongradeitemnumber = 0;
             $update->completionpassgrade = 1;
         } else {
-            // must_view and the submit/contribute requirements (whose module-specific rules
-            // vary) map to "must view", the closest uniform Moodle equivalent.
+            // The must_view requirement, and the submit/contribute ones (whose module-specific
+            // rules vary), map to "must view" — the closest uniform Moodle equivalent.
             $update->completionview = 1;
         }
         $DB->update_record('course_modules', $update);
