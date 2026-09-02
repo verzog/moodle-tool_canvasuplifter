@@ -263,7 +263,13 @@ class course_builder {
                 $modelitem = $segment['item'];
                 $cmid = $this->build_one($course, $sectionnum, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons);
                 if ($modelitem->completionrequirement !== '') {
-                    if ($cmid) {
+                    // A required item counts as satisfiable only when it built into a *gateable*
+                    // activity. One that failed to build, or built hidden (e.g. a Canvas-
+                    // unpublished item or an empty quiz preserved as a hidden placeholder — a
+                    // valid cmid the completion pass later excludes as non-viewable), can never
+                    // be completed by a student, so the module's prerequisite is under-enforced
+                    // unless it is treated as dropped.
+                    if ($cmid && $this->is_gateable_cmid($cmid)) {
                         $itemcompletions[] = [
                             'cmid' => $cmid,
                             'requirement' => $modelitem->completionrequirement,
@@ -833,6 +839,28 @@ class course_builder {
     }
 
     /**
+     * Whether a freshly built course module is one the completion pass can gate on: it is
+     * visible and its module can track completion by view. Mirrors
+     * {@see \tool_canvasuplifter\local\build\completion_builder::gateable_cmids()} so a required
+     * item that built hidden (a Canvas-unpublished item, or an empty quiz kept as a hidden
+     * placeholder) is recognised as non-gateable here — the completion pass would exclude it, so
+     * its module's prerequisite must be reported unresolved rather than gated on a sibling alone.
+     * The module name is read from the built record so this holds for any activity type.
+     *
+     * @param int $cmid The course-module id.
+     * @return bool
+     */
+    private function is_gateable_cmid(int $cmid): bool {
+        global $DB;
+        $cm = $DB->get_record('course_modules', ['id' => $cmid], 'visible, module', IGNORE_MISSING);
+        if (!$cm || (int) $cm->visible !== 1) {
+            return false;
+        }
+        $modname = $DB->get_field('modules', 'name', ['id' => $cm->module]);
+        return $modname && plugin_supports('mod', $modname, FEATURE_COMPLETION_TRACKS_VIEWS, false);
+    }
+
+    /**
      * Build a run of consecutive pages as one combined book/lesson activity,
      * recording each page's link target and the chapter/page rows that the
      * second link pass must rewrite. Falls back to one page per item if the
@@ -914,23 +942,23 @@ class course_builder {
         }
         // The run collapsed into one activity (the book/lesson), so a completion requirement on
         // any grouped page maps to that single course module. Record it once; a run rarely mixes
-        // distinct requirements, and the group is a single activity that can carry only one.
+        // distinct requirements, and the group is a single activity that can carry only one. A
+        // required page that did not build, or a group activity that isn't gateable, is dropped.
+        $groupgateable = $this->is_gateable_cmid((int) $result['cmid']);
         $groupcompletionrecorded = false;
         foreach ($pages as $page) {
             if ($page->completionrequirement === '') {
                 continue;
             }
-            if (!empty($built[spl_object_id($page)])) {
-                if (!$groupcompletionrecorded) {
-                    $itemcompletions[] = [
-                        'cmid' => (int) $result['cmid'],
-                        'requirement' => $page->completionrequirement,
-                        'minscore' => $page->completionminscore,
-                    ];
-                    $groupcompletionrecorded = true;
-                }
-            } else {
+            if (empty($built[spl_object_id($page)]) || !$groupgateable) {
                 $requireddropped = true;
+            } else if (!$groupcompletionrecorded) {
+                $itemcompletions[] = [
+                    'cmid' => (int) $result['cmid'],
+                    'requirement' => $page->completionrequirement,
+                    'minscore' => $page->completionminscore,
+                ];
+                $groupcompletionrecorded = true;
             }
         }
         foreach ($pages as $page) {
@@ -986,7 +1014,7 @@ class course_builder {
                 }
             }
             if ($page->completionrequirement !== '') {
-                if ($cmid !== null) {
+                if ($cmid !== null && $this->is_gateable_cmid($cmid)) {
                     $itemcompletions[] = [
                         'cmid' => $cmid,
                         'requirement' => $page->completionrequirement,
