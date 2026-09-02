@@ -160,6 +160,25 @@ final class events_parser_test extends \basic_testcase {
     }
 
     /**
+     * A syntactically plausible but invalid date (e.g. Feb 30, which PHP silently rolls to
+     * Mar 2) is treated as an unusable start rather than imported on the wrong day: the event
+     * is retained (it has a title) but carries a zero start for the builder to skip.
+     *
+     * @return void
+     */
+    public function test_invalid_date_is_not_silently_normalized(): void {
+        $xml = $this->events(
+            '<event identifier="e6"><title>Bad date</title>'
+            . '<start_at>2026-02-30T10:00:00Z</start_at><all_day>false</all_day></event>'
+        );
+
+        $events = (new events_parser())->parse($xml);
+
+        $this->assertCount(1, $events);
+        $this->assertSame(0, $events[0]->timestart);
+    }
+
+    /**
      * Non-empty content that will not parse as XML is flagged malformed (so the loss is
      * surfaced) rather than treated as simply having no events.
      *

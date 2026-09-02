@@ -124,10 +124,18 @@ class events_parser {
             return null;
         }
         try {
-            return (new DateTimeImmutable($value, new DateTimeZone('UTC')))->getTimestamp();
+            $datetime = new DateTimeImmutable($value, new DateTimeZone('UTC'));
         } catch (Exception $e) {
             return null;
         }
+        // PHP does not throw on a syntactically plausible but invalid date (e.g. Feb 30 is
+        // silently rolled to Mar 2); treat any parse warning/error as an unusable value so a
+        // bad timestamp is reported as a skipped event rather than imported on the wrong day.
+        $errors = DateTimeImmutable::getLastErrors();
+        if ($errors !== false && (($errors['warning_count'] ?? 0) > 0 || ($errors['error_count'] ?? 0) > 0)) {
+            return null;
+        }
+        return $datetime->getTimestamp();
     }
 
     /**
