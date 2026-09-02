@@ -84,11 +84,12 @@ class events_parser {
 
             $start = $this->timestamp($this->direct_child_text($node, 'start_at'));
             if ($model->allday) {
-                // An all-day event pins to the date's midnight (UTC); Canvas may give only
-                // all_day_date, so prefer it and fall back to start_at's day.
+                // An all-day event has no time-of-day, but Canvas encodes it as local
+                // midnight in start_at (a timezone-aware instant), so prefer that to keep
+                // the event on the right calendar day for viewers outside UTC. Fall back to
+                // all_day_date read as UTC midnight only when start_at is absent.
                 $date = trim($this->direct_child_text($node, 'all_day_date'));
-                $allstart = $date !== '' ? $this->timestamp($date) : $start;
-                $model->timestart = $allstart ?? ($start ?? 0);
+                $model->timestart = $start ?? ($date !== '' ? ($this->timestamp($date) ?? 0) : 0);
                 $model->timeduration = 0;
             } else {
                 $end = $this->timestamp($this->direct_child_text($node, 'end_at'));
@@ -98,9 +99,11 @@ class events_parser {
                 $model->timeduration = ($start !== null && $end !== null && $end > $start) ? $end - $start : 0;
             }
 
-            // Keep any event carrying a title or a resolvable start; an entry with
-            // neither is empty noise the builder could not place on the calendar.
-            if ($model->title !== '' || $model->timestart > 0) {
+            // Keep any event carrying content — a title, a description, or a resolvable
+            // start. An entry with none is empty noise; but one with authored content and
+            // no usable start is retained so the builder counts and reports it as skipped
+            // rather than dropping it silently here.
+            if ($model->title !== '' || $model->description !== '' || $model->timestart > 0) {
                 $events[] = $model;
             }
         }

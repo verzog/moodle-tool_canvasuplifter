@@ -11,8 +11,10 @@ quickly.
   `course_settings/events.xml` calendar events are created as Moodle **course** calendar
   events (`calendar_event`, event type `course`), carrying each event's title,
   description, start time and duration. Canvas stores start/end as ISO-8601 UTC, which the
-  parser resolves to Unix timestamps; an all-day event pins to its date's midnight with
-  zero duration, and a non-active (e.g. deleted) event is skipped. Event descriptions are
+  parser resolves to Unix timestamps; an all-day event keeps Canvas's timezone-bearing
+  `start_at` (local midnight as a UTC instant) so it lands on the right day for viewers
+  outside UTC — falling back to `all_day_date` at UTC midnight only when `start_at` is
+  absent — with zero duration, and a non-active (e.g. deleted) event is skipped. Event descriptions are
   fed through the same second-pass link rewriting and `$IMS-CC-FILEBASE$` media embedding
   as page/outcome content, so internal `$WIKI_REFERENCE$`/`$CANVAS_OBJECT_REFERENCE$`
   links and inline images resolve. The build report notes the number of events imported

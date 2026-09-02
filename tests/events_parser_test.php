@@ -63,15 +63,16 @@ final class events_parser_test extends \basic_testcase {
     }
 
     /**
-     * An all-day event pins to its all_day_date at midnight UTC with zero duration,
-     * ignoring any start_at time-of-day.
+     * An all-day event keeps Canvas's timezone-bearing start_at (local midnight expressed
+     * as a UTC instant, e.g. 04:00Z for a US Eastern course) so it lands on the right day
+     * for viewers outside UTC, with zero duration.
      *
      * @return void
      */
-    public function test_parses_all_day_event(): void {
+    public function test_all_day_event_keeps_timezone_bearing_start(): void {
         $xml = $this->events(
             '<event identifier="e2"><title>Reading day</title>'
-            . '<start_at>2026-10-01T13:00:00Z</start_at><end_at>2026-10-01T14:00:00Z</end_at>'
+            . '<start_at>2026-10-01T04:00:00Z</start_at><end_at>2026-10-02T04:00:00Z</end_at>'
             . '<all_day>true</all_day><all_day_date>2026-10-01</all_day_date>'
             . '<workflow_state>active</workflow_state></event>'
         );
@@ -80,8 +81,48 @@ final class events_parser_test extends \basic_testcase {
 
         $this->assertCount(1, $events);
         $this->assertTrue($events[0]->allday);
+        $this->assertSame(strtotime('2026-10-01T04:00:00Z'), $events[0]->timestart);
+        $this->assertSame(0, $events[0]->timeduration);
+    }
+
+    /**
+     * An all-day event with only an all_day_date (no start_at) falls back to that date read
+     * as UTC midnight.
+     *
+     * @return void
+     */
+    public function test_all_day_event_falls_back_to_date(): void {
+        $xml = $this->events(
+            '<event identifier="e2b"><title>Reading day</title>'
+            . '<all_day>true</all_day><all_day_date>2026-10-01</all_day_date>'
+            . '<workflow_state>active</workflow_state></event>'
+        );
+
+        $events = (new events_parser())->parse($xml);
+
+        $this->assertCount(1, $events);
         $this->assertSame(gmmktime(0, 0, 0, 10, 1, 2026), $events[0]->timestart);
         $this->assertSame(0, $events[0]->timeduration);
+    }
+
+    /**
+     * An event with authored content (here a description) but no usable start is retained,
+     * with a zero start, so the builder can count and report it as skipped rather than the
+     * parser dropping it silently.
+     *
+     * @return void
+     */
+    public function test_content_event_without_start_is_retained(): void {
+        $xml = $this->events(
+            '<event identifier="e2c"><description>&lt;p&gt;Details to follow&lt;/p&gt;</description>'
+            . '<all_day>false</all_day><workflow_state>active</workflow_state></event>'
+        );
+
+        $events = (new events_parser())->parse($xml);
+
+        $this->assertCount(1, $events);
+        $this->assertSame('', $events[0]->title);
+        $this->assertSame(0, $events[0]->timestart);
     }
 
     /**
