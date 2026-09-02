@@ -214,6 +214,233 @@ XML;
     }
 
     /**
+     * A min_score completion requirement on a prerequisite activity sets that activity's grade
+     * item passing threshold (gradepass) and configures pass-grade completion, and the dependent
+     * section's restriction expects a passing completion state (COMPLETION_COMPLETE_PASS) rather
+     * than the generic COMPLETION_COMPLETE, which would also accept a failing grade.
+     *
+     * @return void
+     */
+    public function test_min_score_prerequisite_sets_gradepass_and_pass_state(): void {
+        global $DB, $CFG;
+        require_once($CFG->libdir . '/gradelib.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        set_config('enablecompletion', 1);
+
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/wiki_content');
+        mkdir($dir . '/asg');
+        file_put_contents($dir . '/wiki_content/b.html', '<html><head><title>B</title></head><body>Page B</body></html>');
+        file_put_contents($dir . '/asg/assignment.html', '<html><head><title>Task</title></head><body>Do it</body></html>');
+        file_put_contents($dir . '/asg/assignment_settings.xml', <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<assignment identifier="asg1" xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <title>Graded task</title>
+  <grading_type>points</grading_type>
+  <points_possible>100</points_possible>
+  <submission_types>online_text_entry</submission_types>
+  <workflow_state>published</workflow_state>
+</assignment>
+XML);
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="asg1" type="associatedcontent/imscc_xmlv1p1/learning-application-resource" href="asg/assignment.html">
+      <file href="asg/assignment.html"/><file href="asg/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="r_b" type="webcontent" href="wiki_content/b.html"><file href="wiki_content/b.html"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="modA">
+    <title>Module A</title><workflow_state>active</workflow_state>
+    <items><item identifier="mi_a"><content_type>Assignment</content_type><workflow_state>active</workflow_state>
+      <title>Graded task</title><identifierref>asg1</identifierref>
+      <completion_requirement><type>min_score</type><min_score>80</min_score></completion_requirement></item></items>
+  </module>
+  <module identifier="modB">
+    <title>Module B</title><workflow_state>active</workflow_state>
+    <prerequisites><prerequisite type="context_module"><title>Module A</title>
+      <identifierref>modA</identifierref></prerequisite></prerequisites>
+    <items><item identifier="mi_b"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+      <title>Page B</title><identifierref>r_b</identifierref></item></items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $courseid = (int) $report['courseid'];
+
+        $modinfo = get_fast_modinfo($courseid);
+        $sections = $modinfo->get_sections();
+        $acmid = (int) reset($sections[1]);
+        $acm = $modinfo->get_cm($acmid);
+        $this->assertSame('assign', $acm->modname);
+
+        // The assignment now requires a passing grade for completion.
+        $record = $DB->get_record('course_modules', ['id' => $acmid], 'completion, completionpassgrade, completiongradeitemnumber');
+        $this->assertEquals(COMPLETION_TRACKING_AUTOMATIC, (int) $record->completion);
+        $this->assertEquals(1, (int) $record->completionpassgrade);
+        $this->assertEquals(0, (int) $record->completiongradeitemnumber);
+
+        // Its grade item carries the passing threshold scaled from Canvas's min_score.
+        $gradeitem = \grade_item::fetch([
+            'itemtype' => 'mod', 'itemmodule' => 'assign', 'iteminstance' => $acm->instance,
+            'itemnumber' => 0, 'courseid' => $courseid,
+        ]);
+        $this->assertNotFalse($gradeitem);
+        $this->assertEqualsWithDelta(80.0, (float) $gradeitem->gradepass, 0.001);
+
+        // Module B's section restriction expects a *passing* completion state, not a bare complete.
+        $bsectionid = (int) $modinfo->get_section_info(2)->id;
+        $tree = json_decode($DB->get_field('course_sections', 'availability', ['id' => $bsectionid]));
+        $matched = false;
+        foreach ($tree->c as $condition) {
+            if ((int) $condition->cm === $acmid) {
+                $matched = true;
+                $this->assertSame(COMPLETION_COMPLETE_PASS, (int) $condition->e);
+            }
+        }
+        $this->assertTrue($matched, 'Expected a completion condition on the assignment.');
+    }
+
+    /**
+     * When a prerequisite module contains a Canvas-required item (one carrying a
+     * completion_requirement) that fails to build — here an unsupported resource kind — the
+     * surviving activity alone must not satisfy the gate: the whole prerequisite is reported
+     * unresolved rather than writing a restriction that under-restricts the dependent section.
+     *
+     * @return void
+     */
+    public function test_dropped_required_item_marks_prerequisite_unresolved(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        set_config('enablecompletion', 1);
+
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/a.html', '<html><head><title>A</title></head><body>A</body></html>');
+        file_put_contents($dir . '/wiki_content/b.html', '<html><head><title>B</title></head><body>B</body></html>');
+        file_put_contents($dir . '/x.dat', 'binary');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_a" type="webcontent" href="wiki_content/a.html"><file href="wiki_content/a.html"/></resource>
+    <resource identifier="r_x" type="canvas/unsupported-widget" href="x.dat"><file href="x.dat"/></resource>
+    <resource identifier="r_b" type="webcontent" href="wiki_content/b.html"><file href="wiki_content/b.html"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        // Module A has a normal page plus a required item of an unsupported kind (won't build).
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="modA"><title>Module A</title><workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_a"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+        <title>Page A</title><identifierref>r_a</identifierref></item>
+      <item identifier="mi_x"><content_type>Widget</content_type><workflow_state>active</workflow_state>
+        <title>Required widget</title><identifierref>r_x</identifierref>
+        <completion_requirement><type>must_view</type></completion_requirement></item>
+    </items>
+  </module>
+  <module identifier="modB"><title>Module B</title><workflow_state>active</workflow_state>
+    <prerequisites><prerequisite type="context_module"><title>Module A</title>
+      <identifierref>modA</identifierref></prerequisite></prerequisites>
+    <items><item identifier="mi_b"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+      <title>Page B</title><identifierref>r_b</identifierref></item></items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo((int) $report['courseid']);
+        $bsectionid = (int) $modinfo->get_section_info(2)->id;
+        $this->assertEmpty($DB->get_field('course_sections', 'availability', ['id' => $bsectionid]));
+        $this->assertStringContainsString(
+            get_string('warngatingunresolved', 'tool_canvasuplifter', 1),
+            implode("\n", $report['warnings'])
+        );
+    }
+
+    /**
+     * When consecutive pages are combined into a single book, a must_view completion requirement
+     * on one of the grouped pages is carried onto the resulting book activity rather than lost.
+     *
+     * @return void
+     */
+    public function test_grouped_page_completion_requirement_tracked(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        set_config('enablecompletion', 1);
+
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/a.html', '<html><head><title>A</title></head><body>Page A</body></html>');
+        file_put_contents($dir . '/wiki_content/b.html', '<html><head><title>B</title></head><body>Page B</body></html>');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_a" type="webcontent" href="wiki_content/a.html"><file href="wiki_content/a.html"/></resource>
+    <resource identifier="r_b" type="webcontent" href="wiki_content/b.html"><file href="wiki_content/b.html"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="modA"><title>Reading</title><workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_a"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+        <title>Page A</title><identifierref>r_a</identifierref></item>
+      <item identifier="mi_b"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+        <title>Page B</title><identifierref>r_b</identifierref>
+        <completion_requirement><type>must_view</type></completion_requirement></item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The sixth constructor argument selects the "combine consecutive pages into a book" option.
+        $report = (new course_builder($category->id, $dir, null, 0, false, 'book'))->build($coursemodel);
+        $courseid = (int) $report['courseid'];
+
+        $book = $DB->get_record('book', ['course' => $courseid], '*', MUST_EXIST);
+        $cm = get_coursemodule_from_instance('book', $book->id, $courseid, false, MUST_EXIST);
+        $record = $DB->get_record('course_modules', ['id' => $cm->id], 'completion, completionview');
+        $this->assertEquals(COMPLETION_TRACKING_AUTOMATIC, (int) $record->completion);
+        $this->assertEquals(1, (int) $record->completionview);
+    }
+
+    /**
      * A package with no module prerequisites gates nothing and does not enable course completion.
      *
      * @return void

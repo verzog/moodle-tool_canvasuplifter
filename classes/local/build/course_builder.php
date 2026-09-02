@@ -235,19 +235,11 @@ class course_builder {
                 $sectionnum = ++$builtsections;
                 $this->prepare_section($course, $sectionnum, $sectionmodel->title);
             }
-            // Record the Canvas module id -> section and its prerequisites so the completion
-            // pass can gate this section behind the completion of its prerequisite modules.
-            // Only a module that got its own topic section (sectionnum > 0) can carry — or be —
-            // a gate; a module whose items all route to section 0 (e.g. a question bank) has no
-            // section of its own to restrict, so it is not enqueued (which would otherwise write
-            // the restriction onto the General section).
-            if ($sectionmodel->canvasid !== '' && $sectionnum > 0) {
-                $gatingsections[] = [
-                    'canvasid' => $sectionmodel->canvasid,
-                    'sectionnum' => $sectionnum,
-                    'prerequisites' => $sectionmodel->prerequisites,
-                ];
-            }
+            // Whether any Canvas-required item of this module (one carrying a completion
+            // requirement) failed to build; the completion pass treats a prerequisite on such a
+            // module as unresolved rather than gating on the survivors alone (which would let the
+            // dependent section unlock without the dropped requirement ever completed).
+            $requireddropped = false;
             foreach ($this->segment_items($sectionmodel->items) as $segment) {
                 if ($segment['type'] === 'group') {
                     $this->build_page_group(
@@ -260,7 +252,9 @@ class course_builder {
                         $builtpagecmids,
                         $rewritetargets,
                         $createdcounts,
-                        $skippedcounts
+                        $skippedcounts,
+                        $itemcompletions,
+                        $requireddropped
                     );
                     $processed += count($segment['items']);
                     $this->report_item_progress($processed, $totalitems, item::KIND_PAGE);
@@ -268,15 +262,33 @@ class course_builder {
                 }
                 $modelitem = $segment['item'];
                 $cmid = $this->build_one($course, $sectionnum, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons);
-                if ($cmid && $modelitem->completionrequirement !== '') {
-                    $itemcompletions[] = [
-                        'cmid' => $cmid,
-                        'requirement' => $modelitem->completionrequirement,
-                        'minscore' => $modelitem->completionminscore,
-                    ];
+                if ($modelitem->completionrequirement !== '') {
+                    if ($cmid) {
+                        $itemcompletions[] = [
+                            'cmid' => $cmid,
+                            'requirement' => $modelitem->completionrequirement,
+                            'minscore' => $modelitem->completionminscore,
+                        ];
+                    } else {
+                        $requireddropped = true;
+                    }
                 }
                 $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
                 $this->report_item_progress(++$processed, $totalitems, $modelitem->kind);
+            }
+            // Record the Canvas module id -> section and its prerequisites so the completion
+            // pass can gate this section behind the completion of its prerequisite modules.
+            // Only a module that got its own topic section (sectionnum > 0) can carry — or be —
+            // a gate; a module whose items all route to section 0 (e.g. a question bank) has no
+            // section of its own to restrict, so it is not enqueued (which would otherwise write
+            // the restriction onto the General section).
+            if ($sectionmodel->canvasid !== '' && $sectionnum > 0) {
+                $gatingsections[] = [
+                    'canvasid' => $sectionmodel->canvasid,
+                    'sectionnum' => $sectionnum,
+                    'prerequisites' => $sectionmodel->prerequisites,
+                    'droppedrequired' => $requireddropped,
+                ];
             }
         }
 
@@ -314,6 +326,9 @@ class course_builder {
                 $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
             }
             $orphantitle = get_string('additionalresources', 'tool_canvasuplifter');
+            // Orphans are never a prerequisite target, so a dropped required item here can't
+            // affect gating; honour any explicit completion requirement, discard the flag.
+            $orphandropped = false;
             foreach ($this->segment_items($extras) as $segment) {
                 if ($segment['type'] === 'group') {
                     $this->build_page_group(
@@ -326,7 +341,9 @@ class course_builder {
                         $builtpagecmids,
                         $rewritetargets,
                         $createdcounts,
-                        $skippedcounts
+                        $skippedcounts,
+                        $itemcompletions,
+                        $orphandropped
                     );
                     $processed += count($segment['items']);
                     $this->report_item_progress($processed, $totalitems, item::KIND_PAGE);
@@ -831,6 +848,8 @@ class course_builder {
      * @param array $rewritetargets Grouped content rows for the link pass (modified in place).
      * @param array $createdcounts Created tallies (modified in place).
      * @param array $skippedcounts Skipped tallies (modified in place).
+     * @param array $itemcompletions Explicit-completion rows for the gating pass (modified in place).
+     * @param bool $requireddropped Set true when a Canvas-required grouped page failed to build.
      * @return void
      */
     private function build_page_group(
@@ -843,7 +862,9 @@ class course_builder {
         array &$builtpagecmids,
         array &$rewritetargets,
         array &$createdcounts,
-        array &$skippedcounts
+        array &$skippedcounts,
+        array &$itemcompletions,
+        bool &$requireddropped
     ): void {
         global $DB;
         $builder = $this->group_builder();
@@ -876,7 +897,9 @@ class course_builder {
                 $urlmap,
                 $builtpagecmids,
                 $createdcounts,
-                $skippedcounts
+                $skippedcounts,
+                $itemcompletions,
+                $requireddropped
             );
             return;
         }
@@ -888,6 +911,27 @@ class course_builder {
             $this->record_link_target($urlmap, $page, (int) $result['cmid'], $entry['url']);
             $rewritetargets[] = $entry['rewrite'];
             $this->tally((int) $result['cmid'], item::KIND_PAGE, $createdcounts, $skippedcounts);
+        }
+        // The run collapsed into one activity (the book/lesson), so a completion requirement on
+        // any grouped page maps to that single course module. Record it once; a run rarely mixes
+        // distinct requirements, and the group is a single activity that can carry only one.
+        $groupcompletionrecorded = false;
+        foreach ($pages as $page) {
+            if ($page->completionrequirement === '') {
+                continue;
+            }
+            if (!empty($built[spl_object_id($page)])) {
+                if (!$groupcompletionrecorded) {
+                    $itemcompletions[] = [
+                        'cmid' => (int) $result['cmid'],
+                        'requirement' => $page->completionrequirement,
+                        'minscore' => $page->completionminscore,
+                    ];
+                    $groupcompletionrecorded = true;
+                }
+            } else {
+                $requireddropped = true;
+            }
         }
         foreach ($pages as $page) {
             if (empty($built[spl_object_id($page)])) {
@@ -908,6 +952,8 @@ class course_builder {
      * @param int[] $builtpagecmids Page cmids for the link pass (modified in place).
      * @param array $createdcounts Created tallies (modified in place).
      * @param array $skippedcounts Skipped tallies (modified in place).
+     * @param array $itemcompletions Explicit-completion rows for the gating pass (modified in place).
+     * @param bool $requireddropped Set true when a Canvas-required page failed to build.
      * @return void
      */
     private function build_pages_individually(
@@ -918,7 +964,9 @@ class course_builder {
         array &$urlmap,
         array &$builtpagecmids,
         array &$createdcounts,
-        array &$skippedcounts
+        array &$skippedcounts,
+        array &$itemcompletions,
+        bool &$requireddropped
     ): void {
         $pagebuilder = $builders[item::KIND_PAGE] ?? null;
         foreach ($pages as $page) {
@@ -935,6 +983,17 @@ class course_builder {
                 $builtpagecmids[] = $cmid;
                 if (!$page->isvisible) {
                     set_coursemodule_visible($cmid, 0);
+                }
+            }
+            if ($page->completionrequirement !== '') {
+                if ($cmid !== null) {
+                    $itemcompletions[] = [
+                        'cmid' => $cmid,
+                        'requirement' => $page->completionrequirement,
+                        'minscore' => $page->completionminscore,
+                    ];
+                } else {
+                    $requireddropped = true;
                 }
             }
             $this->tally($cmid, item::KIND_PAGE, $createdcounts, $skippedcounts);

@@ -49,12 +49,18 @@ class completion_builder {
     /** @var bool Whether gating was skipped because the site's completion tracking is disabled. */
     public bool $sitecompletiondisabled = false;
 
+    /** @var array Set of course-module ids (keys) gated on a passing grade rather than a plain
+     * completion, populated by a min_score requirement so the section rule can expect the
+     * COMPLETION_COMPLETE_PASS state instead of the generic COMPLETION_COMPLETE. */
+    protected array $passgradecmids = [];
+
     /**
      * Apply the gating. Both inputs come from course_builder's build pass.
      *
      * @param stdClass $course Course record.
      * @param array $sections One row per built section: ['canvasid' => string, 'sectionnum' => int,
-     *        'prerequisites' => array of prerequisite Canvas module ids].
+     *        'prerequisites' => array of prerequisite Canvas module ids, 'droppedrequired' => bool
+     *        (a Canvas-required item of this module failed to build)].
      * @param array $itemcompletions One row per built activity carrying an explicit Canvas
      *        completion requirement: ['cmid' => int, 'requirement' => string, 'minscore' => string].
      * @return int Number of sections gated.
@@ -75,11 +81,16 @@ class completion_builder {
         }
 
         // Map each Canvas module id to the section number it built into, so a prerequisite
-        // (which names a module) resolves to that module's section and its activities.
+        // (which names a module) resolves to that module's section and its activities. Also
+        // note which modules dropped a Canvas-required item: a prerequisite on such a module
+        // can never be fully honoured (the surviving activities would unlock the gate without
+        // the required item ever completed), so it is treated as unresolved below.
         $sectionbycanvasid = [];
+        $droppedbycanvasid = [];
         foreach ($sections as $row) {
             if ($row['canvasid'] !== '' && $row['sectionnum'] > 0) {
                 $sectionbycanvasid[$row['canvasid']] = (int) $row['sectionnum'];
+                $droppedbycanvasid[$row['canvasid']] = !empty($row['droppedrequired']);
             }
         }
 
@@ -111,7 +122,10 @@ class completion_builder {
             foreach ($row['prerequisites'] as $prereqid) {
                 $cmids = isset($sectionbycanvasid[$prereqid])
                     ? $this->gateable_cmids($modinfo, $sectionbycanvasid[$prereqid]) : [];
-                if (empty($cmids)) {
+                // Count as unresolved a prerequisite that resolves to no gateable activity, or one
+                // whose module dropped a Canvas-required item (gating on the survivors alone would
+                // under-restrict — the dependent section would unlock without the required item).
+                if (empty($cmids) || !empty($droppedbycanvasid[$prereqid])) {
                     $this->unresolvedprereqs++;
                     continue;
                 }
@@ -130,10 +144,14 @@ class completion_builder {
                     $this->set_view_completion($modinfo->cms[$cmid]);
                 }
             }
-            // Write the "&"-combined completion restriction onto the dependent section.
+            // Write the "&"-combined completion restriction onto the dependent section. An
+            // activity gated on a passing grade (a min_score requirement) must expect
+            // COMPLETION_COMPLETE_PASS — the generic COMPLETION_COMPLETE also accepts a failing
+            // grade (COMPLETION_COMPLETE_FAIL), which would unlock the section on a fail.
             $children = [];
             foreach (array_keys($prereqcmids) as $cmid) {
-                $children[] = completion_condition::get_json($cmid, COMPLETION_COMPLETE);
+                $expected = isset($this->passgradecmids[$cmid]) ? COMPLETION_COMPLETE_PASS : COMPLETION_COMPLETE;
+                $children[] = completion_condition::get_json($cmid, $expected);
             }
             $json = json_encode(tree::get_root_json($children, tree::OP_AND, true));
             $sectionid = (int) $modinfo->get_section_info((int) $row['sectionnum'])->id;
@@ -195,9 +213,10 @@ class completion_builder {
 
     /**
      * Set an activity's completion config from an explicit Canvas completion requirement. A
-     * min_score requires a passing grade; must_view/must_mark_done/must_submit/must_contribute
-     * fall back to view-completion, which every gateable module supports. Returns whether a rule
-     * was written (false when the module cannot track completion by view).
+     * min_score sets the grade item's passing threshold and requires a passing grade;
+     * must_view/must_mark_done/must_submit/must_contribute fall back to view-completion, which
+     * every gateable module supports. Returns whether a rule was written (false when the module
+     * cannot track completion by view).
      *
      * @param \cm_info $cm The course module.
      * @param string $requirement The Canvas requirement type.
@@ -210,18 +229,54 @@ class completion_builder {
             return false;
         }
         $update = (object) ['id' => $cm->id, 'completion' => COMPLETION_TRACKING_AUTOMATIC];
-        if ($requirement === 'min_score' && plugin_supports('mod', $cm->modname, FEATURE_GRADE_HAS_GRADE, false)) {
-            // Require a grade on the activity; a passing grade when the module carries a
-            // grade item Moodle can compare against a gradepass.
+        if (
+            $requirement === 'min_score'
+            && plugin_supports('mod', $cm->modname, FEATURE_GRADE_HAS_GRADE, false)
+            && $this->set_grade_pass($cm, $minscore)
+        ) {
+            // Require a passing grade: the activity's grade item now carries a gradepass scaled
+            // from Canvas's min_score, and completionpassgrade tells Moodle to compare against it.
             $update->completiongradeitemnumber = 0;
             $update->completionpassgrade = 1;
+            $this->passgradecmids[(int) $cm->id] = true;
         } else {
             // The must_view requirement, and the submit/contribute ones (whose module-specific
-            // rules vary), map to "must view" — the closest uniform Moodle equivalent.
+            // rules vary), map to "must view" — the closest uniform Moodle equivalent. A min_score
+            // on an ungraded activity (no grade item to compare) also lands here: without a grade
+            // item a passing-grade rule can't be enforced, so view-completion is the safe fallback.
             $update->completionview = 1;
         }
         $DB->update_record('course_modules', $update);
         $this->completionset++;
+        return true;
+    }
+
+    /**
+     * Set an activity's grade-item passing threshold (gradepass) from a Canvas min_score. Canvas
+     * min_score is a raw points value on the same scale as the imported activity's grademax (the
+     * importer sets the activity's grade from Canvas's points_possible), so it maps directly,
+     * clamped to the grade item's [0, grademax] range. Returns false when the activity has no
+     * gradeable item to set the threshold on (so the caller falls back to view-completion).
+     *
+     * @param \cm_info $cm The course module.
+     * @param string $minscore The Canvas min_score value.
+     * @return bool Whether a passing threshold was set.
+     */
+    protected function set_grade_pass(\cm_info $cm, string $minscore): bool {
+        global $CFG;
+        require_once($CFG->libdir . '/gradelib.php');
+        $gradeitem = \grade_item::fetch([
+            'itemtype' => 'mod',
+            'itemmodule' => $cm->modname,
+            'iteminstance' => $cm->instance,
+            'itemnumber' => 0,
+            'courseid' => $cm->course,
+        ]);
+        if (!$gradeitem || (float) $gradeitem->grademax <= 0) {
+            return false;
+        }
+        $gradeitem->gradepass = min(max((float) $minscore, 0.0), (float) $gradeitem->grademax);
+        $gradeitem->update();
         return true;
     }
 }
