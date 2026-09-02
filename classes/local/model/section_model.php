@@ -39,6 +39,12 @@ class section_model {
     /** @var item[] Items contained in this section, in order. */
     public array $items = [];
 
+    /** @var bool True when the parser discarded an item that carried a Canvas completion
+     * requirement (its resource was missing/suppressed, or its type unsupported), so the item
+     * never reaches the build. The completion pass treats such a module's prerequisite as
+     * unresolved rather than gating dependents on the surviving activities alone. */
+    public bool $droppedrequired = false;
+
     /**
      * Constructor.
      *

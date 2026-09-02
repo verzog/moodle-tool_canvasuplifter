@@ -238,8 +238,10 @@ class course_builder {
             // Whether any Canvas-required item of this module (one carrying a completion
             // requirement) failed to build; the completion pass treats a prerequisite on such a
             // module as unresolved rather than gating on the survivors alone (which would let the
-            // dependent section unlock without the dropped requirement ever completed).
-            $requireddropped = false;
+            // dependent section unlock without the dropped requirement ever completed). Seed it
+            // from the parser, which flags a required item it discarded before the build (a
+            // missing/suppressed resource, or an unsupported type) — that item never reaches here.
+            $requireddropped = $sectionmodel->droppedrequired;
             foreach ($this->segment_items($sectionmodel->items) as $segment) {
                 if ($segment['type'] === 'group') {
                     $this->build_page_group(

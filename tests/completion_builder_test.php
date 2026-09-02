@@ -384,6 +384,79 @@ XML;
     }
 
     /**
+     * A required item the parser discards before the build — its identifierref resolves to no
+     * manifest resource — never reaches the section's item list, so the flag can't be set from a
+     * built activity. The parser marks the module instead, and the dependent section is still
+     * reported unresolved rather than gated on the surviving visible activity alone.
+     *
+     * @return void
+     */
+    public function test_parser_dropped_required_item_marks_prerequisite_unresolved(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        set_config('enablecompletion', 1);
+
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/a.html', '<html><head><title>A</title></head><body>A</body></html>');
+        file_put_contents($dir . '/wiki_content/b.html', '<html><head><title>B</title></head><body>B</body></html>');
+        // The manifest declares no resource for the required item's identifierref (r_missing).
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_a" type="webcontent" href="wiki_content/a.html"><file href="wiki_content/a.html"/></resource>
+    <resource identifier="r_b" type="webcontent" href="wiki_content/b.html"><file href="wiki_content/b.html"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        // Module A has a visible page plus a required item whose resource is absent (parser drops it).
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="modA"><title>Module A</title><workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_a"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+        <title>Page A</title><identifierref>r_a</identifierref></item>
+      <item identifier="mi_x"><content_type>Assignment</content_type><workflow_state>active</workflow_state>
+        <title>Required missing</title><identifierref>r_missing</identifierref>
+        <completion_requirement><type>must_view</type></completion_requirement></item>
+    </items>
+  </module>
+  <module identifier="modB"><title>Module B</title><workflow_state>active</workflow_state>
+    <prerequisites><prerequisite type="context_module"><title>Module A</title>
+      <identifierref>modA</identifierref></prerequisite></prerequisites>
+    <items><item identifier="mi_b"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+      <title>Page B</title><identifierref>r_b</identifierref></item></items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        // The parser flagged the module even though the required item never became a section item.
+        $sections = array_values(array_filter(
+            $coursemodel->sections,
+            static fn($s) => $s->canvasid === 'modA'
+        ));
+        $this->assertTrue($sections[0]->droppedrequired);
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo((int) $report['courseid']);
+        $bsectionid = (int) $modinfo->get_section_info(2)->id;
+        $this->assertEmpty($DB->get_field('course_sections', 'availability', ['id' => $bsectionid]));
+        $this->assertStringContainsString(
+            get_string('warngatingunresolved', 'tool_canvasuplifter', 1),
+            implode("\n", $report['warnings'])
+        );
+    }
+
+    /**
      * A required item that builds into a hidden activity (here a Canvas-unpublished page; the same
      * holds for an empty quiz kept as a hidden placeholder) returns a valid course module, but the
      * completion pass excludes it as non-viewable. Its module must therefore be reported unresolved
