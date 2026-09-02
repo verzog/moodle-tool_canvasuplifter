@@ -274,6 +274,9 @@ class course_builder {
                             'cmid' => $cmid,
                             'requirement' => $modelitem->completionrequirement,
                             'minscore' => $modelitem->completionminscore,
+                            // The Canvas max the min_score is out of, so the completion pass can
+                            // scale it to the rounded grade item (assignments round their max).
+                            'maxscore' => $this->completion_max_score($builders, $cmid),
                         ];
                     } else {
                         $requireddropped = true;
@@ -861,6 +864,24 @@ class course_builder {
     }
 
     /**
+     * The unrounded Canvas maximum a min_score requirement is out of, for a built activity, or ''
+     * when unknown. Currently only assignments (whose Moodle max grade is integer-rounded) record
+     * it; other graded modules keep a matching maximum, so an empty value leaves the completion
+     * pass to treat min_score as an absolute threshold.
+     *
+     * @param array $builders Map of kind => builder object.
+     * @param int $cmid The built course-module id.
+     * @return string
+     */
+    private function completion_max_score(array $builders, int $cmid): string {
+        $assignbuilder = $builders[item::KIND_ASSIGNMENT] ?? null;
+        if ($assignbuilder instanceof assign_builder && isset($assignbuilder->completionmaxscore[$cmid])) {
+            return (string) $assignbuilder->completionmaxscore[$cmid];
+        }
+        return '';
+    }
+
+    /**
      * Build a run of consecutive pages as one combined book/lesson activity,
      * recording each page's link target and the chapter/page rows that the
      * second link pass must rewrite. Falls back to one page per item if the
@@ -950,7 +971,11 @@ class course_builder {
             if ($page->completionrequirement === '') {
                 continue;
             }
-            if (empty($built[spl_object_id($page)]) || !$groupgateable) {
+            // Drop the requirement when the required page didn't build, when the group activity
+            // isn't gateable, or when the required page itself is hidden: an unpublished page
+            // folded into a visible book/lesson becomes a hidden chapter, so completing the
+            // visible group would satisfy it without the student ever seeing the required page.
+            if (empty($built[spl_object_id($page)]) || !$groupgateable || !$page->isvisible) {
                 $requireddropped = true;
             } else if (!$groupcompletionrecorded) {
                 $itemcompletions[] = [

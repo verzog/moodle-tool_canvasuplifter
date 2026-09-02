@@ -62,7 +62,8 @@ class completion_builder {
      *        'prerequisites' => array of prerequisite Canvas module ids, 'droppedrequired' => bool
      *        (a Canvas-required item of this module failed to build)].
      * @param array $itemcompletions One row per built activity carrying an explicit Canvas
-     *        completion requirement: ['cmid' => int, 'requirement' => string, 'minscore' => string].
+     *        completion requirement: ['cmid' => int, 'requirement' => string, 'minscore' => string,
+     *        'maxscore' => string (the Canvas maximum min_score is out of, for scaling)].
      * @return int Number of sections gated.
      */
     public function apply(stdClass $course, array $sections, array $itemcompletions): int {
@@ -105,7 +106,13 @@ class completion_builder {
             if ($cmid <= 0 || !isset($modinfo->cms[$cmid])) {
                 continue;
             }
-            if ($this->set_requirement_completion($modinfo->cms[$cmid], (string) $row['requirement'], (string) $row['minscore'])) {
+            $applied = $this->set_requirement_completion(
+                $modinfo->cms[$cmid],
+                (string) $row['requirement'],
+                (string) $row['minscore'],
+                (string) ($row['maxscore'] ?? '')
+            );
+            if ($applied) {
                 $explicit[$cmid] = true;
                 $changed = true;
             }
@@ -115,26 +122,32 @@ class completion_builder {
             if (empty($row['prerequisites'])) {
                 continue;
             }
-            // Collect the completion-trackable activities of every prerequisite module,
-            // counting each prerequisite that resolves to none (missing module, or a module
-            // with no gateable activity — e.g. only labels or hidden items) once.
+            // Collect the completion-trackable activities of every prerequisite module. Canvas
+            // requires ALL listed prerequisites (an AND), so if any one can't be faithfully
+            // represented the whole restriction would under-enforce — a partial rule on the
+            // remaining prerequisites lets the section unlock without the unresolved one. Count
+            // each unresolved prerequisite and, if any is unresolved, write no rule for the
+            // section at all (reported via warngatingunresolved) rather than a misleading partial.
             $prereqcmids = [];
+            $hasunresolved = false;
             foreach ($row['prerequisites'] as $prereqid) {
                 $cmids = isset($sectionbycanvasid[$prereqid])
                     ? $this->gateable_cmids($modinfo, $sectionbycanvasid[$prereqid]) : [];
-                // Count as unresolved a prerequisite that resolves to no gateable activity, or one
-                // whose module dropped a Canvas-required item (gating on the survivors alone would
-                // under-restrict — the dependent section would unlock without the required item).
+                // Unresolved: a prerequisite that resolves to no gateable activity (missing
+                // module, or one with only labels/hidden items), or one whose module dropped a
+                // Canvas-required item (gating on the survivors alone would under-restrict).
                 if (empty($cmids) || !empty($droppedbycanvasid[$prereqid])) {
                     $this->unresolvedprereqs++;
+                    $hasunresolved = true;
                     continue;
                 }
                 foreach ($cmids as $cmid) {
                     $prereqcmids[$cmid] = true;
                 }
             }
-            if (empty($prereqcmids)) {
-                // Every prerequisite was unresolvable (already counted above); write no rule.
+            if ($hasunresolved || empty($prereqcmids)) {
+                // At least one prerequisite couldn't be represented (already counted above), or
+                // none resolved; write no rule so the section is not gated on a partial set.
                 continue;
             }
             // Give each prerequisite activity automatic view-completion (unless it already has
@@ -221,9 +234,16 @@ class completion_builder {
      * @param \cm_info $cm The course module.
      * @param string $requirement The Canvas requirement type.
      * @param string $minscore The min_score value (for min_score requirements).
+     * @param string $maxscore The Canvas maximum min_score is out of (for scaling to a rounded
+     *        grade item); '' when unknown, in which case min_score is treated as absolute.
      * @return bool
      */
-    protected function set_requirement_completion(\cm_info $cm, string $requirement, string $minscore): bool {
+    protected function set_requirement_completion(
+        \cm_info $cm,
+        string $requirement,
+        string $minscore,
+        string $maxscore = ''
+    ): bool {
         global $DB;
         if (!plugin_supports('mod', $cm->modname, FEATURE_COMPLETION_TRACKS_VIEWS, false)) {
             return false;
@@ -232,7 +252,7 @@ class completion_builder {
         if (
             $requirement === 'min_score'
             && plugin_supports('mod', $cm->modname, FEATURE_GRADE_HAS_GRADE, false)
-            && $this->set_grade_pass($cm, $minscore)
+            && $this->set_grade_pass($cm, $minscore, $maxscore)
         ) {
             // Require a passing grade: the activity's grade item now carries a gradepass scaled
             // from Canvas's min_score, and completionpassgrade tells Moodle to compare against it.
@@ -253,16 +273,19 @@ class completion_builder {
 
     /**
      * Set an activity's grade-item passing threshold (gradepass) from a Canvas min_score. Canvas
-     * min_score is a raw points value on the same scale as the imported activity's grademax (the
-     * importer sets the activity's grade from Canvas's points_possible), so it maps directly,
-     * clamped to the grade item's [0, grademax] range. Returns false when the activity has no
-     * gradeable item to set the threshold on (so the caller falls back to view-completion).
+     * min_score is a raw points value out of the assignment's points_possible. When that maximum
+     * was rounded to build the Moodle grade item (mod_assign stores an integer max grade), the
+     * threshold is rescaled by grademax/maxscore so its proportion is preserved; otherwise (matching
+     * maxima, or no known maximum) min_score maps directly. The result is clamped to [0, grademax].
+     * Returns false when the activity has no gradeable item to set the threshold on (so the caller
+     * falls back to view-completion).
      *
      * @param \cm_info $cm The course module.
      * @param string $minscore The Canvas min_score value.
+     * @param string $maxscore The Canvas maximum min_score is out of; '' when unknown.
      * @return bool Whether a passing threshold was set.
      */
-    protected function set_grade_pass(\cm_info $cm, string $minscore): bool {
+    protected function set_grade_pass(\cm_info $cm, string $minscore, string $maxscore = ''): bool {
         global $CFG;
         require_once($CFG->libdir . '/gradelib.php');
         $gradeitem = \grade_item::fetch([
@@ -275,7 +298,14 @@ class completion_builder {
         if (!$gradeitem || (float) $gradeitem->grademax <= 0) {
             return false;
         }
-        $gradeitem->gradepass = min(max((float) $minscore, 0.0), (float) $gradeitem->grademax);
+        $grademax = (float) $gradeitem->grademax;
+        $min = max((float) $minscore, 0.0);
+        $canvasmax = (float) $maxscore;
+        // Scale min_score to the imported grademax when the Canvas maximum is known and differs
+        // (an assignment whose fractional points_possible was rounded), so a "2 out of 2.5" (80%)
+        // requirement stays 80% of the rounded grade item rather than 2 out of 3 (67%).
+        $pass = $canvasmax > 0 ? ($min / $canvasmax) * $grademax : $min;
+        $gradeitem->gradepass = min($pass, $grademax);
         $gradeitem->update();
         return true;
     }

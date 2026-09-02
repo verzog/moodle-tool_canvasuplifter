@@ -32,8 +32,15 @@ class assignment_settings {
     /** @var string Assignment title. */
     public string $title = '';
 
-    /** @var int Maximum points (0 when not point-graded). */
+    /** @var int Maximum points (0 when not point-graded). mod_assign stores its max grade as an
+     * integer, so a fractional Canvas points_possible is rounded here; {@see $pointsraw} keeps the
+     * unrounded value for scaling a min_score completion threshold to the rounded grade item. */
     public int $points = 0;
+
+    /** @var float Unrounded Canvas points_possible (0 when not point-graded). Preserved so a
+     * min_score completion threshold can be rescaled to the imported (rounded) grade maximum
+     * without losing the intended proportion. */
+    public float $pointsraw = 0.0;
 
     /** @var string Canvas grading type, e.g. "points", "pass_fail", "not_graded". */
     public string $gradingtype = '';
@@ -144,7 +151,8 @@ class assignment_settings {
             // both default and prefixed CC profile documents.
             $points = (string) $ims->gradable->attributes()->points_possible;
             if ($points !== '') {
-                $settings->points = (int) round((float) $points);
+                $settings->pointsraw = max(0.0, (float) $points);
+                $settings->points = (int) round($settings->pointsraw);
             }
             $gradable = filter_var(trim((string) $ims->gradable), FILTER_VALIDATE_BOOLEAN);
             $settings->gradingtype = $gradable && $settings->points > 0 ? 'points' : 'not_graded';
@@ -212,7 +220,8 @@ class assignment_settings {
             }
         }
         if (isset($node->points_possible) && trim((string) $node->points_possible) !== '') {
-            $settings->points = (int) round((float) $node->points_possible);
+            $settings->pointsraw = max(0.0, (float) $node->points_possible);
+            $settings->points = (int) round($settings->pointsraw);
         }
         if (isset($node->allowed_extensions)) {
             $settings->allowedextensions = trim((string) $node->allowed_extensions);
