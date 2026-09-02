@@ -1462,6 +1462,69 @@ XML;
     }
 
     /**
+     * A module's Canvas prerequisites (context_module references) and a per-item
+     * completion_requirement are read into the section/item model so the builder can gate the
+     * module and set activity completion.
+     *
+     * @return void
+     */
+    public function test_module_meta_reads_prerequisites_and_completion(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/wiki_content');
+        file_put_contents($dir . '/wiki_content/a.html', '<html><title>A</title></html>');
+        file_put_contents($dir . '/wiki_content/b.html', '<html><title>B</title></html>');
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>
+  <resources>
+    <resource identifier="r_a" type="webcontent" href="wiki_content/a.html"><file href="wiki_content/a.html"/></resource>
+    <resource identifier="r_b" type="webcontent" href="wiki_content/b.html"><file href="wiki_content/b.html"/></resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="modA">
+    <title>Module A</title><workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_a"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+        <title>Page A</title><identifierref>r_a</identifierref>
+        <completion_requirement><type>must_view</type></completion_requirement>
+      </item>
+    </items>
+  </module>
+  <module identifier="modB">
+    <title>Module B</title><workflow_state>active</workflow_state>
+    <prerequisites>
+      <prerequisite type="context_module"><title>Module A</title><identifierref>modA</identifierref></prerequisite>
+    </prerequisites>
+    <items>
+      <item identifier="mi_b"><content_type>WikiPage</content_type><workflow_state>active</workflow_state>
+        <title>Page B</title><identifierref>r_b</identifierref></item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(2, $course->sections);
+        [$a, $b] = $course->sections;
+        $this->assertSame('modA', $a->canvasid);
+        $this->assertSame([], $a->prerequisites);
+        $this->assertSame('must_view', $a->items[0]->completionrequirement);
+        $this->assertSame('modB', $b->canvasid);
+        $this->assertSame(['modA'], $b->prerequisites);
+    }
+
+    /**
      * A module-level workflow_state="unpublished" hides every item inside it,
      * even items whose own workflow_state is "active". Canvas lets teachers
      * unpublish a whole module without having to flip each item, so the inherited

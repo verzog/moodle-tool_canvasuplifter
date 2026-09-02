@@ -124,6 +124,8 @@ $string['note_url'] = 'External links convert directly.';
 $string['notecanvasboilerplate'] = 'Dropped {$a} Canvas platform item(s) with no Moodle equivalent (help-guide '
     . 'links to Canvas\'s documentation, and leftover ANGEL migration objects).';
 $string['noteeventsimported'] = 'Imported {$a} Canvas calendar event(s) as course calendar events.';
+$string['notegatingimported'] = 'Applied Canvas module prerequisites to {$a} section(s) as "Restrict access" rules, with '
+    . 'activity completion enabled on the required activities. Course completion has been turned on.';
 $string['notegradeletters'] = 'Imported {$a} letter-grade boundaries from the Canvas grading scheme as this '
     . 'course\'s grade letters.';
 $string['noteoutcomesimported'] = 'Imported {$a} Canvas learning outcome(s) as course grade outcomes, each with a '
@@ -253,6 +255,8 @@ $string['warnblackboardnative'] = 'This looks like a Blackboard Learn native exp
     . 'Cartridge (IMSCC) and import that package instead.';
 $string['warneventsmalformed'] = 'The Canvas calendar events file could not be read, so its events were not imported.';
 $string['warneventsskipped'] = 'Skipped {$a} Canvas calendar event(s) that carried no usable start time.';
+$string['warngatingunresolved'] = 'Could not apply {$a} Canvas module prerequisite(s): the required module had no built '
+    . 'activity to gate on. Set up any needed "Restrict access" rules by hand.';
 $string['warningsheading'] = 'Notes and warnings';
 $string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';

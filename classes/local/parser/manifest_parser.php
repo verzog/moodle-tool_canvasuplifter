@@ -2206,6 +2206,10 @@ class manifest_parser {
                 continue;
             }
             $section = new section_model($this->child_text($module, 'title'));
+            // Record the module's own identifier and its prerequisite module identifiers so
+            // the builder can gate this section behind the completion of those modules.
+            $section->canvasid = $module->getAttribute('identifier');
+            $section->prerequisites = $this->module_prerequisites($module);
             // Canvas can hide a whole module with the module-level workflow_state
             // even when its items individually carry workflow_state="active". AND
             // the two so the items inherit their parent module's hidden state.
@@ -2222,6 +2226,52 @@ class manifest_parser {
             $course->add_section($section);
         }
         return true;
+    }
+
+    /**
+     * The Canvas module identifiers a <module> lists as prerequisites. Canvas records each as
+     * a <prerequisite type="context_module"> whose <identifierref> names the required module;
+     * only module (context_module) prerequisites are represented, since a Moodle availability
+     * completion condition gates on activities, which map to another module's items.
+     *
+     * @param DOMElement $module The <module> element from module_meta.xml.
+     * @return array List of prerequisite module identifiers, in document order.
+     */
+    protected function module_prerequisites(DOMElement $module): array {
+        $prerequisites = [];
+        $node = $this->first_child_named($module, 'prerequisites');
+        if ($node === null) {
+            return $prerequisites;
+        }
+        foreach ($this->children_named($node, 'prerequisite') as $prereq) {
+            if ($prereq->getAttribute('type') !== '' && $prereq->getAttribute('type') !== 'context_module') {
+                continue;
+            }
+            $ref = trim($this->child_text($prereq, 'identifierref'));
+            if ($ref !== '') {
+                $prerequisites[] = $ref;
+            }
+        }
+        return $prerequisites;
+    }
+
+    /**
+     * Copy a module_meta <item>'s completion requirement onto the model item, when it declares
+     * one. Canvas records it as <completion_requirement><type>…</type><min_score>…</min_score>,
+     * where type is must_view/must_submit/must_contribute/must_mark_done/min_score; the builder
+     * maps it to the activity's completion config (falling back to view-completion otherwise).
+     *
+     * @param DOMElement $node The <item> element from module_meta.xml.
+     * @param item $modelitem The model item to annotate (modified in place).
+     * @return void
+     */
+    protected function apply_completion_requirement(DOMElement $node, item $modelitem): void {
+        $requirement = $this->first_child_named($node, 'completion_requirement');
+        if ($requirement === null) {
+            return;
+        }
+        $modelitem->completionrequirement = trim($this->child_text($requirement, 'type'));
+        $modelitem->completionminscore = trim($this->child_text($requirement, 'min_score'));
     }
 
     /**
@@ -2272,6 +2322,7 @@ class manifest_parser {
             // hidden must stay hidden even when a published module also places it,
             // so only ever hide - never let an active module reveal it.
             $modelitem->isvisible = $isvisible && $resources[$ref]->isvisible;
+            $this->apply_completion_requirement($node, $modelitem);
             return $modelitem;
         }
 
@@ -2287,6 +2338,7 @@ class manifest_parser {
             $modelitem->kind = item::KIND_URL;
             $modelitem->url = $url;
             $modelitem->isvisible = $isvisible;
+            $this->apply_completion_requirement($node, $modelitem);
             if ($id !== '') {
                 $resources[$id] = $modelitem;
             }

@@ -213,6 +213,8 @@ class course_builder {
         $totalitems = max(1, count($coursemodel->all_items()));
         $processed = 0;
 
+        $gatingsections = [];   // Per built section: canvasid, sectionnum, prerequisites (#167).
+        $itemcompletions = [];  // Per built activity with an explicit Canvas completion requirement.
         $builtsections = 0;
         foreach ($coursemodel->sections as $sectionmodel) {
             // A section whose every item routes to section 0 (a question bank) would leave an
@@ -232,6 +234,15 @@ class course_builder {
             if ($hasplaced) {
                 $sectionnum = ++$builtsections;
                 $this->prepare_section($course, $sectionnum, $sectionmodel->title);
+            }
+            // Record the Canvas module id -> section and its prerequisites so the completion
+            // pass can gate this section behind the completion of its prerequisite modules.
+            if ($sectionmodel->canvasid !== '') {
+                $gatingsections[] = [
+                    'canvasid' => $sectionmodel->canvasid,
+                    'sectionnum' => $sectionnum,
+                    'prerequisites' => $sectionmodel->prerequisites,
+                ];
             }
             foreach ($this->segment_items($sectionmodel->items) as $segment) {
                 if ($segment['type'] === 'group') {
@@ -253,6 +264,13 @@ class course_builder {
                 }
                 $modelitem = $segment['item'];
                 $cmid = $this->build_one($course, $sectionnum, $modelitem, $builders, $urlmap, $builtpagecmids, $skipreasons);
+                if ($cmid && $modelitem->completionrequirement !== '') {
+                    $itemcompletions[] = [
+                        'cmid' => $cmid,
+                        'requirement' => $modelitem->completionrequirement,
+                        'minscore' => $modelitem->completionminscore,
+                    ];
+                }
                 $this->tally($cmid, $modelitem->kind, $createdcounts, $skippedcounts);
                 $this->report_item_progress(++$processed, $totalitems, $modelitem->kind);
             }
@@ -401,6 +419,11 @@ class course_builder {
         $this->rewrite_outcome_links($outcomebuilder->createdids, $urlmap);
         $this->rewrite_event_links($calendarbuilder->createdids, $urlmap);
 
+        // Gate modules behind their Canvas prerequisites: now that every activity exists and
+        // its section is known, set activity completion and section availability (#167).
+        $completionbuilder = new completion_builder();
+        $gatedsections = $completionbuilder->apply($course, $gatingsections, $itemcompletions);
+
         $itemcount = count($coursemodel->all_items());
         $createdtotal = array_sum($createdcounts);
         $skippedtotal = $itemcount - $createdtotal;
@@ -470,6 +493,12 @@ class course_builder {
         }
         if ($calendarbuilder->malformedfile) {
             $warnings[] = get_string('warneventsmalformed', 'tool_canvasuplifter');
+        }
+        if ($gatedsections > 0) {
+            $warnings[] = get_string('notegatingimported', 'tool_canvasuplifter', $gatedsections);
+        }
+        if ($completionbuilder->unresolvedprereqs > 0) {
+            $warnings[] = get_string('warngatingunresolved', 'tool_canvasuplifter', $completionbuilder->unresolvedprereqs);
         }
         if ($coursemodel->canvasboilerplatedropped > 0) {
             $warnings[] = get_string(

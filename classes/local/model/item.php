@@ -67,6 +67,16 @@ class item {
     /** @var string Canvas resource identifier. */
     public string $identifier = '';
 
+    /** @var string Canvas module-item completion requirement type, when the module_meta.xml
+     * item declares one: 'must_view', 'must_submit', 'must_contribute', 'must_mark_done' or
+     * 'min_score'. Empty when the item has no explicit requirement (the module gate then falls
+     * back to view-completion). Mapped to the activity's completion config at build time. */
+    public string $completionrequirement = '';
+
+    /** @var string For a 'min_score' completion requirement, the minimum score as a decimal
+     * string; empty otherwise. */
+    public string $completionminscore = '';
+
     /** @var string Human-readable title. */
     public string $title = '';
 

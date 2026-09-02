@@ -5,6 +5,22 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.77.0] - 2026-09-02
+
+- **Canvas module prerequisites now gate the imported course** (#167). Canvas records module
+  gating in `course_settings/module_meta.xml` (a module's `<prerequisites>` and per-item
+  `<completion_requirement>`), which was previously read for structure only. Since Canvas
+  modules import as Moodle sections, a module prerequisite ("finish module A before module B")
+  becomes a section-level **Restrict access** rule on the dependent module: an `&`-combined
+  set of completion conditions on every activity of the prerequisite module(s). Those
+  prerequisite activities are given automatic **view-completion** so the rule can be met (a
+  module that cannot track completion by view, e.g. a label, is skipped), and **course
+  completion** is enabled. An explicit per-item `completion_requirement` sets that activity's
+  completion instead of the view default (`min_score` requires a passing grade). The build
+  report notes how many sections were gated and flags any prerequisite whose module had no
+  gateable activity. Parsed as Moodle-free model data; applied in a second pass once every
+  activity and its section exist.
+
 ## [0.76.0] - 2026-09-01
 
 - **Canvas calendar events now import** (#168). A Canvas package's

@@ -27,6 +27,15 @@ class section_model {
     /** @var string Section title. */
     public string $title = '';
 
+    /** @var string The Canvas module identifier this section was built from (empty when the
+     * section did not come from module_meta.xml), so prerequisites can reference it. */
+    public string $canvasid = '';
+
+    /** @var string[] Canvas module identifiers this module lists as prerequisites — the
+     * learner must finish those modules before this one. Mapped to a Moodle availability
+     * restriction on this section at build time. */
+    public array $prerequisites = [];
+
     /** @var item[] Items contained in this section, in order. */
     public array $items = [];
 
