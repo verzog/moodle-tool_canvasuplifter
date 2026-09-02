@@ -19,6 +19,7 @@ namespace tool_canvasuplifter\local\report;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\model\qti_question;
+use tool_canvasuplifter\local\parser\events_parser;
 use tool_canvasuplifter\local\parser\outcomes_parser;
 use tool_canvasuplifter\local\parser\qti_parser;
 use tool_canvasuplifter\local\parser\source_detector;
@@ -460,6 +461,7 @@ class conversion_report {
             'unknowntypes' => $this->counts_by_resourcetype(item::KIND_UNKNOWN),
             'questionmatrix' => $questionmatrix,
             'outcomes' => $this->outcomes_summary(),
+            'events' => $this->events_summary(),
         ];
     }
 
@@ -498,6 +500,43 @@ class conversion_report {
             }
         }
         $total = count($outcomes);
+        return ['total' => $total, 'importable' => $importable, 'skipped' => $total - $importable, 'malformed' => false];
+    }
+
+    /**
+     * Summarise the package's calendar events so the analyse preview reflects them (the
+     * build creates a course calendar event per event with a usable start time and skips
+     * those without one). Requires a package root; returns an empty array when there is no
+     * events file or it holds none.
+     *
+     * @return array Empty, or {total:int, importable:int, skipped:int, malformed:bool}.
+     */
+    protected function events_summary(): array {
+        if ($this->packageroot === null) {
+            return [];
+        }
+        $path = $this->packageroot . '/course_settings/events.xml';
+        if (!is_readable($path)) {
+            return [];
+        }
+        $parser = new events_parser();
+        $events = $parser->parse((string) @file_get_contents($path));
+        if ($parser->malformed) {
+            // File present but unreadable as XML: flag the total loss rather than report it
+            // as a package with no events.
+            return ['total' => 0, 'importable' => 0, 'skipped' => 0, 'malformed' => true];
+        }
+        if (empty($events)) {
+            return [];
+        }
+        $importable = 0;
+        foreach ($events as $event) {
+            // Mirrors calendar_builder: an event needs a usable start time to be placed.
+            if ($event->timestart > 0) {
+                $importable++;
+            }
+        }
+        $total = count($events);
         return ['total' => $total, 'importable' => $importable, 'skipped' => $total - $importable, 'malformed' => false];
     }
 

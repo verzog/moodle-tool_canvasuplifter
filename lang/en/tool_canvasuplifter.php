@@ -80,6 +80,12 @@ $string['errornotzip'] = 'That file could not be opened as a Common Cartridge (z
 $string['errorpackagetoolarge'] = 'That package is too large to extract safely (it expands past the allowed size or file count).';
 $string['erroruploadfailed'] = 'The upload could not be completed after several attempts. Check your connection and try '
     . 'uploading the package again.';
+$string['eventsheading'] = 'Calendar events';
+$string['eventsmalformed'] = 'The events.xml file is present but could not be read (it appears truncated or malformed), '
+    . 'so its calendar events will not be imported.';
+$string['eventssummary'] = '{$a->total} Canvas calendar event(s) found; {$a->importable} will import as course '
+    . 'calendar events, {$a->skipped} skipped (no usable start time).';
+$string['eventuntitled'] = 'Untitled event';
 $string['extraquizzesbuilt'] = 'Also built {$a} runnable quiz(zes) from standalone question banks (in "Additional resources").';
 $string['itemcount'] = 'Content items';
 $string['itemdetailheading'] = 'Item-by-item detail';
@@ -117,6 +123,7 @@ $string['note_unknown'] = 'Resource type not recognised; these are skipped.';
 $string['note_url'] = 'External links convert directly.';
 $string['notecanvasboilerplate'] = 'Dropped {$a} Canvas platform item(s) with no Moodle equivalent (help-guide '
     . 'links to Canvas\'s documentation, and leftover ANGEL migration objects).';
+$string['noteeventsimported'] = 'Imported {$a} Canvas calendar event(s) as course calendar events.';
 $string['notegradeletters'] = 'Imported {$a} letter-grade boundaries from the Canvas grading scheme as this '
     . 'course\'s grade letters.';
 $string['noteoutcomesimported'] = 'Imported {$a} Canvas learning outcome(s) as course grade outcomes, each with a '
@@ -244,6 +251,8 @@ $string['warnblackboardnative'] = 'This looks like a Blackboard Learn native exp
     . 'package, so most of its content — Blackboard\'s proprietary resources — cannot be imported (any Common Cartridge '
     . 'items it does contain are still imported). To bring the whole course across, export it from Blackboard as Common '
     . 'Cartridge (IMSCC) and import that package instead.';
+$string['warneventsmalformed'] = 'The Canvas calendar events file could not be read, so its events were not imported.';
+$string['warneventsskipped'] = 'Skipped {$a} Canvas calendar event(s) that carried no usable start time.';
 $string['warningsheading'] = 'Notes and warnings';
 $string['warningskippedfornow'] = '{$a} content items were not created (their content type is not yet supported by the builder).';
 $string['warningunclassified'] = '{$a} unclassified resources will be skipped.';

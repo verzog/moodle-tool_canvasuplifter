@@ -32,6 +32,34 @@ use tool_canvasuplifter\local\report\conversion_report;
  */
 final class conversion_report_test extends \advanced_testcase {
     /**
+     * The analyse preview summarises the package's calendar events (a package can carry
+     * only events and no manifest items), counting those that will import and those skipped
+     * for lack of a usable start time.
+     *
+     * @return void
+     */
+    public function test_events_summary_counts_calendar_events(): void {
+        $this->resetAfterTest(true);
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<events xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<event identifier="e1"><title>Midterm</title><start_at>2026-09-15T10:00:00Z</start_at>'
+            . '<all_day>false</all_day><workflow_state>active</workflow_state></event>'
+            . '<event identifier="e2"><title>No date</title>'
+            . '<all_day>false</all_day><workflow_state>active</workflow_state></event>'
+            . '</events>';
+        file_put_contents($dir . '/course_settings/events.xml', $xml);
+
+        $report = (new conversion_report(new course_model(), $dir))->build();
+
+        $this->assertSame(
+            ['total' => 2, 'importable' => 1, 'skipped' => 1, 'malformed' => false],
+            $report['events']
+        );
+    }
+
+    /**
      * The report should split builds-now from later, and surface detail/orphans.
      *
      * @return void
