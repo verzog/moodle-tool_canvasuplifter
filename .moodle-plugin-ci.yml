@@ -1,0 +1,12 @@
+# moodle-plugin-ci configuration for tool_canvasuplifter.
+#
+# The repository_largefile/ directory is a SELF-CONTAINED, standalone Moodle
+# repository plugin (it installs to repository/largefile/, not under this tool).
+# It is kept in this repo for convenience but is a different component, so the
+# static analysers must not lint its files as part of tool_canvasuplifter — its
+# @package tag, namespaces and install path all belong to repository_largefile.
+# These filters exclude it from phplint, phpcs, phpdoc, phpcpd, phpmd and
+# mustache. It is validated on its own (see repository_largefile/README.md).
+filter:
+  notPaths:
+    - repository_largefile

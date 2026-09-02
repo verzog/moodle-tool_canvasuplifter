@@ -1,0 +1,71 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template repository_largefile/upload_dialogue
+
+    Body of the Large file repository upload dialogue: a tab to upload a large
+    file from the user's computer (in chunks) and a tab to fetch a file from a URL.
+
+    Context variables required for this template:
+    * none
+
+    Example context (json):
+    {
+    }
+}}
+<div class="repository_largefile_dialogue">
+    <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item" role="presentation">
+            <a class="nav-link active" id="largefile-tab-computer" data-bs-toggle="tab" data-toggle="tab"
+                href="#largefile-pane-computer" role="tab" aria-controls="largefile-pane-computer" aria-selected="true">
+                {{#str}} tabupload, repository_largefile {{/str}}
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a class="nav-link" id="largefile-tab-url" data-bs-toggle="tab" data-toggle="tab"
+                href="#largefile-pane-url" role="tab" aria-controls="largefile-pane-url" aria-selected="false">
+                {{#str}} taburl, repository_largefile {{/str}}
+            </a>
+        </li>
+    </ul>
+    <div class="tab-content">
+        <div class="tab-pane active show" id="largefile-pane-computer" role="tabpanel"
+            aria-labelledby="largefile-tab-computer" data-region="tab-computer">
+            <p class="text-muted">{{#str}} uploadinstructions, repository_largefile {{/str}}</p>
+            <div class="form-group">
+                <label for="largefile-fileinput">{{#str}} chooselargefile, repository_largefile {{/str}}</label>
+                <input type="file" class="form-control-file d-block" id="largefile-fileinput" data-region="fileinput">
+            </div>
+        </div>
+        <div class="tab-pane" id="largefile-pane-url" role="tabpanel"
+            aria-labelledby="largefile-tab-url" data-region="tab-url">
+            <div class="form-group">
+                <label for="largefile-urlinput">{{#str}} url, repository_largefile {{/str}}</label>
+                <input type="url" class="form-control" id="largefile-urlinput" data-region="urlinput"
+                    placeholder="https://">
+                <small class="form-text text-muted">{{#str}} url_help, repository_largefile {{/str}}</small>
+            </div>
+        </div>
+    </div>
+    <div class="mt-3">
+        <div class="progress" style="height: 0.75rem;">
+            <div class="progress-bar" role="progressbar" data-region="progressbar" style="width: 0;"
+                aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+        <p class="mt-2 mb-0" data-region="status" aria-live="polite"></p>
+    </div>
+</div>

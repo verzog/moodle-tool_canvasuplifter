@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="repository/largefile/db" VERSION="20260902" COMMENT="Large file repository schema"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <TABLE NAME="repository_largefile_chunks" COMMENT="Tracks chunked uploads of large files. id, userid, contextid, maxlength and state are set when the token is created; the remaining fields are filled as chunks arrive.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="char" LENGTH="15" NOTNULL="true" SEQUENCE="false" COMMENT="Upload token generated when the picker screen renders."/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="User who owns the upload."/>
+        <FIELD NAME="contextid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Context the upload was started in."/>
+        <FIELD NAME="maxlength" TYPE="int" LENGTH="15" NOTNULL="false" SEQUENCE="false" COMMENT="Maximum allowed bytes, or -1 for unlimited."/>
+        <FIELD NAME="lastmodified" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Time the row was last touched, for cleanup."/>
+        <FIELD NAME="state" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="0: token generated, not used; 1: upload started; 2: upload completed."/>
+        <FIELD NAME="filename" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Name of the uploaded file."/>
+        <FIELD NAME="length" TYPE="int" LENGTH="15" NOTNULL="false" SEQUENCE="false" COMMENT="Total expected file length in bytes."/>
+        <FIELD NAME="currentpos" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Bytes written so far."/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="userid_ix" UNIQUE="false" FIELDS="userid"/>
+        <INDEX NAME="state_lastmodified_ix" UNIQUE="false" FIELDS="state, lastmodified"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>
