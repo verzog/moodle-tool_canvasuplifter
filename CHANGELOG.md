@@ -5,6 +5,16 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.79.1] - 2026-09-03
+
+- **Fix: the large-package upload field failed to load with JavaScript caching off
+  (developer mode).** With no source map beside `amd/build/chunkupload.min.js`,
+  Moodle's dev-mode loader served the ES6 `amd/src/chunkupload.js` directly, which
+  the browser cannot load as a plain RequireJS script ("Cannot use import statement
+  outside a module"). The 0.79.0 change had removed that map; it is restored (with
+  its `sourceMappingURL` comment) so the built AMD module is served in every mode.
+  A future `grunt amd` regenerates the map with full line mappings.
+
 ## [0.79.0] - 2026-09-03
 
 - **Admin settings grouped under the plugin name.** The chunked-upload settings now
