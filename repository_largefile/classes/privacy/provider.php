@@ -109,17 +109,25 @@ class provider implements
             if (!$records) {
                 continue;
             }
+            $subcontext = [get_string('privacy:chunkspath', 'repository_largefile')];
+            $writer = \core_privacy\local\request\writer::with_context($context);
             $data = [];
             foreach ($records as $record) {
                 $data[] = (object) [
                     'filename' => $record->filename,
                     'lastmodified' => $record->lastmodified ? userdate($record->lastmodified) : '',
                 ];
+                // The staged upload is stored under dataroot (outside the file API),
+                // so include its actual bytes in the export, not just the metadata.
+                $path = \repository_largefile\chunk_store::get_path_for_id((string) $record->id);
+                if ($path !== null && is_readable($path)) {
+                    $filename = (string) $record->filename !== '' ? (string) $record->filename : ('upload_' . $record->id);
+                    raise_memory_limit(MEMORY_EXTRA);
+                    $writer->export_custom_file($subcontext, $filename, (string) file_get_contents($path));
+                    reduce_memory_limit(MEMORY_STANDARD);
+                }
             }
-            \core_privacy\local\request\writer::with_context($context)->export_data(
-                [get_string('privacy:chunkspath', 'repository_largefile')],
-                (object) ['uploads' => $data]
-            );
+            $writer->export_data($subcontext, (object) ['uploads' => $data]);
         }
     }
 

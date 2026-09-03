@@ -155,7 +155,10 @@ switch ($action) {
         die;
 
     case 'delete':
-        chunk_store::reset($id);
+        // Full delete (not reset): the browser fires this when the dialogue is
+        // cancelled, so a URL fetch still running server-side finds no token when
+        // it tries to adopt its download and discards it instead of staging it.
+        chunk_store::delete($id);
         break;
 
     case 'fetchurl':

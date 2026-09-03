@@ -276,10 +276,11 @@ const openUploadModal = async(data) => {
     });
 
     const root = modal.getRoot();
-    // Shared abort state: cancelling the modal flips `cancelled` and aborts any
-    // in-flight request so a closed dialogue does not keep staging the file or
-    // fire the completion callback behind the user's back.
-    const controller = {cancelled: false, xhr: null};
+    // Shared abort state: cancelling the modal flips `cancelled`, aborts any
+    // in-flight request, and drops the server-side token so a closed dialogue
+    // does not keep staging the file or fire the completion callback behind the
+    // user's back.
+    const controller = {cancelled: false, xhr: null, token: null};
     let selectedFile = null;
     let busy = false;
 
@@ -302,6 +303,13 @@ const openUploadModal = async(data) => {
         controller.cancelled = true;
         if (controller.xhr) {
             controller.xhr.abort();
+        }
+        if (controller.token) {
+            // Best-effort: drop the token so a server-side fetch still running
+            // discards its download rather than staging it. Pass no controller so
+            // the request is not short-circuited by the cancelled flag.
+            postRequest({action: 'delete', id: controller.token}, null, null, null, null);
+            controller.token = null;
         }
     };
 
@@ -344,6 +352,7 @@ const openUploadModal = async(data) => {
                 }
                 setStatus(await getString('uploading', 'repository_largefile'));
                 const token = await newToken(data.contextId, controller);
+                controller.token = token.id;
                 staged = await fetchUrl(url, token.id, controller);
             } else {
                 if (!selectedFile) {
@@ -351,6 +360,7 @@ const openUploadModal = async(data) => {
                     return;
                 }
                 const token = await newToken(data.contextId, controller);
+                controller.token = token.id;
                 if (token.maxbytes > 0 && selectedFile.size > token.maxbytes) {
                     throw new Error(await getString('errordownloadtoobig', 'repository_largefile'));
                 }
@@ -361,6 +371,10 @@ const openUploadModal = async(data) => {
             if (controller.cancelled || staged === false) {
                 return;
             }
+            // The file is staged and about to be listed for selection, so clear the
+            // token — otherwise closing the modal would delete it before the user
+            // can pick it.
+            controller.token = null;
             modal.hide();
             data.callback();
         } catch (error) {
