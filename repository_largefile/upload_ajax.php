@@ -173,9 +173,21 @@ switch ($action) {
         raise_memory_limit(MEMORY_EXTRA);
 
         $maxbytes = (int) $record->maxlength;
+        // Poll the token during the (blocking) fetch: the browser deletes it when
+        // the dialogue is cancelled, so an abandoned download stops instead of
+        // running to the timeout. Throttle the DB check so it costs little.
+        $lastcheck = 0.0;
+        $iscancelled = function () use ($id, &$lastcheck): bool {
+            $now = microtime(true);
+            if ($now - $lastcheck < 3.0) {
+                return false;
+            }
+            $lastcheck = $now;
+            return chunk_store::get_record($id) === null;
+        };
         try {
             $fetcher = new url_fetcher();
-            $result = $fetcher->fetch($url, $maxbytes > 0 ? $maxbytes : 0);
+            $result = $fetcher->fetch($url, $maxbytes > 0 ? $maxbytes : 0, $iscancelled);
         } catch (\moodle_exception $e) {
             $senderror($e->getMessage());
         }

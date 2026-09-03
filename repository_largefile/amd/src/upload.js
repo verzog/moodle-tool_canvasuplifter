@@ -359,6 +359,11 @@ const openUploadModal = async(data) => {
                     busy = false;
                     return;
                 }
+                if (selectedFile.size === 0) {
+                    // The chunk loop would send nothing for a zero-byte file and
+                    // report a false success, so reject it up front.
+                    throw new Error(await getString('erroremptyfile', 'repository_largefile'));
+                }
                 const token = await newToken(data.contextId, controller);
                 controller.token = token.id;
                 if (token.maxbytes > 0 && selectedFile.size > token.maxbytes) {
@@ -380,6 +385,12 @@ const openUploadModal = async(data) => {
         } catch (error) {
             busy = false;
             setProgress(0, 1);
+            // Drop a partially staged token on failure so a retry does not orphan
+            // it (a cancel has already deleted and cleared it via abort()).
+            if (controller.token) {
+                postRequest({action: 'delete', id: controller.token}, null, null, null, null);
+                controller.token = null;
+            }
             if (controller.cancelled) {
                 return;
             }

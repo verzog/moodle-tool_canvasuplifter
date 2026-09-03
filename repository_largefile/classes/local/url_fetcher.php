@@ -85,10 +85,12 @@ class url_fetcher {
      *
      * @param string $url Absolute http(s) URL.
      * @param int $maxbytes Maximum accepted size in bytes; 0 (or negative) falls back to a finite ceiling.
+     * @param callable|null $iscancelled Optional predicate polled during the transfer; when it returns
+     *        true the download is aborted (so a cancelled request stops streaming instead of running on).
      * @return array Keys: 'path' (absolute temp path), 'filename', 'contenttype'.
      * @throws \moodle_exception With a repository_largefile error string key.
      */
-    public function fetch(string $url, int $maxbytes): array {
+    public function fetch(string $url, int $maxbytes, ?callable $iscancelled = null): array {
         global $CFG;
         require_once($CFG->libdir . '/filelib.php');
 
@@ -126,15 +128,17 @@ class url_fetcher {
             'CURLOPT_SSL_VERIFYHOST' => 2,
             'CURLOPT_USERAGENT' => self::FETCH_USER_AGENT,
         ];
-        if ($maxbytes > 0) {
-            // Abort the transfer as soon as it exceeds the cap (by declared size or
-            // bytes received so far), rather than only checking after the whole body
-            // is on disk.
-            $options['CURLOPT_NOPROGRESS'] = 0;
-            $options['CURLOPT_PROGRESSFUNCTION'] = function ($ch, $dltotal, $dlnow) use ($maxbytes) {
-                return ($dltotal > $maxbytes || $dlnow > $maxbytes) ? 1 : 0;
-            };
-        }
+        // Abort the transfer as soon as it exceeds the cap (by declared size or
+        // bytes received so far), rather than only checking after the whole body is
+        // on disk; also abort promptly when the caller signals cancellation, so a
+        // fetch for a dialogue the user closed does not keep streaming.
+        $options['CURLOPT_NOPROGRESS'] = 0;
+        $options['CURLOPT_PROGRESSFUNCTION'] = function ($ch, $dltotal, $dlnow) use ($maxbytes, $iscancelled) {
+            if ($iscancelled !== null && $iscancelled()) {
+                return 1;
+            }
+            return ($dltotal > $maxbytes || $dlnow > $maxbytes) ? 1 : 0;
+        };
         $result = $curl->download_one($url, null, $options);
         fclose($fh);
 

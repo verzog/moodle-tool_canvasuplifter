@@ -35,6 +35,7 @@ $string['errordownloadempty'] = 'The URL returned an empty response.';
 $string['errordownloadfailed'] = 'The file could not be downloaded from that URL.';
 $string['errordownloadhttp'] = 'The server returned HTTP status {$a} for that URL.';
 $string['errordownloadtoobig'] = 'The file at that URL is larger than the site upload limit.';
+$string['erroremptyfile'] = 'The selected file is empty.';
 $string['erroruploadfailed'] = 'The upload could not be completed after several attempts. Check your connection and try '
     . 'uploading the file again.';
 $string['largefile:view'] = 'Use the Large file repository in the file picker';

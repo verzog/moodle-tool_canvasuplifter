@@ -46,6 +46,9 @@ class provider implements
     \core_privacy\local\metadata\provider,
     \core_privacy\local\request\core_userlist_provider,
     \core_privacy\local\request\plugin\provider {
+    /** @var int Largest staged payload whose bytes are inlined into a privacy export (10 MB). */
+    private const EXPORT_INLINE_MAXBYTES = 10485760;
+
     /**
      * Describe the personal data stored by this plugin.
      *
@@ -113,18 +116,22 @@ class provider implements
             $writer = \core_privacy\local\request\writer::with_context($context);
             $data = [];
             foreach ($records as $record) {
+                // The staged upload lives under dataroot (outside the file API).
+                // Include its actual bytes when it is small enough to hold in
+                // memory safely; a larger transient payload (this plugin can stage
+                // multi-gigabyte files) is documented by its size in the metadata
+                // rather than loaded whole, which would risk an out-of-memory
+                // failure and drop the whole export.
+                $path = \repository_largefile\chunk_store::get_path_for_id((string) $record->id);
+                $size = ($path !== null && is_readable($path)) ? (int) filesize($path) : 0;
                 $data[] = (object) [
                     'filename' => $record->filename,
+                    'filesize' => $size,
                     'lastmodified' => $record->lastmodified ? userdate($record->lastmodified) : '',
                 ];
-                // The staged upload is stored under dataroot (outside the file API),
-                // so include its actual bytes in the export, not just the metadata.
-                $path = \repository_largefile\chunk_store::get_path_for_id((string) $record->id);
-                if ($path !== null && is_readable($path)) {
+                if ($size > 0 && $size <= self::EXPORT_INLINE_MAXBYTES) {
                     $filename = (string) $record->filename !== '' ? (string) $record->filename : ('upload_' . $record->id);
-                    raise_memory_limit(MEMORY_EXTRA);
                     $writer->export_custom_file($subcontext, $filename, (string) file_get_contents($path));
-                    reduce_memory_limit(MEMORY_STANDARD);
                 }
             }
             $writer->export_data($subcontext, (object) ['uploads' => $data]);
