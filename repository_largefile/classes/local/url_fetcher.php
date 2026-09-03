@@ -46,6 +46,15 @@ class url_fetcher {
     private const FETCH_USER_AGENT =
         'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0';
 
+    /**
+     * @var int Finite download ceiling used when the caller sets no limit (0).
+     * 2 GB - 1: the largest value that stays an int (not a float) on 32-bit PHP,
+     * so it never trips download_one()'s int handling, while still bounding a
+     * hostile or misconfigured endpoint that would otherwise stream until the
+     * timeout and fill the disk.
+     */
+    private const DEFAULT_MAXBYTES = 2147483647;
+
     /** @var string|null Effective URL of the most recent download (after redirects). */
     private ?string $lastfinalurl = null;
 
@@ -75,7 +84,7 @@ class url_fetcher {
      * Download $url to a fresh temporary file and return its path plus metadata.
      *
      * @param string $url Absolute http(s) URL.
-     * @param int $maxbytes Maximum accepted size in bytes (0 = the finite fallback ceiling).
+     * @param int $maxbytes Maximum accepted size in bytes; 0 (or negative) falls back to a finite ceiling.
      * @return array Keys: 'path' (absolute temp path), 'filename', 'contenttype'.
      * @throws \moodle_exception With a repository_largefile error string key.
      */
@@ -86,6 +95,10 @@ class url_fetcher {
         if (!self::is_fetchable_url($url)) {
             throw new \moodle_exception('errorbadurl', 'repository_largefile');
         }
+
+        // Always enforce a finite cap: when the caller imposes none (0), fall back
+        // to a bounded ceiling so an oversize or endless body cannot fill the disk.
+        $maxbytes = $maxbytes > 0 ? $maxbytes : self::DEFAULT_MAXBYTES;
 
         $this->lastfinalurl = null;
         $this->lastcontenttype = null;

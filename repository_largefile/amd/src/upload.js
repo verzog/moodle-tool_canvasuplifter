@@ -56,20 +56,32 @@ let listenersRegistered = false;
 
 /**
  * POST one request to the endpoint. Resolves with the HTTP status and response
- * text; a network-level failure resolves with status 0 (treated as transient).
+ * text; a network-level failure or an abort resolves with status 0 (treated as
+ * transient by the retry path).
  *
- * @param {object} params Query parameters (action, id, ...); sesskey is added.
- * @param {Blob|FormData|null} body Request body, or null.
- * @param {boolean} octet Whether to send the body as application/octet-stream.
+ * The sensitive fields (a signed source URL) are sent in the request body, never
+ * the query string, so they are not written to web-server/proxy access logs.
+ *
+ * @param {object} params Query-string parameters (action, id, ...); sesskey is added.
+ * @param {Blob|string|null} body Request body, or null.
+ * @param {string|null} contentType Content-Type for the body, or null for none.
  * @param {function|null} onprogress Optional callback given the bytes uploaded so far.
+ * @param {object|null} controller Optional {cancelled, xhr} used to abort in-flight requests.
  * @return {Promise} Resolves with {status, text}.
  */
-const postRequest = (params, body, octet, onprogress) => {
+const postRequest = (params, body, contentType, onprogress, controller) => {
     return new Promise((resolve) => {
+        if (controller && controller.cancelled) {
+            resolve({status: 0, text: ''});
+            return;
+        }
         const query = Object.assign({sesskey: config.sesskey}, params);
         const qs = Object.keys(query).map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(query[k])).join('&');
         const xhr = new XMLHttpRequest();
         xhr.open('post', config.wwwroot + ENDPOINT + '?' + qs);
+        if (controller) {
+            controller.xhr = xhr;
+        }
         if (onprogress && xhr.upload) {
             xhr.upload.onprogress = (e) => onprogress(e.loaded);
         }
@@ -79,8 +91,9 @@ const postRequest = (params, body, octet, onprogress) => {
             }
         };
         xhr.onerror = () => resolve({status: 0, text: ''});
-        if (octet) {
-            xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.onabort = () => resolve({status: 0, text: ''});
+        if (contentType) {
+            xhr.setRequestHeader('Content-Type', contentType);
         }
         xhr.send(body);
     });
@@ -121,10 +134,11 @@ const isTerminal = (status) => status >= 400 && status < 500 && status !== 408 &
  * Allocate a new upload token for the current context.
  *
  * @param {number} contextId The context id.
+ * @param {object} controller The {cancelled, xhr} abort controller.
  * @return {Promise} Resolves with {id, maxbytes, chunksize}, or rejects with a message.
  */
-const newToken = async(contextId) => {
-    const result = await postRequest({action: 'newtoken', contextid: contextId}, null, false, null);
+const newToken = async(contextId, controller) => {
+    const result = await postRequest({action: 'newtoken', contextid: contextId}, null, null, null, controller);
     const response = parseJson(result.text);
     if (result.status !== 200 || response === null || response.error !== undefined || !response.id) {
         throw new Error(response && response.error ? response.error : await getString('erroruploadfailed', 'repository_largefile'));
@@ -137,10 +151,11 @@ const newToken = async(contextId) => {
  * lost response resumes from the true position.
  *
  * @param {string} token The upload token id.
+ * @param {object} controller The {cancelled, xhr} abort controller.
  * @return {Promise} Resolves with {state, currentpos, length}, or null if unknown.
  */
-const queryStatus = async(token) => {
-    const result = await postRequest({action: 'status', id: token}, null, false, null);
+const queryStatus = async(token, controller) => {
+    const result = await postRequest({action: 'status', id: token}, null, null, null, controller);
     if (result.status !== 200) {
         return null;
     }
@@ -155,26 +170,35 @@ const queryStatus = async(token) => {
  * Upload one file chunk by chunk. A chunk is retried through transient network or
  * 5xx failures with exponential backoff, reconciling the resume position with the
  * server after each failure. A 4xx response or explicit server error is terminal.
+ * The loop stops as soon as the controller is cancelled.
  *
  * @param {File} file The file to upload.
  * @param {string} token The upload token id.
  * @param {number} chunkSize The chunk size in bytes.
  * @param {function} onProgress Callback given (bytesConfirmed, total).
- * @return {Promise} Resolves true on success, or rejects with an error message.
+ * @param {object} controller The {cancelled, xhr} abort controller.
+ * @return {Promise} Resolves true on success, false if cancelled, or rejects with a message.
  */
-const uploadFileChunked = async(file, token, chunkSize, onProgress) => {
+const uploadFileChunked = async(file, token, chunkSize, onProgress, controller) => {
     let confirmed = 0;
     let retries = 0;
     let started = false;
     while (confirmed < file.size) {
+        if (controller.cancelled) {
+            return false;
+        }
         const start = confirmed;
         const end = Math.min(start + chunkSize, file.size);
         const params = start === 0
             ? {action: 'start', start: start, end: end, length: file.size, filename: file.name, id: token}
             : {action: 'proceed', start: start, end: end, id: token};
         const slice = file.slice(start, end);
-        const result = await postRequest(params, slice, true, (loaded) => onProgress(start + loaded, file.size));
+        const result = await postRequest(params, slice, 'application/octet-stream',
+            (loaded) => onProgress(start + loaded, file.size), controller);
 
+        if (controller.cancelled) {
+            return false;
+        }
         if (result.status === 200) {
             const response = parseJson(result.text);
             if (response !== null && response.error !== undefined) {
@@ -199,7 +223,7 @@ const uploadFileChunked = async(file, token, chunkSize, onProgress) => {
         retries++;
         await sleep(Math.min(BACKOFF_BASE_MS * Math.pow(2, retries - 1), BACKOFF_CAP_MS));
         if (started) {
-            const snap = await queryStatus(token);
+            const snap = await queryStatus(token, controller);
             if (snap !== null && snap.length === file.size) {
                 const advanced = snap.currentpos > confirmed;
                 confirmed = (snap.state === STATE_COMPLETED || snap.currentpos >= file.size) ? file.size : snap.currentpos;
@@ -214,14 +238,21 @@ const uploadFileChunked = async(file, token, chunkSize, onProgress) => {
 };
 
 /**
- * Fetch a remote URL server-side into the token.
+ * Fetch a remote URL server-side into the token. The URL is sent in the POST body
+ * so a signed link's credentials are not exposed in request logs.
  *
  * @param {string} url The URL to fetch.
  * @param {string} token The upload token id.
- * @return {Promise} Resolves true on success, or rejects with an error message.
+ * @param {object} controller The {cancelled, xhr} abort controller.
+ * @return {Promise} Resolves true on success, false if cancelled, or rejects with a message.
  */
-const fetchUrl = async(url, token) => {
-    const result = await postRequest({action: 'fetchurl', id: token, url: url}, null, false, null);
+const fetchUrl = async(url, token, controller) => {
+    const body = 'url=' + encodeURIComponent(url);
+    const result = await postRequest({action: 'fetchurl', id: token}, body,
+        'application/x-www-form-urlencoded', null, controller);
+    if (controller.cancelled) {
+        return false;
+    }
     const response = parseJson(result.text);
     if (result.status !== 200 || response === null || response.error !== undefined) {
         throw new Error(response && response.error ? response.error : await getString('errordownloadfailed', 'repository_largefile'));
@@ -245,6 +276,10 @@ const openUploadModal = async(data) => {
     });
 
     const root = modal.getRoot();
+    // Shared abort state: cancelling the modal flips `cancelled` and aborts any
+    // in-flight request so a closed dialogue does not keep staging the file or
+    // fire the completion callback behind the user's back.
+    const controller = {cancelled: false, xhr: null};
     let selectedFile = null;
     let busy = false;
 
@@ -263,6 +298,12 @@ const openUploadModal = async(data) => {
             bar.setAttribute('aria-valuenow', pct);
         }
     };
+    const abort = () => {
+        controller.cancelled = true;
+        if (controller.xhr) {
+            controller.xhr.abort();
+        }
+    };
 
     root.on(ModalEvents.shown, () => {
         selectedFile = null;
@@ -277,7 +318,12 @@ const openUploadModal = async(data) => {
         }
     });
 
-    root.on(ModalEvents.hidden, () => modal.destroy());
+    // Cancelling or closing the dialogue aborts any in-flight transfer.
+    root.on(ModalEvents.cancel, abort);
+    root.on(ModalEvents.hidden, () => {
+        abort();
+        modal.destroy();
+    });
 
     root.on(ModalEvents.save, async(e) => {
         e.preventDefault();
@@ -288,6 +334,7 @@ const openUploadModal = async(data) => {
         const urlTabActive = root.find('[data-region="tab-url"]').hasClass('active');
         try {
             busy = true;
+            let staged;
             if (urlTabActive) {
                 const urlInput = el('[data-region="urlinput"]');
                 const url = urlInput ? urlInput.value.trim() : '';
@@ -296,25 +343,32 @@ const openUploadModal = async(data) => {
                     return;
                 }
                 setStatus(await getString('uploading', 'repository_largefile'));
-                const token = await newToken(data.contextId);
-                await fetchUrl(url, token.id);
+                const token = await newToken(data.contextId, controller);
+                staged = await fetchUrl(url, token.id, controller);
             } else {
                 if (!selectedFile) {
                     busy = false;
                     return;
                 }
-                const token = await newToken(data.contextId);
+                const token = await newToken(data.contextId, controller);
                 if (token.maxbytes > 0 && selectedFile.size > token.maxbytes) {
                     throw new Error(await getString('errordownloadtoobig', 'repository_largefile'));
                 }
                 setStatus(await getString('uploading', 'repository_largefile'));
-                await uploadFileChunked(selectedFile, token.id, token.chunksize, setProgress);
+                staged = await uploadFileChunked(selectedFile, token.id, token.chunksize, setProgress, controller);
+            }
+            // A cancelled transfer returns false: leave the picker untouched.
+            if (controller.cancelled || staged === false) {
+                return;
             }
             modal.hide();
             data.callback();
         } catch (error) {
             busy = false;
             setProgress(0, 1);
+            if (controller.cancelled) {
+                return;
+            }
             const strings = await Promise.all([getString('error', 'core'), getString('ok', 'core')]);
             Notification.alert(strings[0], error.message, strings[1]);
         }

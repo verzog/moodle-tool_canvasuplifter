@@ -225,7 +225,13 @@ class chunk_store {
         if (!file_exists($dirpath)) {
             mkdir($dirpath, $CFG->directorypermissions, true);
         }
-        file_put_contents(self::get_path_for_id($record->id), $content);
+        // Only advance the stored position by the bytes actually persisted, so a
+        // short write (disk full, quota) can never mark the upload further along
+        // than the file really is — which would hand the picker a truncated file.
+        $written = file_put_contents(self::get_path_for_id($record->id), $content);
+        if ($written === false || $written !== strlen($content)) {
+            return 'Failed to write chunk to disk.';
+        }
 
         $record->currentpos = $end;
         $record->length = $length;
@@ -273,11 +279,28 @@ class chunk_store {
             if ($handle === false) {
                 return 'Begin of file does not exist on this server.';
             }
-            ftruncate($handle, $currentpos);
-            fseek($handle, $currentpos);
-            fwrite($handle, substr($content, $currentpos - $start));
+            $towrite = substr($content, $currentpos - $start);
+            if (ftruncate($handle, $currentpos) === false || fseek($handle, $currentpos) !== 0) {
+                fclose($handle);
+                return 'Could not position the upload file for writing.';
+            }
+            // Advance the stored position only by the bytes fwrite actually
+            // persisted, so a short write (disk full, quota) never marks the
+            // upload further along than the file really is; the client then
+            // resumes from the true position. Persist that position before
+            // reporting the failure so the resume is accurate.
+            $written = fwrite($handle, $towrite);
             fclose($handle);
-            $record->currentpos = $end;
+            if ($written === false) {
+                return 'Failed to write chunk to disk.';
+            }
+            $record->currentpos = $currentpos + $written;
+            if ($written < strlen($towrite)) {
+                $record->state = self::STATE_STARTED;
+                $record->lastmodified = time();
+                $DB->update_record(self::TABLE, $record);
+                return 'Failed to write the whole chunk to disk.';
+            }
         }
         // Otherwise the whole chunk is already stored — accept it as a no-op.
         $record->state = (int) $record->currentpos === (int) $record->length

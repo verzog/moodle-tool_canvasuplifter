@@ -33,6 +33,7 @@
 define('AJAX_SCRIPT', true);
 
 require(__DIR__ . '/../../config.php');
+require_once($CFG->dirroot . '/repository/lib.php');
 
 use repository_largefile\chunk_store;
 use repository_largefile\local\url_fetcher;
@@ -53,6 +54,19 @@ $senderror = function (string $message): void {
     die;
 };
 
+// Gate every action on the same access the file picker enforces: the repository
+// type must be enabled/visible site-wide, and the user must hold
+// repository/largefile:view in the context the upload was started in. Without
+// this a logged-in user could drive the endpoint directly even where an admin
+// has disabled the repository or revoked the capability.
+$requirerepoaccess = function (\context $context) use ($senderror): void {
+    $type = \repository::get_type_by_typename('largefile');
+    if (!$type || !$type->get_visible()) {
+        $senderror(get_string('erroruploadfailed', 'repository_largefile'));
+    }
+    require_capability('repository/largefile:view', $context);
+};
+
 // Allocate a new upload token. Kept separate from the first chunk so the browser
 // can obtain the token before it starts streaming bytes.
 if ($action === 'newtoken') {
@@ -61,6 +75,7 @@ if ($action === 'newtoken') {
     if (!$context) {
         $senderror('Context not found.');
     }
+    $requirerepoaccess($context);
     // The server-side ceiling for a staged file: the site upload limit, or
     // unlimited when the site imposes none. The destination form re-checks its
     // own (possibly smaller) limit when the file is selected.
@@ -92,6 +107,11 @@ if (!$record) {
 if ((int) $record->userid !== (int) $USER->id) {
     $senderror('Request was made by a different user!');
 }
+$tokencontext = context::instance_by_id((int) $record->contextid, IGNORE_MISSING);
+if (!$tokencontext) {
+    $senderror('Context for that token not found.');
+}
+$requirerepoaccess($tokencontext);
 
 switch ($action) {
     case 'start':
