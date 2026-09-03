@@ -50,6 +50,17 @@ plugin relies on this standard Moodle mechanism rather than maintaining its own
 blocklist, so SSRF protection stays a site-configuration responsibility.
 Uploading the `.imscc` file directly avoids the server-side fetch entirely.
 
+## Also in this repository: `repository_largefile`
+
+The [`repository_largefile/`](repository_largefile/README.md) folder is a
+**separate, self-contained Moodle repository plugin** kept here for convenience.
+It generalises this tool's two large-file features — **import from a URL**
+(server-side fetch) and **chunked large-file upload** — into a repository plugin
+that appears in *every* file picker, including the course backup restore upload
+screen. It installs to `repository/largefile/`, not under `admin/tool/`, and is
+validated on its own (it is excluded from this plugin's `moodle-plugin-ci` run via
+`.moodle-plugin-ci.yml`). See its [README](repository_largefile/README.md).
+
 ## Requirements
 
 - Moodle 5.0+ (question banks are `mod_qbank` activity modules from 5.0)
