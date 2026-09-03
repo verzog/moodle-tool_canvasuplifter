@@ -128,7 +128,7 @@ class repository_largefile extends repository {
      * @return array Keys 'path' (temp file to copy in) and 'url'.
      */
     public function get_file($source, $filename = '') {
-        global $USER;
+        global $CFG, $USER;
 
         $id = $this->token_from_source($source);
         $record = $id !== null ? chunk_store::get_record($id) : null;
@@ -136,22 +136,16 @@ class repository_largefile extends repository {
             throw new \moodle_exception('tokenexpired', 'repository_largefile');
         }
 
-        $stagedpath = chunk_store::get_path_for_id($id);
-        $target = $this->prepare_file($filename !== '' ? $filename : (string) $record->filename);
-
-        // Move (not copy) the staged file into the temp path the picker will
-        // consume: an atomic rename within dataroot avoids a second full-size copy
-        // of a potentially multi-gigabyte file. Fall back to a copy across devices.
-        if (!@rename($stagedpath, $target)) {
-            if (!@copy($stagedpath, $target)) {
-                throw new \moodle_exception('errordownloadfailed', 'repository_largefile');
-            }
-            @unlink($stagedpath);
-        }
-        // The bytes now live in $target; drop the tracking row and any remnant.
-        chunk_store::delete($id);
-
-        return ['path' => $target, 'url' => ''];
+        // Hand the staged file to the picker without consuming it. Setting
+        // repository_no_delete stops move_to_filepool() unlinking the returned
+        // path (the same mechanism repository_filesystem uses), so the original
+        // stays put: a selection the picker then rejects — most predictably a
+        // non-privileged user whose file exceeds the destination's maxbytes (see
+        // README, "Destination size limits") — can be retried without
+        // re-uploading, and the cleanup task removes the staged file after its
+        // retention window rather than this method deleting it up front.
+        $CFG->repository_no_delete = true;
+        return ['path' => chunk_store::get_path_for_id($id), 'url' => ''];
     }
 
     /**

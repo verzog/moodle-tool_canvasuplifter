@@ -375,17 +375,23 @@ class chunk_store {
     }
 
     /**
-     * Delete a token row and its partial file.
+     * Delete a token row and its file.
+     *
+     * The file is removed first, and the tracking row is dropped only once the
+     * bytes are gone. If the unlink fails (a transient permission or open-file
+     * problem), the row is kept so the cleanup task retries and privacy deletion
+     * cannot report success while the payload still sits under dataroot.
      *
      * @param string $id The token id.
      * @return void
      */
     public static function delete(string $id): void {
         global $DB;
-        $DB->delete_records(self::TABLE, ['id' => $id]);
         $path = self::get_path_for_id($id);
-        if ($path !== null && file_exists($path)) {
-            unlink($path);
+        if ($path !== null && file_exists($path) && !@unlink($path) && file_exists($path)) {
+            // The bytes could not be removed; leave the row for a later retry.
+            return;
         }
+        $DB->delete_records(self::TABLE, ['id' => $id]);
     }
 }

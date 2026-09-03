@@ -52,7 +52,6 @@ class cleanup_chunks extends \core\task\scheduled_task {
      * @return void
      */
     public function execute() {
-        global $DB;
         $config = get_config('repository_largefile');
         $state0duration = $config->state0duration ?? 3600;
         $state1duration = $config->state1duration ?? 3600;
@@ -79,15 +78,10 @@ class cleanup_chunks extends \core\task\scheduled_task {
             'lastmodified < :time AND state = :state',
             ['time' => time() - $maxage, 'state' => $state]
         );
-        if (!$ids) {
-            return;
-        }
-        $DB->delete_records_list(chunk_store::TABLE, 'id', $ids);
+        // Delete each via chunk_store so the file is removed before its row, and a
+        // row whose file could not be removed is kept for the next run to retry.
         foreach ($ids as $id) {
-            $path = chunk_store::get_path_for_id((string) $id);
-            if ($path !== null && file_exists($path)) {
-                unlink($path);
-            }
+            chunk_store::delete((string) $id);
         }
     }
 }
