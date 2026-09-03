@@ -33,12 +33,20 @@ if ($hassiteconfig) {
         'tool/canvasuplifter:use'
     ));
 
-    // Settings for the chunked-upload field on the package upload form
-    // (folded in from the former local_chunkupload plugin). Titled with the
-    // plugin name so it is discoverable as "Canvas Uplifter" under Admin tools.
+    // Group everything for this plugin under a "Canvas Uplifter" category in Admin
+    // tools, so its settings (and any future admin pages) sit one level under the
+    // plugin name rather than as a loose leaf beside other tools.
+    $category = new admin_category(
+        'tool_canvasuplifter_cat',
+        get_string('pluginname', 'tool_canvasuplifter')
+    );
+    $ADMIN->add('tools', $category);
+
+    // Settings for the chunked-upload field on the package upload form (folded in
+    // from the former local_chunkupload plugin).
     $settings = new admin_settingpage(
         'tool_canvasuplifter_settings',
-        get_string('pluginname', 'tool_canvasuplifter')
+        get_string('settings', 'tool_canvasuplifter')
     );
     $settings->add(new admin_setting_heading(
         'tool_canvasuplifter/chunkheading',
@@ -73,5 +81,5 @@ if ($hassiteconfig) {
         86400,
         86400
     ));
-    $ADMIN->add('tools', $settings);
+    $ADMIN->add('tool_canvasuplifter_cat', $settings);
 }

@@ -5,6 +5,15 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.79.0] - 2026-09-03
+
+- **Admin settings grouped under the plugin name.** The chunked-upload settings now
+  live in a "Canvas Uplifter" category under *Site administration > Plugins > Admin
+  tools*, one level under the plugin name (and a natural home for future admin
+  pages), rather than as a loose leaf beside other tools.
+- **Upload field shows a live percentage** next to the progress bar, so it is clear
+  a large-package upload is actually progressing.
+
 ## [0.77.0] - 2026-09-02
 
 - **Canvas module prerequisites now gate the imported course** (#167). Canvas records module

@@ -61,6 +61,7 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
     let parentelem = fileinput.next();
     let filename = parentelem.find('.chunkupload-filename');
     let progress = parentelem.find('.chunkupload-progress');
+    let percent = parentelem.find('.chunkupload-percent');
     let progressicon = parentelem.find('.chunkupload-icon');
     let deleteicon = parentelem.next();
 
@@ -272,8 +273,10 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
         if (loaded === total) {
             // Hide progressbar on finish.
             progress.css('width', '0');
+            percent.text('');
         } else {
             progress.css('width', loaded * 100 / total + "%");
+            percent.text(Math.round(loaded * 100 / total) + '%');
         }
         progressicon.prop('hidden', loaded !== total);
         deleteicon.prop('hidden', loaded !== total);
