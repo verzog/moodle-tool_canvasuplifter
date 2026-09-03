@@ -240,8 +240,8 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
                 }
             }
         }
-        // The server holds the whole file; mark the bar finished.
-        setProgress(file.size, file.size);
+        // The server has confirmed the whole file; show the finished state.
+        finishProgress();
     }
 
     /**
@@ -260,26 +260,47 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
      * Resets the Progress and the Filepicker name.
      */
     function reset() {
-        setProgress(0, 1);
+        clearProgress();
         filename.text("");
     }
 
     /**
-     * Sets the progressbar
-     * @param {int} loaded
-     * @param {int} total
+     * Renders the current upload progress: fills the bar and shows the
+     * percentage. Kept purely as a progress display — it never switches to the
+     * finished or idle state, so the indicator stays visible at 100% while the
+     * server is still confirming the final chunk and during retry back-off.
+     *
+     * @param {int} loaded Bytes uploaded so far.
+     * @param {int} total Total bytes to upload.
      */
     function setProgress(loaded, total) {
-        if (loaded === total) {
-            // Hide progressbar on finish.
-            progress.css('width', '0');
-            percent.text('');
-        } else {
-            progress.css('width', loaded * 100 / total + "%");
-            percent.text(Math.round(loaded * 100 / total) + '%');
-        }
-        progressicon.prop('hidden', loaded !== total);
-        deleteicon.prop('hidden', loaded !== total);
+        let ratio = total > 0 ? loaded * 100 / total : 0;
+        progress.css('width', ratio + "%");
+        percent.text(Math.round(ratio) + '%');
+        progressicon.prop('hidden', true);
+        deleteicon.prop('hidden', true);
+    }
+
+    /**
+     * Returns the indicator to its idle state: empty bar, no percentage, no
+     * icons. Used when no upload is running (initial state, delete, error).
+     */
+    function clearProgress() {
+        progress.css('width', '0');
+        percent.text('');
+        progressicon.prop('hidden', true);
+        deleteicon.prop('hidden', true);
+    }
+
+    /**
+     * Marks the upload finished once the server has confirmed the whole file:
+     * clears the bar and percentage and reveals the done and delete icons.
+     */
+    function finishProgress() {
+        progress.css('width', '0');
+        percent.text('');
+        progressicon.prop('hidden', false);
+        deleteicon.prop('hidden', false);
     }
 
     /**
