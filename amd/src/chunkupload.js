@@ -64,6 +64,9 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
     let percent = parentelem.find('.chunkupload-percent');
     let progressicon = parentelem.find('.chunkupload-icon');
     let deleteicon = parentelem.next();
+    // The last whole-number percentage written, so the progressbar's exposed
+    // value is only updated when it actually changes.
+    let lastpct = -1;
 
     fileinput.change(() => {
         reset();
@@ -276,9 +279,14 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
     function setProgress(loaded, total) {
         let ratio = total > 0 ? loaded * 100 / total : 0;
         progress.css('width', ratio + "%");
-        percent.text(Math.round(ratio) + '%');
-        progressicon.prop('hidden', true);
-        deleteicon.prop('hidden', true);
+        // The percentage carries progressbar semantics rather than a live region,
+        // and its exposed value is refreshed only when the whole number changes,
+        // so a large upload does not queue a stream of identical announcements.
+        let pct = Math.round(ratio);
+        if (pct !== lastpct) {
+            lastpct = pct;
+            percent.text(pct + '%').attr('aria-valuenow', pct);
+        }
     }
 
     /**
@@ -286,8 +294,9 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
      * icons. Used when no upload is running (initial state, delete, error).
      */
     function clearProgress() {
+        lastpct = -1;
         progress.css('width', '0');
-        percent.text('');
+        percent.text('').removeAttr('aria-valuenow');
         progressicon.prop('hidden', true);
         deleteicon.prop('hidden', true);
     }
@@ -297,8 +306,9 @@ export function init(elementid, acceptedTypes, maxBytes, wwwroot, chunksize, bro
      * clears the bar and percentage and reveals the done and delete icons.
      */
     function finishProgress() {
+        lastpct = -1;
         progress.css('width', '0');
-        percent.text('');
+        percent.text('').removeAttr('aria-valuenow');
         progressicon.prop('hidden', false);
         deleteicon.prop('hidden', false);
     }
