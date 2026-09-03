@@ -252,6 +252,24 @@
     color: green;
 }
 
+/* The percentage sits in its own space at the right of the label, stacked above
+   the (absolutely positioned) filename overlay and the opaque progress bar so it
+   stays readable throughout the upload. It is empty when no upload is running. */
+.tool_canvasuplifter-chunkupload .chunkupload-label .chunkupload-left .chunkupload-percent {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 2;
+    padding: .375rem .5rem;
+    background: rgba(255, 255, 255, .85);
+    font-size: .875rem;
+    line-height: 1.5;
+}
+
+.tool_canvasuplifter-chunkupload .chunkupload-label .chunkupload-left .chunkupload-percent:empty {
+    display: none;
+}
+
 .tool_canvasuplifter-chunkupload .chunkupload-delete {
     position: absolute;
     right: 0;
