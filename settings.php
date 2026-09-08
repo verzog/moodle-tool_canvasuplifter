@@ -81,5 +81,16 @@ if ($hassiteconfig) {
         86400,
         86400
     ));
+    // A legitimate multi-gigabyte package download must not be killed by a fixed
+    // overall timeout — abort only when the connection has actually stalled. The
+    // ingest url_fetcher enforces this and reads the value here (with a floor of
+    // 30 seconds and a ceiling of 1 hour).
+    $settings->add(new admin_setting_configduration(
+        'tool_canvasuplifter/transferstall',
+        new lang_string('setting:transferstall', 'tool_canvasuplifter'),
+        new lang_string('setting:transferstall_desc', 'tool_canvasuplifter'),
+        120,
+        60
+    ));
     $ADMIN->add('tool_canvasuplifter_cat', $settings);
 }

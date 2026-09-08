@@ -177,6 +177,30 @@ class url_fetcher {
      * @return string Absolute path to the downloaded temp file.
      * @throws \RuntimeException With a language string key as the message.
      */
+    /**
+     * How long a download may go without any bytes arriving before it is aborted as
+     * stalled, from the plugin's admin setting (default 2 minutes). Bounded to a sane
+     * range so a misconfigured value can never disable the stall check or set it
+     * absurdly high.
+     *
+     * @return int Seconds.
+     */
+    public static function stall_window_seconds(): int {
+        $seconds = (int) get_config('tool_canvasuplifter', 'transferstall');
+        if ($seconds < 30) {
+            $seconds = 120;
+        }
+        return min($seconds, 3600);
+    }
+
+    /**
+     * Download a URL to a temp file, aborting if the transfer exceeds the size cap
+     * or stalls (see {@see self::stall_window_seconds()}).
+     *
+     * @param string $url The absolute HTTP(S) URL to fetch.
+     * @param int $maxbytes Maximum accepted size in bytes; 0 for no cap.
+     * @return string The absolute path of the downloaded temp file.
+     */
     private function download_to(string $url, int $maxbytes): string {
         $this->lastfinalurl = null;
         $this->lastcontenttype = null;
@@ -199,7 +223,15 @@ class url_fetcher {
             'CURLOPT_FOLLOWLOCATION' => 1,
             'CURLOPT_MAXREDIRS' => 5,
             'CURLOPT_CONNECTTIMEOUT' => 30,
-            'CURLOPT_TIMEOUT' => 600,
+            // Abort on a real stall, not on total time: fewer than 1 KB/s sustained
+            // for the configured window (default 2 minutes) is dead, not slow. A
+            // legitimately slow-but-progressing multi-gigabyte package download must
+            // not be killed by a fixed overall timeout. The size cap in the progress
+            // callback still gates real growth, and CURLOPT_TIMEOUT is left as a very
+            // high runaway safety net (24 hours).
+            'CURLOPT_LOW_SPEED_LIMIT' => 1024,
+            'CURLOPT_LOW_SPEED_TIME' => self::stall_window_seconds(),
+            'CURLOPT_TIMEOUT' => 86400,
             'CURLOPT_SSL_VERIFYPEER' => 1,
             'CURLOPT_SSL_VERIFYHOST' => 2,
             'CURLOPT_USERAGENT' => self::FETCH_USER_AGENT,

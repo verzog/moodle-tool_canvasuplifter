@@ -220,6 +220,11 @@ $string['setting:state1duration'] = 'Keep unfinished uploads for';
 $string['setting:state1duration_desc'] = 'How long a partially uploaded file is kept before the cleanup task removes it.';
 $string['setting:state2duration'] = 'Keep completed uploads for';
 $string['setting:state2duration_desc'] = 'How long a completed upload that was never consumed is kept before the cleanup task removes it.';
+$string['setting:transferstall'] = 'Stall a package download after';
+$string['setting:transferstall_desc'] = 'A URL import of a large package is aborted only when it goes '
+    . 'this long without any bytes arriving (below one kilobyte per second). Do not confuse this with the '
+    . 'total time the download is allowed to take — a big, slow-but-progressing package is fine. Bounded '
+    . 'between 30 seconds and one hour.';
 $string['settings'] = 'Chunked upload settings';
 $string['skipreasonsheading'] = 'Skip reasons (debug)';
 $string['source_angel'] = 'ANGEL (eXe learning modules)';
