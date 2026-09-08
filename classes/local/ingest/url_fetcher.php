@@ -186,9 +186,17 @@ class url_fetcher {
      * @return int Seconds.
      */
     public static function stall_window_seconds(): int {
-        $seconds = (int) get_config('tool_canvasuplifter', 'transferstall');
+        $raw = get_config('tool_canvasuplifter', 'transferstall');
+        // An unset setting uses the default (120 s). A configured value below the
+        // documented floor is clamped up to the floor, not silently reset to the
+        // default — otherwise an admin who sets 10 s (perhaps by mistake) gets the
+        // 120 s default without any hint.
+        if ($raw === false || $raw === '') {
+            return 120;
+        }
+        $seconds = (int) $raw;
         if ($seconds < 30) {
-            $seconds = 120;
+            return 30;
         }
         return min($seconds, 3600);
     }
