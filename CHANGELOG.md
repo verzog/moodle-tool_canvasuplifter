@@ -5,6 +5,16 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.80.0] - 2026-09-08
+
+- **Fix: a URL import of a large package could be killed at ten minutes.** The
+  ingest url_fetcher used a fixed 600-second overall cURL timeout, which is fine
+  for a small file but cuts a legitimate multi-gigabyte package download short.
+  The timeout is now stall-based — abort only when the connection goes without
+  any bytes for the configured window (default 2 minutes, admin setting *Stall
+  a package download after*) — with a 24-hour absolute ceiling as a runaway
+  safety net. The size cap in the progress callback still gates real growth.
+
 ## [0.79.1] - 2026-09-03
 
 - **Fix: the large-package upload field failed to load with JavaScript caching off
