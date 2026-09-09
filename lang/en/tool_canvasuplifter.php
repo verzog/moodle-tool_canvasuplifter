@@ -128,6 +128,9 @@ $string['notegatingimported'] = 'Applied Canvas module prerequisites to {$a} sec
     . 'activity completion enabled on the required activities. Course completion has been turned on.';
 $string['notegradeletters'] = 'Imported {$a} letter-grade boundaries from the Canvas grading scheme as this '
     . 'course\'s grade letters.';
+$string['notemoodleltidetected'] = 'Detected {$a} external tool link(s) that appear to launch Moodle-hosted content '
+    . 'over LTI (e.g. an activity published from another Moodle). They import as hidden tool placeholders; the real '
+    . 'content — and its native source — lives in that Moodle, not in this package.';
 $string['noteoutcomesimported'] = 'Imported {$a} Canvas learning outcome(s) as course grade outcomes, each with a '
     . 'scale built from its mastery ratings. Outcomes stay hidden until the site\'s "Enable outcomes" advanced '
     . 'setting is turned on.';
@@ -137,6 +140,9 @@ $string['noterecoveredassets'] = 'Imported {$a} embedded asset(s) as standalone 
     . 'the activity each was meant to be embedded in could not be built, so the asset was kept as a file rather than lost.';
 $string['noterubricsunlinked'] = 'Found {$a} rubric(s) in the package not linked to any activity, so they could '
     . 'not be imported; recreate them on the relevant activities if needed.';
+$string['notestackltidetected'] = 'Detected {$a} external tool link(s) that appear to deliver Moodle STACK questions '
+    . 'over LTI. They import as hidden tool placeholders — the package cannot carry the STACK question source, so the '
+    . 'native questions remain in the Moodle that hosts them.';
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';
 $string['openbuiltcourse'] = 'Open the built course';
 $string['orphansexplain'] = 'These resources are in the package but are not linked from any module. '
@@ -214,6 +220,13 @@ $string['sectionitemscount'] = '{$a->title} ({$a->count} items)';
 $string['setting:chunksize'] = 'Chunk size (MB)';
 $string['setting:chunksize_desc'] = 'Size of each chunk sent to the server when uploading a large package, in megabytes. '
     . 'Lower this if large uploads fail — some web servers, reverse proxies and firewalls reject large request bodies.';
+$string['setting:ltimoodlepatterns'] = 'Moodle/STACK LTI link patterns';
+$string['setting:ltimoodlepatterns_desc'] = 'Extra patterns for recognising external tool links that launch '
+    . 'Moodle-hosted content (such as STACK questions delivered over LTI), so the conversion report can flag them. '
+    . 'One pattern per line, matched case-insensitively against the launch URL, title and custom parameters. '
+    . 'Prefix a line with "stack:" or "moodle:" to set how it is reported (default "moodle"); e.g. '
+    . '"stack:stackassessment.example.edu" or "moodle:/enrol/lti/". Links whose URL already points at a Moodle '
+    . 'enrol_lti or mod/lti endpoint, or that mention "stack", are detected without any configuration here.';
 $string['setting:state0duration'] = 'Keep unused upload tokens for';
 $string['setting:state0duration_desc'] = 'How long an upload token that was generated but never used is kept before the cleanup task removes it.';
 $string['setting:state1duration'] = 'Keep unfinished uploads for';

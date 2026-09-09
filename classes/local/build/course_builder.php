@@ -481,6 +481,16 @@ class course_builder {
                 $skippedcounts[item::KIND_UNKNOWN]
             );
         }
+        // External-tool links that actually launch Moodle-hosted content (e.g. STACK questions
+        // delivered over LTI) are built as ordinary tool placeholders, but flagged so the migrator
+        // knows the real content — and its native source — lives in a Moodle, not in this package.
+        $ltibuilder = $builders[item::KIND_LTI] ?? null;
+        if ($ltibuilder instanceof lti_builder && $ltibuilder->stackcount > 0) {
+            $warnings[] = get_string('notestackltidetected', 'tool_canvasuplifter', $ltibuilder->stackcount);
+        }
+        if ($ltibuilder instanceof lti_builder && $ltibuilder->moodlehostedcount > 0) {
+            $warnings[] = get_string('notemoodleltidetected', 'tool_canvasuplifter', $ltibuilder->moodlehostedcount);
+        }
         // Canvas quiz/exam shells whose questions weren't in the package were
         // built as hidden placeholders; flag them so graders know to finish them.
         $quizbuilder = $builders[item::KIND_QUIZ] ?? null;

@@ -42,6 +42,15 @@ class lti_builder {
     /** @var string|null Why the last build returned null, for course_builder's skip report. */
     public ?string $skipreason = null;
 
+    /** @var int External tools recognised as Moodle STACK questions delivered over LTI. */
+    public int $stackcount = 0;
+
+    /** @var int External tools recognised as other Moodle-hosted content delivered over LTI. */
+    public int $moodlehostedcount = 0;
+
+    /** @var array|null Lazily-read site patterns for the LTI classifier (see lti_classifier). */
+    private ?array $classifierpatterns = null;
+
     /** @var string|null Absolute path the last launch_instructions() read the intro HTML from,
      * or null for inline instructions - the intro's owner directory is derived from it. */
     private ?string $instructionssource = null;
@@ -133,7 +142,36 @@ class lti_builder {
                 $DB->set_field('lti', 'intro', $newintro, ['id' => (int) $created->instance]);
             }
         }
+        // Flag a link that actually launches Moodle-hosted content (e.g. a STACK question
+        // delivered over LTI) so the conversion report can point the migrator at it. The
+        // activity itself is built as a normal placeholder either way.
+        $kind = lti_classifier::classify(
+            $cartridge['launchurl'],
+            $cartridge['secureurl'] ?? '',
+            $name,
+            $cartridge['custom'] ?? [],
+            $this->classifier_patterns()
+        );
+        if ($kind === lti_classifier::KIND_STACK) {
+            $this->stackcount++;
+        } else if ($kind === lti_classifier::KIND_MOODLE) {
+            $this->moodlehostedcount++;
+        }
         return (int) $created->coursemodule;
+    }
+
+    /**
+     * The site-configured LTI classifier patterns, read once. Empty when the setting is unset.
+     *
+     * @return array Patterns as returned by {@see lti_classifier::parse_patterns()}.
+     */
+    private function classifier_patterns(): array {
+        if ($this->classifierpatterns === null) {
+            $this->classifierpatterns = lti_classifier::parse_patterns(
+                (string) get_config('tool_canvasuplifter', 'ltimoodlepatterns')
+            );
+        }
+        return $this->classifierpatterns;
     }
 
     /**
