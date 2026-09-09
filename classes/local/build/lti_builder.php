@@ -16,10 +16,10 @@
 
 namespace tool_canvasuplifter\local\build;
 
-use DOMDocument;
-use DOMElement;
 use stdClass;
 use tool_canvasuplifter\local\model\item;
+use tool_canvasuplifter\local\parser\lti_cartridge;
+use tool_canvasuplifter\local\parser\lti_classifier;
 
 /**
  * Creates a mod_lti placeholder from a Common Cartridge LTI link.
@@ -145,10 +145,13 @@ class lti_builder {
         // Flag a link that actually launches Moodle-hosted content (e.g. a STACK question
         // delivered over LTI) so the conversion report can point the migrator at it. The
         // activity itself is built as a normal placeholder either way.
+        // Classify against both the activity name and the cartridge's own <blti:title>: a Canvas
+        // item renamed by an instructor overwrites the model title, which would otherwise hide a
+        // cartridge titled e.g. "STACK Question".
         $kind = lti_classifier::classify(
             $cartridge['launchurl'],
             $cartridge['secureurl'] ?? '',
-            $name,
+            trim($name . ' ' . ($cartridge['title'] ?? '')),
             $cartridge['custom'] ?? [],
             $this->classifier_patterns()
         );
@@ -273,7 +276,7 @@ class lti_builder {
      * @return array|null Cartridge fields, or null when the URL is not http(s).
      */
     private static function cartridge_from_launchurl(string $launchurl, string $title, string $descriptionhtml = ''): ?array {
-        $launchurl = self::sanitise_url(trim($launchurl));
+        $launchurl = lti_cartridge::sanitise_url($launchurl);
         if ($launchurl === '') {
             return null;
         }
@@ -288,108 +291,23 @@ class lti_builder {
     }
 
     /**
-     * Parse a Common Cartridge LTI XML document. Static and Moodle-free so it
-     * can be unit-tested directly from XML strings.
+     * Parse a Common Cartridge LTI XML document. Delegates to the Moodle-free
+     * {@see lti_cartridge::parse()} (kept here for callers and tests that read cartridge fields
+     * through the builder). A cartridge carries only a plain-text <description>; the raw-HTML
+     * instructions slot ('descriptionhtml') is used by the re-homed-assignment path, so it is
+     * added empty here.
      *
      * @param string $xml The cartridge XML.
-     * @return array|null ['title','launchurl','secureurl','description','custom'] or null.
+     * @return array|null ['title','launchurl','secureurl','description','descriptionhtml','custom']
+     *         or null when the document has no usable http(s) launch URL.
      */
     public static function parse_cartridge_xml(string $xml): ?array {
-        if (trim($xml) === '') {
+        $cartridge = lti_cartridge::parse($xml);
+        if ($cartridge === null) {
             return null;
         }
-        $dom = new DOMDocument();
-        $previous = libxml_use_internal_errors(true);
-        $loaded = $dom->loadXML($xml, LIBXML_NONET);
-        libxml_clear_errors();
-        libxml_use_internal_errors($previous);
-        if (!$loaded || $dom->documentElement === null) {
-            return null;
-        }
-        $title = self::first_child_text($dom, 'title');
-        $launchurl = self::sanitise_url(self::first_child_text($dom, 'launch_url'));
-        $secureurl = self::sanitise_url(self::first_child_text($dom, 'secure_launch_url'));
-        $description = self::first_child_text($dom, 'description');
-        // A cartridge with no usable http(s) URL is not a safe placeholder.
-        // Reject javascript:, data:, file:, app-internal schemes and the like
-        // so a malformed or malicious package can't create an active LTI
-        // endpoint that students could later launch.
-        if ($launchurl === '' && $secureurl === '') {
-            return null;
-        }
-        if ($launchurl === '') {
-            $launchurl = $secureurl;
-        }
-        return [
-            'title' => $title,
-            'launchurl' => $launchurl,
-            'secureurl' => $secureurl,
-            'description' => $description,
-            // A cartridge carries only a plain-text <description>; the raw-HTML
-            // instructions slot is used by the re-homed-assignment path.
-            'descriptionhtml' => '',
-            'custom' => self::read_custom_parameters($dom),
-        ];
-    }
-
-    /**
-     * Validate a candidate launch URL: only http and https are accepted, so
-     * javascript:, data:, file:, mailto: and other dangerous or unusable
-     * schemes never reach mod_lti as a tool endpoint.
-     *
-     * @param string $url Trimmed candidate URL.
-     * @return string The URL if it's http(s), or the empty string.
-     */
-    private static function sanitise_url(string $url): string {
-        return preg_match('#^https?://#i', $url) === 1 ? $url : '';
-    }
-
-    /**
-     * Read the cartridge's <blti:custom> parameters. Many deep-linked
-     * publisher tools encode the resource id (or which Canvas assignment the
-     * link points at) in these parameters, so dropping them would leave the
-     * imported activity pointing at the tool's generic endpoint.
-     *
-     * @param DOMDocument $dom The parsed cartridge.
-     * @return array<string, string> Map of parameter name -> value, in document order.
-     */
-    private static function read_custom_parameters(DOMDocument $dom): array {
-        $params = [];
-        foreach ($dom->getElementsByTagNameNS('*', 'property') as $node) {
-            if (!($node instanceof DOMElement)) {
-                continue;
-            }
-            // Custom parameters live inside <blti:custom>; ignore <lticm:property>
-            // elements elsewhere (e.g. inside <blti:extensions>) so platform
-            // extensions don't leak into mod_lti's instructor parameters.
-            $parent = $node->parentNode;
-            if (!($parent instanceof DOMElement) || $parent->localName !== 'custom') {
-                continue;
-            }
-            $name = trim($node->getAttribute('name'));
-            if ($name === '') {
-                continue;
-            }
-            $params[$name] = trim($node->textContent);
-        }
-        return $params;
-    }
-
-    /**
-     * Return the trimmed text of the first element in the document with the
-     * given local name, regardless of namespace prefix.
-     *
-     * @param DOMDocument $dom The parsed cartridge.
-     * @param string $localname Element local name.
-     * @return string
-     */
-    private static function first_child_text(DOMDocument $dom, string $localname): string {
-        foreach ($dom->getElementsByTagNameNS('*', $localname) as $node) {
-            if ($node instanceof DOMElement) {
-                return trim($node->textContent);
-            }
-        }
-        return '';
+        $cartridge['descriptionhtml'] = '';
+        return $cartridge;
     }
 
     /**

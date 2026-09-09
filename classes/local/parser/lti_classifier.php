@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
-namespace tool_canvasuplifter\local\build;
+namespace tool_canvasuplifter\local\parser;
 
 /**
  * Best-effort classifier for LTI external-tool links that actually launch Moodle-hosted
@@ -75,9 +75,11 @@ class lti_classifier {
             $title . ' ' . implode(' ', array_keys($custom)) . ' ' . implode(' ', array_values($custom))
         );
 
-        // STACK, the most specific: the word "stack" in the URL, title or a custom parameter
-        // (a whole word, so "beanstalk"/"stackexchange" don't match), or a configured stack pattern.
-        if (preg_match('/\bstack\b/', $all) === 1) {
+        // STACK, the most specific: the token "stack" in the URL, title or a custom parameter, or
+        // a configured stack pattern. Boundaries are ASCII letters/digits rather than \b so that
+        // identifier forms like "stack_lti" or "stack_question_id" match (PCRE \b treats an
+        // underscore as a word character), while "stackexchange"/"beanstalk" still do not.
+        if (preg_match('/(?<![a-z0-9])stack(?![a-z0-9])/', $all) === 1) {
             return self::KIND_STACK;
         }
         foreach ($patterns as $pattern) {

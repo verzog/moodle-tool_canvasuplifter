@@ -60,6 +60,76 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * The analyse preview flags a cartridge LTI link whose launch URL points at a Moodle
+     * enrol_lti endpoint as Moodle-hosted content, before any build.
+     *
+     * @return void
+     */
+    public function test_analyse_flags_moodle_hosted_lti(): void {
+        $this->resetAfterTest(true);
+        $dir = make_request_directory();
+        mkdir($dir . '/lti');
+        $cartridge = '<cartridge_basiclti_link xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0">'
+            . '<blti:title>Weekly activity</blti:title>'
+            . '<blti:launch_url>https://moodle.example.edu/enrol/lti/launch.php?id=4</blti:launch_url>'
+            . '</cartridge_basiclti_link>';
+        file_put_contents($dir . '/lti/tool.xml', $cartridge);
+
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $lti = new item('i1', 'Weekly activity');
+        $lti->kind = item::KIND_LTI;
+        $lti->files = ['lti/tool.xml'];
+        $section->add_item($lti);
+        $course->add_section($section);
+
+        $warnings = (new conversion_report($course, $dir))->build()['warnings'];
+        $this->assertContains('warnreportmoodlelti', $warnings);
+        $this->assertNotContains('warnreportstacklti', $warnings);
+    }
+
+    /**
+     * The analyse preview flags a STACK-titled LTI cartridge as a STACK delivery, and honours a
+     * site-configured pattern for a bespoke provider.
+     *
+     * @return void
+     */
+    public function test_analyse_flags_stack_lti_and_configured_pattern(): void {
+        $this->resetAfterTest(true);
+        $dir = make_request_directory();
+        mkdir($dir . '/lti');
+        $cartridge = '<cartridge_basiclti_link xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0">'
+            . '<blti:title>STACK: integration</blti:title>'
+            . '<blti:launch_url>https://tool.example.com/launch</blti:launch_url>'
+            . '</cartridge_basiclti_link>';
+        file_put_contents($dir . '/lti/tool.xml', $cartridge);
+
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $lti = new item('i1', 'STACK: integration');
+        $lti->kind = item::KIND_LTI;
+        $lti->files = ['lti/tool.xml'];
+        $section->add_item($lti);
+        $course->add_section($section);
+
+        $warnings = (new conversion_report($course, $dir))->build()['warnings'];
+        $this->assertContains('warnreportstacklti', $warnings);
+
+        // An inline-launch tool matched only by a site-configured pattern is flagged as Moodle-hosted.
+        $course2 = new course_model();
+        $section2 = new section_model('Week 1');
+        $inline = new item('i2', 'Bespoke tool');
+        $inline->kind = item::KIND_LTI;
+        $inline->launchurl = 'https://lms.example.edu/tool';
+        $section2->add_item($inline);
+        $course2->add_section($section2);
+
+        $patterns = \tool_canvasuplifter\local\parser\lti_classifier::parse_patterns('lms.example.edu');
+        $warnings2 = (new conversion_report($course2, null, '', false, $patterns))->build()['warnings'];
+        $this->assertContains('warnreportmoodlelti', $warnings2);
+    }
+
+    /**
      * The report should split builds-now from later, and surface detail/orphans.
      *
      * @return void

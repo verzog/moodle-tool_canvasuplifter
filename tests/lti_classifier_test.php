@@ -16,7 +16,7 @@
 
 namespace tool_canvasuplifter;
 
-use tool_canvasuplifter\local\build\lti_classifier;
+use tool_canvasuplifter\local\parser\lti_classifier;
 
 /**
  * Tests the Moodle/STACK LTI link classifier.
@@ -24,7 +24,7 @@ use tool_canvasuplifter\local\build\lti_classifier;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\lti_classifier
+ * @covers     \tool_canvasuplifter\local\parser\lti_classifier
  */
 final class lti_classifier_test extends \basic_testcase {
     /**
@@ -79,6 +79,27 @@ final class lti_classifier_test extends \basic_testcase {
         $this->assertSame(
             lti_classifier::KIND_NONE,
             lti_classifier::classify('https://beanstalk.example.com/x', '', 'Stackexchange helper', [])
+        );
+    }
+
+    /**
+     * Underscores separate tokens: identifier-style STACK signals (stack_lti, stack_question_id,
+     * moodle_stack) in a URL path or custom parameter are recognised.
+     *
+     * @return void
+     */
+    public function test_stack_identifier_forms_match(): void {
+        $this->assertSame(
+            lti_classifier::KIND_STACK,
+            lti_classifier::classify('https://tool.example.edu/stack_lti/launch', '', 'Question', [])
+        );
+        $this->assertSame(
+            lti_classifier::KIND_STACK,
+            lti_classifier::classify('https://tool.example.edu/launch', '', 'Q', ['stack_question_id' => '5'])
+        );
+        $this->assertSame(
+            lti_classifier::KIND_STACK,
+            lti_classifier::classify('https://tool.example.edu/launch', '', 'moodle_stack activity', [])
         );
     }
 

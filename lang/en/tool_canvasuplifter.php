@@ -298,12 +298,18 @@ $string['warnreportcategorization'] = 'Some categorization questions use Canvas 
 $string['warnreportduplicates'] = 'Some resources look like duplicate copies of other files in the package '
     . '(for example "name (2)" or "name-1"); all are imported, so review the resource list for repeats.';
 $string['warnreportlti'] = 'External (LTI) tools need their keys reconfigured by hand after import.';
+$string['warnreportmoodlelti'] = 'Some external (LTI) tool links appear to launch Moodle-hosted content (e.g. an activity '
+    . 'published from another Moodle). They import as tool placeholders; the real content — and its native source — '
+    . 'lives in that Moodle, not in this package.';
 $string['warnreportnavtools'] = 'This Canvas course had external tools in its course navigation that carry no launch '
     . 'configuration in the package, so they could not be imported; add them by hand in Moodle if the course needs them.';
 $string['warnreportobsolete'] = 'Some resources are Flash (.swf) or other obsolete formats that modern browsers '
     . 'no longer play; they are imported but will not function.';
 $string['warnreportquiz'] = 'Quiz questions depend on type support; check the question-type matrix.';
 $string['warnreportquizfrombank'] = 'Some assessments are not linked anywhere in the course, so they import as reusable question banks only. To also create a runnable quiz from each, tick "Also build a runnable quiz from each standalone question bank" before building.';
+$string['warnreportstacklti'] = 'Some external (LTI) tool links appear to deliver Moodle STACK questions. They import as '
+    . 'tool placeholders — this package cannot carry the STACK question source, so the native questions remain in the '
+    . 'Moodle that hosts them.';
 $string['warnreportunclassified'] = 'Some resources could not be classified and will be skipped.';
 $string['warnunresolvedmedia'] = '{$a} embedded asset(s) referenced in page or activity content are not present in '
     . 'the package (for example a stale cross-course image copied from another course), so those references were '
