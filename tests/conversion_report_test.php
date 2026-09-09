@@ -130,6 +130,27 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * An inline LTI launch URL that isn't http(s) builds no placeholder, so analysis must not
+     * classify it — even when it contains a STACK signal — or it would promise an import that
+     * never happens.
+     *
+     * @return void
+     */
+    public function test_analyse_ignores_non_http_inline_lti_url(): void {
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $lti = new item('i1', 'STACK question');
+        $lti->kind = item::KIND_LTI;
+        $lti->launchurl = 'stack://question/1';
+        $section->add_item($lti);
+        $course->add_section($section);
+
+        $warnings = (new conversion_report($course))->build()['warnings'];
+        $this->assertNotContains('warnreportstacklti', $warnings);
+        $this->assertNotContains('warnreportmoodlelti', $warnings);
+    }
+
+    /**
      * The report should split builds-now from later, and surface detail/orphans.
      *
      * @return void

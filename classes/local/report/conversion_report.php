@@ -1017,7 +1017,10 @@ class conversion_report {
      */
     private function lti_launch_signals(item $modelitem): array {
         if ($modelitem->launchurl !== '') {
-            return [$modelitem->launchurl, '', $modelitem->title, []];
+            // Validate the scheme as the builder does: a non-http(s) inline URL (e.g.
+            // stack://question/1) builds no placeholder, so it must not be classified here either
+            // or the analysis would promise an import that never happens.
+            return [lti_cartridge::sanitise_url($modelitem->launchurl), '', $modelitem->title, []];
         }
         $cartridge = $this->read_lti_cartridge($modelitem);
         if ($cartridge === null) {
