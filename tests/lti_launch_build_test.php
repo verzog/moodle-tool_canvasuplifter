@@ -109,4 +109,105 @@ XML;
         // credentials-needed placeholder note.
         $this->assertStringContainsString('Complete the publisher activity before Friday.', $instance->intro);
     }
+
+    /**
+     * Write a package with a single LTI cartridge link carrying the given launch URL and title.
+     *
+     * @param string $launchurl The cartridge launch URL.
+     * @param string $title The organization item title (the activity name).
+     * @param string|null $cartridgetitle The cartridge <blti:title>; defaults to $title.
+     * @return string Path to the package root.
+     */
+    protected function build_lti_cartridge_fixture(string $launchurl, string $title, ?string $cartridgetitle = null): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/lti', 0777, true);
+        $cartridge = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p0"'
+            . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
+            . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
+            . '<blti:title>' . ($cartridgetitle ?? $title) . '</blti:title>'
+            . '<blti:launch_url>' . $launchurl . '</blti:launch_url>'
+            . '</cartridge_basiclti_link>';
+        file_put_contents($dir . '/lti/tool.xml', $cartridge);
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title>'
+            . '<item identifier="i1" identifierref="r_lti"><title>' . $title . '</title></item>'
+            . '</item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_lti" type="imsbasiclti_xmlv1p0" href="lti/tool.xml">'
+            . '<file href="lti/tool.xml"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        return $dir;
+    }
+
+    /**
+     * An LTI link whose launch URL points at a Moodle enrol_lti endpoint builds as a normal
+     * mod_lti placeholder, and the conversion report flags it as Moodle-hosted content.
+     *
+     * @return void
+     */
+    public function test_moodle_hosted_lti_is_flagged_in_report(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_lti_cartridge_fixture(
+            'https://moodle.example.edu/enrol/lti/launch.php?id=3',
+            'Weekly activity'
+        );
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertCount(1, get_fast_modinfo($report['courseid'])->get_instances_of('lti'));
+        $this->assertStringContainsString(
+            get_string('notemoodleltidetected', 'tool_canvasuplifter', 1),
+            implode("\n", $report['warnings'])
+        );
+    }
+
+    /**
+     * An LTI link whose title marks it as a STACK question is flagged as a STACK delivery in the
+     * conversion report, even though it still builds as a plain tool placeholder.
+     *
+     * @return void
+     */
+    public function test_stack_lti_is_flagged_in_report(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_lti_cartridge_fixture('https://tool.example.com/launch', 'STACK: derivatives');
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertCount(1, get_fast_modinfo($report['courseid'])->get_instances_of('lti'));
+        $this->assertStringContainsString(
+            get_string('notestackltidetected', 'tool_canvasuplifter', 1),
+            implode("\n", $report['warnings'])
+        );
+    }
+
+    /**
+     * A STACK signal in the cartridge's own title is honoured even when the Canvas item was
+     * renamed to something generic (which overwrites the model title).
+     *
+     * @return void
+     */
+    public function test_stack_detected_from_cartridge_title_when_item_renamed(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_lti_cartridge_fixture('https://tool.example.com/launch', 'Exercise 1', 'STACK Question');
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $this->assertStringContainsString(
+            get_string('notestackltidetected', 'tool_canvasuplifter', 1),
+            implode("\n", $report['warnings'])
+        );
+    }
 }

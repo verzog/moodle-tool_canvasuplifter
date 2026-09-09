@@ -20,6 +20,8 @@ use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\model\qti_question;
 use tool_canvasuplifter\local\parser\events_parser;
+use tool_canvasuplifter\local\parser\lti_cartridge;
+use tool_canvasuplifter\local\parser\lti_classifier;
 use tool_canvasuplifter\local\parser\outcomes_parser;
 use tool_canvasuplifter\local\parser\qti_parser;
 use tool_canvasuplifter\local\parser\source_detector;
@@ -67,6 +69,9 @@ class conversion_report {
     /** @var bool Whether the run will also build a runnable quiz from each standalone bank. */
     protected bool $quizfrombank;
 
+    /** @var array Site-configured extra patterns for the LTI classifier (see lti_classifier). */
+    protected array $ltipatterns;
+
     /**
      * @var bool Set while tallying the question matrix when at least one all-or-nothing
      *           categorization was converted to a partial-credit match, so the report can
@@ -81,17 +86,20 @@ class conversion_report {
      * @param string|null $packageroot Extracted package root, enabling the question-type matrix.
      * @param string $pagegrouping Page-grouping choice to reflect: '' (off), 'book' or 'lesson'.
      * @param bool $quizfrombank Whether standalone assessments will also build a runnable quiz.
+     * @param array $ltipatterns Site LTI-classifier patterns from lti_classifier::parse_patterns().
      */
     public function __construct(
         course_model $course,
         ?string $packageroot = null,
         string $pagegrouping = '',
-        bool $quizfrombank = false
+        bool $quizfrombank = false,
+        array $ltipatterns = []
     ) {
         $this->course = $course;
         $this->packageroot = $packageroot !== null ? rtrim($packageroot, '/') : null;
         $this->pagegrouping = in_array($pagegrouping, ['book', 'lesson'], true) ? $pagegrouping : '';
         $this->quizfrombank = $quizfrombank;
+        $this->ltipatterns = $ltipatterns;
     }
 
     /**
@@ -419,6 +427,16 @@ class conversion_report {
         }
         if (($counts[item::KIND_LTI] ?? 0) > 0) {
             $warnings[] = 'warnreportlti';
+        }
+        // Flag LTI links that actually launch Moodle-hosted content (e.g. STACK questions
+        // delivered over LTI) already during analysis, so the migrator sees them before deciding
+        // to build — the real content, and its native source, lives in a Moodle, not this package.
+        $lticlassification = $this->lti_classification_counts();
+        if (($lticlassification[lti_classifier::KIND_STACK] ?? 0) > 0) {
+            $warnings[] = 'warnreportstacklti';
+        }
+        if (($lticlassification[lti_classifier::KIND_MOODLE] ?? 0) > 0) {
+            $warnings[] = 'warnreportmoodlelti';
         }
         // Course-navigation external tools with no launch configuration in the
         // package (and not already imported as a module item) cannot be built, so
@@ -960,6 +978,86 @@ class conversion_report {
     private function resolve_readable(string $relative): ?string {
         $absolute = $this->resolve_within($relative);
         return ($absolute !== null && is_file($absolute)) ? $absolute : null;
+    }
+
+    /**
+     * Count LTI items whose link launches Moodle-hosted content, so the analysis can flag STACK
+     * questions and other Moodle-published tools before any build. Signals come from the same
+     * fields the builder uses: an inline launch URL, or the cartridge's launch URL, title and
+     * custom parameters read from the package.
+     *
+     * @return array Counts keyed by lti_classifier::KIND_STACK and KIND_MOODLE.
+     */
+    protected function lti_classification_counts(): array {
+        $counts = [lti_classifier::KIND_STACK => 0, lti_classifier::KIND_MOODLE => 0];
+        foreach ($this->course->all_items() as $modelitem) {
+            if ($modelitem->kind !== item::KIND_LTI) {
+                continue;
+            }
+            [$launchurl, $secureurl, $title, $custom] = $this->lti_launch_signals($modelitem);
+            if ($launchurl === '' && $secureurl === '') {
+                continue;
+            }
+            $kind = lti_classifier::classify($launchurl, $secureurl, $title, $custom, $this->ltipatterns);
+            if ($kind !== lti_classifier::KIND_NONE) {
+                $counts[$kind]++;
+            }
+        }
+        return $counts;
+    }
+
+    /**
+     * Resolve an LTI item's launch signals for classification: an inline launch URL when present,
+     * otherwise the cartridge's launch URL, title and custom parameters read from the package.
+     * The classification title combines the item title and the cartridge title, so a renamed
+     * Canvas item does not hide a cartridge-level signal.
+     *
+     * @param item $modelitem The LTI item.
+     * @return array [launchurl, secureurl, title, custom].
+     */
+    private function lti_launch_signals(item $modelitem): array {
+        if ($modelitem->launchurl !== '') {
+            // Validate the scheme as the builder does: a non-http(s) inline URL (e.g.
+            // stack://question/1) builds no placeholder, so it must not be classified here either
+            // or the analysis would promise an import that never happens.
+            return [lti_cartridge::sanitise_url($modelitem->launchurl), '', $modelitem->title, []];
+        }
+        $cartridge = $this->read_lti_cartridge($modelitem);
+        if ($cartridge === null) {
+            return ['', '', $modelitem->title, []];
+        }
+        $title = trim($modelitem->title . ' ' . ($cartridge['title'] ?? ''));
+        return [$cartridge['launchurl'], $cartridge['secureurl'] ?? '', $title, $cartridge['custom'] ?? []];
+    }
+
+    /**
+     * Read the LTI cartridge XML for an item from the package, if available.
+     *
+     * @param item $modelitem The LTI item.
+     * @return array|null Parsed cartridge fields, or null.
+     */
+    private function read_lti_cartridge(item $modelitem): ?array {
+        if ($this->packageroot === null) {
+            return null;
+        }
+        $candidates = $modelitem->files;
+        if ($modelitem->href !== '') {
+            $candidates[] = $modelitem->href;
+        }
+        foreach ($candidates as $relative) {
+            if (!preg_match('/\.xml$/i', (string) $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_readable((string) $relative);
+            if ($absolute === null) {
+                continue;
+            }
+            $cartridge = lti_cartridge::parse((string) @file_get_contents($absolute));
+            if ($cartridge !== null) {
+                return $cartridge;
+            }
+        }
+        return null;
     }
 
     /**

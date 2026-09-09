@@ -19,6 +19,7 @@ namespace tool_canvasuplifter\task;
 use tool_canvasuplifter\local\ingest\package;
 use tool_canvasuplifter\local\job_manager;
 use tool_canvasuplifter\local\parser\manifest_parser;
+use tool_canvasuplifter\local\parser\lti_classifier;
 use tool_canvasuplifter\local\report\conversion_report;
 
 /**
@@ -84,7 +85,8 @@ class analyse_package_task extends package_job_task {
 
             $jobs->set_progress($jobid, 70, get_string('progressparse', 'tool_canvasuplifter'));
             $course = (new manifest_parser($root))->parse();
-            $report = (new conversion_report($course, $root, $pagegrouping, (bool) $quizfrombank))->build();
+            $ltipatterns = lti_classifier::parse_patterns((string) get_config('tool_canvasuplifter', 'ltimoodlepatterns'));
+            $report = (new conversion_report($course, $root, $pagegrouping, (bool) $quizfrombank, $ltipatterns))->build();
 
             // Carry the chosen build options so the status page's build form
             // reuses them rather than asking again.

@@ -92,5 +92,14 @@ if ($hassiteconfig) {
         120,
         60
     ));
+    // Extra patterns for recognising LTI links that launch Moodle-hosted content (e.g. STACK
+    // questions delivered over LTI), so the conversion report can flag them. Built-in detection
+    // (enrol_lti/mod-lti URLs, and "stack") works without any configuration here.
+    $settings->add(new admin_setting_configtextarea(
+        'tool_canvasuplifter/ltimoodlepatterns',
+        new lang_string('setting:ltimoodlepatterns', 'tool_canvasuplifter'),
+        new lang_string('setting:ltimoodlepatterns_desc', 'tool_canvasuplifter'),
+        ''
+    ));
     $ADMIN->add('tool_canvasuplifter_cat', $settings);
 }
