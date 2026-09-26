@@ -1537,6 +1537,12 @@ class manifest_parser {
             // activity that can build.
             if ($ownerbuilds) {
                 $twins[$identifier] = true;
+                // A $CANVAS_OBJECT_REFERENCE$ to the twin resolves to the assignment it merged into.
+                foreach ($byuuid[$uuid] as $owner) {
+                    if (!in_array($identifier, $owner->aliasids, true)) {
+                        $owner->aliasids[] = $identifier;
+                    }
+                }
             }
         }
         return $twins;

@@ -25,6 +25,7 @@ use tool_canvasuplifter\local\build\lti_builder;
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\build\lti_builder::parse_cartridge_xml
+ * @covers     \tool_canvasuplifter\local\build\lti_builder::is_blank_html
  */
 final class lti_builder_test extends \basic_testcase {
     /**
@@ -119,5 +120,36 @@ final class lti_builder_test extends \basic_testcase {
             '<cartridge_basiclti_link xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0">'
             . '<blti:title>No URL</blti:title></cartridge_basiclti_link>'
         ));
+    }
+
+    /**
+     * Instructions HTML that only a document shell and empty containers make up counts as blank;
+     * text or any rendered element (image, inline SVG, canvas, table) does not.
+     *
+     * @return array
+     */
+    public static function blank_html_provider(): array {
+        return [
+            'empty shell' => ['<html><head><title>X</title></head><body><p>&nbsp;</p><div></div></body></html>', true],
+            'empty' => ['', true],
+            'text' => ['<html><body><p>Read chapter 5.</p></body></html>', false],
+            'image' => ['<p><img src="a.png"></p>', false],
+            'svg' => ['<svg viewBox="0 0 10 10"><rect width="5" height="5"/></svg>', false],
+            'canvas' => ['<canvas id="c"></canvas>', false],
+            'table' => ['<table><tr><td></td></tr></table>', false],
+        ];
+    }
+
+    /**
+     * The twin-description fallback replaces only instructions that show nothing.
+     *
+     * @dataProvider blank_html_provider
+     * @param string $html The instructions HTML.
+     * @param bool $blank Whether it should count as blank.
+     * @return void
+     */
+    public function test_is_blank_html(string $html, bool $blank): void {
+        $method = new \ReflectionMethod(lti_builder::class, 'is_blank_html');
+        $this->assertSame($blank, $method->invoke(null, $html));
     }
 }

@@ -220,15 +220,18 @@ class lti_builder {
     }
 
     /**
-     * Whether instructions HTML shows nothing: no text and no image or embedded media.
+     * Whether instructions HTML shows nothing: only a document shell and empty text containers.
+     * Any other element (an image, embedded media, an inline SVG or canvas, a table, ...) or any
+     * text makes it non-blank.
      *
      * @param string $html The HTML.
      * @return bool
      */
     private static function is_blank_html(string $html): bool {
         $html = preg_replace('#<(head|title|script|style)\b[^>]*>.*?</\1>#is', '', $html) ?? $html;
-        $visible = strip_tags($html, '<img><iframe><video><audio><object><embed>');
-        return trim(html_entity_decode($visible, ENT_QUOTES | ENT_HTML5), " \t\n\r\0\x0B\u{00A0}") === '';
+        $html = preg_replace('#<!--.*?-->|<!doctype[^>]*>#is', '', $html) ?? $html;
+        $shell = preg_replace('#</?(html|body|p|div|span|br|meta|link)\b[^>]*>#i', '', $html) ?? $html;
+        return trim(html_entity_decode($shell, ENT_QUOTES | ENT_HTML5), " \t\n\r\0\x0B\u{00A0}") === '';
     }
 
     /**

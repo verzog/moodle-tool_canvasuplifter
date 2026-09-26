@@ -1657,6 +1657,7 @@ XML;
         $this->assertSame(['assignment_xid' => 'xid-ch5'], $placed->launchcustom);
         $this->assertSame('McGraw Hill Connect LTIA', $placed->launchtooltitle);
         $this->assertSame('Chapter practice', $placed->launchtooldescription);
+        $this->assertContains('twin', $placed->aliasids);
         // Only the cartridge with no matching assignment remains an orphan.
         $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
     }
