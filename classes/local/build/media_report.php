@@ -133,6 +133,15 @@ class media_report {
     }
 
     /**
+     * The absolute package paths recorded as embedded.
+     *
+     * @return string[]
+     */
+    public function embedded_paths(): array {
+        return array_keys($this->embedded);
+    }
+
+    /**
      * The distinct unresolved reference paths, sorted for a stable presentation.
      *
      * @return array List of decoded reference paths.

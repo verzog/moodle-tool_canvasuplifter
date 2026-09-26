@@ -391,9 +391,11 @@ class manifest_parser {
      */
     protected function suppress_embedded_page_assets(course_model $course, array $resources, array $placed): void {
         $embedded = $this->collect_embedded_files($resources, $placed);
-        if (empty($embedded)) {
+        $inquestions = $this->collect_question_embedded_files($resources);
+        if (empty($embedded) && empty($inquestions)) {
             return;
         }
+        $dependencies = $inquestions === [] ? [] : $this->embedding_dependency_targets($resources);
         foreach ($resources as $identifier => $resourceitem) {
             if ($resourceitem->kind !== item::KIND_FILE || !empty($placed[$identifier])) {
                 continue;
@@ -402,7 +404,8 @@ class manifest_parser {
             // suppressing on an auxiliary <file> would drop an activity whose real
             // payload (e.g. a PDF href) is not the embedded asset at all.
             $built = $this->built_file_payload($resourceitem);
-            if ($built !== null && isset($embedded[$built])) {
+            $inquestion = $built !== null && isset($inquestions[$built]) && empty($dependencies[$identifier]);
+            if ($built !== null && (isset($embedded[$built]) || $inquestion)) {
                 $resourceitem->suppressed = true;
                 // Remember it (keyed by the path a builder embeds and file_builder would
                 // build from) so the build can recover it if no activity actually embeds it.
@@ -615,72 +618,125 @@ class manifest_parser {
                 $embedded[$file['package']] = true;
             }
         }
-        // Question stems, answers and feedback embed their media too (question_xml_writer
-        // inlines it into the question), so an image referenced only from a question is not
-        // also a standalone download.
+        return $embedded;
+    }
+
+    /**
+     * Absolute package paths of every file embedded in the importable questions of the quizzes,
+     * unreferenced assessments and item banks that build: question_xml_writer inlines question
+     * stem, answer and feedback media into the question, so an image Canvas references only
+     * from a question (without declaring it as the quiz's <dependency>) is not also a standalone
+     * download.
+     *
+     * @param array $resources The resources keyed by identifier.
+     * @return array Set keyed by absolute package path, each value true.
+     */
+    protected function collect_question_embedded_files(array $resources): array {
+        $rewriter = new link_rewriter();
+        $embedded = [];
         foreach ($resources as $resourceitem) {
             $kind = $resourceitem->kind;
             if (($kind !== item::KIND_QUIZ && $kind !== item::KIND_QUESTIONBANK) || $resourceitem->suppressed) {
                 continue;
             }
-            $source = $this->question_embed_source($resourceitem);
-            if ($source === null) {
-                continue;
-            }
-            [$html, $ownerdir] = $source;
-            foreach ($rewriter->rewrite_files($html, $this->basedir, $ownerdir)['files'] as $file) {
-                $embedded[$file['package']] = true;
+            foreach ($this->question_embed_sources($resourceitem) as [$html, $ownerdir]) {
+                foreach ($rewriter->rewrite_files($html, $this->basedir, $ownerdir)['files'] as $file) {
+                    $embedded[$file['package']] = true;
+                }
             }
         }
         return $embedded;
     }
 
     /**
-     * The combined rich text of a quiz's importable questions and the package-relative folder
-     * their $IMS-CC-FILEBASE$ tokens resolve against, mirroring the question source quiz_builder
-     * and questionbank_builder import (qti_source_locator::resolve_assessment_source()): the
-     * Common Cartridge QTI, relative to its own folder, or, when that has no importable question,
-     * the native non_cc_assessments dump, relative to the package root. Both a placed quiz and
-     * an unreferenced assessment (built as a question bank) import these questions; a standalone
-     * item bank imports its own dump, relative to the package root (item_bank_registry). Null
-     * when no importable question references a package file.
+     * Identifiers of resources declared as a <dependency> of a quiz, question bank or
+     * discussion. suppress_dependency_assets() handles those (keeping every visible member of a
+     * multi-file dependency for recovery), so the question scan leaves them to it.
      *
-     * Item-bank draws from other banks are not followed; those banks are resources of their own
-     * and are scanned in turn. Any prediction the build does not confirm is recovered by
-     * course_builder as a standalone file, so a miss here never loses a file.
-     *
-     * @param item $resourceitem The quiz resource.
-     * @return array|null [html, ownerdir], or null.
+     * @param array $resources The resources keyed by identifier.
+     * @return array Set keyed by identifier, each value true.
      */
-    protected function question_embed_source(item $resourceitem): ?array {
+    protected function embedding_dependency_targets(array $resources): array {
+        $targets = [];
+        foreach ($resources as $parent) {
+            if (in_array($parent->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK, item::KIND_DISCUSSION], true)) {
+                foreach ($parent->dependencies as $dependencyref) {
+                    $targets[$dependencyref] = true;
+                }
+            }
+        }
+        return $targets;
+    }
+
+    /**
+     * The rich text of the questions an assessment imports, each paired with the
+     * package-relative folder its $IMS-CC-FILEBASE$ tokens resolve against, mirroring
+     * qti_source_locator::resolve_assessment_source(): the Common Cartridge QTI, relative to its
+     * own folder, or, when that has no importable question, the native non_cc_assessments dump,
+     * relative to the package root. Both a placed quiz and an unreferenced assessment (built as a
+     * question bank) import these questions; a standalone item bank imports its own dump. The
+     * item banks the assessment draws from (item_bank_registry imports them from their
+     * non_cc_assessments dumps, relative to the package root, whether or not the manifest
+     * declares them) are included too.
+     *
+     * Any prediction the build does not confirm is recovered by course_builder as a standalone
+     * file, so an over-prediction here never loses a file.
+     *
+     * @param item $resourceitem The quiz or question-bank resource.
+     * @return array List of [html, ownerdir].
+     */
+    protected function question_embed_sources(item $resourceitem): array {
         if ($resourceitem->kind === item::KIND_QUESTIONBANK && $resourceitem->objectbankid !== '') {
-            // A standalone item bank imports its own dump, with media from the package root.
             $bankpath = $resourceitem->objectbankpath !== ''
                 ? $resourceitem->objectbankpath
                 : 'non_cc_assessments/' . $resourceitem->objectbankid . '.xml.qti';
-            $qtipath = $this->resolve_within($bankpath);
-            if ($qtipath === null) {
-                return null;
-            }
-            $parsed = (new qti_parser())->parse((string) @file_get_contents($qtipath));
-            return $this->question_html_source($parsed, '');
+            return $this->bank_embed_sources([$bankpath]);
         }
         $qtipath = $this->locate_quiz_qti($resourceitem);
         if ($qtipath === null) {
-            return null;
+            return [];
         }
         $parsed = (new qti_parser())->parse((string) @file_get_contents($qtipath));
-        $ownerdir = safe_path::package_dir($this->basedir, $qtipath);
-        if (!$this->qti_has_importable($parsed)) {
-            $native = $this->locate_native_quiz_qti($resourceitem, $qtipath);
-            if ($native === null) {
-                return null;
+        $selections = $parsed['selections'] ?? [];
+        $sources = [$this->question_html_source($parsed, safe_path::package_dir($this->basedir, $qtipath))];
+        $native = $this->locate_native_quiz_qti($resourceitem, $qtipath);
+        if ($native !== null) {
+            $nativeparsed = (new qti_parser())->parse((string) @file_get_contents($native));
+            $selections = array_merge($selections, $nativeparsed['selections'] ?? []);
+            if (!$this->qti_has_importable($parsed)) {
+                // The builders adopt the native dump; its questions reference media from the package root.
+                $sources = [$this->question_html_source($nativeparsed, '')];
             }
-            $parsed = (new qti_parser())->parse((string) @file_get_contents($native));
-            // Native questions reference media from the package root.
-            $ownerdir = '';
         }
-        return $this->question_html_source($parsed, $ownerdir);
+        $bankpaths = [];
+        foreach ($selections as $selection) {
+            $bankid = (string) ($selection['bank'] ?? '');
+            if ($bankid !== '') {
+                $bankpaths[$bankid] = 'non_cc_assessments/' . $bankid . '.xml.qti';
+            }
+        }
+        return array_merge(array_values(array_filter($sources)), $this->bank_embed_sources(array_values($bankpaths)));
+    }
+
+    /**
+     * Question text sources for item-bank dumps, whose media resolves from the package root.
+     *
+     * @param array $paths Package-relative dump paths.
+     * @return array List of [html, ownerdir].
+     */
+    protected function bank_embed_sources(array $paths): array {
+        $sources = [];
+        foreach ($paths as $path) {
+            $absolute = $this->resolve_within((string) $path);
+            if ($absolute === null) {
+                continue;
+            }
+            $source = $this->question_html_source((new qti_parser())->parse((string) @file_get_contents($absolute)), '');
+            if ($source !== null) {
+                $sources[] = $source;
+            }
+        }
+        return $sources;
     }
 
     /**
@@ -698,7 +754,9 @@ class manifest_parser {
                 $html .= implode("\n", $this->text_values(get_object_vars($question))) . "\n";
             }
         }
-        return str_contains($html, '$IMS-CC-FILEBASE$') ? [$html, $ownerdir] : null;
+        // The writer and link_rewriter accept the URL-encoded token too.
+        $hastoken = str_contains($html, '$IMS-CC-FILEBASE$') || stripos($html, '%24IMS-CC-FILEBASE%24') !== false;
+        return $hastoken ? [$html, $ownerdir] : null;
     }
 
     /**
