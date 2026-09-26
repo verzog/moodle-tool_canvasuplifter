@@ -138,27 +138,40 @@ XML;
     }
 
     /**
-     * When the external-tool assignment fails at build time, its suppressed twin cartridge is
-     * built instead, so the link is not lost.
+     * When the external-tool assignment fails at build time, it is rebuilt against its
+     * suppressed twin cartridge's endpoint, so the link is not lost: the fallback keeps the
+     * assignment's name, instructions and (hidden) visibility, and replaces its skip in the report.
      *
      * @return void
      */
-    public function test_twin_builds_when_its_assignment_fails(): void {
+    public function test_assignment_rebuilt_from_twin_when_it_fails(): void {
+        global $DB;
         $this->resetAfterTest(true);
         $this->setAdminUser();
 
         $root = $this->build_twin_fixture();
+        file_put_contents($root . '/a1/instructions.html', '<html><body><p>Do chapter 5.</p></body></html>');
         $category = $this->getDataGenerator()->create_category();
         $coursemodel = (new manifest_parser($root))->parse();
         $this->assertArrayHasKey('twin', $coursemodel->ltitwins);
-        // The assignment can no longer build (as when its tool URL fails to load).
-        $coursemodel->sections[0]->items[0]->launchurl = 'javascript:bad';
+        $owner = $coursemodel->sections[0]->items[0];
+        // The assignment's own tool URL cannot build (as when it fails to load at build time).
+        $owner->launchurl = 'javascript:bad';
+        $owner->isvisible = false;
 
         $report = (new course_builder($category->id, $root))->build($coursemodel);
 
         $ltis = get_fast_modinfo($report['courseid'])->get_instances_of('lti');
         $this->assertCount(1, $ltis);
-        $this->assertSame('McGraw Hill Connect LTIA', reset($ltis)->name);
+        $cm = reset($ltis);
+        $this->assertSame('Publisher Tool', $cm->name);
+        $this->assertFalse((bool) $cm->visible);
+        $instance = $DB->get_record('lti', ['id' => $cm->instance], '*', MUST_EXIST);
+        $this->assertSame('https://secure.example.com/launch', $instance->toolurl);
+        $this->assertStringContainsString('Do chapter 5.', $instance->intro);
+        $this->assertSame(1, $report['createdcounts']['lti'] ?? 0);
+        $this->assertSame(0, $report['skippedcounts']['lti'] ?? 0);
+        $this->assertSame([], $report['skipreasons']);
     }
 
     /**
