@@ -277,6 +277,7 @@ class manifest_parser {
         // places, so the report flags them for the admin (they carry no launch
         // configuration in the package, so there is nothing to build a mod_lti from).
         $this->mark_navigation_tools($resources, $course);
+        $course->pagesnavhidden = $this->pages_tab_hidden();
 
         // A Blackboard Learn native export (x-bb-* resource types / .bb-package-info
         // marker) is not Common Cartridge, so this Canvas-focused tool classifies
@@ -3117,6 +3118,33 @@ class manifest_parser {
             }
             $course->navtoolsunimported++;
         }
+    }
+
+    /**
+     * Whether course_settings.xml's <tab_configuration> hides Canvas's Pages menu (built-in tab
+     * id 2, marked "hidden": true). Missing or malformed settings count as not hidden.
+     *
+     * @return bool
+     */
+    protected function pages_tab_hidden(): bool {
+        $path = $this->basedir . '/course_settings/course_settings.xml';
+        if (!is_readable($path)) {
+            return false;
+        }
+        $previous = libxml_use_internal_errors(true);
+        $xml = simplexml_load_file($path, 'SimpleXMLElement', LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if ($xml === false || !isset($xml->tab_configuration)) {
+            return false;
+        }
+        $tabs = json_decode(trim((string) $xml->tab_configuration), true);
+        foreach (is_array($tabs) ? $tabs : [] as $tab) {
+            if (is_array($tab) && (string) ($tab['id'] ?? '') === '2') {
+                return !empty($tab['hidden']);
+            }
+        }
+        return false;
     }
 
     /**

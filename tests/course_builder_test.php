@@ -1894,6 +1894,38 @@ XML;
     }
 
     /**
+     * When Canvas hid its Pages menu, the Additional resources section is built hidden (the
+     * syllabus in the top section is unaffected) and the build report says so.
+     *
+     * @return void
+     */
+    public function test_additional_resources_hidden_when_pages_menu_hidden(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_syllabus_fixture();
+        mkdir($root . '/course_settings');
+        file_put_contents(
+            $root . '/course_settings/course_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?><course xmlns="http://canvas.instructure.com/xsd/cccv1p0"'
+            . ' identifier="c1"><title>C</title><tab_configuration>[{"id":0},{"id":2,"hidden":true}]</tab_configuration></course>'
+        );
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $resource = $modinfo->get_instances_of('resource');
+        $this->assertCount(1, $resource);
+        $section = $modinfo->get_section_info(reset($resource)->sectionnum);
+        $this->assertSame(get_string('additionalresources', 'tool_canvasuplifter'), $section->name);
+        $this->assertFalse((bool) $section->visible);
+        $this->assertTrue((bool) $modinfo->get_section_info(0)->visible);
+        $this->assertContains(get_string('warnreportextrashidden', 'tool_canvasuplifter'), $report['warnings']);
+    }
+
+    /**
      * The syllabus lands in the top section with its real title; other orphans
      * go to "Additional resources".
      *
