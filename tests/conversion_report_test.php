@@ -919,6 +919,53 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * Canvas writes question_type "Error" for a question it failed to convert when the
+     * content was first imported into Canvas (only a placeholder stem survives). The
+     * matrix reports those under their own 'canvaserror' row rather than the bare
+     * Canvas label, so the report can explain there is nothing to recover.
+     *
+     * @return void
+     */
+    public function test_matrix_reports_canvas_error_questions(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        mkdir($dir . '/non_cc_assessments');
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Sample bank"><section ident="s1"></section>'
+            . '</assessment></questestinterop>';
+        file_put_contents($dir . '/a1/assessment_qti.xml', $shell);
+        $erroritem = '<item ident="e1" title="Sample Question 1"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>Error</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">Placeholder</mattext></material>'
+            . '</presentation></item>';
+        $native = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Sample bank"><section ident="s1">'
+            . $erroritem . str_replace('"e1"', '"e2"', $erroritem)
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/non_cc_assessments/a1.xml.qti', $native);
+
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $quiz = new item('q1', 'Sample bank');
+        $quiz->kind = item::KIND_QUIZ;
+        $quiz->files = ['a1/assessment_qti.xml', 'non_cc_assessments/a1.xml.qti'];
+        $section->add_item($quiz);
+        $course->add_section($section);
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        $this->assertSame(2, $matrix['total']);
+        $this->assertSame(0, $matrix['supported']);
+        $this->assertSame('canvaserror', $matrix['rows'][0]['label']);
+        $this->assertSame('unsupported', $matrix['rows'][0]['status']);
+        $this->assertSame(2, $matrix['rows'][0]['count']);
+        $this->assertTrue(get_string_manager()->string_exists('qtype_canvaserror', 'tool_canvasuplifter'));
+    }
+
+    /**
      * When the CC file has its own unsupported questions and the native dump is
      * also unimportable, quiz_builder keeps the CC parse — so the matrix must
      * report the CC questions, not switch to the native dump.

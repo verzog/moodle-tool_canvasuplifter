@@ -734,7 +734,8 @@ final class qti_parser_test extends \basic_testcase {
                 . '</material></response_label></render_choice></response_lid>';
         };
         $pres = '<presentation><material><mattext texttype="text/html">Pick for each [I] [II].</mattext></material>'
-            . $blank('response_I', 'I', 'a1', 'a2') . $blank('response_II', 'II', 'b1', 'b2') . '</presentation>';
+            . $blank('response_I', 'Optic nerve', 'a1', 'a2') . $blank('response_II', 'Oculomotor nerve', 'b1', 'b2')
+            . '</presentation>';
         $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
             . '<respcondition><conditionvar><varequal respident="response_I">a1</varequal></conditionvar>'
             . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
@@ -753,8 +754,122 @@ final class qti_parser_test extends \basic_testcase {
                 $pairs[$this->plain($sub['text'])] = $sub['answer'];
             }
         }
-        $this->assertSame('Sensory', $pairs['I']);
-        $this->assertSame('Motor', $pairs['II']);
+        $this->assertSame('Sensory', $pairs['Optic nerve']);
+        $this->assertSame('Motor', $pairs['Oculomotor nerve']);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * Canvas's native export labels each dropdown with only its own blank id (the
+     * response_lid "response_RESPONSE_0" carries the material "RESPONSE_0") and keeps
+     * the real label beside the [RESPONSE_0] marker in the prompt. Even with a shared
+     * choice set that is not a matching question: a match would show "RESPONSE_0" as
+     * the row label. It imports as a Cloze with each dropdown inline at its marker.
+     *
+     * @return void
+     */
+    public function test_native_dropdowns_labelled_by_blank_id_become_cloze(): void {
+        $states = ['ny' => 'New York', 'nv' => 'Nevada', 'ca' => 'California'];
+        $blank = function (string $id) use ($states): string {
+            $choices = '';
+            foreach ($states as $ident => $text) {
+                $choices .= '<response_label ident="' . $id . '_' . $ident . '"><material>'
+                    . '<mattext texttype="text/plain">' . $text . '</mattext></material></response_label>';
+            }
+            return '<response_lid ident="response_' . $id . '"><material><mattext>' . $id . '</mattext></material>'
+                . '<render_choice>' . $choices . '</render_choice></response_lid>';
+        };
+        $prompt = '&lt;p&gt;Statue of Liberty [RESPONSE_0]&lt;/p&gt;&lt;p&gt;Grand Canyon [RESPONSE_1]&lt;/p&gt;'
+            . '&lt;p&gt;Golden Gate Bridge [RESPONSE_2]&lt;/p&gt;';
+        $pres = '<presentation><material><mattext texttype="text/html">' . $prompt . '</mattext></material>'
+            . $blank('RESPONSE_0') . $blank('RESPONSE_1') . $blank('RESPONSE_2') . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>';
+        foreach (['RESPONSE_0' => 'ny', 'RESPONSE_1' => 'nv', 'RESPONSE_2' => 'ca'] as $id => $right) {
+            $resp .= '<respcondition><conditionvar><varequal respident="response_' . $id . '">' . $id . '_' . $right
+                . '</varequal></conditionvar><setvar varname="SCORE" action="Add">33.33</setvar></respcondition>';
+        }
+        $resp .= '</resprocessing>';
+        $item = '<item ident="q20" title="Landmarks"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_CLOZE, $q->type);
+        $this->assertStringContainsString(
+            'Statue of Liberty {1:MULTICHOICE:=New York~Nevada~California}',
+            $q->questiontext
+        );
+        $this->assertStringContainsString(
+            'Golden Gate Bridge {1:MULTICHOICE:New York~Nevada~=California}',
+            $q->questiontext
+        );
+        $this->assertStringNotContainsString('[RESPONSE_', $q->questiontext);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A blank labelled by its own id only counts as unlabelled when its [id] marker is
+     * in the prompt. An answer option that happens to contain "[I]" is not a marker, so
+     * a shared-choice item with no prompt markers stays a matching question.
+     *
+     * @return void
+     */
+    public function test_blank_id_in_option_text_is_not_a_prompt_marker(): void {
+        $blank = function (string $ident, string $stem, string $a1, string $a2): string {
+            return '<response_lid ident="' . $ident . '"><material><mattext>' . $stem . '</mattext></material>'
+                . '<render_choice>'
+                . '<response_label ident="' . $a1 . '"><material><mattext>Sensory [I]</mattext></material></response_label>'
+                . '<response_label ident="' . $a2 . '"><material><mattext>Motor [II]</mattext></material></response_label>'
+                . '</render_choice></response_lid>';
+        };
+        $pres = '<presentation><material><mattext texttype="text/html">Classify each nerve.</mattext></material>'
+            . $blank('response_I', 'I', 'a1', 'a2') . $blank('response_II', 'II', 'b1', 'b2') . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_I">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_II">b2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="m1" title="Nerves"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_MATCHING, $q->type);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A blank id that appears in the prompt only inside markup (an image alt attribute)
+     * or inert content (a script block) is not a marker the Cloze path could place, so a
+     * shared-choice item labelled by its ids stays a matching question.
+     *
+     * @return void
+     */
+    public function test_blank_id_only_in_prompt_markup_is_not_a_marker(): void {
+        $blank = function (string $ident, string $stem, string $a1, string $a2): string {
+            return '<response_lid ident="' . $ident . '"><material><mattext>' . $stem . '</mattext></material>'
+                . '<render_choice>'
+                . '<response_label ident="' . $a1 . '"><material><mattext>Sensory</mattext></material></response_label>'
+                . '<response_label ident="' . $a2 . '"><material><mattext>Motor</mattext></material></response_label>'
+                . '</render_choice></response_lid>';
+        };
+        $prompt = 'Classify each nerve. &lt;img src="n.png" alt="[I]"&gt;&lt;script&gt;var b = "[II]";&lt;/script&gt;';
+        $pres = '<presentation><material><mattext texttype="text/html">' . $prompt . '</mattext></material>'
+            . $blank('response_I', 'I', 'a1', 'a2') . $blank('response_II', 'II', 'b1', 'b2') . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_I">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_II">b2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="m2" title="Nerves"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_MATCHING, $q->type);
         $this->assertTrue($q->is_importable());
     }
 
@@ -2157,7 +2272,8 @@ final class qti_parser_test extends \basic_testcase {
                 . '</render_choice></response_lid>';
         };
         $pres = '<presentation><flow><material><mattext>Pick [I] [II].</mattext></material>'
-            . $blank('response_I', 'I', 'a1', 'a2') . $blank('response_II', 'II', 'b1', 'b2') . '</flow></presentation>';
+            . $blank('response_I', 'Optic nerve', 'a1', 'a2') . $blank('response_II', 'Oculomotor nerve', 'b1', 'b2')
+            . '</flow></presentation>';
         $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
             . '<respcondition><conditionvar><varequal respident="response_I">a1</varequal></conditionvar>'
             . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'

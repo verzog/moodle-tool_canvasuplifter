@@ -197,6 +197,8 @@ $string['progressextract'] = 'Extracting package…';
 $string['progressfetch'] = 'Downloading package…';
 $string['progressitem'] = 'Built {$a->done} of {$a->total} items ({$a->kind})…';
 $string['progressparse'] = 'Parsing manifest…';
+$string['qtype_canvaserror'] = 'Canvas conversion error (Canvas could not convert this question when it was imported '
+    . 'into Canvas, so the export holds only a placeholder)';
 $string['qtype_essay'] = 'Essay';
 $string['qtype_multianswer'] = 'Multiple response';
 $string['qtype_multichoice'] = 'Multiple choice';
