@@ -30,7 +30,8 @@ register it in `course_builder`'s `$builders` map + `BUILDS_NOW` + `KIND_TO_MOD`
 ## Validate locally before pushing
 
 CI (`.github/workflows/moodle-ci.yml`) runs `moodle-plugin-ci` against a real
-Moodle across PHP 8.2–8.4 × Moodle 5.0–5.2 × pgsql/mariadb/mysqli. Reproduce it
+Moodle across PHP 8.2–8.4 × Moodle 5.0–5.2 × pgsql/mariadb/mysqli, plus a non-blocking
+Moodle 5.3 (`main`) cell. Reproduce it
 locally with:
 
 ```

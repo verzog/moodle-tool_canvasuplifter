@@ -388,7 +388,9 @@ submit.
 
 The GitHub Actions workflow (`.github/workflows/moodle-ci.yml`) runs
 `moodle-plugin-ci` across every supported Moodle branch (5.0–5.2) on the PHP
-versions each supports (8.2–8.4), against PostgreSQL, MariaDB and MySQL. The
+versions each supports (8.2–8.4), against PostgreSQL 17, MariaDB 11.4 and MySQL
+8.4, plus one non-blocking Moodle 5.3 LTS cell (`main`, PHP 8.3, PostgreSQL)
+until `MOODLE_503_STABLE` is branched. The
 **blocking** checks are PHP lint, `phpcs` (the Moodle Code Checker), PHPDoc,
 `validate`, upgrade `savepoints`, Mustache lint and PHPUnit; it also runs
 `phpcpd` and `phpmd` as **advisory** (`continue-on-error`) steps. There is no

@@ -513,6 +513,9 @@ class quiz_builder {
         return array_merge($review, [
             'timeopen' => 0,
             'timeclose' => 0,
+            // Moodle 5.3+ quiz due date (quiz.duedate), which its calendar code reads on every
+            // create. Earlier releases have no such column; insert_record() ignores the field.
+            'duedate' => 0,
             'timelimit' => 0,
             'overduehandling' => 'autosubmit',
             'graceperiod' => 86400,
@@ -588,6 +591,11 @@ class quiz_builder {
         $close = $settings->close_time();
         if ($close !== 0) {
             $overlay['timeclose'] = $close;
+        }
+        // Canvas's due date also becomes Moodle 5.3's own quiz due date, shown to students;
+        // the close time above still falls back to it when Canvas set no lock date.
+        if ($settings->duedate !== 0) {
+            $overlay['duedate'] = $settings->duedate;
         }
         // When Canvas hides the correct answers, switch off the right-answer
         // review option at every phase; the other review defaults stand.
