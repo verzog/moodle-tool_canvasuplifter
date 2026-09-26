@@ -716,6 +716,12 @@ class conversion_report {
                 }
             } else if ($question->type === qti_question::TYPE_UNSUPPORTED) {
                 $label = $question->profile !== '' ? $question->profile : '(unknown)';
+                // Canvas writes question_type "Error" for a question it failed to convert
+                // when the content was first imported into Canvas; the item holds only a
+                // placeholder stem. Give it its own row so the report can say why.
+                if ($label === 'Error') {
+                    $label = 'canvaserror';
+                }
                 $acc['unsupported'][$label] = ($acc['unsupported'][$label] ?? 0) + 1;
                 $acc['unsupportedsources'][$label][$source] = ($acc['unsupportedsources'][$label][$source] ?? 0) + 1;
             } else {

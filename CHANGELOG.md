@@ -5,6 +5,22 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.82.0] - 2026-09-26
+
+- **Fix: Canvas inline-dropdown questions could import with meaningless row labels.**
+  Canvas's native export labels each dropdown blank with only its own id (for
+  example `RESPONSE_0`) and keeps the real label next to the `[RESPONSE_0]` marker
+  in the question text. When every blank shared one choice set the item imported as
+  a Moodle matching question, so students saw `RESPONSE_0` as each row's label and
+  the raw markers in the prompt. A blank whose label is only its id (with its marker
+  in the prompt) now counts as unlabelled, so the question imports as a Cloze with
+  each dropdown inline beside its real label. Dropdowns with genuine per-blank labels
+  still import as matching.
+- **Clearer report row for questions Canvas itself failed to convert.** Canvas marks
+  such questions `question_type` `Error` (only a placeholder stem survives). The
+  question-type table now lists them as "Canvas conversion error" instead of the
+  bare label "Error".
+
 ## [0.80.0] - 2026-09-08
 
 - **Fix: a URL import of a large package could be killed at ten minutes.** The

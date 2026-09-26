@@ -120,7 +120,11 @@ Admin tools > Canvas Uplifter*.
   response, fill-in-blank, true/false, essay, matching, numerical, calculated
   (formula) and free-text multi-blank (imported as a Moodle Cloze). Canvas
   inline-dropdown questions import as Moodle matching when every blank shares one
-  choice set (Moodle's match type has a single answer pool). When a Canvas Common
+  choice set and carries its own label (Moodle's match type has a single answer
+  pool); otherwise — including blanks Canvas labels only by their id, such as
+  `RESPONSE_0` — they import as a Cloze with each dropdown inline in the question
+  text. Questions Canvas itself marks `Error` (it failed to convert them when they
+  were imported into Canvas) are reported, not imported. When a Canvas Common
   Cartridge assessment ships an empty shell, the questions are recovered from
   Canvas's native QTI dump (`non_cc_assessments`).
   Bundled media in question text — images, video, audio and attachments,

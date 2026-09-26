@@ -1883,18 +1883,32 @@ class qti_parser {
      * would import empty stems and be dropped. Such items are left unsupported
      * rather than converted to a broken match.
      *
+     * Canvas's native export also labels each blank with nothing but its own blank id
+     * (a response_lid "response_RESPONSE_0" carries the material "RESPONSE_0") while the
+     * real label sits next to the matching [RESPONSE_0] marker in the prompt. That id is
+     * not a stem: a match would show students "RESPONSE_0" as the row label and leave the
+     * raw markers in the question text. When the material is only the blank id and the
+     * prompt carries its [id] marker, the blank counts as stemless, so the item becomes a
+     * Cloze with each dropdown placed inline at its marker instead.
+     *
      * @param DOMElement $presentation The presentation element.
      * @return bool
      */
     protected function blanks_have_stems(DOMElement $presentation): bool {
         $seen = false;
+        $prompt = $presentation->textContent;
         foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
             if (!($lid instanceof DOMElement)) {
                 continue;
             }
             $seen = true;
             $material = $this->first_child_element($lid, 'material');
-            if ($material === null || trim($this->mattext($material)) === '') {
+            $stem = $material === null ? '' : trim($this->mattext($material));
+            if ($stem === '') {
+                return false;
+            }
+            $blankid = (string) preg_replace('/^response_/', '', $lid->getAttribute('ident'));
+            if ($blankid !== '' && $stem === $blankid && strpos($prompt, '[' . $blankid . ']') !== false) {
                 return false;
             }
         }
