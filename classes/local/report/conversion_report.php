@@ -1034,7 +1034,7 @@ class conversion_report {
             return [
                 $launchurl,
                 lti_cartridge::sanitise_url($modelitem->launchsecureurl),
-                $modelitem->title,
+                trim($modelitem->title . ' ' . $modelitem->launchtooltitle),
                 $modelitem->launchcustom,
             ];
         }

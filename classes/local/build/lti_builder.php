@@ -160,7 +160,7 @@ class lti_builder {
         $kind = lti_classifier::classify(
             $cartridge['launchurl'],
             $cartridge['secureurl'] ?? '',
-            trim($name . ' ' . ($cartridge['title'] ?? '')),
+            trim($name . ' ' . ($cartridge['title'] ?? '') . ' ' . $modelitem->launchtooltitle),
             $cartridge['custom'] ?? [],
             $this->classifier_patterns()
         );

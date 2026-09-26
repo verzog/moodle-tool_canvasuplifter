@@ -1655,6 +1655,7 @@ XML;
         $this->assertSame('Chapter 5 SmartBook Assignment', $placed->title);
         $this->assertSame('uuid-ch5', $placed->ltilinkuuid);
         $this->assertSame(['assignment_xid' => 'xid-ch5'], $placed->launchcustom);
+        $this->assertSame('McGraw Hill Connect LTIA', $placed->launchtooltitle);
         // Only the cartridge with no matching assignment remains an orphan.
         $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
     }
@@ -1728,14 +1729,22 @@ XML;
                 . '<blti:title>McGraw Hill Connect LTIA</blti:title>'
                 . '<blti:secure_launch_url>' . $secureurl . '</blti:secure_launch_url>'
                 . '<blti:custom><lticm:property name="assignment_xid">' . $xid . '</lticm:property></blti:custom>'
+                // Another platform's lookup_uuid comes first; only Canvas's pairs.
+                . '<blti:extensions platform="other.example.com">'
+                . '<lticm:property name="lookup_uuid">not-canvas</lticm:property></blti:extensions>'
                 . '<blti:extensions platform="canvas.instructure.com">'
                 . '<lticm:property name="lookup_uuid">' . $uuid . '</lticm:property></blti:extensions>'
                 . '</cartridge_basiclti_link>';
         };
         file_put_contents($dir . '/lti_resource_links/twin.xml', $cartridge('uuid-ch5', 'xid-ch5'));
         file_put_contents($dir . '/lti_resource_links/other.xml', $cartridge('uuid-other', 'xid-other'));
-        // Auxiliary metadata XML with no lookup_uuid, listed before the cartridge when $auxfirst.
-        file_put_contents($dir . '/lti_resource_links/meta.xml', '<?xml version="1.0"?><meta><note>aux</note></meta>');
+        // Auxiliary metadata XML (carrying the matching lookup_uuid but no launch URL, so not a
+        // cartridge), listed before the cartridge when $auxfirst.
+        file_put_contents(
+            $dir . '/lti_resource_links/meta.xml',
+            '<?xml version="1.0"?><meta><extensions platform="canvas.instructure.com">'
+            . '<property name="lookup_uuid">uuid-ch5</property></extensions></meta>'
+        );
         $auxfile = $auxfirst ? '<file href="lti_resource_links/meta.xml"/>' : '';
         $manifest = <<<XML
 <?xml version="1.0" encoding="UTF-8"?>

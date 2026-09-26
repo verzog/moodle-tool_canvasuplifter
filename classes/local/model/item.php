@@ -144,6 +144,10 @@ class item {
      *              $launchurl so the launch placeholder does not lose it. Empty otherwise. */
     public string $launchsecureurl = '';
 
+    /** @var string The tool title (<blti:title>) of that twin cartridge, kept so classification still
+     *              sees a signal such as "STACK Question" that only the cartridge carried. */
+    public string $launchtooltitle = '';
+
     /** @var string For assignments: Canvas <assignment_group_identifierref>. */
     public string $gradegroupref = '';
 

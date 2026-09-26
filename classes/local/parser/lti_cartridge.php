@@ -98,6 +98,7 @@ class lti_cartridge {
             if (
                 $node instanceof DOMElement && $node->getAttribute('name') === 'lookup_uuid'
                 && $parent instanceof DOMElement && $parent->localName === 'extensions'
+                && $parent->getAttribute('platform') === 'canvas.instructure.com'
             ) {
                 return trim($node->textContent);
             }

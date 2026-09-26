@@ -1460,7 +1460,7 @@ class manifest_parser {
      * separate unreferenced LTI cartridge whose Canvas extension lookup_uuid equals the
      * assignment's resource_link_lookup_uuid. Left alone, the cartridge would build a second,
      * generically titled placeholder in "Additional resources". Each twin's custom parameters
-     * (a publisher's assignment id, for example) and secure launch URL are copied onto the
+     * (a publisher's assignment id, for example), secure launch URL and title are copied onto the
      * assignment's item, and the twin is returned so the orphan pass skips it, unless no owning
      * assignment has a usable http(s) launch URL, in which case the twin still builds.
      *
@@ -1495,8 +1495,9 @@ class manifest_parser {
             ) {
                 continue;
             }
-            // Scan every XML file, as lti_builder does: an auxiliary XML may precede the cartridge.
-            $xml = '';
+            // Scan every XML file, as lti_builder does: auxiliary XML may precede the cartridge, so
+            // stop only at a parseable cartridge whose uuid matches an owner.
+            $cartridge = null;
             $uuid = '';
             foreach (array_merge([$resourceitem->href], $resourceitem->files) as $path) {
                 $absolute = $path === '' ? null : $this->resolve_within((string) $path);
@@ -1505,21 +1506,24 @@ class manifest_parser {
                 }
                 $xml = (string) @file_get_contents($absolute);
                 $uuid = lti_cartridge::lookup_uuid($xml);
-                if ($uuid !== '') {
+                $cartridge = isset($byuuid[$uuid]) ? lti_cartridge::parse($xml) : null;
+                if ($cartridge !== null) {
                     break;
                 }
             }
-            if ($uuid === '' || !isset($byuuid[$uuid])) {
+            if ($cartridge === null) {
                 continue;
             }
-            $cartridge = lti_cartridge::parse($xml);
             $ownerbuilds = false;
             foreach ($byuuid[$uuid] as $owner) {
-                if ($cartridge !== null && $owner->launchcustom === []) {
+                if ($owner->launchcustom === []) {
                     $owner->launchcustom = $cartridge['custom'];
                 }
-                if ($cartridge !== null && $owner->launchsecureurl === '') {
+                if ($owner->launchsecureurl === '') {
                     $owner->launchsecureurl = $cartridge['secureurl'];
+                }
+                if ($owner->launchtooltitle === '') {
+                    $owner->launchtooltitle = $cartridge['title'];
                 }
                 if (lti_cartridge::sanitise_url($owner->launchurl) !== '') {
                     $ownerbuilds = true;
