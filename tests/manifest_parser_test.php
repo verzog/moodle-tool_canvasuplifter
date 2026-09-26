@@ -653,6 +653,134 @@ XML;
     }
 
     /**
+     * A Canvas QTI 1.2 item for the question-media tests: a single-answer multiple choice
+     * question whose stem is the given HTML, or (when not $convertible) a hot-spot question
+     * with no response, which does not convert.
+     *
+     * @param string $ident The item ident.
+     * @param string $stemhtml The question stem HTML (unescaped).
+     * @param bool $convertible Whether the item is a convertible multiple choice question.
+     * @return string
+     */
+    private function question_media_item(string $ident, string $stemhtml, bool $convertible = true): string {
+        $head = '<item ident="' . $ident . '" title="Q ' . $ident . '"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>'
+            . ($convertible ? 'multiple_choice_question' : 'hot_spot_question')
+            . '</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">' . htmlspecialchars($stemhtml) . '</mattext>';
+        if (!$convertible) {
+            return $head . '</material></presentation></item>';
+        }
+        return $head . '</material><response_lid ident="response1" rcardinality="Single"><render_choice>'
+            . '<response_label ident="a"><material><mattext texttype="text/plain">Right</mattext></material></response_label>'
+            . '<response_label ident="b"><material><mattext texttype="text/plain">Wrong</mattext></material></response_label>'
+            . '</render_choice></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar><varequal respident="response1">a</varequal></conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
+     * An image referenced only from a quiz question stem (not declared as a manifest
+     * dependency, as Canvas exports it) is inlined into the question at build time, so it is
+     * not also an orphan download. An image only an unconvertible question references, and a
+     * file nothing references, stay orphans.
+     *
+     * @return void
+     */
+    public function test_quiz_question_media_is_not_an_orphan(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        mkdir($dir . '/web_resources/Uploaded Media', 0777, true);
+        file_put_contents(
+            $dir . '/quiz/assessment_qti.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="IVUS Image Identification Quiz"><section ident="root_section">'
+            . $this->question_media_item('q1', '<p><img src="$IMS-CC-FILEBASE$/Uploaded%20Media/Ivus%20q.JPG"></p>')
+            . $this->question_media_item('q2', '<p><img src="$IMS-CC-FILEBASE$/Uploaded%20Media/Hot.png"></p>', false)
+            . '</section></assessment></questestinterop>'
+        );
+        file_put_contents($dir . '/web_resources/Uploaded Media/Ivus q.JPG', 'JPG');
+        file_put_contents($dir . '/web_resources/Uploaded Media/Hot.png', 'PNG');
+        file_put_contents($dir . '/handout.pdf', 'PDF');
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="i_quiz" identifierref="r_quiz"><title>IVUS Image Identification Quiz</title></item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">
+      <file href="quiz/assessment_qti.xml"/>
+    </resource>
+    <resource identifier="r_ivus" type="webcontent" href="web_resources/Uploaded Media/Ivus q.JPG">
+      <file href="web_resources/Uploaded Media/Ivus q.JPG"/>
+    </resource>
+    <resource identifier="r_hot" type="webcontent" href="web_resources/Uploaded Media/Hot.png">
+      <file href="web_resources/Uploaded Media/Hot.png"/>
+    </resource>
+    <resource identifier="r_handout" type="webcontent" href="handout.pdf">
+      <file href="handout.pdf"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $orphanhrefs = array_map(fn($o) => $o->href, $course->orphans);
+        $this->assertNotContains('web_resources/Uploaded Media/Ivus q.JPG', $orphanhrefs);
+        $this->assertArrayHasKey(realpath($dir . '/web_resources/Uploaded Media/Ivus q.JPG'), $course->embeddedassets);
+        $this->assertContains('web_resources/Uploaded Media/Hot.png', $orphanhrefs);
+        $this->assertContains('handout.pdf', $orphanhrefs);
+    }
+
+    /**
+     * A standalone Canvas item bank (non_cc_assessments/<id>.xml.qti) imports its questions
+     * with media resolved from the package root, so an image only its questions reference is
+     * not also an orphan download.
+     *
+     * @return void
+     */
+    public function test_standalone_bank_question_media_is_not_an_orphan(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/non_cc_assessments');
+        mkdir($dir . '/web_resources/Uploaded Media', 0777, true);
+        file_put_contents(
+            $dir . '/non_cc_assessments/pool.xml.qti',
+            '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<objectbank ident="pool"><qtimetadata><qtimetadatafield>'
+            . '<fieldlabel>bank_title</fieldlabel><fieldentry>Impella Lab Quiz</fieldentry>'
+            . '</qtimetadatafield></qtimetadata>'
+            . $this->question_media_item('q1', '<p><img src="$IMS-CC-FILEBASE$/Uploaded%20Media/Impella%20R.png"></p>')
+            . '</objectbank></questestinterop>'
+        );
+        file_put_contents($dir . '/web_resources/Uploaded Media/Impella R.png', 'PNG');
+        $manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title></item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_bank" type="associatedcontent/imscc_xmlv1p1/learning-application-resource"'
+            . ' href="non_cc_assessments/pool.xml.qti"><file href="non_cc_assessments/pool.xml.qti"/></resource>'
+            . '<resource identifier="r_img" type="webcontent" href="web_resources/Uploaded Media/Impella R.png">'
+            . '<file href="web_resources/Uploaded Media/Impella R.png"/></resource>'
+            . '</resources></manifest>';
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $orphans = array_map(fn($o) => $o->identifier, $course->orphans);
+        $this->assertSame(['r_bank'], $orphans);
+    }
+
+    /**
      * An orphan assessment (absent from the organisation tree) is built as a
      * question bank, whose activity has an empty intro and embeds nothing, so its
      * assessment_meta.xml description media must be left as a standalone download
