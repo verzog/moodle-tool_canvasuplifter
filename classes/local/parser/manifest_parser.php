@@ -1460,8 +1460,9 @@ class manifest_parser {
      * separate unreferenced LTI cartridge whose Canvas extension lookup_uuid equals the
      * assignment's resource_link_lookup_uuid. Left alone, the cartridge would build a second,
      * generically titled placeholder in "Additional resources". Each twin's custom parameters
-     * (a publisher's assignment id, for example) are copied onto the assignment's item, and the
-     * twin is returned so the orphan pass skips it.
+     * (a publisher's assignment id, for example) and secure launch URL are copied onto the
+     * assignment's item, and the twin is returned so the orphan pass skips it, unless no owning
+     * assignment has a usable http(s) launch URL, in which case the twin still builds.
      *
      * @param course_model $course The course model (its placed items are updated in place).
      * @param array $resources The resources keyed by identifier.
@@ -1494,25 +1495,41 @@ class manifest_parser {
             ) {
                 continue;
             }
+            // Scan every XML file, as lti_builder does: an auxiliary XML may precede the cartridge.
             $xml = '';
+            $uuid = '';
             foreach (array_merge([$resourceitem->href], $resourceitem->files) as $path) {
                 $absolute = $path === '' ? null : $this->resolve_within((string) $path);
-                if ($absolute !== null && preg_match('/\.xml$/i', $absolute)) {
-                    $xml = (string) @file_get_contents($absolute);
+                if ($absolute === null || !preg_match('/\.xml$/i', $absolute)) {
+                    continue;
+                }
+                $xml = (string) @file_get_contents($absolute);
+                $uuid = lti_cartridge::lookup_uuid($xml);
+                if ($uuid !== '') {
                     break;
                 }
             }
-            $uuid = lti_cartridge::lookup_uuid($xml);
             if ($uuid === '' || !isset($byuuid[$uuid])) {
                 continue;
             }
             $cartridge = lti_cartridge::parse($xml);
+            $ownerbuilds = false;
             foreach ($byuuid[$uuid] as $owner) {
                 if ($cartridge !== null && $owner->launchcustom === []) {
                     $owner->launchcustom = $cartridge['custom'];
                 }
+                if ($cartridge !== null && $owner->launchsecureurl === '') {
+                    $owner->launchsecureurl = $cartridge['secureurl'];
+                }
+                if (lti_cartridge::sanitise_url($owner->launchurl) !== '') {
+                    $ownerbuilds = true;
+                }
             }
-            $twins[$identifier] = true;
+            // Keep the twin when no owner has a usable http(s) launch URL: it is then the only
+            // activity that can build.
+            if ($ownerbuilds) {
+                $twins[$identifier] = true;
+            }
         }
         return $twins;
     }

@@ -113,7 +113,7 @@ XML;
     /**
      * A Canvas external-tool assignment and its lti_resource_links/ twin (matched by lookup
      * uuid) build one mod_lti, not two, and the twin's custom parameters (the publisher's
-     * assignment id) reach the placeholder's instructor custom parameters.
+     * assignment id) and secure launch URL reach the placeholder.
      *
      * @return void
      */
@@ -137,7 +137,7 @@ XML;
             . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
             . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
             . '<blti:title>McGraw Hill Connect LTIA</blti:title>'
-            . '<blti:secure_launch_url>https://tool.example.com/launch</blti:secure_launch_url>'
+            . '<blti:secure_launch_url>https://secure.example.com/launch</blti:secure_launch_url>'
             . '<blti:custom><lticm:property name="assignment_xid">xid-1</lticm:property></blti:custom>'
             . '<blti:extensions platform="canvas.instructure.com">'
             . '<lticm:property name="lookup_uuid">uuid-1</lticm:property></blti:extensions>'
@@ -160,6 +160,7 @@ XML;
         $instance = $DB->get_record('lti', ['id' => reset($ltis)->instance], '*', MUST_EXIST);
         $this->assertSame('Publisher Tool', $instance->name);
         $this->assertStringContainsString('assignment_xid=xid-1', $instance->instructorcustomparameters);
+        $this->assertSame('https://secure.example.com/launch', $instance->securetoolurl);
     }
 
     /**

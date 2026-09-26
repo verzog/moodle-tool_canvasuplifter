@@ -1026,7 +1026,17 @@ class conversion_report {
             // Validate the scheme as the builder does: a non-http(s) inline URL (e.g.
             // stack://question/1) builds no placeholder, so it must not be classified here either
             // or the analysis would promise an import that never happens.
-            return [lti_cartridge::sanitise_url($modelitem->launchurl), '', $modelitem->title, []];
+            $launchurl = lti_cartridge::sanitise_url($modelitem->launchurl);
+            if ($launchurl === '') {
+                return ['', '', $modelitem->title, []];
+            }
+            // Include what the twin cartridge supplied (see manifest_parser::pair_lti_link_twins()).
+            return [
+                $launchurl,
+                lti_cartridge::sanitise_url($modelitem->launchsecureurl),
+                $modelitem->title,
+                $modelitem->launchcustom,
+            ];
         }
         $cartridge = $this->read_lti_cartridge($modelitem);
         if ($cartridge === null) {

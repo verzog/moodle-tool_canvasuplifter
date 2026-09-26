@@ -1646,6 +1646,66 @@ XML;
      * @return void
      */
     public function test_external_tool_assignment_absorbs_its_lti_link_twin(): void {
+        $dir = $this->lti_twin_package();
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $placed = $course->sections[0]->items[0];
+        $this->assertSame(item::KIND_LTI, $placed->kind);
+        $this->assertSame('Chapter 5 SmartBook Assignment', $placed->title);
+        $this->assertSame('uuid-ch5', $placed->ltilinkuuid);
+        $this->assertSame(['assignment_xid' => 'xid-ch5'], $placed->launchcustom);
+        // Only the cartridge with no matching assignment remains an orphan.
+        $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
+    }
+
+    /**
+     * The twin is found past an auxiliary XML file listed before its cartridge, and its secure
+     * launch URL is kept on the assignment it merges into.
+     *
+     * @return void
+     */
+    public function test_lti_link_twin_found_past_auxiliary_xml_and_keeps_secure_url(): void {
+        $dir = $this->lti_twin_package('http://connect.example.com/lti', 'https://secure.example.com/lti', true);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $placed = $course->sections[0]->items[0];
+        $this->assertSame(['assignment_xid' => 'xid-ch5'], $placed->launchcustom);
+        $this->assertSame('https://secure.example.com/lti', $placed->launchsecureurl);
+        $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
+    }
+
+    /**
+     * When the assignment's launch URL cannot build (not http(s)), the twin is its only buildable
+     * activity, so it stays in the orphan list rather than being dropped.
+     *
+     * @return void
+     */
+    public function test_lti_link_twin_kept_when_assignment_url_cannot_build(): void {
+        $dir = $this->lti_twin_package('javascript:bad');
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $orphans = array_map(fn($orphan) => $orphan->identifier, $course->orphans);
+        sort($orphans);
+        $this->assertSame(['other', 'twin'], $orphans);
+    }
+
+    /**
+     * Write a package with a Canvas external-tool assignment (lookup uuid "uuid-ch5") placed in a
+     * module, its lti_resource_links/ twin and one unrelated cartridge.
+     *
+     * @param string $toolurl The assignment's external_tool_url.
+     * @param string $secureurl The cartridges' secure_launch_url.
+     * @param bool $auxfirst Whether the twin resource lists an auxiliary XML before its cartridge.
+     * @return string The package directory.
+     */
+    private function lti_twin_package(
+        string $toolurl = 'https://connect.example.com/lti',
+        string $secureurl = 'https://connect.example.com/lti',
+        bool $auxfirst = false
+    ): string {
         $dir = make_request_directory();
         mkdir($dir . '/course_settings');
         mkdir($dir . '/a1');
@@ -1657,16 +1717,16 @@ XML;
             . '<assignment identifier="a1" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
             . '<title>Chapter 5 SmartBook Assignment</title><points_possible>10.0</points_possible>'
             . '<submission_types>external_tool</submission_types>'
-            . '<external_tool_url>https://connect.example.com/lti</external_tool_url>'
+            . '<external_tool_url>' . $toolurl . '</external_tool_url>'
             . '<resource_link_lookup_uuid>uuid-ch5</resource_link_lookup_uuid></assignment>'
         );
-        $cartridge = function (string $uuid, string $xid): string {
+        $cartridge = function (string $uuid, string $xid) use ($secureurl): string {
             return '<?xml version="1.0" encoding="UTF-8"?>'
                 . '<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p3"'
                 . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
                 . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
                 . '<blti:title>McGraw Hill Connect LTIA</blti:title>'
-                . '<blti:secure_launch_url>https://connect.example.com/lti</blti:secure_launch_url>'
+                . '<blti:secure_launch_url>' . $secureurl . '</blti:secure_launch_url>'
                 . '<blti:custom><lticm:property name="assignment_xid">' . $xid . '</lticm:property></blti:custom>'
                 . '<blti:extensions platform="canvas.instructure.com">'
                 . '<lticm:property name="lookup_uuid">' . $uuid . '</lticm:property></blti:extensions>'
@@ -1674,7 +1734,10 @@ XML;
         };
         file_put_contents($dir . '/lti_resource_links/twin.xml', $cartridge('uuid-ch5', 'xid-ch5'));
         file_put_contents($dir . '/lti_resource_links/other.xml', $cartridge('uuid-other', 'xid-other'));
-        $manifest = <<<'XML'
+        // Auxiliary metadata XML with no lookup_uuid, listed before the cartridge when $auxfirst.
+        file_put_contents($dir . '/lti_resource_links/meta.xml', '<?xml version="1.0"?><meta><note>aux</note></meta>');
+        $auxfile = $auxfirst ? '<file href="lti_resource_links/meta.xml"/>' : '';
+        $manifest = <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
   <organizations>
@@ -1689,7 +1752,7 @@ XML;
       <file href="a1/assignment_settings.xml"/>
     </resource>
     <resource identifier="twin" type="imsbasiclti_xmlv1p3">
-      <file href="lti_resource_links/twin.xml"/>
+      {$auxfile}<file href="lti_resource_links/twin.xml"/>
     </resource>
     <resource identifier="other" type="imsbasiclti_xmlv1p3">
       <file href="lti_resource_links/other.xml"/>
@@ -1717,15 +1780,7 @@ XML;
 XML;
         file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
 
-        $course = (new manifest_parser($dir))->parse();
-
-        $placed = $course->sections[0]->items[0];
-        $this->assertSame(item::KIND_LTI, $placed->kind);
-        $this->assertSame('Chapter 5 SmartBook Assignment', $placed->title);
-        $this->assertSame('uuid-ch5', $placed->ltilinkuuid);
-        $this->assertSame(['assignment_xid' => 'xid-ch5'], $placed->launchcustom);
-        // Only the cartridge with no matching assignment remains an orphan.
-        $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
+        return $dir;
     }
 
     /**

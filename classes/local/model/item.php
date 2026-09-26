@@ -140,6 +140,10 @@ class item {
      *             publisher's assignment id, so the launch placeholder keeps them. Empty otherwise. */
     public array $launchcustom = [];
 
+    /** @var string The secure (https) launch URL recovered from that twin cartridge, kept alongside
+     *              $launchurl so the launch placeholder does not lose it. Empty otherwise. */
+    public string $launchsecureurl = '';
+
     /** @var string For assignments: Canvas <assignment_group_identifierref>. */
     public string $gradegroupref = '';
 

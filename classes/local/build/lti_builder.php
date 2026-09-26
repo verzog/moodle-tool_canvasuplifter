@@ -86,7 +86,12 @@ class lti_builder {
         // placed in a module, or an external-tool assignment) rather than a
         // cartridge XML file; prefer that when present, else read the cartridge.
         $cartridge = $modelitem->launchurl !== ''
-            ? self::cartridge_from_launchurl($modelitem->launchurl, $modelitem->title, $this->launch_instructions($modelitem))
+            ? self::cartridge_from_launchurl(
+                $modelitem->launchurl,
+                $modelitem->title,
+                $this->launch_instructions($modelitem),
+                $modelitem->launchsecureurl
+            )
             : $this->read_cartridge($modelitem);
         // Custom parameters recovered from a Canvas external-tool assignment's twin cartridge.
         if ($cartridge !== null && $modelitem->launchcustom !== [] && ($cartridge['custom'] ?? []) === []) {
@@ -277,9 +282,15 @@ class lti_builder {
      * @param string $launchurl The inline launch URL.
      * @param string $title The item title (used as the cartridge title).
      * @param string $descriptionhtml Instructions HTML to show in the intro (or '').
+     * @param string $secureurl A secure launch URL recovered from a twin cartridge (or '').
      * @return array|null Cartridge fields, or null when the URL is not http(s).
      */
-    private static function cartridge_from_launchurl(string $launchurl, string $title, string $descriptionhtml = ''): ?array {
+    private static function cartridge_from_launchurl(
+        string $launchurl,
+        string $title,
+        string $descriptionhtml = '',
+        string $secureurl = ''
+    ): ?array {
         $launchurl = lti_cartridge::sanitise_url($launchurl);
         if ($launchurl === '') {
             return null;
@@ -287,7 +298,7 @@ class lti_builder {
         return [
             'title' => trim($title),
             'launchurl' => $launchurl,
-            'secureurl' => '',
+            'secureurl' => lti_cartridge::sanitise_url($secureurl),
             'description' => '',
             'descriptionhtml' => trim($descriptionhtml),
             'custom' => [],
