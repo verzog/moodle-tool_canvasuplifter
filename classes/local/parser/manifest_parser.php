@@ -1921,8 +1921,11 @@ class manifest_parser {
             if ($absolute === null) {
                 continue;
             }
-            $html = (string) @file_get_contents($absolute, false, null, 0, 65536);
-            $head = preg_match('#<head\b.*?</head>#is', $html, $m) ? $m[0] : '';
+            // Read the whole page: a long <head> (a large inline stylesheet) must not cut off
+            // its closing tag. Everything before <body> counts as the head when it is unclosed.
+            $html = (string) @file_get_contents($absolute);
+            $bodyat = stripos($html, '<body');
+            $head = $bodyat === false ? $html : substr($html, 0, $bodyat);
             foreach (preg_match_all('#<meta\b[^>]*>#i', $head, $metas) ? $metas[0] : [] as $meta) {
                 if (
                     preg_match('#\bname\s*=\s*["\']workflow_state["\']#i', $meta)

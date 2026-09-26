@@ -1999,8 +1999,10 @@ XML;
     public function test_unpublished_unplaced_page_is_hidden(): void {
         $dir = make_request_directory();
         mkdir($dir . '/wiki_content');
+        // A long inline stylesheet after the meta must not hide it.
         $page = fn(string $title, string $state) => '<html><head><title>' . $title . '</title>'
-            . '<meta content="' . $state . '" name="workflow_state"/></head><body><p>' . $title . '</p></body></html>';
+            . '<meta content="' . $state . '" name="workflow_state"/>'
+            . '<style>' . str_repeat('.x { color: red; }', 5000) . '</style></head><body><p>' . $title . '</p></body></html>';
         file_put_contents($dir . '/wiki_content/draft.html', $page('Draft', 'unpublished'));
         file_put_contents($dir . '/wiki_content/live.html', $page('Live', 'active'));
         file_put_contents(
