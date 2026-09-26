@@ -2029,6 +2029,70 @@ XML;
     }
 
     /**
+     * Parse a package whose module places the given pages and which also ships the given
+     * unreferenced pages, none marked intendeduse="syllabus".
+     *
+     * @param array $placed Placed page slugs => titles.
+     * @param array $unplaced Unreferenced page slugs => titles.
+     * @return \tool_canvasuplifter\local\model\course_model
+     */
+    private function parse_syllabus_candidates(array $placed, array $unplaced): \tool_canvasuplifter\local\model\course_model {
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        $items = '';
+        $resources = '';
+        foreach ($placed + $unplaced as $slug => $title) {
+            file_put_contents(
+                $dir . '/wiki_content/' . $slug . '.html',
+                '<html><head><title>' . $title . '</title></head><body><p>' . $title . '</p></body></html>'
+            );
+            $resources .= '<resource identifier="r_' . $slug . '" type="webcontent" href="wiki_content/' . $slug . '.html">'
+                . '<file href="wiki_content/' . $slug . '.html"/></resource>';
+            if (isset($placed[$slug])) {
+                $items .= '<item identifier="i_' . $slug . '" identifierref="r_' . $slug . '"><title>' . $title . '</title></item>';
+            }
+        }
+        file_put_contents(
+            $dir . '/imsmanifest.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title>' . $items . '</item></item></organization></organizations>'
+            . '<resources>' . $resources . '</resources></manifest>'
+        );
+        return (new manifest_parser($dir))->parse();
+    }
+
+    /**
+     * Without an intendeduse="syllabus" marker, the one unreferenced page named like a syllabus
+     * is the course syllabus, but not when a module already places the syllabus (an old
+     * syllabus left lying around) or when several unreferenced pages could be it.
+     *
+     * @return void
+     */
+    public function test_syllabus_by_name_only_when_unambiguous(): void {
+        $top = fn($course) => array_values(array_map(
+            fn($orphan) => $orphan->identifier,
+            array_filter($course->orphans, fn($orphan) => $orphan->is_syllabus())
+        ));
+
+        $course = $this->parse_syllabus_candidates(['welcome' => 'Welcome'], ['course-syllabus' => 'Course Syllabus']);
+        $this->assertSame(['r_course-syllabus'], $top($course));
+
+        $course = $this->parse_syllabus_candidates(
+            ['welcome' => 'Welcome', '2024-ndxt-120-syllabus' => '2024 NDXT 120 Syllabus'],
+            ['ndxt-101-syllabus' => 'NDXT 101 Syllabus']
+        );
+        $this->assertSame([], $top($course));
+
+        $course = $this->parse_syllabus_candidates(
+            ['welcome' => 'Welcome'],
+            ['syllabus-2022' => 'Syllabus 2022', 'syllabus-2023' => 'Syllabus 2023']
+        );
+        $this->assertSame([], $top($course));
+    }
+
+    /**
      * topicMeta carries its own <workflow_state>. When it says "unpublished",
      * the announcement's isvisible must flip to false even when module_meta.xml
      * doesn't list the announcement at all (Canvas commonly omits them from
