@@ -20,7 +20,9 @@ use DOMDocument;
 use DOMElement;
 use tool_canvasuplifter\local\build\ilias_cleaner;
 use tool_canvasuplifter\local\build\link_rewriter;
+use tool_canvasuplifter\local\build\media_report;
 use tool_canvasuplifter\local\build\page_payload;
+use tool_canvasuplifter\local\build\question_xml_writer;
 use tool_canvasuplifter\local\build\safe_path;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\section_model;
@@ -632,16 +634,20 @@ class manifest_parser {
      * @return array Set keyed by absolute package path, each value true.
      */
     protected function collect_question_embedded_files(array $resources): array {
-        $rewriter = new link_rewriter();
         $embedded = [];
         foreach ($resources as $resourceitem) {
             $kind = $resourceitem->kind;
             if (($kind !== item::KIND_QUIZ && $kind !== item::KIND_QUESTIONBANK) || $resourceitem->suppressed) {
                 continue;
             }
-            foreach ($this->question_embed_sources($resourceitem) as [$html, $ownerdir]) {
-                foreach ($rewriter->rewrite_files($html, $this->basedir, $ownerdir)['files'] as $file) {
-                    $embedded[$file['package']] = true;
+            foreach ($this->question_embed_sources($resourceitem) as [$questions, $imagedir]) {
+                // Run the builders' own question writer, so every reference it resolves (a
+                // $IMS-CC-FILEBASE$ token, encoded or not, or a path relative to the media
+                // folder) is predicted exactly as the import will embed it.
+                $report = new media_report();
+                (new question_xml_writer())->to_moodle_xml($questions, 'scan', $imagedir, $this->basedir, $report);
+                foreach ($report->embedded_paths() as $packagepath) {
+                    $embedded[$packagepath] = true;
                 }
             }
         }
@@ -669,28 +675,27 @@ class manifest_parser {
     }
 
     /**
-     * The rich text of the questions an assessment imports, each paired with the
-     * package-relative folder its $IMS-CC-FILEBASE$ tokens resolve against, mirroring
-     * qti_source_locator::resolve_assessment_source(): the Common Cartridge QTI, relative to its
-     * own folder, or, when that has no importable question, the native non_cc_assessments dump,
-     * relative to the package root. Both a placed quiz and an unreferenced assessment (built as a
-     * question bank) import these questions; a standalone item bank imports its own dump. The
-     * item banks the assessment draws from (item_bank_registry imports them from their
-     * non_cc_assessments dumps, relative to the package root, whether or not the manifest
-     * declares them) are included too.
+     * The importable questions an assessment imports, each set paired with the absolute folder
+     * its media resolves against, mirroring qti_source_locator::resolve_assessment_source():
+     * the Common Cartridge QTI, relative to its own folder, or, when that has no importable
+     * question, the native non_cc_assessments dump, relative to the package root. Both a placed
+     * quiz and an unreferenced assessment (built as a question bank) import these questions; a
+     * standalone item bank imports its own dump. The item banks the assessment draws from
+     * (item_bank_registry imports them from their non_cc_assessments dumps, relative to the
+     * package root, whether or not the manifest declares them) are included too.
      *
      * Any prediction the build does not confirm is recovered by course_builder as a standalone
      * file, so an over-prediction here never loses a file.
      *
      * @param item $resourceitem The quiz or question-bank resource.
-     * @return array List of [html, ownerdir].
+     * @return array List of [questions, imagedir].
      */
     protected function question_embed_sources(item $resourceitem): array {
         if ($resourceitem->kind === item::KIND_QUESTIONBANK && $resourceitem->objectbankid !== '') {
             $bankpath = $resourceitem->objectbankpath !== ''
-                ? $resourceitem->objectbankpath
-                : 'non_cc_assessments/' . $resourceitem->objectbankid . '.xml.qti';
-            return $this->bank_embed_sources([$bankpath]);
+                ? $this->resolve_within($resourceitem->objectbankpath)
+                : $this->bank_dump_path($resourceitem->objectbankid);
+            return $bankpath === null ? [] : [$this->importable_questions($bankpath, $this->basedir)];
         }
         $qtipath = $this->locate_quiz_qti($resourceitem);
         if ($qtipath === null) {
@@ -698,84 +703,76 @@ class manifest_parser {
         }
         $parsed = (new qti_parser())->parse((string) @file_get_contents($qtipath));
         $selections = $parsed['selections'] ?? [];
-        $sources = [$this->question_html_source($parsed, safe_path::package_dir($this->basedir, $qtipath))];
+        $sources = [$this->importable_questions($qtipath, dirname($qtipath), $parsed)];
         $native = $this->locate_native_quiz_qti($resourceitem, $qtipath);
         if ($native !== null) {
             $nativeparsed = (new qti_parser())->parse((string) @file_get_contents($native));
             $selections = array_merge($selections, $nativeparsed['selections'] ?? []);
             if (!$this->qti_has_importable($parsed)) {
                 // The builders adopt the native dump; its questions reference media from the package root.
-                $sources = [$this->question_html_source($nativeparsed, '')];
+                $sources = [$this->importable_questions($native, $this->basedir, $nativeparsed)];
             }
         }
-        $bankpaths = [];
+        $banks = [];
         foreach ($selections as $selection) {
             $bankid = (string) ($selection['bank'] ?? '');
-            if ($bankid !== '') {
-                $bankpaths[$bankid] = 'non_cc_assessments/' . $bankid . '.xml.qti';
-            }
-        }
-        return array_merge(array_values(array_filter($sources)), $this->bank_embed_sources(array_values($bankpaths)));
-    }
-
-    /**
-     * Question text sources for item-bank dumps, whose media resolves from the package root.
-     *
-     * @param array $paths Package-relative dump paths.
-     * @return array List of [html, ownerdir].
-     */
-    protected function bank_embed_sources(array $paths): array {
-        $sources = [];
-        foreach ($paths as $path) {
-            $absolute = $this->resolve_within((string) $path);
-            if ($absolute === null) {
-                continue;
-            }
-            $source = $this->question_html_source((new qti_parser())->parse((string) @file_get_contents($absolute)), '');
-            if ($source !== null) {
-                $sources[] = $source;
+            if ($bankid !== '' && !isset($banks[$bankid])) {
+                $banks[$bankid] = true;
+                $bankpath = $this->bank_dump_path($bankid);
+                if ($bankpath !== null) {
+                    $sources[] = $this->importable_questions($bankpath, $this->basedir);
+                }
             }
         }
         return $sources;
     }
 
     /**
-     * The combined rich text of a parsed assessment's importable questions paired with the
-     * folder their media resolves against, or null when none references a package file.
+     * The importable questions of a QTI file paired with the folder their media resolves against.
      *
-     * @param array $parsed A qti_parser::parse() result.
-     * @param string $ownerdir Package-relative folder the questions' media resolves against.
-     * @return array|null [html, ownerdir], or null.
+     * @param string $path Absolute path of the QTI file.
+     * @param string $imagedir Absolute folder the questions' media resolves against.
+     * @param array|null $parsed The file's qti_parser::parse() result, when already parsed.
+     * @return array [questions, imagedir].
      */
-    protected function question_html_source(array $parsed, string $ownerdir): ?array {
-        $html = '';
-        foreach (($parsed['questions'] ?? []) as $question) {
-            if ($question->type !== qti_question::TYPE_UNSUPPORTED && $question->is_importable()) {
-                $html .= implode("\n", $this->text_values(get_object_vars($question))) . "\n";
-            }
-        }
-        // The writer and link_rewriter accept the URL-encoded token too.
-        $hastoken = str_contains($html, '$IMS-CC-FILEBASE$') || stripos($html, '%24IMS-CC-FILEBASE%24') !== false;
-        return $hastoken ? [$html, $ownerdir] : null;
+    protected function importable_questions(string $path, string $imagedir, ?array $parsed = null): array {
+        $parsed = $parsed ?? (new qti_parser())->parse((string) @file_get_contents($path));
+        $questions = array_values(array_filter(
+            $parsed['questions'] ?? [],
+            fn($question) => $question->type !== qti_question::TYPE_UNSUPPORTED && $question->is_importable()
+        ));
+        return [$questions, $imagedir];
     }
 
     /**
-     * Every string in a (possibly nested) array of values: a question's text fields, answers,
-     * subquestions and feedback.
+     * The native dump of an item bank (non_cc_assessments/<id>.xml.qti), matching the folder and
+     * file name case-insensitively when the exact path is absent, as
+     * qti_source_locator::bank_dump_path() does for the builders.
      *
-     * @param array $values The values to walk.
-     * @return string[]
+     * @param string $bankid The bank id.
+     * @return string|null Absolute path within the package, or null.
      */
-    protected function text_values(array $values): array {
-        $texts = [];
-        foreach ($values as $value) {
-            if (is_string($value)) {
-                $texts[] = $value;
-            } else if (is_array($value) || is_object($value)) {
-                array_push($texts, ...$this->text_values(is_object($value) ? get_object_vars($value) : $value));
+    protected function bank_dump_path(string $bankid): ?string {
+        $direct = $this->resolve_within('non_cc_assessments/' . $bankid . '.xml.qti');
+        if ($direct !== null && is_readable($direct)) {
+            return $direct;
+        }
+        $root = realpath($this->basedir);
+        if ($root === false) {
+            return null;
+        }
+        $target = strtolower($bankid . '.xml.qti');
+        foreach ((array) @scandir($root) as $dir) {
+            if (strtolower((string) $dir) !== 'non_cc_assessments' || !is_dir($root . '/' . $dir)) {
+                continue;
+            }
+            foreach ((array) @scandir($root . '/' . $dir) as $entry) {
+                if (strtolower((string) $entry) === $target && is_readable($root . '/' . $dir . '/' . $entry)) {
+                    return $root . '/' . $dir . '/' . $entry;
+                }
             }
         }
-        return $texts;
+        return null;
     }
 
     /**

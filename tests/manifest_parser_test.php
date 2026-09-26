@@ -748,14 +748,20 @@ XML;
      * @param string $sectionxml Items/draw sections for the quiz's root section.
      * @param string $resourcesxml Extra <resource> elements.
      * @param string $dependencies <dependency> elements for the quiz resource.
+     * @param string $folder The folder holding the quiz QTI.
      * @return string The package directory.
      */
-    private function question_media_package(string $sectionxml, string $resourcesxml, string $dependencies = ''): string {
+    private function question_media_package(
+        string $sectionxml,
+        string $resourcesxml,
+        string $dependencies = '',
+        string $folder = 'quiz'
+    ): string {
         $dir = make_request_directory();
-        mkdir($dir . '/quiz');
+        mkdir($dir . '/' . $folder);
         mkdir($dir . '/web_resources/Uploaded Media', 0777, true);
         file_put_contents(
-            $dir . '/quiz/assessment_qti.xml',
+            $dir . '/' . $folder . '/assessment_qti.xml',
             '<?xml version="1.0" encoding="UTF-8"?>'
             . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
             . '<assessment ident="a1" title="Quiz"><section ident="root_section">' . $sectionxml
@@ -769,7 +775,7 @@ XML;
             . '<item identifier="i_quiz" identifierref="r_quiz"><title>Quiz</title></item>'
             . '</item></organization></organizations><resources>'
             . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">'
-            . '<file href="quiz/assessment_qti.xml"/>' . $dependencies . '</resource>'
+            . '<file href="' . $folder . '/assessment_qti.xml"/>' . $dependencies . '</resource>'
             . $resourcesxml . '</resources></manifest>'
         );
         return $dir;
@@ -788,6 +794,27 @@ XML;
             . '<file href="web_resources/Uploaded Media/Enc.png"/></resource>'
         );
         file_put_contents($dir . '/web_resources/Uploaded Media/Enc.png', 'PNG');
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame([], $course->orphans);
+    }
+
+    /**
+     * A question image referenced by a path relative to the assessment's folder (no filebase
+     * token) is resolved and inlined by the question writer, so it is not an orphan either.
+     *
+     * @return void
+     */
+    public function test_relative_question_media_is_not_an_orphan(): void {
+        $dir = $this->question_media_package(
+            $this->question_media_item('q1', '<p><img src="figure.png"></p>'),
+            '<resource identifier="r_img" type="webcontent" href="g1/figure.png">'
+            . '<file href="g1/figure.png"/></resource>',
+            '',
+            'g1'
+        );
+        file_put_contents($dir . '/g1/figure.png', 'PNG');
 
         $course = (new manifest_parser($dir))->parse();
 
@@ -822,8 +849,9 @@ XML;
 
     /**
      * A quiz that draws from an item bank the manifest does not declare still imports that
-     * bank's dump (item_bank_registry falls back to non_cc_assessments/<id>.xml.qti), so an
-     * image only the bank's questions reference is not an orphan.
+     * bank's dump (item_bank_registry falls back to non_cc_assessments/<id>.xml.qti, matching
+     * the file name case-insensitively), so an image only the bank's questions reference is not
+     * an orphan.
      *
      * @return void
      */
@@ -838,7 +866,7 @@ XML;
         );
         mkdir($dir . '/non_cc_assessments');
         file_put_contents(
-            $dir . '/non_cc_assessments/gpool.xml.qti',
+            $dir . '/non_cc_assessments/GPool.XML.QTI',
             '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2"><objectbank ident="gpool">'
             . $this->question_media_item('p1', '<p><img src="$IMS-CC-FILEBASE$/Uploaded%20Media/Pool.png"></p>')
             . '</objectbank></questestinterop>'
