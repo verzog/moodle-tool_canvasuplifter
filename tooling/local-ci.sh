@@ -82,6 +82,10 @@ require_pg_version() {
   fi
 }
 
+# Set to 1 when start_postgres() replaces an old managed container: its databases
+# are gone, so main() must reinstall Moodle rather than reuse the workspace.
+DB_REPLACED=0
+
 # Prefer a Docker Postgres (matches CI exactly); fall back to a locally
 # installed cluster when no Docker daemon is available (e.g. this sandbox).
 start_postgres() {
@@ -91,10 +95,11 @@ start_postgres() {
       return 0
     fi
     # An older container this script created earlier (postgres:16): replace it. Its
-    # databases go with it, so the Moodle install must be redone (--reinstall).
+    # databases go with it, so main() reinstalls Moodle (DB_REPLACED).
     if docker info >/dev/null 2>&1 && docker container inspect "$PGCONTAINER" >/dev/null 2>&1; then
       log "Replacing ${PGCONTAINER} (PostgreSQL $(pg_major)): ${MOODLE_BRANCH} needs $(min_pg_major)+."
       start_postgres_docker
+      DB_REPLACED=1
       wait_for_postgres
       require_pg_version
       return 0
@@ -227,11 +232,14 @@ main() {
   install_ci_tool
 
   local arg="${1:-}"
-  if [ "$arg" = "--reinstall" ] || [ ! -d "$WORKSPACE/moodle" ]; then
-    # A fresh install already places the current working-tree plugin.
-    install_moodle
-    shift || true
+  if [ "$arg" = "--reinstall" ]; then
+    shift
     arg="${1:-}"
+    install_moodle
+  elif [ ! -d "$WORKSPACE/moodle" ] || [ "$DB_REPLACED" = "1" ]; then
+    # A fresh install already places the current working-tree plugin. A replaced
+    # database container also needs one: the old Moodle's database went with it.
+    install_moodle
   else
     # Reusing an existing Moodle: refresh the plugin from the working tree and
     # re-initialise the test environment (the plugin version may have changed).
