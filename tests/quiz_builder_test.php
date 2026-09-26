@@ -178,6 +178,79 @@ XML;
         return $dir;
     }
 
+
+    /**
+     * A Canvas ordering_question in its exported shape: one response_lid
+     * rcardinality="Ordered" with top/bottom end labels, and the correct order as the
+     * <varequal> sequence of the scoring condition.
+     *
+     * @param string $ident The item ident.
+     * @param array $order Item texts in their correct order.
+     * @param bool $complete Whether the scoring sequence names every item.
+     * @return string
+     */
+    private function orderingitem(string $ident, array $order, bool $complete = true): string {
+        $labels = '';
+        $sequence = '';
+        // List the items in a shuffled display order so the correct order is not implied.
+        foreach (array_reverse($order, true) as $i => $text) {
+            $labels .= '<response_label ident="' . $ident . '_' . $i . '"><material>'
+                . '<mattext texttype="text/html">&lt;p&gt;' . $text . '&lt;/p&gt;</mattext>'
+                . '</material></response_label>';
+        }
+        foreach (array_keys($order) as $i) {
+            if ($complete || $i > 0) {
+                $sequence .= '<varequal respident="response1">' . $ident . '_' . $i . '</varequal>';
+            }
+        }
+        return '<item ident="' . $ident . '" title="Stages"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>ordering_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;p&gt;List the stages.&lt;/p&gt;</mattext>'
+            . '</material><response_lid ident="response1" rcardinality="Ordered"><render_extension>'
+            . '<material position="top"><mattext>Mild</mattext></material>'
+            . '<ims_render_object shuffle="No"><flow_label>' . $labels . '</flow_label></ims_render_object>'
+            . '<material position="bottom"><mattext>Severe</mattext></material>'
+            . '</render_extension></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar defaultval="1" varname="ORDERSCORE" vartype="Integer"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar>' . $sequence . '</conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
+     * A Canvas ordering question imports into Moodle as a core qtype_ordering question with
+     * all-or-nothing grading and its items stored in their correct order.
+     *
+     * @return void
+     */
+    public function test_ordering_question_imports_as_moodle_ordering(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/question/type/ordering/question.php');
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = $this->build_mixed_fixture();
+        $qti = str_replace(
+            '</section>',
+            $this->orderingitem('ord', ['First stage', 'Second stage', 'Third stage']) . '</section>',
+            (string) file_get_contents($dir . '/quiz/a2/qti.xml')
+        );
+        file_put_contents($dir . '/quiz/a2/qti.xml', $qti);
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+
+        (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $question = $DB->get_record('question', ['qtype' => 'ordering'], '*', MUST_EXIST);
+        $options = $DB->get_record('qtype_ordering_options', ['questionid' => $question->id], '*', MUST_EXIST);
+        $this->assertEquals(\qtype_ordering_question::GRADING_ALL_OR_NOTHING, (int) $options->gradingtype);
+        $answers = $DB->get_records('question_answers', ['question' => $question->id], 'fraction ASC');
+        $this->assertSame(
+            ['First stage', 'Second stage', 'Third stage'],
+            array_values(array_map(fn($answer) => trim(strip_tags($answer->answer)), $answers))
+        );
+    }
+
     /**
      * Write a package whose referenced assessment has only unconvertible
      * questions (a lone single-option choice).
