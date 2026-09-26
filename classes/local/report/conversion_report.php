@@ -233,34 +233,6 @@ class conversion_report {
     }
 
     /**
-     * Per-position grouped flags for the orphan list, aligned to
-     * course_model::$orphans. Only the "extras" (everything but the syllabus,
-     * which is lifted to the course top and built individually) are segmented,
-     * exactly as course_builder does.
-     *
-     * @return array<int, bool> A flag per orphan index; true where the page groups.
-     */
-    protected function orphan_grouped_flags(): array {
-        $orphans = $this->course->orphans;
-        $flags = array_fill(0, count($orphans), false);
-        if ($this->pagegrouping === '') {
-            return $flags;
-        }
-        $extraindices = [];
-        $extras = [];
-        foreach ($orphans as $i => $modelitem) {
-            if (!$modelitem->is_syllabus()) {
-                $extraindices[] = $i;
-                $extras[] = $modelitem;
-            }
-        }
-        foreach ($this->grouped_flags($extras) as $k => $isgrouped) {
-            $flags[$extraindices[$k]] = $isgrouped;
-        }
-        return $flags;
-    }
-
-    /**
      * Add an item to the aggregate map, grouped by content type and the Moodle
      * target it will actually build into.
      *
@@ -392,9 +364,9 @@ class conversion_report {
                 $this->accumulate($grouped, $modelitem, true, $flags[$i]);
             }
         }
-        $orphanflags = $this->orphan_grouped_flags();
-        foreach ($this->course->orphans as $i => $modelitem) {
-            $this->accumulate($grouped, $modelitem, false, $orphanflags[$i]);
+        // Unreferenced pages are never grouped (course_builder builds each on its own).
+        foreach ($this->course->orphans as $modelitem) {
+            $this->accumulate($grouped, $modelitem, false);
         }
         ksort($grouped);
 
@@ -1352,9 +1324,8 @@ class conversion_report {
      */
     protected function orphan_detail(): array {
         $orphans = [];
-        $flags = $this->orphan_grouped_flags();
-        foreach ($this->course->orphans as $i => $modelitem) {
-            $entry = $this->effective_plan($modelitem, false, $flags[$i]);
+        foreach ($this->course->orphans as $modelitem) {
+            $entry = $this->effective_plan($modelitem, false);
             $orphans[] = [
                 'title' => $this->display_title($modelitem, false),
                 'kind' => $modelitem->kind,
