@@ -185,12 +185,12 @@ class question_importer {
     }
 
     /**
-     * Fold a batch's media into the caller's report: every missing-media reference, but an
-     * embedded file only when a question Moodle actually stored carries it. When the whole
-     * batch was stored, all embeds count. Otherwise each stored question is matched back to
-     * its model by name, as restore_cloze_marks() does, and its own media is re-derived; a
-     * name some rejected question also used can't be told apart, so its media is not claimed
-     * (course_builder then keeps the file as a download rather than losing it).
+     * Fold a batch's media into the caller's report, both embedded files and missing-media
+     * references, only for questions Moodle actually stored. When the whole batch was stored, all
+     * of it counts. Otherwise each stored question is matched back to its model by name, as
+     * restore_cloze_marks() does, and its own media is re-derived; a name some rejected question
+     * also used can't be told apart, so its media is not claimed (course_builder then keeps an
+     * embedded file as a download rather than losing it).
      *
      * @param media_report $mediareport The caller's report.
      * @param media_report $batchreport The scratch report the batch XML was written with.
@@ -211,13 +211,8 @@ class question_importer {
         ?string $filebase
     ): void {
         global $DB;
-        foreach ($batchreport->references() as $reference) {
-            $mediareport->record($reference);
-        }
         if (count($ids) === count($questions)) {
-            foreach ($batchreport->embedded_paths() as $packagepath) {
-                $mediareport->record_embedded($packagepath);
-            }
+            $mediareport->merge($batchreport);
             return;
         }
         $stored = [];
@@ -237,9 +232,7 @@ class question_importer {
             }
             $single = new media_report();
             (new question_xml_writer())->to_moodle_xml([$question], $categoryname, $imagedir, $filebase, $single);
-            foreach ($single->embedded_paths() as $packagepath) {
-                $mediareport->record_embedded($packagepath);
-            }
+            $mediareport->merge($single);
         }
     }
 

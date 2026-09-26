@@ -49,9 +49,9 @@ final class question_importer_media_test extends \advanced_testcase {
     }
 
     /**
-     * When Moodle stores every question, all their media counts as embedded; when it rejects
-     * one, only the stored question's media does, so the rejected question's image is left for
-     * course_builder to recover as a download.
+     * When Moodle stores every question, all their media counts (embedded and missing); when it
+     * rejects one, only the stored question's media does, so the rejected question's image is
+     * left for course_builder to recover as a download and its missing image is not reported.
      *
      * @return void
      */
@@ -65,12 +65,15 @@ final class question_importer_media_test extends \advanced_testcase {
         file_put_contents($dir . '/kept.png', 'PNG');
         file_put_contents($dir . '/lost.png', 'PNG');
         $questions = [$this->question('Kept', 'kept.png'), $this->question('Lost', 'lost.png')];
+        // The rejected question also references a file the package lacks.
+        $questions[1]->questiontext .= '<p><img src="$IMS-CC-FILEBASE$/missing.png"></p>';
 
         $report = new media_report();
         $ids = (new question_importer())->import($course, $context, $questions, $dir, $dir, $report);
         $this->assertCount(2, $ids);
         $this->assertTrue($report->was_embedded(realpath($dir . '/kept.png')));
         $this->assertTrue($report->was_embedded(realpath($dir . '/lost.png')));
+        $this->assertSame(1, $report->count());
 
         // Simulate Moodle rejecting the second question of the batch.
         $importer = new class extends question_importer {
@@ -99,5 +102,7 @@ final class question_importer_media_test extends \advanced_testcase {
         $this->assertCount(1, $ids);
         $this->assertTrue($report->was_embedded(realpath($dir . '/kept.png')));
         $this->assertFalse($report->was_embedded(realpath($dir . '/lost.png')));
+        // Its missing image is not reported either: that question is not in the course.
+        $this->assertSame(0, $report->count());
     }
 }

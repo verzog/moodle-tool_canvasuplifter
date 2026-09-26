@@ -393,7 +393,7 @@ class manifest_parser {
      */
     protected function suppress_embedded_page_assets(course_model $course, array $resources, array $placed): void {
         $embedded = $this->collect_embedded_files($resources, $placed);
-        $inquestions = $this->collect_question_embedded_files($resources);
+        $inquestions = $this->collect_question_embedded_files($resources, $placed);
         if (empty($embedded) && empty($inquestions)) {
             return;
         }
@@ -406,7 +406,10 @@ class manifest_parser {
             // suppressing on an auxiliary <file> would drop an activity whose real
             // payload (e.g. a PDF href) is not the embedded asset at all.
             $built = $this->built_file_payload($resourceitem);
-            $inquestion = $built !== null && isset($inquestions[$built]) && empty($dependencies[$identifier]);
+            // A folded HTML bundle is left alone: the question embeds only its HTML file, not the
+            // assets the bundle carries with it.
+            $inquestion = $built !== null && isset($inquestions[$built]) && empty($dependencies[$identifier])
+                && $resourceitem->bundleassets === [];
             if ($built !== null && (isset($embedded[$built]) || $inquestion)) {
                 $resourceitem->suppressed = true;
                 // Remember it (keyed by the path a builder embeds and file_builder would
@@ -631,16 +634,18 @@ class manifest_parser {
      * download.
      *
      * @param array $resources The resources keyed by identifier.
+     * @param array $placed Identifiers placed as their own activity in the organisation tree.
      * @return array Set keyed by absolute package path, each value true.
      */
-    protected function collect_question_embedded_files(array $resources): array {
+    protected function collect_question_embedded_files(array $resources, array $placed): array {
         $embedded = [];
-        foreach ($resources as $resourceitem) {
+        foreach ($resources as $identifier => $resourceitem) {
             $kind = $resourceitem->kind;
             if (($kind !== item::KIND_QUIZ && $kind !== item::KIND_QUESTIONBANK) || $resourceitem->suppressed) {
                 continue;
             }
-            foreach ($this->question_embed_sources($resourceitem) as [$questions, $imagedir]) {
+            $asquiz = $kind === item::KIND_QUIZ && !empty($placed[$identifier]);
+            foreach ($this->question_embed_sources($resourceitem, $asquiz) as [$questions, $imagedir]) {
                 // Run the builders' own question writer, so every reference it resolves (a
                 // $IMS-CC-FILEBASE$ token, encoded or not, or a path relative to the media
                 // folder) is predicted exactly as the import will embed it.
@@ -665,7 +670,11 @@ class manifest_parser {
     protected function embedding_dependency_targets(array $resources): array {
         $targets = [];
         foreach ($resources as $parent) {
-            if (in_array($parent->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK, item::KIND_DISCUSSION], true)) {
+            // Mirror suppress_dependency_assets(): a suppressed owner claims nothing.
+            if (
+                !$parent->suppressed
+                && in_array($parent->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK, item::KIND_DISCUSSION], true)
+            ) {
                 foreach ($parent->dependencies as $dependencyref) {
                     $targets[$dependencyref] = true;
                 }
@@ -688,34 +697,47 @@ class manifest_parser {
      * file, so an over-prediction here never loses a file.
      *
      * @param item $resourceitem The quiz or question-bank resource.
+     * @param bool $asquiz Whether it builds through quiz_builder (a placed quiz) rather than
+     *        questionbank_builder, which locate their QTI file differently.
      * @return array List of [questions, imagedir].
      */
-    protected function question_embed_sources(item $resourceitem): array {
+    protected function question_embed_sources(item $resourceitem, bool $asquiz): array {
         if ($resourceitem->kind === item::KIND_QUESTIONBANK && $resourceitem->objectbankid !== '') {
             $bankpath = $resourceitem->objectbankpath !== ''
                 ? $this->resolve_within($resourceitem->objectbankpath)
                 : $this->bank_dump_path($resourceitem->objectbankid);
             return $bankpath === null ? [] : [$this->importable_questions($bankpath, $this->basedir)];
         }
-        $qtipath = $this->locate_quiz_qti($resourceitem);
+        // A placed quiz (quiz_builder) skips the sibling assessment_meta.xml; questionbank_builder takes the
+        // first XML file as listed.
+        $qtipath = $asquiz ? $this->locate_quiz_qti($resourceitem) : $this->first_xml_file($resourceitem);
         if ($qtipath === null) {
             return [];
         }
+        // Choose the questions and draws as qti_source_locator::resolve_assessment_source() does.
         $parsed = (new qti_parser())->parse((string) @file_get_contents($qtipath));
-        $selections = $parsed['selections'] ?? [];
+        $selections = !empty($parsed['hasassessment']) ? ($parsed['selections'] ?? []) : [];
         $sources = [$this->importable_questions($qtipath, dirname($qtipath), $parsed)];
-        $native = $this->locate_native_quiz_qti($resourceitem, $qtipath);
+        $hasimportable = $this->qti_has_importable($parsed);
+        $native = (!$hasimportable || $selections === []) ? $this->locate_native_quiz_qti($resourceitem, $qtipath) : null;
         if ($native !== null) {
             $nativeparsed = (new qti_parser())->parse((string) @file_get_contents($native));
-            $selections = array_merge($selections, $nativeparsed['selections'] ?? []);
-            if (!$this->qti_has_importable($parsed)) {
+            $nativeselections = !empty($nativeparsed['hasassessment']) ? ($nativeparsed['selections'] ?? []) : [];
+            if (!$hasimportable && $this->qti_has_importable($nativeparsed)) {
                 // The builders adopt the native dump; its questions reference media from the package root.
                 $sources = [$this->importable_questions($native, $this->basedir, $nativeparsed)];
+                $selections = $nativeselections !== [] ? $nativeselections : $selections;
+            } else if ($selections === [] && $nativeselections !== []) {
+                $selections = $nativeselections;
             }
         }
         $banks = [];
         foreach ($selections as $selection) {
             $bankid = (string) ($selection['bank'] ?? '');
+            // An explicit zero-question draw imports nothing from its bank.
+            if (isset($selection['count']) && (int) $selection['count'] < 1) {
+                continue;
+            }
             if ($bankid !== '' && !isset($banks[$bankid])) {
                 $banks[$bankid] = true;
                 $bankpath = $this->bank_dump_path($bankid);
@@ -725,6 +747,30 @@ class manifest_parser {
             }
         }
         return $sources;
+    }
+
+    /**
+     * The first readable .xml or .xml.qti file of a resource (files before href), as
+     * questionbank_builder::locate_qti() picks it.
+     *
+     * @param item $resourceitem The resource.
+     * @return string|null Absolute path within the package, or null.
+     */
+    protected function first_xml_file(item $resourceitem): ?string {
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        foreach ($candidates as $relative) {
+            if (!preg_match('/\.xml(\.qti)?$/i', (string) $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute !== null && is_readable($absolute)) {
+                return $absolute;
+            }
+        }
+        return null;
     }
 
     /**

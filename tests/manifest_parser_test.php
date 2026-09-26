@@ -879,6 +879,180 @@ XML;
     }
 
     /**
+     * A self-contained HTML exercise (its scripts folded into it as bundle assets) that a question
+     * links to stays a download: the question embeds only the HTML file, not the bundle's assets.
+     *
+     * @return void
+     */
+    public function test_question_linked_html_bundle_is_kept(): void {
+        $dir = $this->question_media_package(
+            $this->question_media_item('q1', '<p><a href="$IMS-CC-FILEBASE$/Uploaded%20Media/ex.html">Try it</a></p>'),
+            '<resource identifier="r_ex" type="webcontent" href="web_resources/Uploaded Media/ex.html">'
+            . '<file href="web_resources/Uploaded Media/ex.html"/></resource>'
+            . '<resource identifier="r_js" type="webcontent" href="web_resources/Uploaded Media/app.js">'
+            . '<file href="web_resources/Uploaded Media/app.js"/></resource>'
+        );
+        file_put_contents(
+            $dir . '/web_resources/Uploaded Media/ex.html',
+            '<html><head><script src="app.js"></script></head><body>Exercise</body></html>'
+        );
+        file_put_contents($dir . '/web_resources/Uploaded Media/app.js', '// app');
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $orphans = array_map(fn($o) => $o->identifier, $course->orphans);
+        $this->assertContains('r_ex', $orphans);
+    }
+
+    /**
+     * An explicit zero-question draw imports nothing from its bank, so that bank's question
+     * media stays a download.
+     *
+     * @return void
+     */
+    public function test_media_of_zero_question_draw_bank_is_kept(): void {
+        $draw = '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>gpool</sourcebank_ref><selection_number>0</selection_number>'
+            . '</selection></selection_ordering></section>';
+        $dir = $this->question_media_package(
+            $draw,
+            '<resource identifier="r_img" type="webcontent" href="web_resources/Uploaded Media/Pool.png">'
+            . '<file href="web_resources/Uploaded Media/Pool.png"/></resource>'
+        );
+        mkdir($dir . '/non_cc_assessments');
+        file_put_contents(
+            $dir . '/non_cc_assessments/gpool.xml.qti',
+            '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2"><objectbank ident="gpool">'
+            . $this->question_media_item('p1', '<p><img src="$IMS-CC-FILEBASE$/Uploaded%20Media/Pool.png"></p>')
+            . '</objectbank></questestinterop>'
+        );
+        file_put_contents($dir . '/web_resources/Uploaded Media/Pool.png', 'PNG');
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame(['r_img'], array_map(fn($o) => $o->identifier, $course->orphans));
+    }
+
+    /**
+     * A file declared as the <dependency> of a suppressed owner is not claimed by that owner, so
+     * a live quiz whose question embeds it still keeps it off the orphan list.
+     *
+     * @return void
+     */
+    public function test_dependency_of_suppressed_owner_does_not_block_question_scan(): void {
+        $dir = $this->question_media_package(
+            $this->question_media_item('q1', '<p><img src="$IMS-CC-FILEBASE$/Uploaded%20Media/Shared.png"></p>'),
+            '<resource identifier="r_img" type="webcontent" href="web_resources/Uploaded Media/Shared.png">'
+            . '<file href="web_resources/Uploaded Media/Shared.png"/></resource>'
+            // A second assessment whose QTI is not QTI 1.2 at all, depending on the image.
+            . '<resource identifier="r_dead" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">'
+            . '<file href="dead/assessment_qti.xml"/><dependency identifierref="r_img"/></resource>'
+        );
+        mkdir($dir . '/dead');
+        file_put_contents($dir . '/dead/assessment_qti.xml', '<not-qti/>');
+        file_put_contents($dir . '/web_resources/Uploaded Media/Shared.png', 'PNG');
+        $parser = new class ($dir) extends manifest_parser {
+            /**
+             * Parse with the dead assessment suppressed, as a skipped owner would be.
+             *
+             * @param array $resources The resources keyed by identifier.
+             * @param array $placed Identifiers placed as their own activity.
+             * @return array
+             */
+            protected function collect_question_embedded_files(array $resources, array $placed): array {
+                if (isset($resources['r_dead'])) {
+                    $resources['r_dead']->suppressed = true;
+                }
+                return parent::collect_question_embedded_files($resources, $placed);
+            }
+        };
+
+        $course = $parser->parse();
+
+        $this->assertNotContains('r_img', array_map(fn($o) => $o->identifier, $course->orphans));
+    }
+
+    /**
+     * When the Common Cartridge QTI has importable questions and its own draws, the builders never
+     * consult the native dump, so a bank only the dump draws from is not scanned.
+     *
+     * @return void
+     */
+    public function test_native_draws_ignored_when_cc_has_questions_and_draws(): void {
+        $ccdraw = '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>gcc</sourcebank_ref><selection_number>1</selection_number>'
+            . '</selection></selection_ordering></section>';
+        $dir = $this->question_media_package(
+            $this->question_media_item('q1', '<p>No media</p>') . $ccdraw,
+            '<resource identifier="r_img" type="webcontent" href="web_resources/Uploaded Media/Native.png">'
+            . '<file href="web_resources/Uploaded Media/Native.png"/></resource>'
+        );
+        mkdir($dir . '/non_cc_assessments');
+        // The native dump for this quiz (keyed by its resource id) draws from another bank.
+        file_put_contents(
+            $dir . '/non_cc_assessments/r_quiz.xml.qti',
+            '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Quiz"><section ident="root_section">'
+            . '<section ident="g2"><selection_ordering><selection><sourcebank_ref>gnative</sourcebank_ref>'
+            . '<selection_number>1</selection_number></selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>'
+        );
+        file_put_contents(
+            $dir . '/non_cc_assessments/gnative.xml.qti',
+            '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2"><objectbank ident="gnative">'
+            . $this->question_media_item('n1', '<p><img src="$IMS-CC-FILEBASE$/Uploaded%20Media/Native.png"></p>')
+            . '</objectbank></questestinterop>'
+        );
+        file_put_contents($dir . '/web_resources/Uploaded Media/Native.png', 'PNG');
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertContains('r_img', array_map(fn($o) => $o->identifier, $course->orphans));
+    }
+
+    /**
+     * An unreferenced assessment builds through questionbank_builder, which takes the first XML
+     * file listed; when that is assessment_meta.xml it imports no questions, so their media stays
+     * a download.
+     *
+     * @return void
+     */
+    public function test_unplaced_assessment_media_follows_the_bank_locator(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/g1');
+        mkdir($dir . '/web_resources/Uploaded Media', 0777, true);
+        file_put_contents(
+            $dir . '/g1/assessment_meta.xml',
+            '<?xml version="1.0"?><quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0" identifier="g1">'
+            . '<title>Old quiz</title></quiz>'
+        );
+        file_put_contents(
+            $dir . '/g1/assessment_qti.xml',
+            '<?xml version="1.0"?><questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="g1" title="Old quiz"><section ident="root_section">'
+            . $this->question_media_item('q1', '<p><img src="$IMS-CC-FILEBASE$/Uploaded%20Media/Old.png"></p>')
+            . '</section></assessment></questestinterop>'
+        );
+        file_put_contents($dir . '/web_resources/Uploaded Media/Old.png', 'PNG');
+        file_put_contents(
+            $dir . '/imsmanifest.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title></item></item></organization></organizations><resources>'
+            . '<resource identifier="r_quiz" type="imsqti_xmlv1p2/imscc_xmlv1p1/assessment">'
+            . '<file href="g1/assessment_meta.xml"/><file href="g1/assessment_qti.xml"/></resource>'
+            . '<resource identifier="r_img" type="webcontent" href="web_resources/Uploaded Media/Old.png">'
+            . '<file href="web_resources/Uploaded Media/Old.png"/></resource>'
+            . '</resources></manifest>'
+        );
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertContains('r_img', array_map(fn($o) => $o->identifier, $course->orphans));
+    }
+
+    /**
      * A standalone Canvas item bank (non_cc_assessments/<id>.xml.qti) imports its questions
      * with media resolved from the package root, so an image only its questions reference is
      * not also an orphan download.
