@@ -121,7 +121,8 @@ Admin tools > Canvas Uplifter*.
   lesson becomes visible.
 - Canvas QTI assessments convert their questions — multiple choice, multiple
   response, fill-in-blank, true/false, essay, matching, numerical, calculated
-  (formula) and free-text multi-blank (imported as a Moodle Cloze). Canvas
+  (formula), free-text multi-blank (imported as a Moodle Cloze) and ordering
+  ("put in order", imported as Moodle's core Ordering question). Canvas
   inline-dropdown questions import as Moodle matching when every blank shares one
   choice set and carries its own label (Moodle's match type has a single answer
   pool); otherwise — including blanks Canvas labels only by their id, such as
