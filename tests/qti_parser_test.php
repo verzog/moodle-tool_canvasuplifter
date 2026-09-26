@@ -818,6 +818,82 @@ final class qti_parser_test extends \basic_testcase {
         $this->assertFalse($q->is_importable());
     }
 
+
+    /**
+     * A Canvas ordering_question in its exported shape: one response_lid
+     * rcardinality="Ordered" with top/bottom end labels, and the correct order as the
+     * <varequal> sequence of the scoring condition.
+     *
+     * @param string $ident The item ident.
+     * @param array $order Item texts in their correct order.
+     * @param bool $complete Whether the scoring sequence names every item.
+     * @return string
+     */
+    private function orderingitem(string $ident, array $order, bool $complete = true): string {
+        $labels = '';
+        $sequence = '';
+        // List the items in a shuffled display order so the correct order is not implied.
+        foreach (array_reverse($order, true) as $i => $text) {
+            $labels .= '<response_label ident="' . $ident . '_' . $i . '"><material>'
+                . '<mattext texttype="text/html">&lt;p&gt;' . $text . '&lt;/p&gt;</mattext>'
+                . '</material></response_label>';
+        }
+        foreach (array_keys($order) as $i) {
+            if ($complete || $i > 0) {
+                $sequence .= '<varequal respident="response1">' . $ident . '_' . $i . '</varequal>';
+            }
+        }
+        return '<item ident="' . $ident . '" title="Stages"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel>'
+            . '<fieldentry>ordering_question</fieldentry></qtimetadatafield></qtimetadata></itemmetadata>'
+            . '<presentation><material><mattext texttype="text/html">&lt;p&gt;List the stages.&lt;/p&gt;</mattext>'
+            . '</material><response_lid ident="response1" rcardinality="Ordered"><render_extension>'
+            . '<material position="top"><mattext>Mild</mattext></material>'
+            . '<ims_render_object shuffle="No"><flow_label>' . $labels . '</flow_label></ims_render_object>'
+            . '<material position="bottom"><mattext>Severe</mattext></material>'
+            . '</render_extension></response_lid></presentation>'
+            . '<resprocessing><outcomes><decvar defaultval="1" varname="ORDERSCORE" vartype="Integer"/></outcomes>'
+            . '<respcondition continue="No"><conditionvar>' . $sequence . '</conditionvar>'
+            . '<setvar action="Set" varname="SCORE">100</setvar></respcondition></resprocessing></item>';
+    }
+
+    /**
+     * A Canvas ordering_question becomes a Moodle ordering question: the answers are the
+     * items in their correct order (from the scoring <varequal> sequence, not the display
+     * order), and the top/bottom end labels are kept in the question text.
+     *
+     * @return void
+     */
+    public function test_ordering_question_converts(): void {
+        $stages = ['Normal hemodynamics', 'Normal at rest, raised with exercise', 'Raised at rest', 'Markedly raised'];
+        $item = $this->orderingitem('ord', $stages);
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_ORDERING, $q->type);
+        $this->assertSame(
+            $stages,
+            array_map(fn($answer) => $this->plain($answer['text']), $q->answers)
+        );
+        $this->assertStringContainsString('Mild &rarr; Severe', $q->questiontext);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * An ordering question whose scoring sequence does not name every item cannot give a
+     * complete order, so it stays unsupported rather than importing a wrong order.
+     *
+     * @return void
+     */
+    public function test_ordering_question_with_incomplete_order_is_unsupported(): void {
+        $item = $this->orderingitem('ord', ['One', 'Two', 'Three'], false);
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+        $this->assertFalse($q->is_importable());
+    }
+
     /**
      * A Canvas multiple_dropdowns_question is authored as one response_lid +
      * render_choice per blank; when every blank shares one choice set it is

@@ -132,6 +132,36 @@ final class question_xml_writer_test extends \advanced_testcase {
     }
 
     /**
+     * An ordering question renders as Moodle <question type="ordering"> with every item
+     * shown (selecttype ALL), all-or-nothing grading (Canvas's scoring), and the answers in
+     * their correct order.
+     *
+     * @return void
+     */
+    public function test_writes_ordering(): void {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_ORDERING;
+        $q->name = 'Stages';
+        $q->questiontext = '<p>List the stages.</p>';
+        foreach (['First', 'Second', 'Third'] as $text) {
+            $q->answers[] = ['text' => '<p>' . $text . '</p>', 'fraction' => 100.0, 'feedback' => ''];
+        }
+
+        $xml = (new question_xml_writer())->to_moodle_xml([$q], '$course$/Imported/Bank');
+
+        $dom = new \DOMDocument();
+        $this->assertTrue($dom->loadXML($xml), 'output should be well-formed XML');
+        $this->assertSame('ordering', $dom->getElementsByTagName('question')->item(1)->getAttribute('type'));
+        $this->assertStringContainsString('<selecttype>ALL</selecttype>', $xml);
+        $this->assertStringContainsString('<gradingtype>ALL_OR_NOTHING</gradingtype>', $xml);
+        $this->assertStringContainsString('<shownumcorrect/>', $xml);
+        $this->assertSame(3, $dom->getElementsByTagName('answer')->length);
+        $this->assertLessThan(strpos($xml, 'Second'), strpos($xml, 'First'));
+        $this->assertLessThan(strpos($xml, 'Third'), strpos($xml, 'Second'));
+        $this->assertStringNotContainsString('<single>', $xml);
+    }
+
+    /**
      * A true/false question renders as a native Moodle <question type="truefalse">
      * with exactly two answers whose text is 'true'/'false', the correct side
      * carrying fraction 100 — not as a multiple-choice question. The correct side

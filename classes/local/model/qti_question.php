@@ -47,6 +47,8 @@ class qti_question {
     public const TYPE_CLOZE = 'cloze';
     /** Text-only stimulus item (Canvas text_only_question) -> Moodle description. */
     public const TYPE_DESCRIPTION = 'description';
+    /** Put-in-order (Canvas ordering_question) -> Moodle ordering (core qtype_ordering). */
+    public const TYPE_ORDERING = 'ordering';
     /** Recognised QTI item we can't yet convert. */
     public const TYPE_UNSUPPORTED = 'unsupported';
 
@@ -148,6 +150,16 @@ class qti_question {
             // A description carries only text (no answers to validate), so it is
             // always importable.
             return true;
+        }
+        if ($this->type === self::TYPE_ORDERING) {
+            // Answers hold the items in their correct order; ordering needs at least two.
+            $items = 0;
+            foreach ($this->answers as $answer) {
+                if (trim((string) ($answer['text'] ?? '')) !== '') {
+                    $items++;
+                }
+            }
+            return $items >= 2 && $items === count($this->answers);
         }
         if ($this->type === self::TYPE_MATCHING) {
             // Moodle's match type needs at least two complete stem/answer pairs

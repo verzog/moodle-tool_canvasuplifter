@@ -5,6 +5,14 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.84.0] - 2026-09-26
+
+- **Canvas ordering ("put in order") questions now convert** to Moodle's core Ordering
+  question type (qtype_ordering). The items keep their correct order, grading is
+  all-or-nothing as in Canvas, and Canvas's top/bottom scale labels ("Mild" …
+  "Severe") are kept in the question text. Previously they were skipped as
+  unsupported (a real CVT 120 export now converts 478 of 478 questions).
+
 ## [0.83.1] - 2026-09-26
 
 - **Moodle 5.3 LTS is now declared supported** (`$plugin->supported = [500, 503]`).
