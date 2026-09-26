@@ -136,6 +136,9 @@ class question_xml_writer {
                 $body .= "    <layouttype>VERTICAL</layouttype>\n    <selecttype>ALL</selecttype>\n";
                 $body .= "    <selectcount>0</selectcount>\n    <gradingtype>ALL_OR_NOTHING</gradingtype>\n";
                 $body .= "    <showgrading>SHOW</showgrading>\n    <numberingstyle>none</numberingstyle>\n";
+                // Without <shownumcorrect/>, qtype_ordering's importer seeds per-hint options for
+                // two hints that have no text, and saving them fails ("Undefined property $hint").
+                $body .= "    <shownumcorrect/>\n";
                 $body .= $this->answers_xml($q, $imagedir, 'html');
                 break;
             case 'multianswer':

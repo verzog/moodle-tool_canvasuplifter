@@ -154,6 +154,7 @@ final class question_xml_writer_test extends \advanced_testcase {
         $this->assertSame('ordering', $dom->getElementsByTagName('question')->item(1)->getAttribute('type'));
         $this->assertStringContainsString('<selecttype>ALL</selecttype>', $xml);
         $this->assertStringContainsString('<gradingtype>ALL_OR_NOTHING</gradingtype>', $xml);
+        $this->assertStringContainsString('<shownumcorrect/>', $xml);
         $this->assertSame(3, $dom->getElementsByTagName('answer')->length);
         $this->assertLessThan(strpos($xml, 'Second'), strpos($xml, 'First'));
         $this->assertLessThan(strpos($xml, 'Third'), strpos($xml, 'Second'));
