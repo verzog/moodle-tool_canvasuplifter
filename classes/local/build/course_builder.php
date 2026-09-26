@@ -336,31 +336,10 @@ class course_builder {
                 $orphansection = $builtsections + 1;
                 $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
             }
-            $orphantitle = get_string('additionalresources', 'tool_canvasuplifter');
-            // Orphans are never a prerequisite target, so a dropped required item here can't
-            // affect gating; honour any explicit completion requirement, discard the flag.
-            $orphandropped = false;
-            foreach ($this->segment_items($extras) as $segment) {
-                if ($segment['type'] === 'group') {
-                    $this->build_page_group(
-                        $course,
-                        $orphansection,
-                        $orphantitle,
-                        $segment['items'],
-                        $builders,
-                        $urlmap,
-                        $builtpagecmids,
-                        $rewritetargets,
-                        $createdcounts,
-                        $skippedcounts,
-                        $itemcompletions,
-                        $orphandropped
-                    );
-                    $processed += count($segment['items']);
-                    $this->report_item_progress($processed, $totalitems, item::KIND_PAGE);
-                    continue;
-                }
-                $modelitem = $segment['item'];
+            // Unreferenced pages are never combined into a book or lesson, even with page
+            // grouping on: consecutive pages in a module follow each other on purpose, but
+            // leftover pages have no authored order, so each builds as its own page.
+            foreach ($extras as $modelitem) {
                 $skipmark = count($skipreasons);
                 $cmid = $this->build_one(
                     $course,
