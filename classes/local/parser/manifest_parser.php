@@ -1883,6 +1883,12 @@ class manifest_parser {
             } else if (in_array($resourceitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)) {
                 $absolute = $this->locate_assessment_meta($resourceitem);
                 $xml = $absolute !== null ? (string) @file_get_contents($absolute) : '';
+            } else if ($resourceitem->kind === item::KIND_PAGE) {
+                // A Canvas wiki page carries its draft state in its own <head>.
+                if ($this->page_marks_unpublished($resourceitem)) {
+                    $resourceitem->isvisible = false;
+                }
+                continue;
             }
             if ($xml === '') {
                 continue;
@@ -1891,6 +1897,43 @@ class manifest_parser {
                 $resourceitem->isvisible = false;
             }
         }
+    }
+
+    /**
+     * Whether a Canvas wiki page is unpublished: Canvas writes
+     * <meta name="workflow_state" content="unpublished"/> into the page's own <head>, and an
+     * unplaced page has nowhere else to carry it. Reads the page file page_payload would render
+     * (the first readable .html candidate, files before href).
+     *
+     * @param item $resourceitem The page resource.
+     * @return bool
+     */
+    protected function page_marks_unpublished(item $resourceitem): bool {
+        $candidates = $resourceitem->files;
+        if ($resourceitem->href !== '') {
+            $candidates[] = $resourceitem->href;
+        }
+        foreach ($candidates as $relative) {
+            if (!preg_match('/\.html?$/i', (string) $relative)) {
+                continue;
+            }
+            $absolute = $this->resolve_within((string) $relative);
+            if ($absolute === null) {
+                continue;
+            }
+            $html = (string) @file_get_contents($absolute, false, null, 0, 65536);
+            $head = preg_match('#<head\b.*?</head>#is', $html, $m) ? $m[0] : '';
+            foreach (preg_match_all('#<meta\b[^>]*>#i', $head, $metas) ? $metas[0] : [] as $meta) {
+                if (
+                    preg_match('#\bname\s*=\s*["\']workflow_state["\']#i', $meta)
+                    && preg_match('#\bcontent\s*=\s*["\']\s*unpublished\s*["\']#i', $meta)
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return false;
     }
 
     /**

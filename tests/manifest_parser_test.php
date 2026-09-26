@@ -1990,6 +1990,43 @@ XML;
     }
 
     /**
+     * A Canvas wiki page records its draft state only in its own <head>
+     * (<meta name="workflow_state" content="unpublished"/>). An unpublished page no module
+     * places must import hidden, not live in Additional resources; a published one stays visible.
+     *
+     * @return void
+     */
+    public function test_unpublished_unplaced_page_is_hidden(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        $page = fn(string $title, string $state) => '<html><head><title>' . $title . '</title>'
+            . '<meta content="' . $state . '" name="workflow_state"/></head><body><p>' . $title . '</p></body></html>';
+        file_put_contents($dir . '/wiki_content/draft.html', $page('Draft', 'unpublished'));
+        file_put_contents($dir . '/wiki_content/live.html', $page('Live', 'active'));
+        file_put_contents(
+            $dir . '/imsmanifest.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org"><item identifier="root">'
+            . '<item identifier="m1"><title>Week 1</title></item></item></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_draft" type="webcontent" href="wiki_content/draft.html">'
+            . '<file href="wiki_content/draft.html"/></resource>'
+            . '<resource identifier="r_live" type="webcontent" href="wiki_content/live.html">'
+            . '<file href="wiki_content/live.html"/></resource>'
+            . '</resources></manifest>'
+        );
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $visibility = [];
+        foreach ($course->orphans as $orphan) {
+            $visibility[$orphan->identifier] = $orphan->isvisible;
+        }
+        $this->assertSame(['r_draft' => false, 'r_live' => true], $visibility);
+    }
+
+    /**
      * topicMeta carries its own <workflow_state>. When it says "unpublished",
      * the announcement's isvisible must flip to false even when module_meta.xml
      * doesn't list the announcement at all (Canvas commonly omits them from
