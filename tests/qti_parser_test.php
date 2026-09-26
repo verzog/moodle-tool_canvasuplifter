@@ -779,6 +779,25 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A swapped stem keeps its word boundaries: block and break elements in the old
+     * stem become spaces in the new answer, not run-together words.
+     *
+     * @return void
+     */
+    public function test_long_matching_swap_keeps_block_boundaries(): void {
+        $item = $this->matching_item([
+            '<p>Joseph</p><p>Lister</p>' => str_repeat('Aseptic technique pioneer. ', 11),
+            'Ignaz<br>Semmelweis' => 'Hand washing',
+        ]);
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $answers = array_column($q->subquestions, 'answer');
+        sort($answers);
+        $this->assertSame(['Ignaz Semmelweis', 'Joseph Lister'], $answers);
+    }
+
+    /**
      * A match with an over-long answer that cannot be swapped safely (here an extra
      * distractor choice, which has no stem to become an answer) is left unsupported
      * under its own label rather than failing the bank's database write.

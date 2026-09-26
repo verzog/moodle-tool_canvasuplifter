@@ -1794,7 +1794,11 @@ class qti_parser {
         foreach ($question->subquestions as $sub) {
             $stem = (string) ($sub['text'] ?? '');
             $answer = (string) ($sub['answer'] ?? '');
-            $plainstem = $this->plain_answer($stem);
+            // Block and break elements are word boundaries (<p>New</p><p>York</p> ->
+            // "New York"), as label_answer_text() treats them; inline tags just go.
+            $plainstem = $this->collapse_ws(
+                html_entity_decode(strip_tags($this->space_block_boundaries($stem)), ENT_QUOTES | ENT_HTML5)
+            );
             $swappable = $answer !== '' && $plainstem !== ''
                 && mb_strlen($plainstem) <= qti_question::MATCH_ANSWER_MAX
                 && !isset($seenanswers[$answer]) && !isset($seenstems[$plainstem])
