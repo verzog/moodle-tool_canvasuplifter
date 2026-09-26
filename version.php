@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026090900;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026092601;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 502];      // Supports Moodle 5.0 to 5.2 inclusive.
-$plugin->maturity  = MATURITY_ALPHA;  // Detect and report Moodle-origin / STACK LTI links on import (#180).
-$plugin->release   = '0.81.0';
+$plugin->maturity  = MATURITY_ALPHA;  // Long matching answers swap sides or are reported, not a failed bank.
+$plugin->release   = '0.83.0';

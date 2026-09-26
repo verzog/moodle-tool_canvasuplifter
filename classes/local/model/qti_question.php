@@ -50,6 +50,9 @@ class qti_question {
     /** Recognised QTI item we can't yet convert. */
     public const TYPE_UNSUPPORTED = 'unsupported';
 
+    /** Longest matching answer Moodle can store: qtype_match_subquestions.answertext is char(255). */
+    public const MATCH_ANSWER_MAX = 255;
+
     /** @var string One of the TYPE_* constants. */
     public string $type = self::TYPE_UNSUPPORTED;
 
@@ -157,6 +160,11 @@ class qti_question {
                 $answer = trim((string) ($sub['answer'] ?? ''));
                 if ($answer === '') {
                     continue;
+                }
+                // An answer longer than Moodle's column fails the database write and rolls back
+                // the whole import batch, so the question is not importable as a match.
+                if (mb_strlen($answer) > self::MATCH_ANSWER_MAX) {
+                    return false;
                 }
                 $answers[$answer] = true;
                 if ($stem !== '') {

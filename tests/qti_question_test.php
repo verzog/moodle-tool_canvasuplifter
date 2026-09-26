@@ -138,4 +138,23 @@ final class qti_question_test extends \basic_testcase {
         $this->assertTrue($this->make(qti_question::TYPE_ESSAY, [])->is_importable());
         $this->assertFalse($this->make(qti_question::TYPE_UNSUPPORTED, ['A', 'B'])->is_importable());
     }
+
+    /**
+     * A match whose answer exceeds Moodle's 255-character answer column is not
+     * importable, however the question was built, so it can never reach the write.
+     *
+     * @return void
+     */
+    public function test_matching_with_overlong_answer_is_not_importable(): void {
+        $q = new qti_question();
+        $q->type = qti_question::TYPE_MATCHING;
+        $q->subquestions = [
+            ['text' => 'Lister', 'answer' => str_repeat('x', qti_question::MATCH_ANSWER_MAX + 1)],
+            ['text' => 'Semmelweis', 'answer' => 'Hand washing'],
+        ];
+        $this->assertFalse($q->is_importable());
+
+        $q->subquestions[0]['answer'] = str_repeat('x', qti_question::MATCH_ANSWER_MAX);
+        $this->assertTrue($q->is_importable());
+    }
 }

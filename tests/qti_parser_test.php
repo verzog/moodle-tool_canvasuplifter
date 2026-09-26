@@ -717,6 +717,89 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * Build a Canvas matching_question item whose rows share one choice pool.
+     *
+     * @param array $rows Row stem => the correct choice's text.
+     * @param array $extras Extra (distractor) choice texts in the pool.
+     * @return string The <item> XML.
+     */
+    private function matching_item(array $rows, array $extras = []): string {
+        $choices = array_merge(array_values($rows), $extras);
+        $pool = '';
+        foreach ($choices as $i => $text) {
+            $pool .= '<response_label ident="o' . $i . '"><material><mattext>' . htmlspecialchars($text)
+                . '</mattext></material></response_label>';
+        }
+        $pres = '<presentation><material><mattext texttype="text/html">Match each surgeon.</mattext></material>';
+        $resp = '<resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>'
+            . '</outcomes>';
+        $n = 0;
+        foreach ($rows as $stem => $answer) {
+            $pres .= '<response_lid ident="r' . $n . '"><material><mattext texttype="text/html">' . htmlspecialchars($stem)
+                . '</mattext></material><render_choice>' . $pool . '</render_choice></response_lid>';
+            $resp .= '<respcondition><conditionvar><varequal respident="r' . $n . '">o'
+                . array_search($answer, $choices, true) . '</varequal></conditionvar>'
+                . '<setvar varname="SCORE" action="Add">50.00</setvar></respcondition>';
+            $n++;
+        }
+        return '<item ident="lm" title="Surgeons"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>matching_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . '</presentation>' . $resp
+            . '</resprocessing></item>';
+    }
+
+    /**
+     * Moodle stores a matching answer in a char(255) column, so an answer longer than
+     * that fails the write and rolls back the whole bank. A one-to-one match with short
+     * stems swaps its sides: the long description becomes the stem and the short name
+     * the answer, which grades the same.
+     *
+     * @return void
+     */
+    public function test_long_matching_answers_swap_with_stems(): void {
+        $lister = 'He was the founder of aseptic technique in the operating room by using phenol as an antiseptic, '
+            . 'wearing gloves during surgical procedures, changing gowns or aprons between cases, and cleaning '
+            . 'and boiling surgical instruments to disinfect them before use on the next patient.';
+        $this->assertGreaterThan(qti_question::MATCH_ANSWER_MAX, mb_strlen($lister));
+        $item = $this->matching_item([
+            'Joseph Lister' => $lister,
+            'Ignaz Semmelweis' => 'Introduced hand washing with chlorinated lime & reduced deaths.',
+        ]);
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_MATCHING, $q->type);
+        $pairs = [];
+        foreach ($q->subquestions as $sub) {
+            $pairs[$this->plain($sub['text'])] = $sub['answer'];
+        }
+        $this->assertSame('Joseph Lister', $pairs[$lister]);
+        $this->assertSame('Ignaz Semmelweis', $pairs['Introduced hand washing with chlorinated lime & reduced deaths.']);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
+     * A match with an over-long answer that cannot be swapped safely (here an extra
+     * distractor choice, which has no stem to become an answer) is left unsupported
+     * under its own label rather than failing the bank's database write.
+     *
+     * @return void
+     */
+    public function test_long_matching_answer_that_cannot_swap_is_unsupported(): void {
+        $long = str_repeat('A long description of aseptic technique. ', 8);
+        $item = $this->matching_item(
+            ['Joseph Lister' => $long, 'Ignaz Semmelweis' => 'Hand washing'],
+            ['Louis Pasteur']
+        );
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_UNSUPPORTED, $q->type);
+        $this->assertSame('matching_answer_too_long', $q->profile);
+        $this->assertFalse($q->is_importable());
+    }
+
+    /**
      * A Canvas multiple_dropdowns_question is authored as one response_lid +
      * render_choice per blank; when every blank shares one choice set it is
      * structurally a matching question, so it imports as a Moodle match (one
