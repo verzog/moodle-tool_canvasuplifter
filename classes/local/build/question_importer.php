@@ -98,7 +98,7 @@ class question_importer {
         ?string $filebase = null,
         ?media_report $mediareport = null
     ): array {
-        global $CFG, $DB;
+        global $CFG;
         require_once($CFG->libdir . '/questionlib.php');
         require_once($CFG->dirroot . '/question/format.php');
         require_once($CFG->dirroot . '/question/format/xml/format.php');
@@ -119,12 +119,39 @@ class question_importer {
         // builders pass a provisional report they only merge into the shared build
         // report once the activity is kept, so a rejected-and-deleted import reports
         // nothing; keeping that decision in the builder also covers the intro media the
-        // builder embeds before calling here.
-        $xml = (new question_xml_writer())->to_moodle_xml($questions, $category->name, $imagedir, $filebase, $mediareport);
+        // builder embeds before calling here. The batch's media goes to a scratch report
+        // first, so files embedded only by a question Moodle then rejects are not claimed.
+        $batchreport = $mediareport === null ? null : new media_report();
+        $xml = (new question_xml_writer())->to_moodle_xml($questions, $category->name, $imagedir, $filebase, $batchreport);
         $dir = make_request_directory();
         $file = $dir . '/questions.xml';
         file_put_contents($file, $xml);
 
+        $ids = $this->run_import($course, $category, $contexts, $file);
+        $this->restore_cloze_marks($questions, $ids);
+        if ($mediareport !== null) {
+            $this->record_stored_media($mediareport, $batchreport, $questions, $ids, $category->name, $imagedir, $filebase);
+        }
+        return $ids;
+    }
+
+    /**
+     * Run Moodle's XML question importer over a written batch and return the ids of the
+     * questions it actually stored.
+     *
+     * @param stdClass $course Course record.
+     * @param stdClass $category The question category to import into.
+     * @param \core_question\local\bank\question_edit_contexts $contexts Edit contexts.
+     * @param string $file Path of the Moodle XML file.
+     * @return int[] Stored question ids.
+     */
+    protected function run_import(
+        stdClass $course,
+        stdClass $category,
+        \core_question\local\bank\question_edit_contexts $contexts,
+        string $file
+    ): array {
+        global $DB;
         $qformat = new \qformat_xml();
         $qformat->setCategory($category);
         $qformat->setContexts($contexts->having_one_edit_tab_cap('import'));
@@ -154,8 +181,59 @@ class question_importer {
                 $ids[] = (int) $id;
             }
         }
-        $this->restore_cloze_marks($questions, $ids);
         return $ids;
+    }
+
+    /**
+     * Fold a batch's media into the caller's report, both embedded files and missing-media
+     * references, only for questions Moodle actually stored. When the whole batch was stored, all
+     * of it counts. Otherwise each stored question is matched back to its model by name, as
+     * restore_cloze_marks() does, and its own media is re-derived; a name some rejected question
+     * also used can't be told apart, so its media is not claimed (course_builder then keeps an
+     * embedded file as a download rather than losing it).
+     *
+     * @param media_report $mediareport The caller's report.
+     * @param media_report $batchreport The scratch report the batch XML was written with.
+     * @param array $questions The model questions written to the batch.
+     * @param array $ids The stored question ids.
+     * @param string $categoryname The question category name.
+     * @param string $imagedir The questions' media folder.
+     * @param string|null $filebase The package root.
+     * @return void
+     */
+    private function record_stored_media(
+        media_report $mediareport,
+        media_report $batchreport,
+        array $questions,
+        array $ids,
+        string $categoryname,
+        string $imagedir,
+        ?string $filebase
+    ): void {
+        global $DB;
+        if (count($ids) === count($questions)) {
+            $mediareport->merge($batchreport);
+            return;
+        }
+        $stored = [];
+        foreach ($ids as $id) {
+            $name = (string) $DB->get_field('question', 'name', ['id' => $id]);
+            $stored[$name] = ($stored[$name] ?? 0) + 1;
+        }
+        $models = [];
+        foreach ($questions as $question) {
+            $name = $this->plain_name((string) $question->name);
+            $models[$name] = ($models[$name] ?? 0) + 1;
+        }
+        foreach ($questions as $question) {
+            $name = $this->plain_name((string) $question->name);
+            if (($stored[$name] ?? 0) < $models[$name]) {
+                continue;
+            }
+            $single = new media_report();
+            (new question_xml_writer())->to_moodle_xml([$question], $categoryname, $imagedir, $filebase, $single);
+            $mediareport->merge($single);
+        }
     }
 
     /**
