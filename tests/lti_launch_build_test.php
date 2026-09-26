@@ -138,13 +138,13 @@ XML;
     }
 
     /**
-     * When the external-tool assignment fails at build time, it is rebuilt against its
-     * suppressed twin cartridge's endpoint, so the link is not lost: the fallback keeps the
-     * assignment's name, instructions and (hidden) visibility, and replaces its skip in the report.
+     * When the external-tool assignment's own launch URL cannot build, it builds with its twin
+     * cartridge's endpoint instead, in its own section, keeping its name, instructions and
+     * (hidden) visibility, with nothing reported as skipped.
      *
      * @return void
      */
-    public function test_assignment_rebuilt_from_twin_when_it_fails(): void {
+    public function test_assignment_falls_back_to_twin_endpoint(): void {
         global $DB;
         $this->resetAfterTest(true);
         $this->setAdminUser();
@@ -153,7 +153,6 @@ XML;
         file_put_contents($root . '/a1/instructions.html', '<html><body><p>Do chapter 5.</p></body></html>');
         $category = $this->getDataGenerator()->create_category();
         $coursemodel = (new manifest_parser($root))->parse();
-        $this->assertArrayHasKey('twin', $coursemodel->ltitwins);
         $owner = $coursemodel->sections[0]->items[0];
         // The assignment's own tool URL cannot build (as when it fails to load at build time).
         $owner->launchurl = 'javascript:bad';
@@ -165,6 +164,7 @@ XML;
         $this->assertCount(1, $ltis);
         $cm = reset($ltis);
         $this->assertSame('Publisher Tool', $cm->name);
+        $this->assertSame(1, (int) $cm->sectionnum);
         $this->assertFalse((bool) $cm->visible);
         $instance = $DB->get_record('lti', ['id' => $cm->instance], '*', MUST_EXIST);
         $this->assertSame('https://secure.example.com/launch', $instance->toolurl);

@@ -84,70 +84,47 @@ class lti_builder {
 
         // An item may carry an inline launch URL (a Canvas ContextExternalTool
         // placed in a module, or an external-tool assignment) rather than a
-        // cartridge XML file; prefer that when present, else read the cartridge.
-        $cartridge = $modelitem->launchurl !== ''
-            ? self::cartridge_from_launchurl(
-                $modelitem->launchurl,
-                $modelitem->title,
-                $this->launch_instructions($modelitem),
-                $modelitem->launchsecureurl
-            )
-            : $this->read_cartridge($modelitem);
-        // Custom parameters recovered from a Canvas external-tool assignment's twin cartridge.
-        if ($cartridge !== null && $modelitem->launchcustom !== [] && ($cartridge['custom'] ?? []) === []) {
-            $cartridge['custom'] = $modelitem->launchcustom;
+        // cartridge XML file; prefer that when present, else read the cartridge. An
+        // external-tool assignment merged with its lti_resource_links/ twin also carries the
+        // twin's endpoints, tried in turn when its own URL is invalid or its tool fails to load.
+        $launchurls = array_values(array_filter(array_merge([$modelitem->launchurl], $modelitem->launchfallbackurls)));
+        $instructions = $launchurls !== [] ? $this->launch_instructions($modelitem) : '';
+        $cartridges = [];
+        foreach ($launchurls as $launchurl) {
+            $candidate = self::cartridge_from_launchurl($launchurl, $modelitem->title, $instructions, $modelitem->launchsecureurl);
+            if ($candidate !== null) {
+                $cartridges[] = $candidate;
+            }
         }
-        // Its plain-text description, shown when the assignment has no instructions (Canvas
-        // still exports an empty HTML page for those, which is dropped in its favour).
-        if (
-            $cartridge !== null && $modelitem->launchtooldescription !== ''
-            && self::is_blank_html($cartridge['descriptionhtml'] ?? '')
-        ) {
-            $cartridge['descriptionhtml'] = '';
-            $cartridge['description'] = $modelitem->launchtooldescription;
+        if ($launchurls === []) {
+            $cartridge = $this->read_cartridge($modelitem);
+            if ($cartridge !== null) {
+                $cartridges[] = $cartridge;
+            }
         }
-        if ($cartridge === null || $cartridge['launchurl'] === '') {
-            return null;
-        }
-
         $module = $DB->get_record('modules', ['name' => 'lti']);
         if (!$module) {
             return null;
         }
-
-        $name = $modelitem->title !== ''
-            ? $modelitem->title
-            : ($cartridge['title'] !== '' ? $cartridge['title'] : 'External tool');
-
-        $moduleinfo = $this->moduleinfo($course, $sectionnum, (int) $module->id, $name, $cartridge);
-        // Remember whether a transaction was already open before we call in: if
-        // one was, it belongs to the caller and we must not touch it.
-        $callerintransaction = $DB->is_transaction_started();
-        try {
-            $created = add_moduleinfo($moduleinfo, $course);
-        } catch (\Throwable $e) {
-            // The mod_lti module re-fetches a tool URL it thinks is a cartridge
-            // (one ending in .xml, or serving XML) and throws if that remote
-            // document can't be read — common when the tool's host is gone. That
-            // escapes add_moduleinfo() with its delegated transaction still open,
-            // which would otherwise abort the whole adhoc task ("Task left
-            // transaction open") and make Moodle retry it, building duplicate
-            // courses.
-            //
-            // Only clean up the transaction add_moduleinfo() opened. If the
-            // caller already had one of its own, force_transaction_rollback()
-            // would silently discard the caller's earlier writes too, so in that
-            // case re-throw and let the caller's own transaction handling deal
-            // with it (the course builder calls us with no outer transaction).
-            if ($callerintransaction) {
-                throw $e;
+        $created = null;
+        foreach ($cartridges as $cartridge) {
+            $cartridge = $this->with_twin_details($cartridge, $modelitem);
+            if ($cartridge['launchurl'] === '') {
+                continue;
             }
-            if ($DB->is_transaction_started()) {
-                $DB->force_transaction_rollback();
+            $name = $modelitem->title !== ''
+                ? $modelitem->title
+                : ($cartridge['title'] !== '' ? $cartridge['title'] : 'External tool');
+            $moduleinfo = $this->moduleinfo($course, $sectionnum, (int) $module->id, $name, $cartridge);
+            $created = $this->create_module($moduleinfo, $course);
+            if ($created !== null) {
+                break;
             }
-            $this->skipreason = 'external tool could not be created (' . $e->getMessage() . ')';
+        }
+        if ($created === null) {
             return null;
         }
+        $this->skipreason = null;
         // When the intro carries assignment instructions with package-relative
         // images, import them and rewrite the intro to pluginfile refs (mirroring
         // assign_builder), so a re-homed external-tool assignment's prompt renders.
@@ -168,7 +145,7 @@ class lti_builder {
         // cartridge titled e.g. "STACK Question".
         $kind = lti_classifier::classify(
             $cartridge['launchurl'],
-            $cartridge['secureurl'] ?? '',
+            trim(($cartridge['secureurl'] ?? '') . ' ' . implode(' ', $modelitem->launchfallbackurls)),
             trim($name . ' ' . ($cartridge['title'] ?? '') . ' ' . $modelitem->launchtooltitle),
             $cartridge['custom'] ?? [],
             $this->classifier_patterns()
@@ -179,6 +156,60 @@ class lti_builder {
             $this->moodlehostedcount++;
         }
         return (int) $created->coursemodule;
+    }
+
+    /**
+     * Fold what an external-tool assignment's twin cartridge supplied into a launch cartridge:
+     * its custom parameters when the cartridge has none, and its plain-text description when the
+     * assignment's instructions show nothing (Canvas still exports an empty HTML page for those,
+     * which is dropped in its favour).
+     *
+     * @param array $cartridge The launch cartridge.
+     * @param item $modelitem The LTI item.
+     * @return array The cartridge.
+     */
+    private function with_twin_details(array $cartridge, item $modelitem): array {
+        if ($modelitem->launchcustom !== [] && ($cartridge['custom'] ?? []) === []) {
+            $cartridge['custom'] = $modelitem->launchcustom;
+        }
+        if ($modelitem->launchtooldescription !== '' && self::is_blank_html($cartridge['descriptionhtml'] ?? '')) {
+            $cartridge['descriptionhtml'] = '';
+            $cartridge['description'] = $modelitem->launchtooldescription;
+        }
+        return $cartridge;
+    }
+
+    /**
+     * Create the mod_lti, or return null (with a skip reason) when mod_lti rejects it.
+     *
+     * The mod_lti module re-fetches a tool URL it thinks is a cartridge (one ending in .xml, or
+     * serving XML) and throws if that remote document can't be read, common when the tool's
+     * host is gone. That escapes add_moduleinfo() with its delegated transaction still open,
+     * which would otherwise abort the whole adhoc task ("Task left transaction open") and make
+     * Moodle retry it, building duplicate courses. Only the transaction add_moduleinfo() opened
+     * is cleaned up: when the caller already had one of its own, force_transaction_rollback()
+     * would silently discard the caller's earlier writes too, so the error is re-thrown for the
+     * caller's own handling (the course builder calls in with no outer transaction).
+     *
+     * @param stdClass $moduleinfo The module info.
+     * @param stdClass $course Course record.
+     * @return stdClass|null The created module info, or null.
+     */
+    private function create_module(stdClass $moduleinfo, stdClass $course): ?stdClass {
+        global $DB;
+        $callerintransaction = $DB->is_transaction_started();
+        try {
+            return add_moduleinfo($moduleinfo, $course);
+        } catch (\Throwable $e) {
+            if ($callerintransaction) {
+                throw $e;
+            }
+            if ($DB->is_transaction_started()) {
+                $DB->force_transaction_rollback();
+            }
+            $this->skipreason = 'external tool could not be created (' . $e->getMessage() . ')';
+            return null;
+        }
     }
 
     /**

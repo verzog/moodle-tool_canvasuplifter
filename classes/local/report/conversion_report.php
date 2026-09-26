@@ -994,18 +994,29 @@ class conversion_report {
      * @return array [launchurl, secureurl, title, custom].
      */
     private function lti_launch_signals(item $modelitem): array {
-        if ($modelitem->launchurl !== '') {
+        if ($modelitem->launchurl !== '' || $modelitem->launchfallbackurls !== []) {
             // Validate the scheme as the builder does: a non-http(s) inline URL (e.g.
             // stack://question/1) builds no placeholder, so it must not be classified here either
-            // or the analysis would promise an import that never happens.
-            $launchurl = lti_cartridge::sanitise_url($modelitem->launchurl);
+            // or the analysis would promise an import that never happens. The builder falls back to
+            // the twin cartridge's endpoints, so the first usable one is the launch URL and the
+            // twin's endpoints count as signals too (see manifest_parser::pair_lti_link_twins()).
+            $launchurl = '';
+            foreach (array_merge([$modelitem->launchurl], $modelitem->launchfallbackurls) as $candidate) {
+                $launchurl = lti_cartridge::sanitise_url($candidate);
+                if ($launchurl !== '') {
+                    break;
+                }
+            }
             if ($launchurl === '') {
                 return ['', '', $modelitem->title, []];
             }
-            // Include what the twin cartridge supplied (see manifest_parser::pair_lti_link_twins()).
+            $secure = array_filter(array_map(
+                fn($url) => lti_cartridge::sanitise_url($url),
+                array_merge([$modelitem->launchsecureurl], $modelitem->launchfallbackurls)
+            ));
             return [
                 $launchurl,
-                lti_cartridge::sanitise_url($modelitem->launchsecureurl),
+                implode(' ', $secure),
                 trim($modelitem->title . ' ' . $modelitem->launchtooltitle),
                 $modelitem->launchcustom,
             ];

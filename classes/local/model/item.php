@@ -152,6 +152,10 @@ class item {
      *              placeholder's intro when the assignment itself has no instructions. */
     public string $launchtooldescription = '';
 
+    /** @var string[] The twin cartridge's own launch and secure launch URLs, tried in turn when this
+     *                item's launch URL cannot build (invalid, or the tool fails to load). */
+    public array $launchfallbackurls = [];
+
     /** @var string For assignments: Canvas <assignment_group_identifierref>. */
     public string $gradegroupref = '';
 

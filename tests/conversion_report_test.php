@@ -157,6 +157,14 @@ final class conversion_report_test extends \advanced_testcase {
         $lti->launchtooltitle = 'STACK Question';
         $warnings = (new conversion_report($course))->build()['warnings'];
         $this->assertContains('warnreportstacklti', $warnings);
+
+        // The twin's own launch URL (the assignment's fallback) is a signal too, and makes an
+        // assignment whose own URL is unusable classifiable.
+        $lti->launchtooltitle = '';
+        $lti->launchurl = 'javascript:bad';
+        $lti->launchfallbackurls = ['https://moodle.example.edu/enrol/lti/tool.php?id=3'];
+        $warnings = (new conversion_report($course))->build()['warnings'];
+        $this->assertContains('warnreportmoodlelti', $warnings);
     }
 
     /**

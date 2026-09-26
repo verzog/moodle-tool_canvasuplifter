@@ -419,20 +419,6 @@ class course_builder {
             $skipreasons
         );
 
-        // An external-tool assignment that failed to build is rebuilt against its LTI twin.
-        $this->build_unpaired_lti_twins(
-            $course,
-            $coursemodel,
-            $builders,
-            $orphansection,
-            $builtsections,
-            $urlmap,
-            $builtpagecmids,
-            $skipreasons,
-            $createdcounts,
-            $skippedcounts
-        );
-
         // Second pass: rewrite internal page links now that every target exists.
         $this->rewrite_internal_links($builtpagecmids, $urlmap);
         $this->rewrite_grouped_content($rewritetargets, $urlmap);
@@ -680,88 +666,6 @@ class course_builder {
             }
         }
         return $recovered;
-    }
-
-    /**
-     * Rebuild the external-tool assignments whose suppressed LTI twin cartridge would otherwise
-     * be lost. The parser adds the twin's identifier to every owner's aliases, so an owner that
-     * built has registered it in the link map; when it is missing, no owner built. Each failed
-     * owner is then rebuilt into the Additional resources section (created if needed) against the
-     * twin's own launch endpoints, keeping the owner's title, instructions, visibility, custom
-     * parameters and link aliases. A rebuilt owner replaces its earlier skip in the tallies.
-     *
-     * @param \stdClass $course Course record.
-     * @param course_model $coursemodel Parsed package (its ltitwins map drives this).
-     * @param array $builders Map of kind => builder object.
-     * @param int $orphansection Additional-resources section number, or 0 (created and updated here if needed).
-     * @param int $builtsections Count of numbered content sections built so far.
-     * @param array $urlmap Link map (modified in place).
-     * @param int[] $builtpagecmids Page cmids for the link pass (passed through).
-     * @param string[] $skipreasons Diagnostic messages (modified in place).
-     * @param array $createdcounts Created counts by kind (modified in place).
-     * @param array $skippedcounts Skipped counts by kind (modified in place).
-     * @return void
-     */
-    private function build_unpaired_lti_twins(
-        \stdClass $course,
-        course_model $coursemodel,
-        array $builders,
-        int &$orphansection,
-        int $builtsections,
-        array &$urlmap,
-        array &$builtpagecmids,
-        array &$skipreasons,
-        array &$createdcounts,
-        array &$skippedcounts
-    ): void {
-        foreach ($coursemodel->ltitwins as $identifier => $twin) {
-            if (isset($urlmap['id:' . $identifier])) {
-                continue;
-            }
-            $launchurl = $twin['launchurl'] !== '' ? $twin['launchurl'] : $twin['secureurl'];
-            if ($launchurl === '') {
-                continue;
-            }
-            foreach ($twin['owners'] as $owner) {
-                if (isset($urlmap['id:' . $owner->identifier])) {
-                    continue;
-                }
-                if ($orphansection === 0) {
-                    $orphansection = $builtsections + 1;
-                    $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
-                }
-                $fallback = clone $owner;
-                $fallback->launchurl = $launchurl;
-                $fallback->launchsecureurl = $twin['secureurl'];
-                $failures = count($skipreasons);
-                $cmid = $this->build_one(
-                    $course,
-                    $orphansection,
-                    $fallback,
-                    $builders,
-                    $urlmap,
-                    $builtpagecmids,
-                    $skipreasons,
-                    false
-                );
-                if ($cmid === null) {
-                    // Keep only the owner's original skip reason, not a second one.
-                    $skipreasons = array_slice($skipreasons, 0, $failures);
-                    continue;
-                }
-                // The owner now exists after all: count it as created, not skipped.
-                $kind = $owner->kind;
-                $createdcounts[$kind] = ($createdcounts[$kind] ?? 0) + 1;
-                if (($skippedcounts[$kind] ?? 0) > 0) {
-                    $skippedcounts[$kind]--;
-                }
-                $skipreasons = array_values(array_filter(
-                    $skipreasons,
-                    fn($reason) => !str_contains($reason, '(id=' . $owner->identifier . ')')
-                        && !str_starts_with($reason, sprintf('failed to build %s "%s"', $kind, $owner->title))
-                ));
-            }
-        }
     }
 
     /**

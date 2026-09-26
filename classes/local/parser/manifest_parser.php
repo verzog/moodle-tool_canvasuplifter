@@ -1462,8 +1462,8 @@ class manifest_parser {
      * generically titled placeholder in "Additional resources". Each twin's custom parameters
      * (a publisher's assignment id, for example), secure launch URL, title and description are
      * copied onto the
-     * assignment's item, and the twin is returned so the orphan pass skips it, unless no owning
-     * assignment has a usable http(s) launch URL, in which case the twin still builds.
+     * assignment's item, with the twin's launch endpoints as fallbacks the assignment tries when
+     * its own launch URL cannot build, and the twin is returned so the orphan pass skips it.
      *
      * @param course_model $course The course model (its placed items are updated in place).
      * @param array $resources The resources keyed by identifier.
@@ -1515,7 +1515,7 @@ class manifest_parser {
             if ($cartridge === null) {
                 continue;
             }
-            $ownerbuilds = false;
+            $twinurls = array_values(array_unique(array_filter([$cartridge['launchurl'], $cartridge['secureurl']])));
             foreach ($byuuid[$uuid] as $owner) {
                 if ($owner->launchcustom === []) {
                     $owner->launchcustom = $cartridge['custom'];
@@ -1529,26 +1529,19 @@ class manifest_parser {
                 if ($owner->launchtooldescription === '') {
                     $owner->launchtooldescription = $cartridge['description'];
                 }
-                if (lti_cartridge::sanitise_url($owner->launchurl) !== '') {
-                    $ownerbuilds = true;
-                }
-            }
-            // Keep the twin when no owner has a usable http(s) launch URL: it is then the only
-            // activity that can build.
-            if ($ownerbuilds) {
-                $twins[$identifier] = true;
-                $course->ltitwins[$identifier] = [
-                    'owners' => $byuuid[$uuid],
-                    'launchurl' => $cartridge['launchurl'],
-                    'secureurl' => $cartridge['secureurl'],
-                ];
-                // A $CANVAS_OBJECT_REFERENCE$ to the twin resolves to the assignment it merged into.
-                foreach ($byuuid[$uuid] as $owner) {
-                    if (!in_array($identifier, $owner->aliasids, true)) {
-                        $owner->aliasids[] = $identifier;
+                // The owner retries with the twin's own endpoints when its launch URL is invalid
+                // or its tool fails to load, so the twin is never needed as a second activity.
+                foreach ($twinurls as $url) {
+                    if ($url !== $owner->launchurl && !in_array($url, $owner->launchfallbackurls, true)) {
+                        $owner->launchfallbackurls[] = $url;
                     }
                 }
+                // A $CANVAS_OBJECT_REFERENCE$ to the twin resolves to the assignment it merged into.
+                if (!in_array($identifier, $owner->aliasids, true)) {
+                    $owner->aliasids[] = $identifier;
+                }
             }
+            $twins[$identifier] = true;
         }
         return $twins;
     }

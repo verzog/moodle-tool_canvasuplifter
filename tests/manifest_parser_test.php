@@ -1676,23 +1676,26 @@ XML;
         $placed = $course->sections[0]->items[0];
         $this->assertSame(['assignment_xid' => 'xid-ch5'], $placed->launchcustom);
         $this->assertSame('https://secure.example.com/lti', $placed->launchsecureurl);
+        $this->assertSame(['https://secure.example.com/lti'], $placed->launchfallbackurls);
         $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
     }
 
     /**
-     * When the assignment's launch URL cannot build (not http(s)), the twin is its only buildable
-     * activity, so it stays in the orphan list rather than being dropped.
+     * The twin merges into the assignment even when the assignment's own launch URL cannot build
+     * (not http(s)): the twin's endpoint becomes the assignment's fallback, so the assignment
+     * builds with it in its own place and links to either identifier resolve to it.
      *
      * @return void
      */
-    public function test_lti_link_twin_kept_when_assignment_url_cannot_build(): void {
+    public function test_lti_link_twin_is_the_fallback_for_an_unusable_assignment_url(): void {
         $dir = $this->lti_twin_package('javascript:bad');
 
         $course = (new manifest_parser($dir))->parse();
 
-        $orphans = array_map(fn($orphan) => $orphan->identifier, $course->orphans);
-        sort($orphans);
-        $this->assertSame(['other', 'twin'], $orphans);
+        $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
+        $placed = $course->sections[0]->items[0];
+        $this->assertSame(['https://connect.example.com/lti'], $placed->launchfallbackurls);
+        $this->assertContains('twin', $placed->aliasids);
     }
 
     /**
