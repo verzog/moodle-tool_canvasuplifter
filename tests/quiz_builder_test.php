@@ -331,6 +331,7 @@ XML;
             . '<time_limit>30</time_limit>'
             . '<assignment identifier="am_a">'
             . '<unlock_at>2030-08-01T00:00:00Z</unlock_at>'
+            . '<due_at>2030-09-07T23:59:00Z</due_at>'
             . '<lock_at>2030-09-08T23:59:00Z</lock_at>'
             . '</assignment>'
             . '</quiz>';
@@ -394,6 +395,10 @@ XML;
         $this->assertSame('192.168.0.0/24', $quiz->subnet);
         $this->assertEquals(strtotime('2030-08-01T00:00:00Z'), (int) $quiz->timeopen);
         $this->assertEquals(strtotime('2030-09-08T23:59:00Z'), (int) $quiz->timeclose);
+        // Moodle 5.3+ has its own quiz due date; Canvas's due_at carries onto it.
+        if ($DB->get_manager()->field_exists('quiz', 'duedate')) {
+            $this->assertEquals(strtotime('2030-09-07T23:59:00Z'), (int) $quiz->duedate);
+        }
         // With show_correct_answers=false, the right-answer review bit clears everywhere.
         $this->assertEquals(0, (int) $quiz->reviewrightanswer);
         // The description carries over as the quiz intro.
