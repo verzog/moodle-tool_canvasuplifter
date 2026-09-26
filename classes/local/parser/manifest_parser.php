@@ -215,9 +215,13 @@ class manifest_parser {
 
         // Any resource never referenced by the organisation tree becomes an orphan.
         $placed = [];
+        $placedurls = [];
         foreach ($course->sections as $section) {
             foreach ($section->items as $placeditem) {
                 $placed[$placeditem->identifier] = true;
+                if ($placeditem->kind === item::KIND_URL && $placeditem->url !== '') {
+                    $placedurls[$this->url_key($placeditem->url)] = true;
+                }
             }
         }
 
@@ -252,6 +256,7 @@ class manifest_parser {
                 && empty($this->containerconsumed[$identifier])
                 && $resourceitem->kind !== item::KIND_UNKNOWN
                 && !$resourceitem->suppressed
+                && !$this->is_placed_url($resourceitem, $placedurls)
             ) {
                 $course->orphans[] = $resourceitem;
             }
@@ -1440,6 +1445,42 @@ class manifest_parser {
             }
         }
         return false;
+    }
+
+    /**
+     * Whether an unplaced web-link resource points at a URL a module already places.
+     *
+     * Canvas's module_meta.xml carries each module link inline (an ExternalUrl item
+     * with its own identifier) and the export also ships the same link as a separate
+     * imswl resource under a different identifier. Matching by identifier alone would
+     * list that resource as unreferenced and build every module link a second time in
+     * "Additional resources", so a link whose target a module already places is not
+     * an orphan.
+     *
+     * @param item $resourceitem The unplaced resource.
+     * @param array $placedurls Placed URL keys (see url_key()) => true.
+     * @return bool
+     */
+    private function is_placed_url(item $resourceitem, array $placedurls): bool {
+        if ($resourceitem->kind !== item::KIND_URL || $placedurls === []) {
+            return false;
+        }
+        $url = $resourceitem->url !== ''
+            ? $resourceitem->url
+            : $this->weblink_target($resourceitem->href, $resourceitem->files);
+        return $url !== '' && isset($placedurls[$this->url_key($url)]);
+    }
+
+    /**
+     * A comparison key for a link target: surrounding whitespace and a trailing
+     * slash are ignored, so "https://example.org/a/" and "https://example.org/a"
+     * count as the same link.
+     *
+     * @param string $url The link target.
+     * @return string
+     */
+    private function url_key(string $url): string {
+        return rtrim(trim($url), '/');
     }
 
     /**

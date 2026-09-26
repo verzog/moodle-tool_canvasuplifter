@@ -1462,6 +1462,73 @@ XML;
     }
 
     /**
+     * Canvas ships each module link twice: inline in module_meta.xml (an ExternalUrl
+     * item with its own identifier) and as a separate imswl resource under another
+     * identifier. The imswl copy of a link a module already places is not an orphan,
+     * so the link is built once; an imswl link no module places is still an orphan.
+     *
+     * @return void
+     */
+    public function test_module_meta_link_is_not_also_orphaned_as_weblink(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        $weblink = function (string $title, string $url): string {
+            return '<?xml version="1.0" encoding="UTF-8"?>'
+                . '<webLink xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imswl_v1p1">'
+                . '<title>' . $title . '</title><url href="' . $url . '"/></webLink>';
+        };
+        file_put_contents($dir . '/wl_placed.xml', $weblink('Semmelweis and Lister', 'https://example.org/lister/'));
+        file_put_contents($dir . '/wl_extra.xml', $weblink('Extra reading', 'https://example.org/extra'));
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Module 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_placed" type="imswl_xmlv1p1" href="wl_placed.xml">
+      <file href="wl_placed.xml"/>
+    </resource>
+    <resource identifier="r_extra" type="imswl_xmlv1p1" href="wl_extra.xml">
+      <file href="wl_extra.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="mod1">
+    <title>Module 1</title>
+    <workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_url">
+        <content_type>ExternalUrl</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Surgery - Semmelweis and Lister</title>
+        <url>https://example.org/lister</url>
+      </item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->sections[0]->items);
+        $this->assertSame('https://example.org/lister', $course->sections[0]->items[0]->url);
+        // Only the link no module places is an orphan; the module link is not duplicated.
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('Extra reading', $course->orphans[0]->title);
+    }
+
+    /**
      * A module's Canvas prerequisites (context_module references) and a per-item
      * completion_requirement are read into the section/item model so the builder can gate the
      * module and set activity completion.
