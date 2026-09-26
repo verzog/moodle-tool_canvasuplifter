@@ -269,6 +269,29 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * With Canvas's Pages menu hidden, the report says the Additional resources section will be
+     * hidden, but only when something actually lands there.
+     *
+     * @return void
+     */
+    public function test_warns_when_additional_resources_will_be_hidden(): void {
+        $course = new course_model();
+        $course->pagesnavhidden = true;
+        $warnings = (new conversion_report($course))->build()['warnings'];
+        $this->assertNotContains('warnreportextrashidden', $warnings);
+
+        $page = new item('p1', 'Old page');
+        $page->kind = item::KIND_PAGE;
+        $course->orphans[] = $page;
+        $warnings = (new conversion_report($course))->build()['warnings'];
+        $this->assertContains('warnreportextrashidden', $warnings);
+
+        $course->pagesnavhidden = false;
+        $warnings = (new conversion_report($course))->build()['warnings'];
+        $this->assertNotContains('warnreportextrashidden', $warnings);
+    }
+
+    /**
      * The syllabus orphan is reported as going to the top of the course.
      *
      * @return void

@@ -416,6 +416,16 @@ class conversion_report {
         if ($this->course->navtoolsunimported > 0) {
             $warnings[] = 'warnreportnavtools';
         }
+        // Mirrors course_builder: with Canvas's Pages menu hidden, the section collecting
+        // unreferenced content is built hidden.
+        if ($this->course->pagesnavhidden) {
+            foreach ($this->course->orphans as $orphan) {
+                if (!$orphan->suppressed && $this->orphan_placement($orphan) === 'extras') {
+                    $warnings[] = 'warnreportextrashidden';
+                    break;
+                }
+            }
+        }
         if (($counts[item::KIND_QUIZ] ?? 0) > 0 || ($counts[item::KIND_QUESTIONBANK] ?? 0) > 0) {
             $warnings[] = 'warnreportquiz';
         }
