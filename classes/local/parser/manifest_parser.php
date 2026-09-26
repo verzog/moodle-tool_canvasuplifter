@@ -279,6 +279,9 @@ class manifest_parser {
         $this->mark_navigation_tools($resources, $course);
         $course->pagesnavhidden = $this->pages_tab_hidden();
 
+        // Pick the course syllabus by name when the exporter did not mark one.
+        $this->choose_syllabus_by_name($course);
+
         // A Blackboard Learn native export (x-bb-* resource types / .bb-package-info
         // marker) is not Common Cartridge, so this Canvas-focused tool classifies
         // none of its proprietary content. When it bears that fingerprint and the
@@ -293,6 +296,42 @@ class manifest_parser {
         }
 
         return $course;
+    }
+
+    /**
+     * For an export that marks no page intendeduse="syllabus", treat the one unreferenced page
+     * whose name mentions "syllabus" as the course syllabus (placed at the top of the course).
+     * Not when a placed page already is the syllabus (by name or title), which is the case for a
+     * course that keeps its current syllabus in a module and old ones lying around unplaced, and
+     * not when several unreferenced pages match, since there is then no telling which is current.
+     *
+     * @param course_model $course The parsed course (the chosen orphan is marked in place).
+     * @return void
+     */
+    protected function choose_syllabus_by_name(course_model $course): void {
+        $candidates = [];
+        foreach ($course->orphans as $orphan) {
+            if ($orphan->is_syllabus()) {
+                return;
+            }
+            if ($orphan->names_syllabus()) {
+                $candidates[] = $orphan;
+            }
+        }
+        if (count($candidates) !== 1) {
+            return;
+        }
+        foreach ($course->sections as $section) {
+            foreach ($section->items as $placed) {
+                if (
+                    $placed->kind === item::KIND_PAGE
+                    && ($placed->is_syllabus() || $placed->names_syllabus() || stripos($placed->title, 'syllabus') !== false)
+                ) {
+                    return;
+                }
+            }
+        }
+        $candidates[0]->intendeduse = 'syllabus';
     }
 
     /**
