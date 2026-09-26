@@ -205,6 +205,7 @@ $string['qtype_matching_answer_too_long'] = 'Matching with an answer over 255 ch
 $string['qtype_multianswer'] = 'Multiple response';
 $string['qtype_multichoice'] = 'Multiple choice';
 $string['qtype_omitted'] = 'Question body not present in the package';
+$string['qtype_ordering'] = 'Ordering (put in order)';
 $string['qtype_shortanswer'] = 'Fill in the blank / short answer';
 $string['qtype_truefalse'] = 'True/false';
 $string['quizbankname'] = 'Imported question bank';

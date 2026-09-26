@@ -92,6 +92,7 @@ class question_xml_writer {
             qti_question::TYPE_NUMERICAL => 'numerical',
             qti_question::TYPE_CALCULATED => 'calculated',
             qti_question::TYPE_CLOZE => 'multianswer',
+            qti_question::TYPE_ORDERING => 'ordering',
             default => 'multichoice',
         };
 
@@ -128,6 +129,14 @@ class question_xml_writer {
                 break;
             case 'calculated':
                 $body .= $this->calculated_xml($q);
+                break;
+            case 'ordering':
+                // Show every item, stacked vertically, unnumbered; Canvas grades an ordering
+                // question all-or-nothing. The answers are already in their correct order.
+                $body .= "    <layouttype>VERTICAL</layouttype>\n    <selecttype>ALL</selecttype>\n";
+                $body .= "    <selectcount>0</selectcount>\n    <gradingtype>ALL_OR_NOTHING</gradingtype>\n";
+                $body .= "    <showgrading>SHOW</showgrading>\n    <numberingstyle>none</numberingstyle>\n";
+                $body .= $this->answers_xml($q, $imagedir, 'html');
                 break;
             case 'multianswer':
                 // A Cloze question carries its sub-questions inline in the question
