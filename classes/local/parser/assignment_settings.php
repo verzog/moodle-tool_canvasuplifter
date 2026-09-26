@@ -51,6 +51,10 @@ class assignment_settings {
     /** @var string Canvas <external_tool_url>: the LTI launch URL for an external-tool assignment. */
     public string $externaltoolurl = '';
 
+    /** @var string Canvas <resource_link_lookup_uuid>: ties an external-tool assignment to its
+     *              lti_resource_links/ cartridge (whose extensions carry the same lookup_uuid). */
+    public string $resourcelinkuuid = '';
+
     /** @var string Comma-separated allowed file extensions, e.g. "pdf,docx". */
     public string $allowedextensions = '';
 
@@ -246,6 +250,9 @@ class assignment_settings {
         }
         if (isset($node->external_tool_url) && trim((string) $node->external_tool_url) !== '') {
             $settings->externaltoolurl = trim((string) $node->external_tool_url);
+        }
+        if (isset($node->resource_link_lookup_uuid)) {
+            $settings->resourcelinkuuid = trim((string) $node->resource_link_lookup_uuid);
         }
         if (isset($node->assignment_group_identifierref)) {
             $settings->gradegroupref = trim((string) $node->assignment_group_identifierref);
