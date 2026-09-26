@@ -197,6 +197,8 @@ $string['progressextract'] = 'Extracting package…';
 $string['progressfetch'] = 'Downloading package…';
 $string['progressitem'] = 'Built {$a->done} of {$a->total} items ({$a->kind})…';
 $string['progressparse'] = 'Parsing manifest…';
+$string['qtype_canvaserror'] = 'Canvas conversion error (Canvas could not convert this question when it was imported '
+    . 'into Canvas, so the export holds only a placeholder)';
 $string['qtype_essay'] = 'Essay';
 $string['qtype_matching_answer_too_long'] = 'Matching with an answer over 255 characters (Moodle cannot store it, '
     . 'and the answers could not be swapped with the prompts)';
