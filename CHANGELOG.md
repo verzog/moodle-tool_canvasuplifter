@@ -13,6 +13,13 @@ quickly.
   "Severe") are kept in the question text. Previously they were skipped as
   unsupported (a real CVT 120 export now converts 478 of 478 questions).
 
+## [0.83.1] - 2026-09-26
+
+- **Moodle 5.3 LTS is now declared supported** (`$plugin->supported = [500, 503]`).
+  CI's Moodle 5.3 cell (pre-release `main`, PHP 8.3, PostgreSQL 17) runs the full
+  PHPUnit suite green since the quiz due-date fix: Moodle 5.3 adds a quiz due date,
+  which Canvas's `due_at` now fills.
+
 ## [0.83.0] - 2026-09-26
 
 - **Fix: one matching question with a long answer could stop a whole question bank

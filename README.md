@@ -63,8 +63,11 @@ validated on its own (it is excluded from this plugin's `moodle-plugin-ci` run v
 
 ## Requirements
 
-- Moodle 5.0+ (question banks are `mod_qbank` activity modules from 5.0)
-- PHP 8.2, 8.3 or 8.4 (Moodle 5.0's minimum is 8.2; the `sodium` extension is required by Moodle)
+- Moodle 5.0 to 5.3 LTS (question banks are `mod_qbank` activity modules from 5.0).
+  Moodle 5.3 is tested in CI against its pre-release `main` branch until
+  `MOODLE_503_STABLE` is branched.
+- PHP 8.2, 8.3 or 8.4 (Moodle 5.0's minimum is 8.2, and 5.2 onwards needs 8.3+; the
+  `sodium` extension is required by Moodle)
 
 ## Install
 
