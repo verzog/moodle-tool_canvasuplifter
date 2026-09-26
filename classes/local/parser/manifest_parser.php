@@ -209,15 +209,22 @@ class manifest_parser {
         // Canvas exports a richer per-module structure in course_settings/module_meta.xml,
         // including published state, in-module subheaders and inline ExternalUrl items;
         // prefer it when present, otherwise fall back to the manifest's <organization>.
-        if (!$this->build_sections_from_module_meta($resources, $course)) {
+        $frommodulemeta = $this->build_sections_from_module_meta($resources, $course);
+        if (!$frommodulemeta) {
             $this->build_sections($dom, $resources, $course);
         }
 
         // Any resource never referenced by the organisation tree becomes an orphan.
         $placed = [];
+        $placedurls = [];
         foreach ($course->sections as $section) {
             foreach ($section->items as $placeditem) {
                 $placed[$placeditem->identifier] = true;
+                // Only Canvas module_meta.xml ships each module link twice (see is_placed_url());
+                // another package's separate resource with the same target is its own activity.
+                if ($frommodulemeta && $placeditem->kind === item::KIND_URL && $placeditem->url !== '') {
+                    $placedurls[$this->url_key($placeditem->url)] = true;
+                }
             }
         }
 
@@ -252,6 +259,7 @@ class manifest_parser {
                 && empty($this->containerconsumed[$identifier])
                 && $resourceitem->kind !== item::KIND_UNKNOWN
                 && !$resourceitem->suppressed
+                && !$this->is_placed_url($resourceitem, $placedurls)
             ) {
                 $course->orphans[] = $resourceitem;
             }
@@ -1443,6 +1451,42 @@ class manifest_parser {
     }
 
     /**
+     * Whether an unplaced web-link resource points at a URL a module already places.
+     *
+     * Canvas's module_meta.xml carries each module link inline (an ExternalUrl item
+     * with its own identifier) and the export also ships the same link as a separate
+     * imswl resource under a different identifier. Matching by identifier alone would
+     * list that resource as unreferenced and build every module link a second time in
+     * "Additional resources", so a link whose target a module already places is not
+     * an orphan.
+     *
+     * @param item $resourceitem The unplaced resource.
+     * @param array $placedurls Placed URL keys (see url_key()) => true.
+     * @return bool
+     */
+    private function is_placed_url(item $resourceitem, array $placedurls): bool {
+        if ($resourceitem->kind !== item::KIND_URL || $placedurls === []) {
+            return false;
+        }
+        $url = $resourceitem->url !== ''
+            ? $resourceitem->url
+            : $this->weblink_target($resourceitem->href, $resourceitem->files);
+        return $url !== '' && isset($placedurls[$this->url_key($url)]);
+    }
+
+    /**
+     * A comparison key for a link target: surrounding whitespace and a trailing
+     * slash are ignored, so "https://example.org/a/" and "https://example.org/a"
+     * count as the same link.
+     *
+     * @param string $url The link target.
+     * @return string
+     */
+    private function url_key(string $url): string {
+        return rtrim(trim($url), '/');
+    }
+
+    /**
      * Read the target URL from an imswl web-link resource's XML file, which
      * stores it as <url href="..."/>. Returns '' when no file resolves or no URL
      * is present. Kept Moodle-free (plain file read + regex) so the parser layer
@@ -1465,9 +1509,45 @@ class manifest_parser {
             if ($absolute === null) {
                 continue;
             }
-            $xml = (string) @file_get_contents($absolute);
-            if (preg_match('/<url\b[^>]*\bhref="([^"]*)"/i', $xml, $m)) {
-                return html_entity_decode(trim($m[1]), ENT_QUOTES | ENT_HTML5);
+            $url = $this->url_from_weblink_xml((string) @file_get_contents($absolute));
+            if ($url !== '') {
+                return $url;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * The http(s) target of an IMS web-link XML document: the href of its <url>
+     * element, or the element's text when it has no href. Namespace-agnostic, so a
+     * prefixed <wl:url> is read too. Mirrors url_builder::url_from_weblink_xml()
+     * without depending on the build layer.
+     *
+     * @param string $xml The web-link XML document.
+     * @return string The URL, or '' if none.
+     */
+    private function url_from_weblink_xml(string $xml): string {
+        if (trim($xml) === '') {
+            return '';
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded) {
+            return '';
+        }
+        foreach ($dom->getElementsByTagNameNS('*', 'url') as $node) {
+            if (!($node instanceof DOMElement)) {
+                continue;
+            }
+            $url = trim($node->getAttribute('href'));
+            if ($url === '') {
+                $url = trim($node->textContent);
+            }
+            if (preg_match('#^https?://#i', $url)) {
+                return $url;
             }
         }
         return '';

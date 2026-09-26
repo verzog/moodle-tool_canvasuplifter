@@ -1462,6 +1462,180 @@ XML;
     }
 
     /**
+     * Canvas ships each module link twice: inline in module_meta.xml (an ExternalUrl
+     * item with its own identifier) and as a separate imswl resource under another
+     * identifier. The imswl copy of a link a module already places is not an orphan,
+     * so the link is built once; an imswl link no module places is still an orphan.
+     *
+     * @return void
+     */
+    public function test_module_meta_link_is_not_also_orphaned_as_weblink(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        $weblink = function (string $title, string $url): string {
+            return '<?xml version="1.0" encoding="UTF-8"?>'
+                . '<webLink xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imswl_v1p1">'
+                . '<title>' . $title . '</title><url href="' . $url . '"/></webLink>';
+        };
+        file_put_contents($dir . '/wl_placed.xml', $weblink('Semmelweis and Lister', 'https://example.org/lister/'));
+        file_put_contents($dir . '/wl_extra.xml', $weblink('Extra reading', 'https://example.org/extra'));
+
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Module 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_placed" type="imswl_xmlv1p1" href="wl_placed.xml">
+      <file href="wl_placed.xml"/>
+    </resource>
+    <resource identifier="r_extra" type="imswl_xmlv1p1" href="wl_extra.xml">
+      <file href="wl_extra.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="mod1">
+    <title>Module 1</title>
+    <workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_url">
+        <content_type>ExternalUrl</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Surgery - Semmelweis and Lister</title>
+        <url>https://example.org/lister</url>
+      </item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(1, $course->sections[0]->items);
+        $this->assertSame('https://example.org/lister', $course->sections[0]->items[0]->url);
+        // Only the link no module places is an orphan; the module link is not duplicated.
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('Extra reading', $course->orphans[0]->title);
+    }
+
+    /**
+     * The imswl twin of a module link is recognised whatever form its XML takes: a
+     * prefixed <wl:url href>, or the target stored as the element's text.
+     *
+     * @return void
+     */
+    public function test_module_meta_link_twin_is_read_namespace_agnostically(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        file_put_contents(
+            $dir . '/wl_prefixed.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<wl:webLink xmlns:wl="http://www.imsglobal.org/xsd/imsccv1p1/imswl_v1p1">'
+            . '<wl:title>Prefixed</wl:title><wl:url href="https://example.org/a"/></wl:webLink>'
+        );
+        file_put_contents(
+            $dir . '/wl_text.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<webLink xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imswl_v1p1">'
+            . '<title>Text</title><url>https://example.org/b</url></webLink>'
+        );
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Module 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_prefixed" type="imswl_xmlv1p1" href="wl_prefixed.xml">
+      <file href="wl_prefixed.xml"/>
+    </resource>
+    <resource identifier="r_text" type="imswl_xmlv1p1" href="wl_text.xml">
+      <file href="wl_text.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="mod1">
+    <title>Module 1</title>
+    <workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_a">
+        <content_type>ExternalUrl</content_type>
+        <workflow_state>active</workflow_state>
+        <title>A</title>
+        <url>https://example.org/a</url>
+      </item>
+      <item identifier="mi_b">
+        <content_type>ExternalUrl</content_type>
+        <workflow_state>active</workflow_state>
+        <title>B</title>
+        <url>https://example.org/b</url>
+      </item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertCount(2, $course->sections[0]->items);
+        $this->assertSame([], $course->orphans);
+    }
+
+    /**
+     * The twin-link rule is specific to Canvas module_meta.xml. A package whose
+     * sections come from its <organization> keeps an unreferenced resource even when
+     * a placed resource shares its URL: it is a separate activity, not a Canvas twin.
+     *
+     * @return void
+     */
+    public function test_same_url_resource_stays_orphan_without_module_meta(): void {
+        $dir = make_request_directory();
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Week 1</title>
+          <item identifier="i1" identifierref="r_placed"><title>Reading</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r_placed" type="imswl_xmlv1p1" href="https://example.org/reading"/>
+    <resource identifier="r_extra" type="imswl_xmlv1p1" href="https://example.org/reading"/>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame('https://example.org/reading', $course->sections[0]->items[0]->url);
+        $this->assertCount(1, $course->orphans);
+        $this->assertSame('r_extra', $course->orphans[0]->identifier);
+    }
+
+    /**
      * A module's Canvas prerequisites (context_module references) and a per-item
      * completion_requirement are read into the section/item model so the builder can gate the
      * module and set activity completion.
