@@ -249,6 +249,7 @@ class qti_parser {
                 } else {
                     $this->fill_matching($item, $presentation, $question);
                 }
+                $this->fit_matching_answers($question);
                 break;
             case qti_question::TYPE_NUMERICAL:
                 $this->fill_numerical_answers($item, $question);
@@ -1759,6 +1760,60 @@ class qti_parser {
                 $question->subquestions[] = ['text' => '', 'answer' => $plain];
             }
         }
+    }
+
+    /**
+     * Keep a match's answers within Moodle's 255-character answer column.
+     *
+     * Moodle stores each matching answer in qtype_match_subquestions.answertext, a
+     * char(255) column, while the stem (the left-hand side) is unlimited text. Canvas has
+     * no such limit, so an answer such as a long description can fail the database write
+     * and roll back the whole bank. When every answer is used by exactly one stem (a
+     * one-to-one match with no distractors) and every stem is short plain text, the two
+     * sides are swapped: the long description becomes the stem and the short label the
+     * answer, which grades the same. Otherwise the question is left unsupported under its
+     * own 'matching_answer_too_long' label so the report can name the reason.
+     *
+     * @param qti_question $question The matching question (modified in place).
+     * @return void
+     */
+    protected function fit_matching_answers(qti_question $question): void {
+        $toolong = false;
+        foreach ($question->subquestions as $sub) {
+            if (mb_strlen((string) ($sub['answer'] ?? '')) > qti_question::MATCH_ANSWER_MAX) {
+                $toolong = true;
+                break;
+            }
+        }
+        if (!$toolong) {
+            return;
+        }
+        $swapped = [];
+        $seenanswers = [];
+        $seenstems = [];
+        foreach ($question->subquestions as $sub) {
+            $stem = (string) ($sub['text'] ?? '');
+            $answer = (string) ($sub['answer'] ?? '');
+            // Block and break elements are word boundaries (<p>New</p><p>York</p> ->
+            // "New York"), as label_answer_text() treats them; inline tags just go.
+            $plainstem = $this->collapse_ws(
+                html_entity_decode(strip_tags($this->space_block_boundaries($stem)), ENT_QUOTES | ENT_HTML5)
+            );
+            $swappable = $answer !== '' && $plainstem !== ''
+                && mb_strlen($plainstem) <= qti_question::MATCH_ANSWER_MAX
+                && !isset($seenanswers[$answer]) && !isset($seenstems[$plainstem])
+                // Media or maths in a stem would be lost as a plain-text answer.
+                && preg_match('#<(img|video|audio|iframe|object|embed|math)\b#i', $stem) !== 1;
+            if (!$swappable) {
+                $question->type = qti_question::TYPE_UNSUPPORTED;
+                $question->profile = 'matching_answer_too_long';
+                return;
+            }
+            $seenanswers[$answer] = true;
+            $seenstems[$plainstem] = true;
+            $swapped[] = ['text' => htmlspecialchars($answer, ENT_QUOTES | ENT_HTML5), 'answer' => $plainstem];
+        }
+        $question->subquestions = $swapped;
     }
 
     /**

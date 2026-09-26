@@ -5,6 +5,20 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.83.0] - 2026-09-26
+
+- **Fix: one matching question with a long answer could stop a whole question bank
+  from importing.** Moodle stores each matching answer in a 255-character column; a
+  Canvas answer longer than that (for example a sentence-long description) failed the
+  database write with "Data too long for column 'answertext'" and rolled back the bank.
+  When every answer is used exactly once and the prompts are short plain text, the two
+  sides are now swapped (the description becomes the prompt, the name the answer),
+  which grades the same. Otherwise that one question is skipped and the report lists it
+  as "Matching with an answer over 255 characters".
+- **Fix: a builder failure was reported twice.** When a builder threw an error, the
+  build log also added a misleading "builder could not find payload" line for the same
+  item. Only the real error is now recorded.
+
 ## [0.82.0] - 2026-09-26
 
 - **Fix: Canvas inline-dropdown questions could import with meaningless row labels.**

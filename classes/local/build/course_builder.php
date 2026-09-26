@@ -1124,6 +1124,7 @@ class course_builder {
     ): ?int {
         global $DB;
         $cmid = null;
+        $threw = false;
         $kind = $modelitem->kind;
         $builder = $builders[$kind] ?? null;
         $buildsasbank = false;
@@ -1154,6 +1155,7 @@ class course_builder {
             try {
                 $cmid = $builder->build($course, $sectionnum, $modelitem);
             } catch (\Throwable $e) {
+                $threw = true;
                 $msg = sprintf('failed to build %s "%s": %s', $modelitem->kind, $modelitem->title, $e->getMessage());
                 if (!defined('PHPUNIT_TEST') || !PHPUNIT_TEST) {
                     mtrace('tool_canvasuplifter: ' . $msg);
@@ -1169,7 +1171,9 @@ class course_builder {
                 $modelitem->title = $savedtitle;
             }
         }
-        if ($cmid === null && in_array($modelitem->kind, self::BUILDS_NOW, true)) {
+        // A builder that threw has already recorded its error above; only a builder that
+        // returned null needs the fallback reason, or one failure is reported twice.
+        if ($cmid === null && !$threw && in_array($modelitem->kind, self::BUILDS_NOW, true)) {
             // The kind has a builder but it returned null. Prefer the builder's
             // own explanation when it left one.
             $reason = ($builder !== null && property_exists($builder, 'skipreason') && $builder->skipreason !== null)

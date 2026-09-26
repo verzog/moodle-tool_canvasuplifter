@@ -200,6 +200,8 @@ $string['progressparse'] = 'Parsing manifest…';
 $string['qtype_canvaserror'] = 'Canvas conversion error (Canvas could not convert this question when it was imported '
     . 'into Canvas, so the export holds only a placeholder)';
 $string['qtype_essay'] = 'Essay';
+$string['qtype_matching_answer_too_long'] = 'Matching with an answer over 255 characters (Moodle cannot store it, '
+    . 'and the answers could not be swapped with the prompts)';
 $string['qtype_multianswer'] = 'Multiple response';
 $string['qtype_multichoice'] = 'Multiple choice';
 $string['qtype_omitted'] = 'Question body not present in the package';
