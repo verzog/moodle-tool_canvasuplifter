@@ -148,6 +148,10 @@ class item {
      *              sees a signal such as "STACK Question" that only the cartridge carried. */
     public string $launchtooltitle = '';
 
+    /** @var string The plain-text <blti:description> of that twin cartridge, shown in the launch
+     *              placeholder's intro when the assignment itself has no instructions. */
+    public string $launchtooldescription = '';
+
     /** @var string For assignments: Canvas <assignment_group_identifierref>. */
     public string $gradegroupref = '';
 

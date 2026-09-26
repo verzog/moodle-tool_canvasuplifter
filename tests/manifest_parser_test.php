@@ -1656,6 +1656,7 @@ XML;
         $this->assertSame('uuid-ch5', $placed->ltilinkuuid);
         $this->assertSame(['assignment_xid' => 'xid-ch5'], $placed->launchcustom);
         $this->assertSame('McGraw Hill Connect LTIA', $placed->launchtooltitle);
+        $this->assertSame('Chapter practice', $placed->launchtooldescription);
         // Only the cartridge with no matching assignment remains an orphan.
         $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
     }
@@ -1727,6 +1728,7 @@ XML;
                 . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
                 . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
                 . '<blti:title>McGraw Hill Connect LTIA</blti:title>'
+                . '<blti:description>Chapter practice</blti:description>'
                 . '<blti:secure_launch_url>' . $secureurl . '</blti:secure_launch_url>'
                 . '<blti:custom><lticm:property name="assignment_xid">' . $xid . '</lticm:property></blti:custom>'
                 // Another platform's lookup_uuid comes first; only Canvas's pairs.

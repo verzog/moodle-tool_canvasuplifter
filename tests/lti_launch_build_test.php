@@ -113,7 +113,7 @@ XML;
     /**
      * A Canvas external-tool assignment and its lti_resource_links/ twin (matched by lookup
      * uuid) build one mod_lti, not two, and the twin's custom parameters (the publisher's
-     * assignment id) and secure launch URL reach the placeholder.
+     * assignment id), secure launch URL and description reach the placeholder.
      *
      * @return void
      */
@@ -137,6 +137,7 @@ XML;
             . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
             . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
             . '<blti:title>McGraw Hill Connect LTIA</blti:title>'
+            . '<blti:description>Read chapter 5 first.</blti:description>'
             . '<blti:secure_launch_url>https://secure.example.com/launch</blti:secure_launch_url>'
             . '<blti:custom><lticm:property name="assignment_xid">xid-1</lticm:property></blti:custom>'
             . '<blti:extensions platform="canvas.instructure.com">'
@@ -150,6 +151,8 @@ XML;
             (string) file_get_contents($root . '/imsmanifest.xml')
         );
         file_put_contents($root . '/imsmanifest.xml', $manifest);
+        // No assignment instructions, so the twin's description fills the intro.
+        file_put_contents($root . '/a1/instructions.html', '<html><body></body></html>');
         $category = $this->getDataGenerator()->create_category();
 
         $coursemodel = (new manifest_parser($root))->parse();
@@ -161,6 +164,7 @@ XML;
         $this->assertSame('Publisher Tool', $instance->name);
         $this->assertStringContainsString('assignment_xid=xid-1', $instance->instructorcustomparameters);
         $this->assertSame('https://secure.example.com/launch', $instance->securetoolurl);
+        $this->assertStringContainsString('Read chapter 5 first.', $instance->intro);
     }
 
     /**

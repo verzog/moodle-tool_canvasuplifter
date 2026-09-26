@@ -97,6 +97,15 @@ class lti_builder {
         if ($cartridge !== null && $modelitem->launchcustom !== [] && ($cartridge['custom'] ?? []) === []) {
             $cartridge['custom'] = $modelitem->launchcustom;
         }
+        // Its plain-text description, shown when the assignment has no instructions (Canvas
+        // still exports an empty HTML page for those, which is dropped in its favour).
+        if (
+            $cartridge !== null && $modelitem->launchtooldescription !== ''
+            && self::is_blank_html($cartridge['descriptionhtml'] ?? '')
+        ) {
+            $cartridge['descriptionhtml'] = '';
+            $cartridge['description'] = $modelitem->launchtooldescription;
+        }
         if ($cartridge === null || $cartridge['launchurl'] === '') {
             return null;
         }
@@ -208,6 +217,18 @@ class lti_builder {
         $source = $modelitem->href !== '' ? $modelitem->href : (string) ($modelitem->files[0] ?? '');
         $dir = trim(str_replace('\\', '/', dirname($source)), '/');
         return ($dir === '' || $dir === '.') ? '' : $dir;
+    }
+
+    /**
+     * Whether instructions HTML shows nothing: no text and no image or embedded media.
+     *
+     * @param string $html The HTML.
+     * @return bool
+     */
+    private static function is_blank_html(string $html): bool {
+        $html = preg_replace('#<(head|title|script|style)\b[^>]*>.*?</\1>#is', '', $html) ?? $html;
+        $visible = strip_tags($html, '<img><iframe><video><audio><object><embed>');
+        return trim(html_entity_decode($visible, ENT_QUOTES | ENT_HTML5), " \t\n\r\0\x0B\u{00A0}") === '';
     }
 
     /**

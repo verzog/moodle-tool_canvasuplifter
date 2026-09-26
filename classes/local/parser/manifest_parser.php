@@ -1460,7 +1460,8 @@ class manifest_parser {
      * separate unreferenced LTI cartridge whose Canvas extension lookup_uuid equals the
      * assignment's resource_link_lookup_uuid. Left alone, the cartridge would build a second,
      * generically titled placeholder in "Additional resources". Each twin's custom parameters
-     * (a publisher's assignment id, for example), secure launch URL and title are copied onto the
+     * (a publisher's assignment id, for example), secure launch URL, title and description are
+     * copied onto the
      * assignment's item, and the twin is returned so the orphan pass skips it, unless no owning
      * assignment has a usable http(s) launch URL, in which case the twin still builds.
      *
@@ -1524,6 +1525,9 @@ class manifest_parser {
                 }
                 if ($owner->launchtooltitle === '') {
                     $owner->launchtooltitle = $cartridge['title'];
+                }
+                if ($owner->launchtooldescription === '') {
+                    $owner->launchtooldescription = $cartridge['description'];
                 }
                 if (lti_cartridge::sanitise_url($owner->launchurl) !== '') {
                     $ownerbuilds = true;
