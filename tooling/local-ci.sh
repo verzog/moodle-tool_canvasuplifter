@@ -67,10 +67,11 @@ start_postgres() {
 
 start_postgres_docker() {
   docker rm -f "$PGCONTAINER" >/dev/null 2>&1 || true
-  log "Starting Postgres 16 (container ${PGCONTAINER}, port ${PGPORT})."
+  # Postgres 17 matches CI; Moodle 5.3 (MOODLE_BRANCH=main) requires 17+.
+  log "Starting Postgres 17 (container ${PGCONTAINER}, port ${PGPORT})."
   docker run -d --name "$PGCONTAINER" \
     -e POSTGRES_USER="$PGUSER" -e POSTGRES_PASSWORD="$PGPASS" \
-    -p "${PGPORT}:5432" postgres:16 >/dev/null
+    -p "${PGPORT}:5432" postgres:17 >/dev/null
 }
 
 start_postgres_local() {
@@ -82,6 +83,8 @@ start_postgres_local() {
     log "No Docker daemon; installing PostgreSQL via apt."
     apt-get update -qq && apt-get install -y --no-install-recommends postgresql
   fi
+  # The distro package may be older than 17 (Ubuntu 24.04 ships 16), which Moodle 5.3
+  # (MOODLE_BRANCH=main) rejects; use the Docker path for that branch.
   log "Starting the local PostgreSQL cluster."
   service postgresql start || true
   # Give the bundled 'postgres' role a known password so TCP auth works.
