@@ -411,9 +411,11 @@ XML;
      * so the quiz is deleted at build; otherwise it is a valid two-option question.
      *
      * @param bool $rejectable Whether the sole question is one Moodle will reject.
+     * @param bool $declared Whether the image is declared as the quiz's <dependency> (Canvas
+     *        often omits it, leaving the stem token as the only reference).
      * @return string Path to the package root.
      */
-    protected function build_quiz_with_dependency_image_fixture(bool $rejectable): string {
+    protected function build_quiz_with_dependency_image_fixture(bool $rejectable, bool $declared = true): string {
         $dir = make_request_directory();
         mkdir($dir . '/quiz/a1', 0777, true);
         mkdir($dir . '/web_resources', 0777, true);
@@ -460,8 +462,43 @@ XML;
   </resources>
 </manifest>
 XML;
+        if (!$declared) {
+            $manifest = str_replace('      <dependency identifierref="r_pic"/>' . "\n", '', $manifest);
+        }
         file_put_contents($dir . '/imsmanifest.xml', $manifest);
         return $dir;
+    }
+
+    /**
+     * An image referenced only from a question stem, with no <dependency> declaring it (as
+     * Canvas exports quiz images), is inlined into the question and not also built as a
+     * standalone download; an image only an unconvertible question references stays a
+     * standalone download.
+     *
+     * @return void
+     */
+    public function test_undeclared_stem_image_is_embedded_not_duplicated(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $category = $this->getDataGenerator()->create_category();
+
+        $dir = $this->build_quiz_with_dependency_image_fixture(false, false);
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $this->assertCount(1, $coursemodel->embeddedassets);
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $this->assertCount(1, $modinfo->get_instances_of('quiz'));
+        $this->assertCount(0, $modinfo->get_instances_of('resource'));
+        $this->assertSame(0, $report['recoveredassets']);
+
+        // A question that cannot convert embeds nothing, so its image stays a download.
+        $dir = $this->build_quiz_with_dependency_image_fixture(true, false);
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $this->assertCount(0, $coursemodel->embeddedassets);
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $this->assertCount(0, $modinfo->get_instances_of('quiz'));
+        $this->assertCount(1, $modinfo->get_instances_of('resource'));
     }
 
     /**
