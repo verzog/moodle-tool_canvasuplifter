@@ -269,18 +269,24 @@ class item {
     /**
      * Whether this item is the Canvas course syllabus page.
      *
-     * Canvas marks it authoritatively with intendeduse="syllabus"; we also fall
-     * back to a "syllabus" hint in the identifier/href/files for exporters that
-     * omit it.
+     * Canvas marks it authoritatively with intendeduse="syllabus". For exporters that omit it,
+     * manifest_parser::choose_syllabus_by_name() sets that marker on the one unreferenced page
+     * whose name suggests a syllabus, when the course has no other syllabus.
      *
      * @return bool
      */
     public function is_syllabus(): bool {
+        return $this->kind === self::KIND_PAGE && $this->intendeduse === 'syllabus';
+    }
+
+    /**
+     * Whether this page's identifier, href or file names mention "syllabus".
+     *
+     * @return bool
+     */
+    public function names_syllabus(): bool {
         if ($this->kind !== self::KIND_PAGE) {
             return false;
-        }
-        if ($this->intendeduse === 'syllabus') {
-            return true;
         }
         $haystacks = array_merge([$this->identifier, $this->href], $this->files);
         foreach ($haystacks as $haystack) {
