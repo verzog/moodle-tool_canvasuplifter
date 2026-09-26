@@ -3597,6 +3597,39 @@ XML;
     }
 
     /**
+     * course_settings.xml's tab_configuration hides the Pages menu with {"id":2,"hidden":true};
+     * a visible Pages tab, or no settings at all, leaves it shown.
+     *
+     * @return void
+     */
+    public function test_reads_hidden_pages_menu(): void {
+        $parse = function (?string $tabs): bool {
+            $dir = make_request_directory();
+            if ($tabs !== null) {
+                mkdir($dir . '/course_settings');
+                file_put_contents(
+                    $dir . '/course_settings/course_settings.xml',
+                    '<?xml version="1.0" encoding="UTF-8"?><course xmlns="http://canvas.instructure.com/xsd/cccv1p0"'
+                    . ' identifier="c1"><title>C</title><tab_configuration>' . $tabs . '</tab_configuration></course>'
+                );
+            }
+            file_put_contents(
+                $dir . '/imsmanifest.xml',
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+                . '<organizations><organization identifier="org"><item identifier="root"/></organization></organizations>'
+                . '<resources/></manifest>'
+            );
+            return (new manifest_parser($dir))->parse()->pagesnavhidden;
+        };
+
+        $this->assertTrue($parse('[{"id":0},{"id":10},{"id":2,"hidden":true}]'));
+        $this->assertFalse($parse('[{"id":0},{"id":2}]'));
+        $this->assertFalse($parse('[{"id":0},{"id":1,"hidden":true}]'));
+        $this->assertFalse($parse(null));
+    }
+
+    /**
      * A Canvas course-navigation external tool that is also placed as a module item
      * is already imported as a hidden mod_lti, so it is deduped; a nav-only tool that
      * appears only in course_settings.xml's tab_configuration carries no launch

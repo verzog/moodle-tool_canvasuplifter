@@ -90,6 +90,13 @@ class course_model {
     public int $navtoolsunimported = 0;
 
     /**
+     * @var bool Whether the Canvas course hid its Pages menu (tab 2 in course_settings.xml's
+     * tab_configuration). Students could then reach pages only through modules, so the build
+     * hides the "Additional resources" section that collects unreferenced content.
+     */
+    public bool $pagesnavhidden = false;
+
+    /**
      * @var array Canvas rubric library, keyed by Canvas identifier. Each value
      * is a hash with keys: title (string), free_form_comments (bool),
      * hide_score_total (bool), criteria (array of ['id','description','points',
