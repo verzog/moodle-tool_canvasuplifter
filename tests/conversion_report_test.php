@@ -492,6 +492,29 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * Unreferenced pages are never grouped: with page grouping on, a module's run of
+     * pages reports as one lesson, while consecutive unreferenced pages each report as
+     * their own mod_page, matching how course_builder builds "Additional resources".
+     *
+     * @return void
+     */
+    public function test_pagegrouping_leaves_unreferenced_pages_ungrouped(): void {
+        $course = $this->course_with_kinds([item::KIND_PAGE, item::KIND_PAGE]);
+        foreach (['Lab Safety', 'Sleep', 'IN LAB'] as $i => $title) {
+            $orphan = new item('o' . $i, $title);
+            $orphan->kind = item::KIND_PAGE;
+            $course->orphans[] = $orphan;
+        }
+
+        $report = (new conversion_report($course, null, 'lesson'))->build();
+        $rows = $this->rows_by_target($report);
+
+        $this->assertSame(2, $rows['page|mod_lesson']['count']);
+        $this->assertSame(3, $rows['page|mod_page']['count']);
+        $this->assertSame(['mod_page', 'mod_page', 'mod_page'], array_column($report['orphans'], 'target'));
+    }
+
+    /**
      * The section drill-down and builds-now total reflect grouping too: grouped
      * pages target the book and still count as building now.
      *
