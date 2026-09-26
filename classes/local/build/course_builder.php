@@ -419,6 +419,18 @@ class course_builder {
             $skipreasons
         );
 
+        // An LTI twin whose external-tool assignment failed to build is built after all.
+        $this->build_unpaired_lti_twins(
+            $course,
+            $coursemodel,
+            $builders,
+            $orphansection,
+            $builtsections,
+            $urlmap,
+            $builtpagecmids,
+            $skipreasons
+        );
+
         // Second pass: rewrite internal page links now that every target exists.
         $this->rewrite_internal_links($builtpagecmids, $urlmap);
         $this->rewrite_grouped_content($rewritetargets, $urlmap);
@@ -666,6 +678,46 @@ class course_builder {
             }
         }
         return $recovered;
+    }
+
+    /**
+     * Build each suppressed LTI twin cartridge whose external-tool assignment did not build, into
+     * the Additional resources section (created if needed). The parser adds the twin's
+     * identifier to every owner's aliases, so an owner that built has registered it in the link
+     * map; one missing from the map had no owner build, and the twin is then the only way the
+     * link survives.
+     *
+     * @param \stdClass $course Course record.
+     * @param course_model $coursemodel Parsed package (its ltitwins map drives this).
+     * @param array $builders Map of kind => builder object.
+     * @param int $orphansection Additional-resources section number, or 0 (created and updated here if needed).
+     * @param int $builtsections Count of numbered content sections built so far.
+     * @param array $urlmap Link map (modified in place).
+     * @param int[] $builtpagecmids Page cmids for the link pass (passed through).
+     * @param string[] $skipreasons Diagnostic messages (modified in place).
+     * @return void
+     */
+    private function build_unpaired_lti_twins(
+        \stdClass $course,
+        course_model $coursemodel,
+        array $builders,
+        int &$orphansection,
+        int $builtsections,
+        array &$urlmap,
+        array &$builtpagecmids,
+        array &$skipreasons
+    ): void {
+        foreach ($coursemodel->ltitwins as $identifier => $twin) {
+            if (isset($urlmap['id:' . $identifier])) {
+                continue;
+            }
+            if ($orphansection === 0) {
+                $orphansection = $builtsections + 1;
+                $this->prepare_section($course, $orphansection, get_string('additionalresources', 'tool_canvasuplifter'));
+            }
+            $twin->suppressed = false;
+            $this->build_one($course, $orphansection, $twin, $builders, $urlmap, $builtpagecmids, $skipreasons, false);
+        }
     }
 
     /**

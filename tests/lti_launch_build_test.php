@@ -122,6 +122,52 @@ XML;
         $this->resetAfterTest(true);
         $this->setAdminUser();
 
+        $root = $this->build_twin_fixture();
+        $category = $this->getDataGenerator()->create_category();
+
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $ltis = get_fast_modinfo($report['courseid'])->get_instances_of('lti');
+        $this->assertCount(1, $ltis);
+        $instance = $DB->get_record('lti', ['id' => reset($ltis)->instance], '*', MUST_EXIST);
+        $this->assertSame('Publisher Tool', $instance->name);
+        $this->assertStringContainsString('assignment_xid=xid-1', $instance->instructorcustomparameters);
+        $this->assertSame('https://secure.example.com/launch', $instance->securetoolurl);
+        $this->assertStringContainsString('Read chapter 5 first.', $instance->intro);
+    }
+
+    /**
+     * When the external-tool assignment fails at build time, its suppressed twin cartridge is
+     * built instead, so the link is not lost.
+     *
+     * @return void
+     */
+    public function test_twin_builds_when_its_assignment_fails(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_twin_fixture();
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $this->assertArrayHasKey('twin', $coursemodel->ltitwins);
+        // The assignment can no longer build (as when its tool URL fails to load).
+        $coursemodel->sections[0]->items[0]->launchurl = 'javascript:bad';
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $ltis = get_fast_modinfo($report['courseid'])->get_instances_of('lti');
+        $this->assertCount(1, $ltis);
+        $this->assertSame('McGraw Hill Connect LTIA', reset($ltis)->name);
+    }
+
+    /**
+     * The external-tool fixture plus its lti_resource_links/ twin (lookup uuid "uuid-1") and no
+     * assignment instructions.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_twin_fixture(): string {
         $root = $this->build_external_tool_fixture();
         $settings = str_replace(
             '</assignment>',
@@ -153,18 +199,7 @@ XML;
         file_put_contents($root . '/imsmanifest.xml', $manifest);
         // No assignment instructions, so the twin's description fills the intro.
         file_put_contents($root . '/a1/instructions.html', '<html><body></body></html>');
-        $category = $this->getDataGenerator()->create_category();
-
-        $coursemodel = (new manifest_parser($root))->parse();
-        $report = (new course_builder($category->id, $root))->build($coursemodel);
-
-        $ltis = get_fast_modinfo($report['courseid'])->get_instances_of('lti');
-        $this->assertCount(1, $ltis);
-        $instance = $DB->get_record('lti', ['id' => reset($ltis)->instance], '*', MUST_EXIST);
-        $this->assertSame('Publisher Tool', $instance->name);
-        $this->assertStringContainsString('assignment_xid=xid-1', $instance->instructorcustomparameters);
-        $this->assertSame('https://secure.example.com/launch', $instance->securetoolurl);
-        $this->assertStringContainsString('Read chapter 5 first.', $instance->intro);
+        return $root;
     }
 
     /**

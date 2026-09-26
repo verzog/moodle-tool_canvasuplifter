@@ -57,6 +57,14 @@ class course_model {
     public array $embeddedassets = [];
 
     /**
+     * @var array Canvas lti_resource_links/ cartridges suppressed as the twin of an external-tool
+     * assignment, keyed by the twin's identifier (each owner carries it as an alias). The build
+     * builds a twin as its own activity when no owner was built, so the link is not lost when
+     * the assignment fails at build time. Values are the suppressed {@see item}s.
+     */
+    public array $ltitwins = [];
+
+    /**
      * @var array<int, array{identifier: string, title: string, position: int, weight: float}>
      * Canvas assignment groups, ordered by position. Each entry maps to one
      * Moodle grade category. Empty when the package has no assignment_groups.xml.
