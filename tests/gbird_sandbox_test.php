@@ -42,8 +42,9 @@ use tool_canvasuplifter\local\report\conversion_report;
  * LTI placeholder instead of being dropped (issue #125), orphan activities whose
  * unpublished state is derived from their own metadata (#126), external-tool
  * assignments re-homed as LTI placeholders (#128), quiz grade items routed to
- * their Canvas assignment group (#130), ordering questions marked unsupported
- * rather than mis-counted (#129; categorization now converts to a match, #169),
+ * their Canvas assignment group (#130), ordering questions no longer mis-counted as
+ * choice questions (#129; they now convert to Moodle ordering, and categorization to a
+ * match, #169),
  * and files_meta hidden files imported
  * hidden (#131). questionbank_builder's native-QTI fallback (#127) is exercised by
  * questionbank_builder_test; here the two orphan banks still report as mod_qbank.
@@ -142,10 +143,10 @@ final class gbird_sandbox_test extends \advanced_testcase {
         // "New quiz engine (question bank)" (4) - both read through the native-QTI
         // fallback now that questionbank_builder has it too (#127), so the report
         // mirrors what builds. Since #169, categorization_question converts to a Moodle
-        // match and file_upload_question to an essay; ordering_question and
-        // hot_spot_question remain unsupported (no faithful core equivalent).
+        // match and file_upload_question to an essay; ordering_question now converts to
+        // Moodle's core ordering question, and only hot_spot_question remains unsupported.
         $this->assertSame(16, $matrix['total']);
-        $this->assertSame(14, $matrix['supported']);
+        $this->assertSame(15, $matrix['supported']);
 
         // A supported row (importable type, no dropped-source attribution).
         $supported = static fn(string $label, int $count): array => [
@@ -174,7 +175,8 @@ final class gbird_sandbox_test extends \advanced_testcase {
             $supported('matching', 4),
             $supported('multianswer', 3),
             $supported('numerical', 1),
-            $newquiz('ordering_question', 1, $engine),
+            // Canvas ordering_question now imports as a core Moodle ordering question.
+            $supported('ordering', 1),
             $newquiz('hot_spot_question', 1, $engine),
         ], $matrix['rows']);
     }
@@ -477,13 +479,13 @@ final class gbird_sandbox_test extends \advanced_testcase {
      * qti_parser::map_type() once left to the response-cardinality heuristic - silently
      * mis-counting them as multi-answer / multiple-choice questions (issue #129). Since
      * #169 categorization converts to a Moodle match, so it no longer appears as its own
-     * unsupported row (it is folded into the supported "matching" row); ordering has no
-     * faithful core equivalent, so it stays TYPE_UNSUPPORTED as its own named row - the
-     * guard that neither is mis-read as a choice question.
+     * unsupported row (it is folded into the supported "matching" row); ordering now
+     * converts to Moodle's core ordering question, its own supported "ordering" row - so
+     * neither is mis-read as a choice question.
      *
      * @return void
      */
-    public function test_gbird_sandbox_categorization_converts_ordering_unsupported(): void {
+    public function test_gbird_sandbox_categorization_and_ordering_convert(): void {
         $qti = '';
         foreach (glob(__DIR__ . '/fixtures/gbird_sandbox/non_cc_assessments/*.qti') as $file) {
             $qti .= file_get_contents($file);
@@ -498,12 +500,12 @@ final class gbird_sandbox_test extends \advanced_testcase {
         }
         // Categorization is no longer an unsupported row - it converts to a match.
         $this->assertArrayNotHasKey('categorization_question', $byid);
-        // Ordering has no faithful core equivalent, so it stays its own unsupported row,
-        // attributed to the referenced quiz it came from (not mis-read as a choice type).
-        $this->assertArrayHasKey('ordering_question', $byid);
-        $this->assertFalse($byid['ordering_question']['supported']);
-        $this->assertSame('unsupported', $byid['ordering_question']['status']);
-        $this->assertSame([['name' => 'New quiz engine', 'count' => 1]], $byid['ordering_question']['sources']);
+        // Ordering converts to Moodle's core ordering question: its own supported row, not
+        // an unsupported ordering_question row and not mis-read as a choice type.
+        $this->assertArrayNotHasKey('ordering_question', $byid);
+        $this->assertArrayHasKey('ordering', $byid);
+        $this->assertTrue($byid['ordering']['supported']);
+        $this->assertSame(1, $byid['ordering']['count']);
     }
 
     /**

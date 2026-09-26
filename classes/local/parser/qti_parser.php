@@ -254,6 +254,9 @@ class qti_parser {
             case qti_question::TYPE_NUMERICAL:
                 $this->fill_numerical_answers($item, $question);
                 break;
+            case qti_question::TYPE_ORDERING:
+                $this->fill_ordering($item, $presentation, $question);
+                break;
             case qti_question::TYPE_CALCULATED:
                 $this->fill_calculated($item, $question);
                 break;
@@ -343,11 +346,11 @@ class qti_parser {
                 // (and require) a file attachment; the essay dispatch sets those fields.
                 return qti_question::TYPE_ESSAY;
             case 'ordering_question':
-                // New Quizzes ordering items carry a response_lid per position, so the
-                // cardinality fallback below would mis-read them as multichoice/multianswer.
-                // Moodle has no faithful core equivalent (ordering is not a core question
-                // type here), so name it explicitly and leave it unsupported.
-                return qti_question::TYPE_UNSUPPORTED;
+                // One response_lid rcardinality="Ordered" holding the items, scored by the
+                // sequence of <varequal>s in resprocessing. Name it explicitly (the cardinality
+                // fallback below would mis-read it as multichoice/multianswer); it maps to
+                // Moodle's core ordering question (qtype_ordering, standard since 4.4).
+                return qti_question::TYPE_ORDERING;
             case 'fill_in_multiple_blanks_question':
                 // Free-text blanks: each blank is a response_lid whose render_choice
                 // lists the acceptable answers for that blank. Two or more blanks
@@ -1814,6 +1817,74 @@ class qti_parser {
             $swapped[] = ['text' => htmlspecialchars($answer, ENT_QUOTES | ENT_HTML5), 'answer' => $plainstem];
         }
         $question->subquestions = $swapped;
+    }
+
+    /**
+     * Populate a Canvas ordering_question as a Moodle ordering question.
+     *
+     * Canvas writes one <response_lid rcardinality="Ordered"> whose render_extension lists
+     * the items (response_labels) and, optionally, top and bottom <material position>
+     * labels naming the two ends of the scale ("Mild" ... "Severe"). The correct order is the
+     * sequence of <varequal respident=lid> values in the scoring respcondition. The answers
+     * are stored in that order (Moodle's ordering type takes them correct-first). Canvas
+     * scores all-or-nothing, which the writer keeps. The end labels have no Moodle field, so
+     * they are appended to the question text as "top → bottom". Anything that does not
+     * account for every item exactly once leaves the question unsupported.
+     *
+     * @param DOMElement $item The item element.
+     * @param DOMElement|null $presentation The presentation element.
+     * @param qti_question $question The question being built (modified in place).
+     * @return void
+     */
+    protected function fill_ordering(DOMElement $item, ?DOMElement $presentation, qti_question $question): void {
+        $lid = $presentation !== null ? $this->descendant($presentation, 'response_lid') : null;
+        if ($lid === null || $lid->getAttribute('ident') === '') {
+            $question->type = qti_question::TYPE_UNSUPPORTED;
+            return;
+        }
+        $labels = [];
+        foreach ($lid->getElementsByTagNameNS('*', 'response_label') as $label) {
+            if ($label instanceof DOMElement && $label->getAttribute('ident') !== '') {
+                $labels[$label->getAttribute('ident')] = trim($this->material_text($label));
+            }
+        }
+        $order = [];
+        foreach ($item->getElementsByTagNameNS('*', 'respcondition') as $condition) {
+            if (!($condition instanceof DOMElement)) {
+                continue;
+            }
+            $sequence = [];
+            foreach ($condition->getElementsByTagNameNS('*', 'varequal') as $varequal) {
+                if ($varequal instanceof DOMElement && $varequal->getAttribute('respident') === $lid->getAttribute('ident')) {
+                    $sequence[] = trim($varequal->textContent);
+                }
+            }
+            if (count($sequence) > count($order)) {
+                $order = $sequence;
+            }
+        }
+        $sorted = $order;
+        sort($sorted);
+        $idents = array_keys($labels);
+        sort($idents);
+        if (count($idents) < 2 || $sorted !== $idents || in_array('', $labels, true)) {
+            $question->type = qti_question::TYPE_UNSUPPORTED;
+            return;
+        }
+        foreach ($order as $ident) {
+            $question->answers[] = ['text' => $labels[$ident], 'fraction' => 100.0, 'feedback' => ''];
+        }
+        $ends = [];
+        foreach ($lid->getElementsByTagNameNS('*', 'material') as $material) {
+            $position = $material instanceof DOMElement ? strtolower($material->getAttribute('position')) : '';
+            if ($position === 'top' || $position === 'bottom') {
+                $ends[$position] = trim($this->mattext($material));
+            }
+        }
+        if (($ends['top'] ?? '') !== '' && ($ends['bottom'] ?? '') !== '') {
+            $question->questiontext .= '<p>' . htmlspecialchars($ends['top'], ENT_QUOTES | ENT_HTML5) . ' &rarr; '
+                . htmlspecialchars($ends['bottom'], ENT_QUOTES | ENT_HTML5) . '</p>';
+        }
     }
 
     /**
