@@ -1636,6 +1636,99 @@ XML;
     }
 
     /**
+     * Canvas exports an external-tool assignment (here a McGraw Hill Connect assignment) twice:
+     * as the assignment, re-homed to an LTI placeholder, and as an unreferenced
+     * lti_resource_links/ cartridge whose lookup_uuid matches the assignment's
+     * resource_link_lookup_uuid. The twin is not an orphan (it would build a second, generic
+     * "McGraw Hill Connect LTIA" placeholder); its custom parameters move onto the assignment's
+     * item. An unrelated cartridge with no matching assignment is still an orphan.
+     *
+     * @return void
+     */
+    public function test_external_tool_assignment_absorbs_its_lti_link_twin(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/a1');
+        mkdir($dir . '/lti_resource_links');
+        file_put_contents($dir . '/a1/chapter-5.html', '<p>Complete the SmartBook.</p>');
+        file_put_contents(
+            $dir . '/a1/assignment_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment identifier="a1" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Chapter 5 SmartBook Assignment</title><points_possible>10.0</points_possible>'
+            . '<submission_types>external_tool</submission_types>'
+            . '<external_tool_url>https://connect.example.com/lti</external_tool_url>'
+            . '<resource_link_lookup_uuid>uuid-ch5</resource_link_lookup_uuid></assignment>'
+        );
+        $cartridge = function (string $uuid, string $xid): string {
+            return '<?xml version="1.0" encoding="UTF-8"?>'
+                . '<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p3"'
+                . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
+                . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
+                . '<blti:title>McGraw Hill Connect LTIA</blti:title>'
+                . '<blti:secure_launch_url>https://connect.example.com/lti</blti:secure_launch_url>'
+                . '<blti:custom><lticm:property name="assignment_xid">' . $xid . '</lticm:property></blti:custom>'
+                . '<blti:extensions platform="canvas.instructure.com">'
+                . '<lticm:property name="lookup_uuid">' . $uuid . '</lticm:property></blti:extensions>'
+                . '</cartridge_basiclti_link>';
+        };
+        file_put_contents($dir . '/lti_resource_links/twin.xml', $cartridge('uuid-ch5', 'xid-ch5'));
+        file_put_contents($dir . '/lti_resource_links/other.xml', $cartridge('uuid-other', 'xid-other'));
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="a1" type="associatedcontent/imscc_xmlv1p1/learning-application-resource"
+        href="a1/chapter-5.html">
+      <file href="a1/chapter-5.html"/>
+      <file href="a1/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="twin" type="imsbasiclti_xmlv1p3">
+      <file href="lti_resource_links/twin.xml"/>
+    </resource>
+    <resource identifier="other" type="imsbasiclti_xmlv1p3">
+      <file href="lti_resource_links/other.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="mod1">
+    <title>Week 1</title>
+    <workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_a1">
+        <content_type>Assignment</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Chapter 5 SmartBook Assignment</title>
+        <identifierref>a1</identifierref>
+      </item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $placed = $course->sections[0]->items[0];
+        $this->assertSame(item::KIND_LTI, $placed->kind);
+        $this->assertSame('Chapter 5 SmartBook Assignment', $placed->title);
+        $this->assertSame('uuid-ch5', $placed->ltilinkuuid);
+        $this->assertSame(['assignment_xid' => 'xid-ch5'], $placed->launchcustom);
+        // Only the cartridge with no matching assignment remains an orphan.
+        $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
+    }
+
+    /**
      * A module's Canvas prerequisites (context_module references) and a per-item
      * completion_requirement are read into the section/item model so the builder can gate the
      * module and set activity completion.

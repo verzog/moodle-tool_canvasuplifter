@@ -88,6 +88,10 @@ class lti_builder {
         $cartridge = $modelitem->launchurl !== ''
             ? self::cartridge_from_launchurl($modelitem->launchurl, $modelitem->title, $this->launch_instructions($modelitem))
             : $this->read_cartridge($modelitem);
+        // Custom parameters recovered from a Canvas external-tool assignment's twin cartridge.
+        if ($cartridge !== null && $modelitem->launchcustom !== [] && ($cartridge['custom'] ?? []) === []) {
+            $cartridge['custom'] = $modelitem->launchcustom;
+        }
         if ($cartridge === null || $cartridge['launchurl'] === '') {
             return null;
         }

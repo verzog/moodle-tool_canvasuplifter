@@ -131,6 +131,15 @@ class item {
      *              so its owner-relative media resolves against that folder rather than the resource href. */
     public string $launchdescriptiondir = '';
 
+    /** @var string For an external-tool assignment re-homed to KIND_LTI: Canvas's
+     *              resource_link_lookup_uuid, matching the lookup_uuid of its lti_resource_links/
+     *              cartridge twin. Empty otherwise. */
+    public string $ltilinkuuid = '';
+
+    /** @var array LTI custom parameters (name => value) recovered from that twin cartridge, e.g. a
+     *             publisher's assignment id, so the launch placeholder keeps them. Empty otherwise. */
+    public array $launchcustom = [];
+
     /** @var string For assignments: Canvas <assignment_group_identifierref>. */
     public string $gradegroupref = '';
 
