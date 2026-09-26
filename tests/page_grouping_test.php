@@ -193,6 +193,69 @@ XML;
     }
 
     /**
+     * Unreferenced pages are never combined into a lesson: with lesson grouping on, the
+     * module's run of pages becomes one lesson, while three consecutive unreferenced pages
+     * each build as their own mod_page in "Additional resources".
+     *
+     * @return void
+     */
+    public function test_lesson_grouping_leaves_unreferenced_pages_separate(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        foreach (['one', 'two', 'lab-safety', 'sleep', 'in-lab'] as $slug) {
+            file_put_contents($dir . '/wiki_content/' . $slug . '.html', '<p>' . $slug . '</p>');
+        }
+        $manifest = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root">
+        <item identifier="m1"><title>Reading</title>
+          <item identifier="i1" identifierref="r1"><title>Page One</title></item>
+          <item identifier="i2" identifierref="r2"><title>Page Two</title></item>
+        </item>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="r1" type="webcontent" href="wiki_content/one.html">
+      <file href="wiki_content/one.html"/>
+    </resource>
+    <resource identifier="r2" type="webcontent" href="wiki_content/two.html">
+      <file href="wiki_content/two.html"/>
+    </resource>
+    <resource identifier="o1" type="webcontent" href="wiki_content/lab-safety.html">
+      <file href="wiki_content/lab-safety.html"/>
+    </resource>
+    <resource identifier="o2" type="webcontent" href="wiki_content/sleep.html">
+      <file href="wiki_content/sleep.html"/>
+    </resource>
+    <resource identifier="o3" type="webcontent" href="wiki_content/in-lab.html">
+      <file href="wiki_content/in-lab.html"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($dir))->parse();
+        $this->assertCount(3, $coursemodel->orphans);
+
+        $report = (new course_builder($category->id, $dir, null, 0, false, 'lesson'))->build($coursemodel);
+        $courseid = $report['courseid'];
+
+        // Only the module's run becomes a lesson; the three unreferenced pages stay pages.
+        $this->assertSame(1, $DB->count_records('lesson', ['course' => $courseid]));
+        $this->assertSame('Reading', $DB->get_field('lesson', 'name', ['course' => $courseid]));
+        $this->assertSame(3, $DB->count_records('page', ['course' => $courseid]));
+    }
+
+    /**
      * A grouped run whose first page references media in a sibling resource folder
      * with an owner-relative $IMS-CC-FILEBASE$ climb: the image folder is not the
      * package root, so it resolves only relative to the page's own folder.
