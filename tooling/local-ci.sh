@@ -44,18 +44,23 @@ db_up() {
   PGPASSWORD="$PGPASS" psql -h 127.0.0.1 -p "$PGPORT" -U "$PGUSER" -tAc 'select 1' >/dev/null 2>&1
 }
 
-# Prefer a Docker Postgres (matches CI exactly); fall back to a locally
-# installed cluster when no Docker daemon is available (e.g. this sandbox).
-start_postgres() {
-  if db_up; then
-    log "Postgres already accepting connections on ${PGPORT}."
-    return 0
-  fi
-  if docker info >/dev/null 2>&1; then
-    start_postgres_docker
-  else
-    start_postgres_local
-  fi
+# Lowest PostgreSQL major version the chosen Moodle branch installs on: 5.3
+# (main, and MOODLE_503_STABLE onwards) needs 17+; 5.0-5.2 accept what CI runs.
+min_pg_major() {
+  case "$MOODLE_BRANCH" in
+    MOODLE_500_STABLE|MOODLE_501_STABLE|MOODLE_502_STABLE) echo 0 ;;
+    *) echo 17 ;;
+  esac
+}
+
+# Major version of the running server (e.g. 16), or 0 if it cannot be read.
+pg_major() {
+  local num
+  num=$(PGPASSWORD="$PGPASS" psql -h 127.0.0.1 -p "$PGPORT" -U "$PGUSER" -tAc 'show server_version_num' 2>/dev/null)
+  echo $(( ${num:-0} / 10000 ))
+}
+
+wait_for_postgres() {
   log "Waiting for Postgres to accept connections."
   for _ in $(seq 1 30); do
     db_up && return 0
@@ -63,6 +68,46 @@ start_postgres() {
   done
   echo "Postgres did not become ready in time." >&2
   exit 1
+}
+
+# Stop early, with a clear reason, rather than let the Moodle install reject the database.
+require_pg_version() {
+  local need have
+  need=$(min_pg_major)
+  have=$(pg_major)
+  if [ "$have" -lt "$need" ]; then
+    echo "PostgreSQL ${have} on port ${PGPORT} is too old: ${MOODLE_BRANCH} needs ${need}+." >&2
+    echo "Use the Docker path (it starts postgres:17), or point PGPORT at a PostgreSQL ${need}+ server." >&2
+    exit 1
+  fi
+}
+
+# Prefer a Docker Postgres (matches CI exactly); fall back to a locally
+# installed cluster when no Docker daemon is available (e.g. this sandbox).
+start_postgres() {
+  if db_up; then
+    if [ "$(pg_major)" -ge "$(min_pg_major)" ]; then
+      log "Postgres already accepting connections on ${PGPORT}."
+      return 0
+    fi
+    # An older container this script created earlier (postgres:16): replace it. Its
+    # databases go with it, so the Moodle install must be redone (--reinstall).
+    if docker info >/dev/null 2>&1 && docker container inspect "$PGCONTAINER" >/dev/null 2>&1; then
+      log "Replacing ${PGCONTAINER} (PostgreSQL $(pg_major)): ${MOODLE_BRANCH} needs $(min_pg_major)+."
+      start_postgres_docker
+      wait_for_postgres
+      require_pg_version
+      return 0
+    fi
+    require_pg_version
+  fi
+  if docker info >/dev/null 2>&1; then
+    start_postgres_docker
+  else
+    start_postgres_local
+  fi
+  wait_for_postgres
+  require_pg_version
 }
 
 start_postgres_docker() {
@@ -84,7 +129,7 @@ start_postgres_local() {
     apt-get update -qq && apt-get install -y --no-install-recommends postgresql
   fi
   # The distro package may be older than 17 (Ubuntu 24.04 ships 16), which Moodle 5.3
-  # (MOODLE_BRANCH=main) rejects; use the Docker path for that branch.
+  # (MOODLE_BRANCH=main) rejects; start_postgres() then stops with a clear message.
   log "Starting the local PostgreSQL cluster."
   service postgresql start || true
   # Give the bundled 'postgres' role a known password so TCP auth works.
