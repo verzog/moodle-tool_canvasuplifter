@@ -419,6 +419,15 @@ class course_builder {
             $skipreasons
         );
 
+        // Canvas hid its Pages menu, so students never reached unreferenced content; hide the
+        // section that collects it (a teacher can show it). Hiding a section keeps each
+        // activity's own visibility for when it is shown again.
+        $extrashidden = false;
+        if ($orphansection > 0 && $coursemodel->pagesnavhidden) {
+            set_section_visible((int) $course->id, $orphansection, 0);
+            $extrashidden = true;
+        }
+
         // Second pass: rewrite internal page links now that every target exists.
         $this->rewrite_internal_links($builtpagecmids, $urlmap);
         $this->rewrite_grouped_content($rewritetargets, $urlmap);
@@ -555,6 +564,9 @@ class course_builder {
         // analyse report raises the same key via conversion_report).
         if ($coursemodel->navtoolsunimported > 0) {
             $warnings[] = get_string('warnreportnavtools', 'tool_canvasuplifter');
+        }
+        if ($extrashidden) {
+            $warnings[] = get_string('warnreportextrashidden', 'tool_canvasuplifter');
         }
         // Assets the parser expected an activity to embed but which no activity actually
         // embedded (its owner was rejected at build time) were recovered as standalone

@@ -301,6 +301,9 @@ $string['warnreportcategorization'] = 'Some categorization questions use Canvas 
     . 'if exact score parity matters.';
 $string['warnreportduplicates'] = 'Some resources look like duplicate copies of other files in the package '
     . '(for example "name (2)" or "name-1"); all are imported, so review the resource list for repeats.';
+$string['warnreportextrashidden'] = 'This Canvas course hid its Pages menu, so students could only reach content '
+    . 'through modules. The "Additional resources" section, which collects content no module links to, is therefore '
+    . 'hidden from students; show it in Moodle if they should see it.';
 $string['warnreportlti'] = 'External (LTI) tools need their keys reconfigured by hand after import.';
 $string['warnreportmoodlelti'] = 'Some external (LTI) tool links appear to launch Moodle-hosted content (e.g. an activity '
     . 'published from another Moodle). They import as tool placeholders; the real content — and its native source — '
