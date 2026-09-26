@@ -130,6 +130,44 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * An inline-launch tool is classified with the custom parameters, secure URL and title its twin
+     * cartridge supplied, as lti_builder does, since the twin itself is no longer listed.
+     *
+     * @return void
+     */
+    public function test_analyse_classifies_inline_lti_with_twin_custom_parameters(): void {
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $lti = new item('i1', 'Chapter 5 practice');
+        $lti->kind = item::KIND_LTI;
+        $lti->launchurl = 'https://tool.example.com/launch';
+        $lti->launchcustom = ['stack_question_id' => '42'];
+        $section->add_item($lti);
+        $course->add_section($section);
+
+        $warnings = (new conversion_report($course))->build()['warnings'];
+        $this->assertContains('warnreportstacklti', $warnings);
+
+        $lti->launchcustom = [];
+        $lti->launchsecureurl = 'https://moodle.example.edu/enrol/lti/tool.php?id=3';
+        $warnings = (new conversion_report($course))->build()['warnings'];
+        $this->assertContains('warnreportmoodlelti', $warnings);
+
+        $lti->launchsecureurl = '';
+        $lti->launchtooltitle = 'STACK Question';
+        $warnings = (new conversion_report($course))->build()['warnings'];
+        $this->assertContains('warnreportstacklti', $warnings);
+
+        // The twin's own launch URL (the assignment's fallback) is a signal too, and makes an
+        // assignment whose own URL is unusable classifiable.
+        $lti->launchtooltitle = '';
+        $lti->launchurl = 'javascript:bad';
+        $lti->launchfallbackurls = ['https://moodle.example.edu/enrol/lti/tool.php?id=3'];
+        $warnings = (new conversion_report($course))->build()['warnings'];
+        $this->assertContains('warnreportmoodlelti', $warnings);
+    }
+
+    /**
      * An inline LTI launch URL that isn't http(s) builds no placeholder, so analysis must not
      * classify it — even when it contains a STACK signal — or it would promise an import that
      * never happens.

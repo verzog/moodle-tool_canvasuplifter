@@ -2075,6 +2075,169 @@ XML;
     }
 
     /**
+     * Canvas exports an external-tool assignment (here a McGraw Hill Connect assignment) twice:
+     * as the assignment, re-homed to an LTI placeholder, and as an unreferenced
+     * lti_resource_links/ cartridge whose lookup_uuid matches the assignment's
+     * resource_link_lookup_uuid. The twin is not an orphan (it would build a second, generic
+     * "McGraw Hill Connect LTIA" placeholder); its custom parameters move onto the assignment's
+     * item. An unrelated cartridge with no matching assignment is still an orphan.
+     *
+     * @return void
+     */
+    public function test_external_tool_assignment_absorbs_its_lti_link_twin(): void {
+        $dir = $this->lti_twin_package();
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $placed = $course->sections[0]->items[0];
+        $this->assertSame(item::KIND_LTI, $placed->kind);
+        $this->assertSame('Chapter 5 SmartBook Assignment', $placed->title);
+        $this->assertSame('uuid-ch5', $placed->ltilinkuuid);
+        $this->assertSame(['assignment_xid' => 'xid-ch5'], $placed->launchcustom);
+        $this->assertSame('McGraw Hill Connect LTIA', $placed->launchtooltitle);
+        $this->assertSame('Chapter practice', $placed->launchtooldescription);
+        $this->assertContains('twin', $placed->aliasids);
+        // Only the cartridge with no matching assignment remains an orphan.
+        $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
+    }
+
+    /**
+     * The twin is found past an auxiliary XML file listed before its cartridge, and its secure
+     * launch URL is kept on the assignment it merges into.
+     *
+     * @return void
+     */
+    public function test_lti_link_twin_found_past_auxiliary_xml_and_keeps_secure_url(): void {
+        $dir = $this->lti_twin_package('http://connect.example.com/lti', 'https://secure.example.com/lti', true);
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $placed = $course->sections[0]->items[0];
+        $this->assertSame(['assignment_xid' => 'xid-ch5'], $placed->launchcustom);
+        $this->assertSame('https://secure.example.com/lti', $placed->launchsecureurl);
+        $this->assertSame(['https://secure.example.com/lti'], $placed->launchfallbackurls);
+        $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
+    }
+
+    /**
+     * The twin merges into the assignment even when the assignment's own launch URL cannot build
+     * (not http(s)): the twin's endpoint becomes the assignment's fallback, so the assignment
+     * builds with it in its own place and links to either identifier resolve to it.
+     *
+     * @return void
+     */
+    public function test_lti_link_twin_is_the_fallback_for_an_unusable_assignment_url(): void {
+        $dir = $this->lti_twin_package('javascript:bad');
+
+        $course = (new manifest_parser($dir))->parse();
+
+        $this->assertSame(['other'], array_map(fn($orphan) => $orphan->identifier, $course->orphans));
+        $placed = $course->sections[0]->items[0];
+        $this->assertSame(['https://connect.example.com/lti'], $placed->launchfallbackurls);
+        $this->assertContains('twin', $placed->aliasids);
+    }
+
+    /**
+     * Write a package with a Canvas external-tool assignment (lookup uuid "uuid-ch5") placed in a
+     * module, its lti_resource_links/ twin and one unrelated cartridge.
+     *
+     * @param string $toolurl The assignment's external_tool_url.
+     * @param string $secureurl The cartridges' secure_launch_url.
+     * @param bool $auxfirst Whether the twin resource lists an auxiliary XML before its cartridge.
+     * @return string The package directory.
+     */
+    private function lti_twin_package(
+        string $toolurl = 'https://connect.example.com/lti',
+        string $secureurl = 'https://connect.example.com/lti',
+        bool $auxfirst = false
+    ): string {
+        $dir = make_request_directory();
+        mkdir($dir . '/course_settings');
+        mkdir($dir . '/a1');
+        mkdir($dir . '/lti_resource_links');
+        file_put_contents($dir . '/a1/chapter-5.html', '<p>Complete the SmartBook.</p>');
+        file_put_contents(
+            $dir . '/a1/assignment_settings.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<assignment identifier="a1" xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . '<title>Chapter 5 SmartBook Assignment</title><points_possible>10.0</points_possible>'
+            . '<submission_types>external_tool</submission_types>'
+            . '<external_tool_url>' . $toolurl . '</external_tool_url>'
+            . '<resource_link_lookup_uuid>uuid-ch5</resource_link_lookup_uuid></assignment>'
+        );
+        $cartridge = function (string $uuid, string $xid) use ($secureurl): string {
+            return '<?xml version="1.0" encoding="UTF-8"?>'
+                . '<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p3"'
+                . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
+                . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
+                . '<blti:title>McGraw Hill Connect LTIA</blti:title>'
+                . '<blti:description>Chapter practice</blti:description>'
+                . '<blti:secure_launch_url>' . $secureurl . '</blti:secure_launch_url>'
+                . '<blti:custom><lticm:property name="assignment_xid">' . $xid . '</lticm:property></blti:custom>'
+                // Another platform's lookup_uuid comes first; only Canvas's pairs.
+                . '<blti:extensions platform="other.example.com">'
+                . '<lticm:property name="lookup_uuid">not-canvas</lticm:property></blti:extensions>'
+                . '<blti:extensions platform="canvas.instructure.com">'
+                . '<lticm:property name="lookup_uuid">' . $uuid . '</lticm:property></blti:extensions>'
+                . '</cartridge_basiclti_link>';
+        };
+        file_put_contents($dir . '/lti_resource_links/twin.xml', $cartridge('uuid-ch5', 'xid-ch5'));
+        file_put_contents($dir . '/lti_resource_links/other.xml', $cartridge('uuid-other', 'xid-other'));
+        // Auxiliary metadata XML (carrying the matching lookup_uuid but no launch URL, so not a
+        // cartridge), listed before the cartridge when $auxfirst.
+        file_put_contents(
+            $dir . '/lti_resource_links/meta.xml',
+            '<?xml version="1.0"?><meta><extensions platform="canvas.instructure.com">'
+            . '<property name="lookup_uuid">uuid-ch5</property></extensions></meta>'
+        );
+        $auxfile = $auxfirst ? '<file href="lti_resource_links/meta.xml"/>' : '';
+        $manifest = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="manifest" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">
+  <organizations>
+    <organization identifier="org1">
+      <item identifier="root"><item identifier="m1"><title>Week 1</title></item></item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="a1" type="associatedcontent/imscc_xmlv1p1/learning-application-resource"
+        href="a1/chapter-5.html">
+      <file href="a1/chapter-5.html"/>
+      <file href="a1/assignment_settings.xml"/>
+    </resource>
+    <resource identifier="twin" type="imsbasiclti_xmlv1p3">
+      {$auxfile}<file href="lti_resource_links/twin.xml"/>
+    </resource>
+    <resource identifier="other" type="imsbasiclti_xmlv1p3">
+      <file href="lti_resource_links/other.xml"/>
+    </resource>
+  </resources>
+</manifest>
+XML;
+        file_put_contents($dir . '/imsmanifest.xml', $manifest);
+        $modulemeta = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">
+  <module identifier="mod1">
+    <title>Week 1</title>
+    <workflow_state>active</workflow_state>
+    <items>
+      <item identifier="mi_a1">
+        <content_type>Assignment</content_type>
+        <workflow_state>active</workflow_state>
+        <title>Chapter 5 SmartBook Assignment</title>
+        <identifierref>a1</identifierref>
+      </item>
+    </items>
+  </module>
+</modules>
+XML;
+        file_put_contents($dir . '/course_settings/module_meta.xml', $modulemeta);
+
+        return $dir;
+    }
+
+    /**
      * A module's Canvas prerequisites (context_module references) and a per-item
      * completion_requirement are read into the section/item model so the builder can gate the
      * module and set activity completion.

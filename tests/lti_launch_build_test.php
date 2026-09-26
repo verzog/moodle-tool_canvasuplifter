@@ -111,6 +111,111 @@ XML;
     }
 
     /**
+     * A Canvas external-tool assignment and its lti_resource_links/ twin (matched by lookup
+     * uuid) build one mod_lti, not two, and the twin's custom parameters (the publisher's
+     * assignment id), secure launch URL and description reach the placeholder.
+     *
+     * @return void
+     */
+    public function test_external_tool_assignment_and_link_twin_build_once(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_twin_fixture();
+        $category = $this->getDataGenerator()->create_category();
+
+        $coursemodel = (new manifest_parser($root))->parse();
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $ltis = get_fast_modinfo($report['courseid'])->get_instances_of('lti');
+        $this->assertCount(1, $ltis);
+        $instance = $DB->get_record('lti', ['id' => reset($ltis)->instance], '*', MUST_EXIST);
+        $this->assertSame('Publisher Tool', $instance->name);
+        $this->assertStringContainsString('assignment_xid=xid-1', $instance->instructorcustomparameters);
+        $this->assertSame('https://secure.example.com/launch', $instance->securetoolurl);
+        $this->assertStringContainsString('Read chapter 5 first.', $instance->intro);
+    }
+
+    /**
+     * When the external-tool assignment's own launch URL cannot build, it builds with its twin
+     * cartridge's endpoint instead, in its own section, keeping its name, instructions and
+     * (hidden) visibility, with nothing reported as skipped.
+     *
+     * @return void
+     */
+    public function test_assignment_falls_back_to_twin_endpoint(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_twin_fixture();
+        file_put_contents($root . '/a1/instructions.html', '<html><body><p>Do chapter 5.</p></body></html>');
+        $category = $this->getDataGenerator()->create_category();
+        $coursemodel = (new manifest_parser($root))->parse();
+        $owner = $coursemodel->sections[0]->items[0];
+        // The assignment's own tool URL cannot build (as when it fails to load at build time).
+        $owner->launchurl = 'javascript:bad';
+        $owner->isvisible = false;
+
+        $report = (new course_builder($category->id, $root))->build($coursemodel);
+
+        $ltis = get_fast_modinfo($report['courseid'])->get_instances_of('lti');
+        $this->assertCount(1, $ltis);
+        $cm = reset($ltis);
+        $this->assertSame('Publisher Tool', $cm->name);
+        $this->assertSame(1, (int) $cm->sectionnum);
+        $this->assertFalse((bool) $cm->visible);
+        $instance = $DB->get_record('lti', ['id' => $cm->instance], '*', MUST_EXIST);
+        $this->assertSame('https://secure.example.com/launch', $instance->toolurl);
+        $this->assertStringContainsString('Do chapter 5.', $instance->intro);
+        $this->assertSame(1, $report['createdcounts']['lti'] ?? 0);
+        $this->assertSame(0, $report['skippedcounts']['lti'] ?? 0);
+        $this->assertSame([], $report['skipreasons']);
+    }
+
+    /**
+     * The external-tool fixture plus its lti_resource_links/ twin (lookup uuid "uuid-1") and no
+     * assignment instructions.
+     *
+     * @return string Path to the package root.
+     */
+    protected function build_twin_fixture(): string {
+        $root = $this->build_external_tool_fixture();
+        $settings = str_replace(
+            '</assignment>',
+            '<resource_link_lookup_uuid>uuid-1</resource_link_lookup_uuid></assignment>',
+            (string) file_get_contents($root . '/a1/assignment_settings.xml')
+        );
+        file_put_contents($root . '/a1/assignment_settings.xml', $settings);
+        mkdir($root . '/lti_resource_links');
+        file_put_contents(
+            $root . '/lti_resource_links/twin.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imslticc_v1p3"'
+            . ' xmlns:blti="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"'
+            . ' xmlns:lticm="http://www.imsglobal.org/xsd/imslticm_v1p0">'
+            . '<blti:title>McGraw Hill Connect LTIA</blti:title>'
+            . '<blti:description>Read chapter 5 first.</blti:description>'
+            . '<blti:secure_launch_url>https://secure.example.com/launch</blti:secure_launch_url>'
+            . '<blti:custom><lticm:property name="assignment_xid">xid-1</lticm:property></blti:custom>'
+            . '<blti:extensions platform="canvas.instructure.com">'
+            . '<lticm:property name="lookup_uuid">uuid-1</lticm:property></blti:extensions>'
+            . '</cartridge_basiclti_link>'
+        );
+        $manifest = str_replace(
+            '</resources>',
+            '<resource identifier="twin" type="imsbasiclti_xmlv1p3">'
+            . '<file href="lti_resource_links/twin.xml"/></resource></resources>',
+            (string) file_get_contents($root . '/imsmanifest.xml')
+        );
+        file_put_contents($root . '/imsmanifest.xml', $manifest);
+        // No assignment instructions, so the twin's description fills the intro.
+        file_put_contents($root . '/a1/instructions.html', '<html><body></body></html>');
+        return $root;
+    }
+
+    /**
      * Write a package with a single LTI cartridge link carrying the given launch URL and title.
      *
      * @param string $launchurl The cartridge launch URL.
