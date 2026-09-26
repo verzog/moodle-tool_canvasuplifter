@@ -841,6 +841,39 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * A blank id that appears in the prompt only inside markup (an image alt attribute)
+     * or inert content (a script block) is not a marker the Cloze path could place, so a
+     * shared-choice item labelled by its ids stays a matching question.
+     *
+     * @return void
+     */
+    public function test_blank_id_only_in_prompt_markup_is_not_a_marker(): void {
+        $blank = function (string $ident, string $stem, string $a1, string $a2): string {
+            return '<response_lid ident="' . $ident . '"><material><mattext>' . $stem . '</mattext></material>'
+                . '<render_choice>'
+                . '<response_label ident="' . $a1 . '"><material><mattext>Sensory</mattext></material></response_label>'
+                . '<response_label ident="' . $a2 . '"><material><mattext>Motor</mattext></material></response_label>'
+                . '</render_choice></response_lid>';
+        };
+        $prompt = 'Classify each nerve. &lt;img src="n.png" alt="[I]"&gt;&lt;script&gt;var b = "[II]";&lt;/script&gt;';
+        $pres = '<presentation><material><mattext texttype="text/html">' . $prompt . '</mattext></material>'
+            . $blank('response_I', 'I', 'a1', 'a2') . $blank('response_II', 'II', 'b1', 'b2') . '</presentation>';
+        $resp = '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes>'
+            . '<respcondition><conditionvar><varequal respident="response_I">a1</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition>'
+            . '<respcondition><conditionvar><varequal respident="response_II">b2</varequal></conditionvar>'
+            . '<setvar varname="SCORE" action="Add">50</setvar></respcondition></resprocessing>';
+        $item = '<item ident="m2" title="Nerves"><itemmetadata><qtimetadata>'
+            . '<qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_dropdowns_question</fieldentry>'
+            . '</qtimetadatafield></qtimetadata></itemmetadata>' . $pres . $resp . '</item>';
+
+        $q = (new qti_parser())->parse($this->assessment($item))['questions'][0];
+
+        $this->assertSame(qti_question::TYPE_MATCHING, $q->type);
+        $this->assertTrue($q->is_importable());
+    }
+
+    /**
      * A Canvas categorization_question authors each category as a response_lid (its
      * material names the bucket), repeats the whole item pool in every render_choice,
      * and lists the member items per category in resprocessing. It maps to a Moodle

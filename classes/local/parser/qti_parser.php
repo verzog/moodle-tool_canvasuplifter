@@ -1896,8 +1896,11 @@ class qti_parser {
      */
     protected function blanks_have_stems(DOMElement $presentation): bool {
         $seen = false;
-        // Only the prompt counts: an answer option that happens to contain "[id]" is not a marker.
+        // Only a marker the Cloze path could actually place counts (see fill_cloze): once in
+        // the prompt, in visible text. Answer options, attributes such as an image alt, and
+        // inert content such as <script> do not.
         $prompt = $this->prompt_text($presentation);
+        $rendered = $this->rendered_text($prompt);
         foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
             if (!($lid instanceof DOMElement)) {
                 continue;
@@ -1909,7 +1912,11 @@ class qti_parser {
                 return false;
             }
             $blankid = (string) preg_replace('/^response_/', '', $lid->getAttribute('ident'));
-            if ($blankid !== '' && $stem === $blankid && strpos($prompt, '[' . $blankid . ']') !== false) {
+            $marker = '[' . $blankid . ']';
+            if (
+                $blankid !== '' && $stem === $blankid
+                && substr_count($prompt, $marker) === 1 && strpos($rendered, $marker) !== false
+            ) {
                 return false;
             }
         }
