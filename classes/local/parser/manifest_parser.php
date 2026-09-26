@@ -209,7 +209,8 @@ class manifest_parser {
         // Canvas exports a richer per-module structure in course_settings/module_meta.xml,
         // including published state, in-module subheaders and inline ExternalUrl items;
         // prefer it when present, otherwise fall back to the manifest's <organization>.
-        if (!$this->build_sections_from_module_meta($resources, $course)) {
+        $frommodulemeta = $this->build_sections_from_module_meta($resources, $course);
+        if (!$frommodulemeta) {
             $this->build_sections($dom, $resources, $course);
         }
 
@@ -219,7 +220,9 @@ class manifest_parser {
         foreach ($course->sections as $section) {
             foreach ($section->items as $placeditem) {
                 $placed[$placeditem->identifier] = true;
-                if ($placeditem->kind === item::KIND_URL && $placeditem->url !== '') {
+                // Only Canvas module_meta.xml ships each module link twice (see is_placed_url());
+                // another package's separate resource with the same target is its own activity.
+                if ($frommodulemeta && $placeditem->kind === item::KIND_URL && $placeditem->url !== '') {
                     $placedurls[$this->url_key($placeditem->url)] = true;
                 }
             }
@@ -1506,9 +1509,45 @@ class manifest_parser {
             if ($absolute === null) {
                 continue;
             }
-            $xml = (string) @file_get_contents($absolute);
-            if (preg_match('/<url\b[^>]*\bhref="([^"]*)"/i', $xml, $m)) {
-                return html_entity_decode(trim($m[1]), ENT_QUOTES | ENT_HTML5);
+            $url = $this->url_from_weblink_xml((string) @file_get_contents($absolute));
+            if ($url !== '') {
+                return $url;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * The http(s) target of an IMS web-link XML document: the href of its <url>
+     * element, or the element's text when it has no href. Namespace-agnostic, so a
+     * prefixed <wl:url> is read too. Mirrors url_builder::url_from_weblink_xml()
+     * without depending on the build layer.
+     *
+     * @param string $xml The web-link XML document.
+     * @return string The URL, or '' if none.
+     */
+    private function url_from_weblink_xml(string $xml): string {
+        if (trim($xml) === '') {
+            return '';
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded) {
+            return '';
+        }
+        foreach ($dom->getElementsByTagNameNS('*', 'url') as $node) {
+            if (!($node instanceof DOMElement)) {
+                continue;
+            }
+            $url = trim($node->getAttribute('href'));
+            if ($url === '') {
+                $url = trim($node->textContent);
+            }
+            if (preg_match('#^https?://#i', $url)) {
+                return $url;
             }
         }
         return '';
