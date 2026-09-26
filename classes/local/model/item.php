@@ -131,6 +131,31 @@ class item {
      *              so its owner-relative media resolves against that folder rather than the resource href. */
     public string $launchdescriptiondir = '';
 
+    /** @var string For an external-tool assignment re-homed to KIND_LTI: Canvas's
+     *              resource_link_lookup_uuid, matching the lookup_uuid of its lti_resource_links/
+     *              cartridge twin. Empty otherwise. */
+    public string $ltilinkuuid = '';
+
+    /** @var array LTI custom parameters (name => value) recovered from that twin cartridge, e.g. a
+     *             publisher's assignment id, so the launch placeholder keeps them. Empty otherwise. */
+    public array $launchcustom = [];
+
+    /** @var string The secure (https) launch URL recovered from that twin cartridge, kept alongside
+     *              $launchurl so the launch placeholder does not lose it. Empty otherwise. */
+    public string $launchsecureurl = '';
+
+    /** @var string The tool title (<blti:title>) of that twin cartridge, kept so classification still
+     *              sees a signal such as "STACK Question" that only the cartridge carried. */
+    public string $launchtooltitle = '';
+
+    /** @var string The plain-text <blti:description> of that twin cartridge, shown in the launch
+     *              placeholder's intro when the assignment itself has no instructions. */
+    public string $launchtooldescription = '';
+
+    /** @var string[] The twin cartridge's own launch and secure launch URLs, tried in turn when this
+     *                item's launch URL cannot build (invalid, or the tool fails to load). */
+    public array $launchfallbackurls = [];
+
     /** @var string For assignments: Canvas <assignment_group_identifierref>. */
     public string $gradegroupref = '';
 

@@ -253,6 +253,7 @@ class manifest_parser {
                 $resourceitem->suppressed = true;
             }
         }
+        $ltitwins = $this->pair_lti_link_twins($course, $resources, $placed);
         foreach ($resources as $identifier => $resourceitem) {
             if (
                 empty($placed[$identifier])
@@ -260,6 +261,7 @@ class manifest_parser {
                 && $resourceitem->kind !== item::KIND_UNKNOWN
                 && !$resourceitem->suppressed
                 && !$this->is_placed_url($resourceitem, $placedurls)
+                && empty($ltitwins[$identifier])
             ) {
                 $course->orphans[] = $resourceitem;
             }
@@ -1488,6 +1490,100 @@ class manifest_parser {
             }
         }
         return false;
+    }
+
+    /**
+     * Pair each Canvas external-tool assignment with its lti_resource_links/ cartridge twin.
+     *
+     * Canvas exports an external-tool assignment (e.g. a McGraw Hill Connect assignment) twice:
+     * as the assignment, which the parser re-homes to a KIND_LTI launch placeholder, and as a
+     * separate unreferenced LTI cartridge whose Canvas extension lookup_uuid equals the
+     * assignment's resource_link_lookup_uuid. Left alone, the cartridge would build a second,
+     * generically titled placeholder in "Additional resources". Each twin's custom parameters
+     * (a publisher's assignment id, for example), secure launch URL, title and description are
+     * copied onto the
+     * assignment's item, with the twin's launch endpoints as fallbacks the assignment tries when
+     * its own launch URL cannot build, and the twin is returned so the orphan pass skips it.
+     *
+     * @param course_model $course The course model (its placed items are updated in place).
+     * @param array $resources The resources keyed by identifier.
+     * @param array $placed Identifiers placed as their own activity.
+     * @return array Twin cartridge identifiers => true.
+     */
+    private function pair_lti_link_twins(course_model $course, array $resources, array $placed): array {
+        $byuuid = [];
+        foreach ($course->sections as $section) {
+            foreach ($section->items as $placeditem) {
+                if ($placeditem->kind === item::KIND_LTI && $placeditem->ltilinkuuid !== '') {
+                    $byuuid[$placeditem->ltilinkuuid][] = $placeditem;
+                }
+            }
+        }
+        foreach ($resources as $resourceitem) {
+            if ($resourceitem->kind === item::KIND_LTI && $resourceitem->ltilinkuuid !== '') {
+                // An unplaced external-tool assignment builds from the orphan pass too.
+                $byuuid[$resourceitem->ltilinkuuid][] = $resourceitem;
+            }
+        }
+        if ($byuuid === []) {
+            return [];
+        }
+        $twins = [];
+        foreach ($resources as $identifier => $resourceitem) {
+            if (
+                !empty($placed[$identifier]) || $resourceitem->kind !== item::KIND_LTI
+                || $resourceitem->launchurl !== '' || $resourceitem->ltilinkuuid !== ''
+            ) {
+                continue;
+            }
+            // Scan every XML file, as lti_builder does: auxiliary XML may precede the cartridge, so
+            // stop only at a parseable cartridge whose uuid matches an owner.
+            $cartridge = null;
+            $uuid = '';
+            foreach (array_merge([$resourceitem->href], $resourceitem->files) as $path) {
+                $absolute = $path === '' ? null : $this->resolve_within((string) $path);
+                if ($absolute === null || !preg_match('/\.xml$/i', $absolute)) {
+                    continue;
+                }
+                $xml = (string) @file_get_contents($absolute);
+                $uuid = lti_cartridge::lookup_uuid($xml);
+                $cartridge = isset($byuuid[$uuid]) ? lti_cartridge::parse($xml) : null;
+                if ($cartridge !== null) {
+                    break;
+                }
+            }
+            if ($cartridge === null) {
+                continue;
+            }
+            $twinurls = array_values(array_unique(array_filter([$cartridge['launchurl'], $cartridge['secureurl']])));
+            foreach ($byuuid[$uuid] as $owner) {
+                if ($owner->launchcustom === []) {
+                    $owner->launchcustom = $cartridge['custom'];
+                }
+                if ($owner->launchsecureurl === '') {
+                    $owner->launchsecureurl = $cartridge['secureurl'];
+                }
+                if ($owner->launchtooltitle === '') {
+                    $owner->launchtooltitle = $cartridge['title'];
+                }
+                if ($owner->launchtooldescription === '') {
+                    $owner->launchtooldescription = $cartridge['description'];
+                }
+                // The owner retries with the twin's own endpoints when its launch URL is invalid
+                // or its tool fails to load, so the twin is never needed as a second activity.
+                foreach ($twinurls as $url) {
+                    if ($url !== $owner->launchurl && !in_array($url, $owner->launchfallbackurls, true)) {
+                        $owner->launchfallbackurls[] = $url;
+                    }
+                }
+                // A $CANVAS_OBJECT_REFERENCE$ to the twin resolves to the assignment it merged into.
+                if (!in_array($identifier, $owner->aliasids, true)) {
+                    $owner->aliasids[] = $identifier;
+                }
+            }
+            $twins[$identifier] = true;
+        }
+        return $twins;
     }
 
     /**
@@ -3330,6 +3426,7 @@ class manifest_parser {
             if ($settings->is_external_tool()) {
                 $resourceitem->kind = item::KIND_LTI;
                 $resourceitem->launchurl = $settings->externaltoolurl;
+                $resourceitem->ltilinkuuid = $settings->resourcelinkuuid;
                 // Preserve the assignment prompt on the launch placeholder. The CC
                 // 1.3 profile carries it inline (<text>); a flat Canvas assignment
                 // keeps it in a sibling HTML that lti_builder reads at build time.

@@ -74,6 +74,39 @@ class lti_cartridge {
     }
 
     /**
+     * The Canvas lookup_uuid of a cartridge: the <lticm:property name="lookup_uuid"> in its
+     * <blti:extensions platform="canvas.instructure.com">. Canvas writes the same value as an
+     * external-tool assignment's resource_link_lookup_uuid, which pairs the two.
+     *
+     * @param string $xml The cartridge XML.
+     * @return string The uuid, or '' when absent or unparseable.
+     */
+    public static function lookup_uuid(string $xml): string {
+        if (trim($xml) === '') {
+            return '';
+        }
+        $dom = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if (!$loaded) {
+            return '';
+        }
+        foreach ($dom->getElementsByTagNameNS('*', 'property') as $node) {
+            $parent = $node->parentNode;
+            if (
+                $node instanceof DOMElement && $node->getAttribute('name') === 'lookup_uuid'
+                && $parent instanceof DOMElement && $parent->localName === 'extensions'
+                && $parent->getAttribute('platform') === 'canvas.instructure.com'
+            ) {
+                return trim($node->textContent);
+            }
+        }
+        return '';
+    }
+
+    /**
      * Validate a candidate launch URL: only http and https are accepted, so javascript:, data:,
      * file:, mailto: and other dangerous or unusable schemes never reach mod_lti as a tool
      * endpoint.
