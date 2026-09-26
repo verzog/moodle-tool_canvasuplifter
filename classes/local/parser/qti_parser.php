@@ -1896,7 +1896,8 @@ class qti_parser {
      */
     protected function blanks_have_stems(DOMElement $presentation): bool {
         $seen = false;
-        $prompt = $presentation->textContent;
+        // Only the prompt counts: an answer option that happens to contain "[id]" is not a marker.
+        $prompt = $this->prompt_text($presentation);
         foreach ($presentation->getElementsByTagNameNS('*', 'response_lid') as $lid) {
             if (!($lid instanceof DOMElement)) {
                 continue;
