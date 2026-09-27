@@ -22,7 +22,7 @@ use tool_canvasuplifter\local\build\url_builder;
  * Tests for reading the target URL out of a Common Cartridge web-link file.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\build\url_builder::url_from_weblink_xml
  */

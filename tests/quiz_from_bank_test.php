@@ -23,7 +23,7 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * Tests the "also build a quiz from each standalone question bank" toggle.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\build\course_builder
  */

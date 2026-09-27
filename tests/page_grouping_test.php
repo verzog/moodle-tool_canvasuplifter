@@ -26,7 +26,7 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * Tests the "combine consecutive pages into a book/lesson" build option.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\build\book_builder
  * @covers     \tool_canvasuplifter\local\build\lesson_builder

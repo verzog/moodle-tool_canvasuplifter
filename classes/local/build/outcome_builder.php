@@ -35,7 +35,7 @@ use tool_canvasuplifter\local\parser\outcomes_parser;
  * across — Canvas records that separately and Moodle models it differently.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class outcome_builder {

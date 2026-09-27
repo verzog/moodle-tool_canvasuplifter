@@ -31,7 +31,7 @@ use tool_canvasuplifter\local\parser\qti_parser;
  * created in section 0, so the section number is ignored.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class questionbank_builder {

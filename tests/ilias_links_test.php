@@ -27,7 +27,7 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * plain relative paths rather than Canvas placeholder tokens.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\build\course_builder
  * @covers     \tool_canvasuplifter\local\build\page_builder

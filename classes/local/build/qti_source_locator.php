@@ -29,7 +29,7 @@ use tool_canvasuplifter\local\parser\qti_parser;
  * property (the extracted package root) for path resolution.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 trait qti_source_locator {

@@ -30,7 +30,7 @@ use tool_canvasuplifter\local\job_manager;
  * while an upload job just copies its already-stored file out to a temp path.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 abstract class package_job_task extends adhoc_task {

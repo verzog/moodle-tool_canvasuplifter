@@ -23,7 +23,7 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * own docs and ANGEL migration objects, while leaving real content untouched.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\parser\manifest_parser
  */

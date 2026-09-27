@@ -34,7 +34,7 @@ use tool_canvasuplifter\local\parser\events_parser;
  * activity), so there is nothing to de-duplicate against the activities' own dates.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class calendar_builder {

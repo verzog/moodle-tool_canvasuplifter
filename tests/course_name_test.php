@@ -23,7 +23,7 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * Tests for deriving a course name when the package has no embedded title.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\build\course_builder::name_from_filename
  * @covers     \tool_canvasuplifter\local\parser\manifest_parser

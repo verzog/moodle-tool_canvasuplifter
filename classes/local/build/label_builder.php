@@ -27,7 +27,7 @@ use tool_canvasuplifter\local\model\item;
  * we mirror them as Moodle labels carrying the title as their introduction.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class label_builder {

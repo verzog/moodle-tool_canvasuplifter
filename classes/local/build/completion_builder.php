@@ -33,7 +33,7 @@ use stdClass;
  * completion config instead of the view default.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class completion_builder {
