@@ -2071,6 +2071,50 @@ XML;
     }
 
     /**
+     * Links to Canvas's course-level pages open their Moodle equivalents in the built course:
+     * Modules the course page, Grades the grade report, Announcements the news forum.
+     *
+     * @return void
+     */
+    public function test_build_rewrites_course_level_links(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        file_put_contents(
+            $dir . '/wiki_content/start.html',
+            '<p><a href="$CANVAS_COURSE_REFERENCE$/modules">Modules</a>'
+            . '<a href="$CANVAS_COURSE_REFERENCE$/grades">Grades</a>'
+            . '<a href="$CANVAS_COURSE_REFERENCE$/announcements">News</a></p>'
+        );
+        file_put_contents(
+            $dir . '/imsmanifest.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="s1"><title>Week 1</title>'
+            . '<item identifier="i1" identifierref="r1"><title>Start</title></item></item>'
+            . '</item></organization></organizations>'
+            . '<resources><resource identifier="r1" type="webcontent" href="wiki_content/start.html">'
+            . '<file href="wiki_content/start.html"/></resource></resources></manifest>'
+        );
+        $category = $this->getDataGenerator()->create_category();
+
+        $report = (new course_builder($category->id, $dir))->build((new manifest_parser($dir))->parse());
+
+        $courseid = $report['courseid'];
+        $page = $DB->get_record('page', ['course' => $courseid]);
+        $this->assertStringContainsString('/course/view.php?id=' . $courseid . '"', $page->content);
+        $this->assertStringContainsString('/grade/report/index.php?id=' . $courseid . '"', $page->content);
+        $this->assertStringNotContainsString('CANVAS_COURSE_REFERENCE', $page->content);
+        $newsforum = $DB->get_field('forum', 'id', ['course' => $courseid, 'type' => 'news']);
+        $expected = $newsforum ? '/mod/forum/view.php?f=' . $newsforum : '/mod/forum/index.php?id=' . $courseid;
+        $this->assertStringContainsString($expected, $page->content);
+    }
+
+    /**
      * A Canvas link to a module ($CANVAS_OBJECT_REFERENCE$/modules/<id>) opens the section that
      * module became, keeping any #fragment; a link to a module Canvas left out stays as it was.
      *
