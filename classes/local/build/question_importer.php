@@ -36,6 +36,22 @@ class question_importer {
     public const EMPTY_ASSESSMENT = 'assessment contains no questions';
 
     /**
+     * Whether any item-bank draw takes questions: one with no count (the whole bank) or a
+     * count of one or more. A draw of zero is an authored empty draw that the builders skip.
+     *
+     * @param array $selections Parsed selections: each ['bank' => id, 'count' => n|null, ...].
+     * @return bool
+     */
+    public static function draws_any(array $selections): bool {
+        foreach ($selections as $selection) {
+            if (($selection['count'] ?? null) === null || (int) $selection['count'] > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Summarise why a set of parsed questions yielded nothing importable, for
      * the skip report: how many were parsed, how many were a supported Moodle
      * type, and the Canvas profiles (or types) of those that can't convert.

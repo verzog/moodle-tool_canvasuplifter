@@ -275,7 +275,7 @@ class conversion_report {
     /**
      * Whether an assessment or question bank is empty: the build would evaluate no questions
      * (after the native-dump fallback), no bare references to questions Canvas left out, and
-     * no item-bank draws (from either QTI file). Mirrors the question-bank builder, which
+     * no item-bank draw of any questions (from either QTI file); its QTI must be readable. Mirrors the question-bank builder, which
      * skips such an item as "assessment contains no questions". Needs package access; false
      * without it (no claim is made).
      *
@@ -286,6 +286,7 @@ class conversion_report {
         if (
             $this->packageroot === null
             || !in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)
+            || $modelitem->objectbankid !== ''
             || $this->resolve_qti($modelitem) === null
         ) {
             return false;
@@ -296,7 +297,25 @@ class conversion_report {
         if ($parsed['questions'] !== [] || (int) ($parsed['unresolved'] ?? 0) > 0) {
             return false;
         }
-        return empty($parsed['hasassessment']) || empty($parsed['selections']);
+        // An unreadable file (malformed, or QTI 2.x/3.x) is a conversion failure, not an empty
+        // quiz; a draw of zero questions is an authored empty draw the builders skip.
+        return !empty($parsed['hasassessment']) && !self::draws_any($parsed['selections'] ?? []);
+    }
+
+    /**
+     * Whether any item-bank draw takes questions: one with no count (the whole bank) or a
+     * count of one or more. Mirrors question_importer::draws_any(), which the builders use.
+     *
+     * @param array $selections Parsed selections: each ['bank' => id, 'count' => n|null, ...].
+     * @return bool
+     */
+    private static function draws_any(array $selections): bool {
+        foreach ($selections as $selection) {
+            if (($selection['count'] ?? null) === null || (int) $selection['count'] > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

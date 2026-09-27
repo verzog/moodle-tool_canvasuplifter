@@ -525,6 +525,40 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * Only a readable, genuinely empty assessment is reported as not created: an unreadable
+     * file is a conversion failure, not an empty quiz, while a draw of zero questions from a
+     * bank is an authored empty draw the builders skip, so it stays empty.
+     *
+     * @return void
+     */
+    public function test_empty_orphan_quiz_requires_readable_qti_and_counts_zero_draws(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/bad');
+        mkdir($dir . '/zero');
+        file_put_contents($dir . '/bad/assessment_qti.xml', '<?xml version="1.0"?><notqti><broken');
+        file_put_contents(
+            $dir . '/zero/assessment_qti.xml',
+            '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="zero" title="Zero draw"><section ident="root">'
+            . '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>0</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>'
+        );
+        $notbuilt = function (string $folder) use ($dir): bool {
+            $course = new course_model();
+            $orphan = new item($folder, 'Quiz');
+            $orphan->kind = item::KIND_QUIZ;
+            $orphan->files = [$folder . '/assessment_qti.xml'];
+            $course->orphans[] = $orphan;
+            return (new conversion_report($course, $dir))->build()['rows'][0]['notbuilt'];
+        };
+        $this->assertFalse($notbuilt('bad'));
+        $this->assertTrue($notbuilt('zero'));
+    }
+
+    /**
      * An unreferenced quiz whose Common Cartridge file is an empty shell but whose native dump
      * draws from an item bank is not empty: the question-bank builder takes those draws from
      * the dump and imports the bank, so the report must not flag it as not created.

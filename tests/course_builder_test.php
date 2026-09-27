@@ -1996,6 +1996,33 @@ XML;
     }
 
     /**
+     * An unreferenced quiz whose QTI file is unreadable is a conversion failure, not an empty
+     * quiz, so it stays in the generic skipped count.
+     *
+     * @return void
+     */
+    public function test_unreadable_orphan_quiz_is_not_reported_empty(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/g1');
+        file_put_contents($dir . '/g1/assessment_qti.xml', '<?xml version="1.0"?><notqti><broken');
+        $coursemodel = new course_model();
+        $orphan = new \tool_canvasuplifter\local\model\item('g1', 'Broken quiz');
+        $orphan->kind = \tool_canvasuplifter\local\model\item::KIND_QUIZ;
+        $orphan->files = ['g1/assessment_qti.xml'];
+        $coursemodel->orphans[] = $orphan;
+        $category = $this->getDataGenerator()->create_category();
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $this->assertSame(1, $report['skipped']);
+        $this->assertNotContains(get_string('warnbuildemptyassessments', 'tool_canvasuplifter', 1), $report['warnings']);
+        $this->assertContains(get_string('warningskippedfornow', 'tool_canvasuplifter', 1), $report['warnings']);
+    }
+
+    /**
      * The syllabus lands in the top section with its real title; other orphans
      * go to "Additional resources".
      *

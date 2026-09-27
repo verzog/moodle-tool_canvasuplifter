@@ -55,6 +55,12 @@ class questionbank_builder {
     /** @var int How many item-bank draws the last build()'s assessment authored (resolved or not). */
     public int $lastbankselections = 0;
 
+    /**
+     * @var bool Whether the last build() skipped a readable assessment that has no questions in
+     *      either QTI file, no references to questions Canvas left out, and no draw of any questions.
+     */
+    public bool $lastemptyassessment = false;
+
     /** @var string Absolute path to the extracted package root. */
     private string $packageroot;
 
@@ -99,6 +105,7 @@ class questionbank_builder {
         $this->lastbankincomplete = false;
         $this->lasthandledviabank = false;
         $this->lastbankselections = 0;
+        $this->lastemptyassessment = false;
 
         // A standalone Canvas item bank (a learning-application-resource whose file is a
         // non_cc_assessments/<id>.xml.qti objectbank, recorded by the parser) is imported
@@ -149,6 +156,7 @@ class questionbank_builder {
                     $importedbanks
                 )
                 : question_importer::describe_unconvertible($questions, $supported, $parsed['unresolved'] ?? 0);
+            $this->lastemptyassessment = $this->is_empty_assessment($modelitem, $qtipath, $parsed, $selections);
             return null;
         }
 
@@ -241,6 +249,33 @@ class questionbank_builder {
             );
         }
         return null;
+    }
+
+    /**
+     * Whether an assessment is a genuinely empty Canvas quiz: readable QTI with no questions
+     * and no references to questions Canvas left out, a native dump that adds none, and no
+     * draw that takes any questions from an item bank. An unreadable file (malformed, or QTI
+     * 2.x/3.x) is not empty, so its skip stays a conversion failure.
+     *
+     * @param item $modelitem The assessment item.
+     * @param string $qtipath Absolute path of the resolved CC QTI file.
+     * @param array $parsed The parse the build used.
+     * @param array $selections The item-bank draws the build used.
+     * @return bool
+     */
+    private function is_empty_assessment(item $modelitem, string $qtipath, array $parsed, array $selections): bool {
+        if (
+            empty($parsed['hasassessment']) || !empty($parsed['questions'])
+            || (int) ($parsed['unresolved'] ?? 0) > 0 || question_importer::draws_any($selections)
+        ) {
+            return false;
+        }
+        $native = $this->locate_native_qti($modelitem, $qtipath);
+        if ($native === null) {
+            return true;
+        }
+        $nativeparsed = $this->parse_qti($native)[0];
+        return empty($nativeparsed['questions']) && (int) ($nativeparsed['unresolved'] ?? 0) === 0;
     }
 
     /**

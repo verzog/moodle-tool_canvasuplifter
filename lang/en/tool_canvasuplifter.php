@@ -34,6 +34,7 @@ $string['buildsnow_no'] = 'No';
 $string['buildsnow_yes'] = 'Yes';
 $string['buildsnowsummary'] = '{$a->now} items will be built into the course now; '
     . '{$a->later} are reported for a later phase and will be skipped.';
+$string['buildsnowsummarynotbuilt'] = '{$a} contain no questions (empty Canvas quizzes) and will not be created.';
 $string['buildstatusheading'] = 'Build status';
 $string['builtcoursesummary'] = 'Built {$a->created} of {$a->itemcount} content items across '
     . '{$a->sectioncount} sections ({$a->skipped} skipped).';
@@ -150,6 +151,7 @@ $string['openbuiltcourse'] = 'Open the built course';
 $string['orphansexplain'] = 'These resources are in the package but are not linked from any module. '
     . 'Each is still imported — most into an "Additional resources" section, with the syllabus '
     . 'surfaced at the top of the course — so nothing is lost.';
+$string['orphansexplainnone'] = 'The exception is an empty Canvas quiz marked "Not created": it has no questions to import.';
 $string['orphansheading'] = 'Unreferenced resources';
 $string['outcomesheading'] = 'Learning outcomes';
 $string['outcomesmalformed'] = 'The learning_outcomes.xml file is present but could not be read (it appears truncated '
