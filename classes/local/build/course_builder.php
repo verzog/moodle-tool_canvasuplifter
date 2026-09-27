@@ -210,6 +210,7 @@ class course_builder {
         $rewritetargets = [];   // Grouped book/lesson content rows, for the link pass.
         $extraquizzes = 0;      // Runnable quizzes built from standalone banks (toggle).
         $orphanbankincomplete = 0;  // Orphan bank-backed quizzes short a draw (no runnable quiz built).
+        $emptyassessments = 0;  // Unreferenced quizzes skipped because they contain no questions.
         $totalitems = max(1, count($coursemodel->all_items()));
         $processed = 0;
 
@@ -384,13 +385,22 @@ class course_builder {
                 // questions rejected) is NOT flagged, so its skip reason is preserved even
                 // when the item also drew from a bank.
                 $handledviabank = $cmid === null && $hasbankstate && $qbb->lasthandledviabank;
-                if ($handledviabank) {
+                // Likewise an orphan the toggle built a runnable (or placeholder) quiz for exists
+                // in the course, so it is created, not skipped.
+                if ($handledviabank || ($cmid === null && $standalone)) {
                     $skipreasons = array_slice($skipreasons, 0, $skipmark);
                 }
-                if ($cmid !== null || $handledviabank) {
+                if ($cmid !== null || $handledviabank || $standalone) {
                     $createdcounts[$modelitem->kind] = ($createdcounts[$modelitem->kind] ?? 0) + 1;
                 } else {
                     $skippedcounts[$modelitem->kind] = ($skippedcounts[$modelitem->kind] ?? 0) + 1;
+                    // An empty Canvas quiz nothing links to has nothing to build; report it
+                    // on its own rather than as content not yet supported. One that draws from
+                    // item banks (even missing ones) or whose QTI is unreadable is not empty.
+                    $isbankkind = in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true);
+                    if ($isbankkind && $qbb instanceof questionbank_builder && $qbb->lastemptyassessment) {
+                        $emptyassessments++;
+                    }
                 }
                 // When no runnable quiz was built to carry these draws (quiz_builder
                 // counts its own short draws), an orphan whose bank was missing or only
@@ -459,8 +469,11 @@ class course_builder {
         if ($coursemodel->source === source_detector::BLACKBOARD_NATIVE) {
             $warnings[] = get_string('warnblackboardnative', 'tool_canvasuplifter');
         }
-        if ($skippedtotal > 0) {
-            $warnings[] = get_string('warningskippedfornow', 'tool_canvasuplifter', $skippedtotal);
+        if ($skippedtotal - $emptyassessments > 0) {
+            $warnings[] = get_string('warningskippedfornow', 'tool_canvasuplifter', $skippedtotal - $emptyassessments);
+        }
+        if ($emptyassessments > 0) {
+            $warnings[] = get_string('warnbuildemptyassessments', 'tool_canvasuplifter', $emptyassessments);
         }
         if (($skippedcounts[item::KIND_UNKNOWN] ?? 0) > 0) {
             $warnings[] = get_string(

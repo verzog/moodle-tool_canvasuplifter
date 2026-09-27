@@ -30,9 +30,11 @@ $string['analyseanother'] = 'Analyse another package';
 $string['analysestatusheading'] = 'Analysis status';
 $string['buildcourse'] = 'Build course';
 $string['buildsnow_later'] = 'Later phase';
+$string['buildsnow_no'] = 'No';
 $string['buildsnow_yes'] = 'Yes';
 $string['buildsnowsummary'] = '{$a->now} items will be built into the course now; '
     . '{$a->later} are reported for a later phase and will be skipped.';
+$string['buildsnowsummarynotbuilt'] = '{$a} contain no questions (empty Canvas quizzes) and will not be created.';
 $string['buildstatusheading'] = 'Build status';
 $string['builtcoursesummary'] = 'Built {$a->created} of {$a->itemcount} content items across '
     . '{$a->sectioncount} sections ({$a->skipped} skipped).';
@@ -103,6 +105,9 @@ $string['matrixsupported_incomplete'] = 'Skipped (incomplete)';
 $string['matrixsupported_no'] = 'Skipped';
 $string['matrixsupported_yes'] = 'Yes';
 $string['maxsize'] = 'Maximum file size: {$a}';
+$string['note_assessment_empty'] = 'Contains no questions (an empty Canvas quiz) and nothing links to it, so it is not created.';
+$string['note_assessment_placeholder'] = 'Contains no questions (its only item-bank draws take none), so the '
+    . '"Also build a quiz" option creates it as a hidden placeholder quiz; no question bank is created.';
 $string['note_assignment'] = 'Name, instructions, due dates and Canvas rubrics (including per-rating long descriptions) convert. CC 1.3 IMS assignment-profile packages from non-Canvas exporters are also recognised. Outcome links do not carry across.';
 $string['note_discussion'] = 'Discussion topics become forums with the prompt as the opening post; Canvas does not export the replies, so existing threads do not carry across.';
 $string['note_file'] = 'Files convert directly to file resources.';
@@ -148,6 +153,7 @@ $string['openbuiltcourse'] = 'Open the built course';
 $string['orphansexplain'] = 'These resources are in the package but are not linked from any module. '
     . 'Each is still imported — most into an "Additional resources" section, with the syllabus '
     . 'surfaced at the top of the course — so nothing is lost.';
+$string['orphansexplainnone'] = 'The exception is an empty Canvas quiz marked "Not created": it has no questions to import.';
 $string['orphansheading'] = 'Unreferenced resources';
 $string['outcomesheading'] = 'Learning outcomes';
 $string['outcomesmalformed'] = 'The learning_outcomes.xml file is present but could not be read (it appears truncated '
@@ -173,6 +179,7 @@ $string['pagegrouping_help'] = 'Canvas wiki pages normally build as one Page act
 $string['pagegrouping_lesson'] = 'Into a lesson (mod_lesson)';
 $string['pagegrouping_none'] = 'No — one page activity each';
 $string['placement_extras'] = 'Additional resources section';
+$string['placement_none'] = 'Not created (no questions)';
 $string['placement_section0'] = 'General (top) section';
 $string['placement_top'] = 'Top of course';
 $string['pluginname'] = 'Canvas Uplifter';
@@ -276,6 +283,7 @@ $string['warnblackboardnative'] = 'This looks like a Blackboard Learn native exp
     . 'package, so most of its content — Blackboard\'s proprietary resources — cannot be imported (any Common Cartridge '
     . 'items it does contain are still imported). To bring the whole course across, export it from Blackboard as Common '
     . 'Cartridge (IMSCC) and import that package instead.';
+$string['warnbuildemptyassessments'] = 'Unlinked Canvas quizzes not created because they contain no questions: {$a}.';
 $string['warneventsmalformed'] = 'The Canvas calendar events file could not be read, so its events were not imported.';
 $string['warneventsskipped'] = 'Skipped {$a} Canvas calendar event(s) that carried no usable start time.';
 $string['warngatingsitecompletion'] = 'Canvas module prerequisites were not applied because completion tracking is '
@@ -302,6 +310,8 @@ $string['warnreportcategorization'] = 'Some categorization questions use Canvas 
     . 'if exact score parity matters.';
 $string['warnreportduplicates'] = 'Some resources look like duplicate copies of other files in the package '
     . '(for example "name (2)" or "name-1"); all are imported, so review the resource list for repeats.';
+$string['warnreportemptyassessments'] = 'Some unlinked Canvas quizzes contain no questions. They will not be created; '
+    . 'add questions in Canvas and re-export if they are needed.';
 $string['warnreportextrashidden'] = 'This Canvas course hid its Pages menu, so students could only reach content '
     . 'through modules. The "Additional resources" section, which collects content no module links to, is therefore '
     . 'hidden from students; show it in Moodle if they should see it.';

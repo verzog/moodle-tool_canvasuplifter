@@ -66,8 +66,20 @@ class conversion_report {
     /** @var string Page-grouping choice to reflect: '' (off), 'book' or 'lesson'. */
     protected string $pagegrouping;
 
+    /** @var string An assessment with something to import (or one the report can't inspect). */
+    public const ASSESSMENT_HAS_CONTENT = 'content';
+
+    /** @var string An unreferenced assessment with nothing to import: it is not created. */
+    public const ASSESSMENT_EMPTY = 'empty';
+
+    /** @var string An unreferenced empty quiz the quiz-from-bank toggle builds as a placeholder. */
+    public const ASSESSMENT_PLACEHOLDER = 'placeholder';
+
     /** @var bool Whether the run will also build a runnable quiz from each standalone bank. */
     protected bool $quizfrombank;
+
+    /** @var array Memoised assessment_state() result per item identifier (it parses QTI files). */
+    private array $assessmentstates = [];
 
     /** @var array Site-configured extra patterns for the LTI classifier (see lti_classifier). */
     protected array $ltipatterns;
@@ -160,6 +172,22 @@ class conversion_report {
      * @return array Plan {target, confidence, note}.
      */
     protected function effective_plan(item $modelitem, bool $referenced, bool $grouped = false): array {
+        // An unreferenced assessment with no questions and no bank draws builds nothing: the
+        // question-bank builder skips it ("assessment contains no questions"). With the
+        // quiz-from-bank toggle on, one that only authored draws of zero questions gets just a
+        // hidden placeholder quiz.
+        $state = $referenced ? self::ASSESSMENT_HAS_CONTENT : $this->assessment_state($modelitem);
+        if ($state === self::ASSESSMENT_EMPTY) {
+            return [
+                'target' => 'mod_qbank',
+                'confidence' => self::CONFIDENCE_NONE,
+                'note' => 'note_assessment_empty',
+                'notbuilt' => true,
+            ];
+        }
+        if ($state === self::ASSESSMENT_PLACEHOLDER) {
+            return ['target' => 'mod_quiz', 'confidence' => self::CONFIDENCE_PARTIAL, 'note' => 'note_assessment_placeholder'];
+        }
         if ($modelitem->kind === item::KIND_QUIZ && !$referenced) {
             return $this->plan_for(item::KIND_QUESTIONBANK);
         }
@@ -255,10 +283,98 @@ class conversion_report {
                 'target' => $plan['target'],
                 'confidence' => $plan['confidence'],
                 'note' => $plan['note'],
-                'buildsnow' => self::builds_now($modelitem->kind),
+                'buildsnow' => self::builds_now($modelitem->kind) && empty($plan['notbuilt']),
+                'notbuilt' => !empty($plan['notbuilt']),
             ];
         }
         $grouped[$key]['count']++;
+    }
+
+    /**
+     * Classify an unreferenced assessment for the build: an empty Canvas quiz has both its QTI
+     * files (the Common Cartridge file and any native dump) readable and holding no questions,
+     * no bare references to questions Canvas left out, and no draw of any questions. Mirrors
+     * the question-bank builder, which skips such an item as "assessment contains no
+     * questions"; but with the quiz-from-bank toggle on, a quiz that authored draws (of zero
+     * questions) still gets a hidden placeholder quiz. Needs package access; without it no
+     * claim is made. Memoised per item, as it parses QTI files.
+     *
+     * @param item $modelitem The item.
+     * @return string One of the ASSESSMENT_* constants.
+     */
+    protected function assessment_state(item $modelitem): string {
+        $key = $modelitem->kind . '|' . $modelitem->identifier;
+        if (!isset($this->assessmentstates[$key])) {
+            $this->assessmentstates[$key] = $this->classify_assessment($modelitem);
+        }
+        return $this->assessmentstates[$key];
+    }
+
+    /**
+     * Uncached body of assessment_state().
+     *
+     * @param item $modelitem The item.
+     * @return string One of the ASSESSMENT_* constants.
+     */
+    private function classify_assessment(item $modelitem): string {
+        if (
+            $this->packageroot === null
+            || !in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)
+            || $modelitem->objectbankid !== ''
+            || $this->resolve_qti($modelitem) === null
+        ) {
+            return self::ASSESSMENT_HAS_CONTENT;
+        }
+        // Check both QTI files the question-bank builder reads: the Common Cartridge file and
+        // the native non_cc_assessments dump (which can hold the real questions, bare references
+        // to questions Canvas left out, or item-bank draws).
+        $path = (string) $this->resolve_qti($modelitem);
+        $parses = [(new qti_parser())->parse((string) @file_get_contents($path))];
+        $native = $this->resolve_native_qti($modelitem, $path);
+        if ($native !== null) {
+            $parses[] = (new qti_parser())->parse((string) @file_get_contents($native));
+        }
+        $hasdraws = false;
+        foreach ($parses as $parsed) {
+            if (!self::is_empty_parse($parsed)) {
+                return self::ASSESSMENT_HAS_CONTENT;
+            }
+            $hasdraws = $hasdraws || !empty($parsed['selections']);
+        }
+        if ($this->quizfrombank && $modelitem->kind === item::KIND_QUIZ && $hasdraws) {
+            return self::ASSESSMENT_PLACEHOLDER;
+        }
+        return self::ASSESSMENT_EMPTY;
+    }
+
+    /**
+     * Whether one parsed QTI file is a readable assessment with nothing to import: no questions,
+     * no references to questions Canvas left out, and no draw of any questions. An unreadable
+     * file (malformed, or QTI 2.x/3.x) is a conversion failure, not empty. Mirrors
+     * question_importer::is_empty_parse(), which the question-bank builder uses.
+     *
+     * @param array $parsed A qti_parser result.
+     * @return bool
+     */
+    private static function is_empty_parse(array $parsed): bool {
+        return !empty($parsed['hasassessment']) && empty($parsed['questions'])
+            && (int) ($parsed['unresolved'] ?? 0) === 0 && !self::draws_any($parsed['selections'] ?? []);
+    }
+
+    /**
+     * Whether any item-bank draw takes questions: one with no count (the whole bank) or a
+     * count of one or more. Mirrors question_importer::draws_any(), which the builders use.
+     *
+     * @param array $selections Parsed selections: each ['bank' => id, 'count' => n|null, ...].
+     * @return bool
+     */
+    private static function draws_any(array $selections): bool {
+        foreach ($selections as $selection) {
+            if (($selection['count'] ?? null) === null || (int) $selection['count'] > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -373,9 +489,12 @@ class conversion_report {
         $rows = [];
         $buildsnowtotal = 0;
         $latertotal = 0;
+        $notbuilttotal = 0;
         foreach ($grouped as $row) {
             $rows[] = $row;
-            if ($row['buildsnow']) {
+            if ($row['notbuilt']) {
+                $notbuilttotal += $row['count'];
+            } else if ($row['buildsnow']) {
                 $buildsnowtotal += $row['count'];
             } else {
                 $latertotal += $row['count'];
@@ -416,6 +535,9 @@ class conversion_report {
         if ($this->course->navtoolsunimported > 0) {
             $warnings[] = 'warnreportnavtools';
         }
+        if ($notbuilttotal > 0) {
+            $warnings[] = 'warnreportemptyassessments';
+        }
         // Mirrors course_builder: with Canvas's Pages menu hidden, the section collecting
         // unreferenced content is built hidden.
         if ($this->course->pagesnavhidden) {
@@ -454,6 +576,7 @@ class conversion_report {
             'itemcount' => count($this->course->all_items()),
             'buildsnowtotal' => $buildsnowtotal,
             'latertotal' => $latertotal,
+            'notbuilttotal' => $notbuilttotal,
             'rows' => $rows,
             'sections' => $this->section_detail(),
             'orphans' => $this->orphan_detail(),
@@ -1366,9 +1489,12 @@ class conversion_report {
      * extras section.
      *
      * @param item $modelitem The orphan resource.
-     * @return string One of 'top', 'section0', 'extras'.
+     * @return string One of 'top', 'section0', 'extras', or 'none' when it is not created.
      */
     private function orphan_placement(item $modelitem): string {
+        if (!empty($this->effective_plan($modelitem, false)['notbuilt'])) {
+            return 'none';
+        }
         if ($modelitem->is_syllabus()) {
             return 'top';
         }
@@ -1390,7 +1516,10 @@ class conversion_report {
      */
     protected function display_title(item $modelitem, bool $referenced): string {
         $buildsasbank = $modelitem->kind === item::KIND_QUESTIONBANK
-            || ($modelitem->kind === item::KIND_QUIZ && !$referenced);
+            || (
+                $modelitem->kind === item::KIND_QUIZ && !$referenced
+                && $this->assessment_state($modelitem) !== self::ASSESSMENT_PLACEHOLDER
+            );
         if ($buildsasbank && $modelitem->banktitle !== '') {
             return $modelitem->banktitle;
         }

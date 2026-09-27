@@ -89,9 +89,13 @@ final class gbird_sandbox_test extends \advanced_testcase {
         // "Accredible", which is now surfaced as an LTI placeholder (#125) instead
         // of being dropped.
         $this->assertSame(33, $report['itemcount']);
-        // Everything the analyser finds builds now; nothing is deferred/skipped.
-        $this->assertSame(33, $report['buildsnowtotal']);
+        // Everything the analyser finds builds now except the unreferenced "New quiz",
+        // which has no questions in either QTI file, so the build skips it; nothing is
+        // deferred to a later phase.
+        $this->assertSame(32, $report['buildsnowtotal']);
         $this->assertSame(0, $report['latertotal']);
+        $this->assertSame(1, $report['notbuilttotal']);
+        $this->assertContains('warnreportemptyassessments', $report['warnings']);
 
         // Per-kind tally. 7 of the original 10 assignments are external-tool
         // assignments re-homed as LTI placeholders (#128), leaving 3 assignments;
@@ -112,22 +116,25 @@ final class gbird_sandbox_test extends \advanced_testcase {
         // assessments are reported as mod_qbank. questionbank_builder now has the
         // same native-QTI fallback as quiz_builder (#127), so the orphan bank whose
         // native dump carries questions genuinely builds; the other orphan's dump
-        // is also empty, so it remains a shell the build skips.
+        // is also empty, so it remains a shell the build skips and is reported as not built.
         $targets = [];
+        $notbuilt = 0;
         foreach ($report['rows'] as $row) {
             if ($row['kind'] === 'quiz') {
-                $targets[$row['target']] = $row['count'];
+                $targets[$row['target']] = ($targets[$row['target']] ?? 0) + $row['count'];
+                $notbuilt += $row['notbuilt'] ? $row['count'] : 0;
             }
         }
         $this->assertSame(1, $targets['mod_quiz']);
         $this->assertSame(2, $targets['mod_qbank']);
+        $this->assertSame(1, $notbuilt);
 
         // The sandbox's duplicate/copy items are unreferenced, so they collect
-        // into the "extras" (Additional resources) bucket rather than a module.
+        // into the "extras" (Additional resources) bucket rather than a module; the empty
+        // "New quiz" is not created, so it has no placement.
         $this->assertCount(16, $report['orphans']);
-        foreach ($report['orphans'] as $orphan) {
-            $this->assertSame('extras', $orphan['placement']);
-        }
+        $placements = array_count_values(array_column($report['orphans'], 'placement'));
+        $this->assertSame(['extras' => 15, 'none' => 1], $placements);
     }
 
     /**

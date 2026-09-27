@@ -32,6 +32,38 @@ use tool_canvasuplifter\local\model\qti_question;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class question_importer {
+    /** @var string Skip reason for an assessment with no questions at all (an empty Canvas quiz). */
+    public const EMPTY_ASSESSMENT = 'assessment contains no questions';
+
+    /**
+     * Whether any item-bank draw takes questions: one with no count (the whole bank) or a
+     * count of one or more. A draw of zero is an authored empty draw that the builders skip.
+     *
+     * @param array $selections Parsed selections: each ['bank' => id, 'count' => n|null, ...].
+     * @return bool
+     */
+    public static function draws_any(array $selections): bool {
+        foreach ($selections as $selection) {
+            if (($selection['count'] ?? null) === null || (int) $selection['count'] > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether one parsed QTI file is a readable assessment with nothing to import: no questions,
+     * no references to questions Canvas left out, and no draw of any questions. An unreadable
+     * file (malformed, or QTI 2.x/3.x) is a conversion failure, not empty.
+     *
+     * @param array $parsed A qti_parser result.
+     * @return bool
+     */
+    public static function is_empty_parse(array $parsed): bool {
+        return !empty($parsed['hasassessment']) && empty($parsed['questions'])
+            && (int) ($parsed['unresolved'] ?? 0) === 0 && !self::draws_any($parsed['selections'] ?? []);
+    }
+
     /**
      * Summarise why a set of parsed questions yielded nothing importable, for
      * the skip report: how many were parsed, how many were a supported Moodle
@@ -56,7 +88,7 @@ class question_importer {
             }
             // A truly empty assessment (e.g. an exam shell with an empty
             // <section/>) is not a conversion failure; say so plainly.
-            return 'assessment contains no questions';
+            return self::EMPTY_ASSESSMENT;
         }
         $profiles = [];
         foreach ($all as $question) {

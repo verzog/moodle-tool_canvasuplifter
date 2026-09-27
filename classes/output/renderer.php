@@ -80,10 +80,16 @@ class renderer extends plugin_renderer_base {
             $nativeshown = true;
         }
 
-        $out .= html_writer::tag('p', get_string('buildsnowsummary', 'tool_canvasuplifter', [
+        $summary = get_string('buildsnowsummary', 'tool_canvasuplifter', [
             'now' => (int) ($report['buildsnowtotal'] ?? 0),
             'later' => (int) ($report['latertotal'] ?? 0),
-        ]), ['class' => 'alert alert-info']);
+        ]);
+        // Empty Canvas quizzes are neither built now nor deferred; count them so the totals add up.
+        $notbuilt = (int) ($report['notbuilttotal'] ?? 0);
+        if ($notbuilt > 0) {
+            $summary .= ' ' . get_string('buildsnowsummarynotbuilt', 'tool_canvasuplifter', $notbuilt);
+        }
+        $out .= html_writer::tag('p', $summary, ['class' => 'alert alert-info']);
 
         $out .= $this->mapping_table($report['rows'] ?? []);
         $out .= $this->question_matrix($report['questionmatrix'] ?? []);
@@ -124,7 +130,10 @@ class renderer extends plugin_renderer_base {
                 s($row['kind']),
                 (int) $row['count'],
                 s($row['target']),
-                get_string($row['buildsnow'] ? 'buildsnow_yes' : 'buildsnow_later', 'tool_canvasuplifter'),
+                get_string(
+                    !empty($row['notbuilt']) ? 'buildsnow_no' : ($row['buildsnow'] ? 'buildsnow_yes' : 'buildsnow_later'),
+                    'tool_canvasuplifter'
+                ),
                 get_string('confidence_' . $row['confidence'], 'tool_canvasuplifter'),
                 get_string($row['note'], 'tool_canvasuplifter'),
             ];
@@ -284,7 +293,12 @@ class renderer extends plugin_renderer_base {
             return '';
         }
         $out = $this->output->heading(get_string('orphansheading', 'tool_canvasuplifter'), 4);
-        $out .= html_writer::tag('p', get_string('orphansexplain', 'tool_canvasuplifter'));
+        $explain = get_string('orphansexplain', 'tool_canvasuplifter');
+        // Not every listed resource is imported when an empty Canvas quiz is among them.
+        if (in_array('none', array_column($orphans, 'placement'), true)) {
+            $explain .= ' ' . get_string('orphansexplainnone', 'tool_canvasuplifter');
+        }
+        $out .= html_writer::tag('p', $explain);
         $table = new html_table();
         $table->head = [
             get_string('coltitle', 'tool_canvasuplifter'),
@@ -293,7 +307,12 @@ class renderer extends plugin_renderer_base {
             get_string('colresourcetype', 'tool_canvasuplifter'),
             get_string('colplacement', 'tool_canvasuplifter'),
         ];
-        $placements = ['top' => 'placement_top', 'section0' => 'placement_section0', 'extras' => 'placement_extras'];
+        $placements = [
+            'top' => 'placement_top',
+            'section0' => 'placement_section0',
+            'extras' => 'placement_extras',
+            'none' => 'placement_none',
+        ];
         foreach ($orphans as $orphan) {
             $placement = $placements[$orphan['placement'] ?? 'extras'] ?? 'placement_extras';
             $table->data[] = [
