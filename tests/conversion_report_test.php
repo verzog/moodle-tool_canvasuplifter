@@ -525,6 +525,47 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * An unreferenced quiz whose Common Cartridge file is an empty shell but whose native dump
+     * draws from an item bank is not empty: the question-bank builder takes those draws from
+     * the dump and imports the bank, so the report must not flag it as not created.
+     *
+     * @return void
+     */
+    public function test_orphan_quiz_with_native_only_bank_draws_is_not_empty(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        mkdir($dir . '/non_cc_assessments');
+        file_put_contents(
+            $dir . '/a1/assessment_qti.xml',
+            '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Drawn quiz"><section ident="root"/></assessment></questestinterop>'
+        );
+        file_put_contents(
+            $dir . '/non_cc_assessments/a1.xml.qti',
+            '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Drawn quiz"><section ident="root">'
+            . '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>'
+        );
+
+        $course = new course_model();
+        $orphan = new item('a1', 'Drawn quiz');
+        $orphan->kind = item::KIND_QUIZ;
+        $orphan->files = ['a1/assessment_qti.xml'];
+        $course->orphans[] = $orphan;
+
+        $report = (new conversion_report($course, $dir))->build();
+        $this->assertFalse($report['rows'][0]['notbuilt']);
+        $this->assertSame(0, $report['notbuilttotal']);
+        $this->assertNotContains('warnreportemptyassessments', $report['warnings']);
+        $this->assertNotSame('none', $report['orphans'][0]['placement']);
+    }
+
+    /**
      * A native Canvas assessment supplied as a .xml.qti dump also builds, so its
      * eligibility for the nudge must be recognised — matching the builders, which
      * accept .xml.qti as well as .xml.

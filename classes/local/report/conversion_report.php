@@ -275,7 +275,7 @@ class conversion_report {
     /**
      * Whether an assessment or question bank is empty: the build would evaluate no questions
      * (after the native-dump fallback), no bare references to questions Canvas left out, and
-     * no item-bank draws of one or more questions. Mirrors the question-bank builder, which
+     * no item-bank draws (from either QTI file). Mirrors the question-bank builder, which
      * skips such an item as "assessment contains no questions". Needs package access; false
      * without it (no claim is made).
      *
@@ -290,16 +290,13 @@ class conversion_report {
         ) {
             return false;
         }
-        $parsed = $this->assessment_parse($modelitem, true, false);
+        // The quiz path adopts item-bank draws that Canvas stored only in the native dump, as
+        // the question-bank builder does for an unreferenced quiz.
+        $parsed = $this->assessment_parse($modelitem, true, true);
         if ($parsed['questions'] !== [] || (int) ($parsed['unresolved'] ?? 0) > 0) {
             return false;
         }
-        foreach (!empty($parsed['hasassessment']) ? ($parsed['selections'] ?? []) : [] as $selection) {
-            if (!isset($selection['count']) || (int) $selection['count'] > 0) {
-                return false;
-            }
-        }
-        return true;
+        return empty($parsed['hasassessment']) || empty($parsed['selections']);
     }
 
     /**

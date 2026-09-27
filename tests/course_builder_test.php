@@ -1960,6 +1960,42 @@ XML;
     }
 
     /**
+     * An unreferenced quiz that only draws from an item bank missing from the package is not
+     * an empty quiz, so it is not reported as one.
+     *
+     * @return void
+     */
+    public function test_orphan_quiz_drawing_from_missing_bank_is_not_reported_empty(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/g1');
+        file_put_contents(
+            $dir . '/g1/assessment_qti.xml',
+            '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="g1" title="Drawn quiz"><section ident="root">'
+            . '<section ident="grp"><selection_ordering><selection>'
+            . '<sourcebank_ref>nobank</sourcebank_ref><selection_number>2</selection_number>'
+            . '</selection></selection_ordering></section>'
+            . '</section></assessment></questestinterop>'
+        );
+        $coursemodel = new course_model();
+        $orphan = new \tool_canvasuplifter\local\model\item('g1', 'Drawn quiz');
+        $orphan->kind = \tool_canvasuplifter\local\model\item::KIND_QUIZ;
+        $orphan->files = ['g1/assessment_qti.xml'];
+        $coursemodel->orphans[] = $orphan;
+        $category = $this->getDataGenerator()->create_category();
+
+        $report = (new course_builder($category->id, $dir))->build($coursemodel);
+
+        $this->assertSame(1, $report['skipped']);
+        $this->assertNotContains(get_string('warnbuildemptyassessments', 'tool_canvasuplifter', 1), $report['warnings']);
+        $this->assertContains(get_string('warningskippedfornow', 'tool_canvasuplifter', 1), $report['warnings']);
+    }
+
+    /**
      * The syllabus lands in the top section with its real title; other orphans
      * go to "Additional resources".
      *
