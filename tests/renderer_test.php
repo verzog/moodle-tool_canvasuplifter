@@ -59,5 +59,7 @@ final class renderer_test extends \advanced_testcase {
         $this->assertStringContainsString(get_string('buildsnowsummarynotbuilt', 'tool_canvasuplifter', 1), $html);
         $this->assertStringContainsString(get_string('orphansexplainnone', 'tool_canvasuplifter'), $html);
         $this->assertStringContainsString(get_string('placement_none', 'tool_canvasuplifter'), $html);
+        // No syllabus is among the unreferenced resources, so the intro does not mention one.
+        $this->assertStringNotContainsStringIgnoringCase('syllabus', $html);
     }
 }

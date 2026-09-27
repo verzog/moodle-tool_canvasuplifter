@@ -151,8 +151,7 @@ $string['notestackltidetected'] = 'Detected {$a} external tool link(s) that appe
 $string['nowarnings'] = 'No warnings. The package looks straightforward to convert.';
 $string['openbuiltcourse'] = 'Open the built course';
 $string['orphansexplain'] = 'These resources are in the package but are not linked from any module. '
-    . 'Each is still imported — most into an "Additional resources" section, with the syllabus '
-    . 'surfaced at the top of the course — so nothing is lost.';
+    . 'Each is still imported, so nothing is lost; the "Placed in" column shows where each one goes in the course.';
 $string['orphansexplainnone'] = 'The exception is an empty Canvas quiz marked "Not created": it has no questions to import.';
 $string['orphansheading'] = 'Unreferenced resources';
 $string['outcomesheading'] = 'Learning outcomes';
