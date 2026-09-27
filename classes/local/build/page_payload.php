@@ -26,7 +26,7 @@ use tool_canvasuplifter\local\model\item;
  * in one place. Filesystem-only (no Moodle DB dependency).
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class page_payload {

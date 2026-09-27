@@ -20,7 +20,7 @@
  * Derived from local_chunkupload (2020 Justus Dieckmann WWU).
  *
  * @package    repository_largefile
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @copyright  2020 Justus Dieckmann WWU
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -33,7 +33,7 @@ use repository_largefile\chunk_store;
  * Cleanup task for stale chunked-upload tokens and files.
  *
  * @package    repository_largefile
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class cleanup_chunks extends \core\task\scheduled_task {

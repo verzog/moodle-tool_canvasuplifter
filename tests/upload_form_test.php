@@ -22,7 +22,7 @@ use tool_canvasuplifter\form\upload_form;
  * Tests for the package upload form's built-in chunked-upload field.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\form\upload_form
  */

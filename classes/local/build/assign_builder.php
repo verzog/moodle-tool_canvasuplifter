@@ -32,7 +32,7 @@ use tool_canvasuplifter\local\parser\assignment_settings;
  * Rubrics and advanced grading are intentionally not carried across.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class assign_builder {

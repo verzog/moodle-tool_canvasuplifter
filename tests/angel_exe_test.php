@@ -24,7 +24,7 @@ use tool_canvasuplifter\local\parser\source_detector;
  * artifacts and titling an empty-<title> page from its first heading.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\parser\source_detector
  * @covers     \tool_canvasuplifter\local\parser\manifest_parser

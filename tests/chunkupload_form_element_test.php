@@ -23,7 +23,7 @@ use tool_canvasuplifter\chunkupload\state_type;
  * Tests for the bundled chunked-upload form element's file API.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\chunkupload\form_element
  */

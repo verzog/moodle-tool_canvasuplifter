@@ -28,7 +28,7 @@ namespace tool_canvasuplifter\local\ingest;
  * (see {@see dspace_resolver}) instead of scraping the empty page shell.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class url_fetcher {

@@ -25,7 +25,7 @@ namespace tool_canvasuplifter\local\build;
  * the package root, so every builder routes file lookups through here.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class safe_path {

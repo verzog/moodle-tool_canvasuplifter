@@ -31,7 +31,7 @@ use tool_canvasuplifter\local\report\conversion_report;
  * page's "Build this course" form can reuse them without asking again.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class analyse_package_task extends package_job_task {

@@ -23,7 +23,7 @@
  * position with the server, so a large upload survives a dropped chunk.
  *
  * @module     repository_largefile/upload
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @copyright  2020 Justus Dieckmann WWU
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */

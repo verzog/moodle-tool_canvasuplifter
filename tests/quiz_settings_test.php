@@ -22,7 +22,7 @@ use tool_canvasuplifter\local\parser\quiz_settings;
  * Tests for the Canvas assessment_meta.xml (quiz settings) parser.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\parser\quiz_settings
  */

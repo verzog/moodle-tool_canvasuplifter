@@ -26,7 +26,7 @@
  *  - fetchurl: fetch a remote URL server-side into the token (URL import).
  *
  * @package    repository_largefile
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

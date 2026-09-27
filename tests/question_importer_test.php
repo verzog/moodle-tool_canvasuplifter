@@ -23,7 +23,7 @@ use tool_canvasuplifter\local\model\qti_question;
  * Tests for the question importer's skip-reason summary.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\build\question_importer::describe_unconvertible
  */

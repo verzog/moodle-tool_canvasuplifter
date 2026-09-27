@@ -23,7 +23,7 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * End-to-end test for the QTI question bank builder.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\build\questionbank_builder
  */

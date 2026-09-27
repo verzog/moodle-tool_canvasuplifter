@@ -24,7 +24,7 @@ use tool_canvasuplifter\task\analyse_package_task;
  * conversion report onto the job, and creates no course.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\task\analyse_package_task
  * @covers     \tool_canvasuplifter\task\package_job_task

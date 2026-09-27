@@ -32,7 +32,7 @@ use tool_canvasuplifter\local\parser\lti_classifier;
  * that credentials still need to be configured.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class lti_builder {

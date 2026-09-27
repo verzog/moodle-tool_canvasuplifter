@@ -28,7 +28,7 @@ use tool_canvasuplifter\local\model\item;
  * area as part of creating the activity.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class file_builder {

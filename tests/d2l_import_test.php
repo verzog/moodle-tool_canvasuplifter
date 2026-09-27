@@ -25,7 +25,7 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * empty "contentmodule" resources and whose syllabus/news are D2L metadata.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \tool_canvasuplifter\local\parser\manifest_parser
  * @covers     \tool_canvasuplifter\local\build\course_builder

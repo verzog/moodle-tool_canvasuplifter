@@ -28,7 +28,7 @@ use tool_canvasuplifter\local\parser\source_detector;
  * set, consecutive pages are combined into a single mod_book or mod_lesson.
  *
  * @package    tool_canvasuplifter
- * @copyright  2026 SCCA
+ * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class course_builder {
