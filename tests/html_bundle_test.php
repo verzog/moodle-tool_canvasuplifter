@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\parser\manifest_parser;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests folding a self-contained interactive HTML exercise (an HTML file plus a
@@ -27,9 +28,9 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\manifest_parser
- * @covers     \tool_canvasuplifter\local\build\file_builder
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\manifest_parser::class)]
+#[CoversClass(\tool_canvasuplifter\local\build\file_builder::class)]
 final class html_bundle_test extends \advanced_testcase {
     /**
      * Build a package shaped like a Canvas-exported interactive exercise:

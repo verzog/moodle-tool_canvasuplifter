@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\parser\assignment_settings;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the Canvas assignment settings parser.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\parser\assignment_settings;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\assignment_settings
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\assignment_settings::class)]
 final class assignment_settings_test extends \basic_testcase {
     /**
      * A typical Canvas assignment_settings.xml parses into the expected values.

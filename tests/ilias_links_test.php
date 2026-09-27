@@ -20,6 +20,7 @@ use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\build\page_payload;
 use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\parser\manifest_parser;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests importing an ILIAS-style export, where each learning module is a folded
@@ -29,12 +30,12 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\course_builder
- * @covers     \tool_canvasuplifter\local\build\page_builder
- * @covers     \tool_canvasuplifter\local\build\book_builder
- * @covers     \tool_canvasuplifter\local\build\page_payload
- * @covers     \tool_canvasuplifter\local\build\link_rewriter
  */
+#[CoversClass(\tool_canvasuplifter\local\build\course_builder::class)]
+#[CoversClass(\tool_canvasuplifter\local\build\page_builder::class)]
+#[CoversClass(\tool_canvasuplifter\local\build\book_builder::class)]
+#[CoversClass(\tool_canvasuplifter\local\build\page_payload::class)]
+#[CoversClass(\tool_canvasuplifter\local\build\link_rewriter::class)]
 final class ilias_links_test extends \advanced_testcase {
     /**
      * Build a package shaped like an ILIAS export: two learning-module folders,

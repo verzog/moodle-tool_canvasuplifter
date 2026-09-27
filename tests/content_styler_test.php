@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\content_styler;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests wrapping imported HTML in the styled container.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\build\content_styler;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\content_styler
  */
+#[CoversClass(\tool_canvasuplifter\local\build\content_styler::class)]
 final class content_styler_test extends \basic_testcase {
     /**
      * Content is wrapped in the scoped container div.

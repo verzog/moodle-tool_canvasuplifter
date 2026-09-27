@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\safe_path;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the package path-containment helper.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\build\safe_path;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\safe_path
  */
+#[CoversClass(\tool_canvasuplifter\local\build\safe_path::class)]
 final class safe_path_test extends \advanced_testcase {
     /**
      * A file inside the root resolves to its real absolute path.

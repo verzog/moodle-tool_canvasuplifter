@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\url_builder;
+use PHPUnit\Framework\Attributes\CoversMethod;
 
 /**
  * Tests for reading the target URL out of a Common Cartridge web-link file.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\build\url_builder;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\url_builder::url_from_weblink_xml
  */
+#[CoversMethod(\tool_canvasuplifter\local\build\url_builder::class, 'url_from_weblink_xml')]
 final class url_builder_test extends \basic_testcase {
     /**
      * A web link with no XML namespace yields its href.

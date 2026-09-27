@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\calendar_builder;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * End-to-end test for the calendar-events builder.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\build\calendar_builder;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\calendar_builder
  */
+#[CoversClass(\tool_canvasuplifter\local\build\calendar_builder::class)]
 final class calendar_builder_test extends \advanced_testcase {
     /**
      * Write a package holding a course_settings/events.xml with the given event bodies.

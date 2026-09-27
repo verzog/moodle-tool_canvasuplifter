@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\parser\qti_parser;
 use tool_canvasuplifter\local\model\qti_question;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests that a single-blank Canvas fill-in-the-blank question converts to a
@@ -27,8 +28,8 @@ use tool_canvasuplifter\local\model\qti_question;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\qti_parser
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\qti_parser::class)]
 final class qti_fillblank_test extends \advanced_testcase {
     /**
      * Wrap a QTI <item> body in an objectbank document.

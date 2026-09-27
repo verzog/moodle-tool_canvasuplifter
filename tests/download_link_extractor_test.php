@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\ingest\download_link_extractor;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests the HTML landing-page download-link extractor.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\ingest\download_link_extractor;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\ingest\download_link_extractor
  */
+#[CoversClass(\tool_canvasuplifter\local\ingest\download_link_extractor::class)]
 final class download_link_extractor_test extends \advanced_testcase {
     /**
      * A relative .imscc anchor resolves against the page URL.

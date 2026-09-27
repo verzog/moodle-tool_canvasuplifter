@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\link_rewriter;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the Canvas link rewriter.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\build\link_rewriter;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\link_rewriter
  */
+#[CoversClass(\tool_canvasuplifter\local\build\link_rewriter::class)]
 final class link_rewriter_test extends \advanced_testcase {
     /**
      * File placeholders resolve to package files and become @@PLUGINFILE@@.

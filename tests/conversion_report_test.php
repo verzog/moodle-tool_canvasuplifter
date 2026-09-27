@@ -21,6 +21,7 @@ use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\model\section_model;
 use tool_canvasuplifter\local\parser\source_detector;
 use tool_canvasuplifter\local\report\conversion_report;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the conversion report.
@@ -28,8 +29,8 @@ use tool_canvasuplifter\local\report\conversion_report;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\report\conversion_report
  */
+#[CoversClass(\tool_canvasuplifter\local\report\conversion_report::class)]
 final class conversion_report_test extends \advanced_testcase {
     /**
      * The analyse preview summarises the package's calendar events (a package can carry

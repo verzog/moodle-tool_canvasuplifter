@@ -19,6 +19,7 @@ namespace tool_canvasuplifter;
 use tool_canvasuplifter\local\model\course_model;
 use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\report\conversion_report;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the analysis renderer.
@@ -26,8 +27,8 @@ use tool_canvasuplifter\local\report\conversion_report;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\output\renderer
  */
+#[CoversClass(\tool_canvasuplifter\output\renderer::class)]
 final class renderer_test extends \advanced_testcase {
     /**
      * An empty unlinked Canvas quiz is counted in the summary line, and the unreferenced

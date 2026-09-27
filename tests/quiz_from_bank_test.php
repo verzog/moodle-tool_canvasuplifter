@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\parser\manifest_parser;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests the "also build a quiz from each standalone question bank" toggle.
@@ -25,8 +26,8 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\course_builder
  */
+#[CoversClass(\tool_canvasuplifter\local\build\course_builder::class)]
 final class quiz_from_bank_test extends \advanced_testcase {
     /**
      * Write a package whose single assessment is unreferenced (an orphan), so it

@@ -20,6 +20,7 @@ use tool_canvasuplifter\launcher;
 use tool_canvasuplifter\local\job_manager;
 use tool_canvasuplifter\task\analyse_package_task;
 use tool_canvasuplifter\task\build_course_task;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests the launcher facade: it creates the job row and queues the matching
@@ -29,8 +30,8 @@ use tool_canvasuplifter\task\build_course_task;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\launcher
  */
+#[CoversClass(\tool_canvasuplifter\launcher::class)]
 final class launcher_test extends \advanced_testcase {
     /**
      * Fetch the single queued adhoc task of a given class, failing if there is

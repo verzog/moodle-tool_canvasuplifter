@@ -17,6 +17,8 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\lti_builder;
+use PHPUnit\Framework\Attributes\CoversMethod;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Tests for reading the launch URL out of a Common Cartridge LTI link.
@@ -24,9 +26,9 @@ use tool_canvasuplifter\local\build\lti_builder;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\lti_builder::parse_cartridge_xml
- * @covers     \tool_canvasuplifter\local\build\lti_builder::is_blank_html
  */
+#[CoversMethod(\tool_canvasuplifter\local\build\lti_builder::class, 'parse_cartridge_xml')]
+#[CoversMethod(\tool_canvasuplifter\local\build\lti_builder::class, 'is_blank_html')]
 final class lti_builder_test extends \basic_testcase {
     /**
      * A plain cartridge yields its title, launch URL and custom parameters.
@@ -143,11 +145,11 @@ final class lti_builder_test extends \basic_testcase {
     /**
      * The twin-description fallback replaces only instructions that show nothing.
      *
-     * @dataProvider blank_html_provider
      * @param string $html The instructions HTML.
      * @param bool $blank Whether it should count as blank.
      * @return void
      */
+    #[DataProvider('blank_html_provider')]
     public function test_is_blank_html(string $html, bool $blank): void {
         $method = new \ReflectionMethod(lti_builder::class, 'is_blank_html');
         $this->assertSame($blank, $method->invoke(null, $html));

@@ -19,6 +19,7 @@ namespace tool_canvasuplifter;
 use tool_canvasuplifter\local\build\media_report;
 use tool_canvasuplifter\local\build\question_importer;
 use tool_canvasuplifter\local\model\qti_question;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests that the question importer claims question media only for questions Moodle stored.
@@ -26,8 +27,8 @@ use tool_canvasuplifter\local\model\qti_question;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\question_importer
  */
+#[CoversClass(\tool_canvasuplifter\local\build\question_importer::class)]
 final class question_importer_media_test extends \advanced_testcase {
     /**
      * A two-option multiple choice question whose stem embeds the given package image.

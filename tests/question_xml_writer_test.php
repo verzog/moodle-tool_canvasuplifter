@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\question_xml_writer;
 use tool_canvasuplifter\local\model\qti_question;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the Moodle question XML writer.
@@ -25,8 +26,8 @@ use tool_canvasuplifter\local\model\qti_question;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\question_xml_writer
  */
+#[CoversClass(\tool_canvasuplifter\local\build\question_xml_writer::class)]
 final class question_xml_writer_test extends \advanced_testcase {
     /**
      * Make a multiple-choice question model.

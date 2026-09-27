@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\parser\manifest_parser;
 use tool_canvasuplifter\local\parser\source_detector;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests source detection and the ANGEL/eXe cleanup: dropping _UNREFERENCED_
@@ -26,9 +27,9 @@ use tool_canvasuplifter\local\parser\source_detector;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\source_detector
- * @covers     \tool_canvasuplifter\local\parser\manifest_parser
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\source_detector::class)]
+#[CoversClass(\tool_canvasuplifter\local\parser\manifest_parser::class)]
 final class angel_exe_test extends \advanced_testcase {
     /**
      * Parse a manifest string into a DOMDocument.

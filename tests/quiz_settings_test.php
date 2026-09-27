@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\parser\quiz_settings;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the Canvas assessment_meta.xml (quiz settings) parser.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\parser\quiz_settings;
  * @package    tool_canvasuplifter
  * @copyright  2026 Vernon Spain
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\quiz_settings
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\quiz_settings::class)]
 final class quiz_settings_test extends \basic_testcase {
     /**
      * A typical Canvas assessment_meta.xml parses into the expected values,
