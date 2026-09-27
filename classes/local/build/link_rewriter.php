@@ -113,18 +113,17 @@ class link_rewriter {
         $files = [];
         $seen = [];
         $unresolved = [];
-        $pattern = '#' . self::FILEBASE_TOKEN . '([^"\'\s>)]*)#i';
-        $callback = function ($matches) use ($packageroot, $ownerdir, &$files, &$seen, &$unresolved) {
-            $rawpath = preg_replace('/[?#].*$/', '', $matches[1]);
-            $decodedraw = rawurldecode((string) $rawpath);
-            // A leading slash marks a package-root reference ($IMS-CC-FILEBASE$/path),
-            // which addresses the same file regardless of who references it; a token with
-            // no leading slash (a bare "name" or a "../" climb) resolves relative to the
-            // owning resource's folder.
-            $rooted = str_starts_with($decodedraw, '/');
-            $decoded = ltrim($decodedraw, '/');
+        // Parentheses are allowed in the path (Canvas names a re-uploaded file "name (2).pdf"):
+        // balanced pairs, or a lone opening one (a quoted "foo(bar.png"), so an unbalanced
+        // closing one ends it, as in a CSS url($IMS-CC-FILEBASE$/a.png). The capture never runs
+        // into the next token, and its possessive quantifiers keep each match linear, so long
+        // url() lists scan once.
+        $char = '(?:(?!' . self::FILEBASE_TOKEN . ')[^"\'\s>()])';
+        $pattern = '#' . self::FILEBASE_TOKEN . '((?:' . $char . '|\(' . $char . '*+\)|\()*+)#i';
+        $resolve = function (string $original, string $reference) use ($packageroot, $ownerdir, &$files, &$seen, &$unresolved) {
+            [$decoded, $rooted] = self::decode_reference($reference);
             if ($decoded === '') {
-                return $matches[0];
+                return $original;
             }
             $hit = self::locate_filebase($packageroot, $decoded, $ownerdir);
             if ($hit === null) {
@@ -132,7 +131,7 @@ class link_rewriter {
                 // unresolved reference so the build report can surface it, keyed by the
                 // canonical missing path.
                 $unresolved[self::unresolved_key($decoded, $ownerdir, $rooted)] = true;
-                return $matches[0];
+                return $original;
             }
             [$absolute, $matched] = $hit;
             // Choose the filearea storage path. A web_resources/ hit stores under the
@@ -151,9 +150,106 @@ class link_rewriter {
             }
             return $this->pluginfile_url($filepath, $filename);
         };
-        $rewritten = preg_replace_callback($pattern, $callback, $html);
+        // Scan forward from the end of each reference rather than the end of the match: the
+        // rest of the match can hold another reference with no separator between them, as in
+        // url($IMS-CC-FILEBASE$/a.png),url($IMS-CC-FILEBASE$/b.png).
+        $rewritten = '';
+        $offset = 0;
+        while (preg_match($pattern, $html, $match, PREG_OFFSET_CAPTURE, $offset)) {
+            $start = $match[0][1];
+            $tokenlength = strlen($match[0][0]) - strlen($match[1][0]);
+            $reference = self::choose_reference($match[1][0], $packageroot, $ownerdir);
+            $rewritten .= substr($html, $offset, $start - $offset);
+            $rewritten .= $resolve(substr($html, $start, $tokenlength + strlen($reference)), $reference);
+            $offset = $start + $tokenlength + strlen($reference);
+        }
+        $rewritten .= substr($html, $offset);
 
-        return ['html' => $rewritten ?? $html, 'files' => $files, 'unresolved' => array_keys($unresolved)];
+        return ['html' => $rewritten, 'files' => $files, 'unresolved' => array_keys($unresolved)];
+    }
+
+    /**
+     * Decode a captured reference into its package path, dropping any query string or fragment.
+     * A leading slash marks a package-root reference ($IMS-CC-FILEBASE$/path), which addresses
+     * the same file regardless of who references it; a token with no leading slash (a bare
+     * "name" or a "../" climb) resolves relative to the owning resource's folder.
+     *
+     * @param string $reference The captured reference.
+     * @return array [decoded path without its leading slash, whether it was rooted]
+     */
+    private static function decode_reference(string $reference): array {
+        $decodedraw = rawurldecode((string) preg_replace('/[?#].*$/', '', $reference));
+        return [ltrim($decodedraw, '/'), str_starts_with($decodedraw, '/')];
+    }
+
+    /**
+     * Pick how much of a captured reference is the file path. Normally the whole balanced
+     * capture, up to any ")" in its query string (so "a%20(2).pdf" stays whole). When that is
+     * not a package file, a cut at the first closing parenthesis wins if it is one, as for the
+     * CSS url($IMS-CC-FILEBASE$/foo(bar.png) of a file named "foo(bar.png". When neither is,
+     * the cut is kept if no file extension follows it, so the unresolved report names
+     * "missing(foo.png" rather than "missing(foo.png),url". At most two lookups.
+     *
+     * @param string $captured The text captured after the token.
+     * @param string $packageroot Absolute path to the extracted package root.
+     * @param string $ownerdir Package-relative folder of the owning resource.
+     * @return string The reference: a prefix of $captured.
+     */
+    private static function choose_reference(string $captured, string $packageroot, string $ownerdir): string {
+        $balanced = self::split_unbalanced_paren($captured)[0];
+        if (self::reference_exists($balanced, $packageroot, $ownerdir)) {
+            return $balanced;
+        }
+        $first = strpos($balanced, ')');
+        if ($first === false) {
+            return $balanced;
+        }
+        $cut = substr($balanced, 0, $first);
+        if (self::reference_exists($cut, $packageroot, $ownerdir)) {
+            return $cut;
+        }
+        return strpos(substr($balanced, $first), '.') === false ? $cut : $balanced;
+    }
+
+    /**
+     * Whether a reference names a file in the package.
+     *
+     * @param string $reference The reference.
+     * @param string $packageroot Absolute path to the extracted package root.
+     * @param string $ownerdir Package-relative folder of the owning resource.
+     * @return bool
+     */
+    private static function reference_exists(string $reference, string $packageroot, string $ownerdir): bool {
+        $decoded = self::decode_reference($reference)[0];
+        return $decoded !== '' && self::locate_filebase($packageroot, $decoded, $ownerdir) !== null;
+    }
+
+    /**
+     * Split a captured reference at its first closing parenthesis that has no matching opening
+     * one: "a%20(2).pdf" stays whole, while the "a.png)" of a CSS url($IMS-CC-FILEBASE$/a.png)
+     * splits into "a.png" and ")". In a query string or fragment any closing parenthesis ends
+     * it (Canvas's own query strings carry none), so "foo(bar.png?x=1)" splits before ")".
+     *
+     * @param string $reference The captured reference.
+     * @return array [reference, tail]
+     */
+    private static function split_unbalanced_paren(string $reference): array {
+        $depth = 0;
+        $inquery = false;
+        $length = strlen($reference);
+        for ($i = 0; $i < $length; $i++) {
+            if ($reference[$i] === '?' || $reference[$i] === '#') {
+                $inquery = true;
+            } else if ($reference[$i] === '(') {
+                $depth++;
+            } else if ($reference[$i] === ')') {
+                if ($depth === 0 || $inquery) {
+                    return [substr($reference, 0, $i), substr($reference, $i)];
+                }
+                $depth--;
+            }
+        }
+        return [$reference, ''];
     }
 
     /**

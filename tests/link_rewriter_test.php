@@ -55,6 +55,166 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * Canvas names a re-uploaded file "name (2).pdf"; the parentheses belong to the path, so
+     * the link resolves (query string dropped), while an unquoted CSS url($IMS-CC-FILEBASE$/...)
+     * still ends at its closing parenthesis.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_keeps_parentheses_in_names(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources/Uploaded Media', 0777, true);
+        file_put_contents($root . '/web_resources/Society.3 (2).pdf', 'PDF');
+        file_put_contents($root . '/web_resources/Uploaded Media/Lab 1 (1).pptx', 'PPTX');
+        file_put_contents($root . '/web_resources/bg.png', 'PNG');
+
+        $html = '<a href="$IMS-CC-FILEBASE$/Society.3%20(2).pdf?canvas_=1&amp;canvas_qs_wrap=1">PDF</a>'
+            . '<a href="$IMS-CC-FILEBASE$/Uploaded%20Media/Lab%201%20(1).pptx">PPTX</a>'
+            . '<div style="background:url($IMS-CC-FILEBASE$/bg.png) no-repeat">x</div>';
+
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertSame([], $result['unresolved']);
+        $names = array_column($result['files'], 'filename');
+        sort($names);
+        $this->assertSame(['Lab 1 (1).pptx', 'Society.3 (2).pdf', 'bg.png'], $names);
+        $this->assertStringContainsString('url(@@PLUGINFILE@@/bg.png) no-repeat', $result['html']);
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $result['html']);
+    }
+
+    /**
+     * CSS url() references written back to back with no separator are each rewritten: the
+     * text after the first one's closing parenthesis is scanned for the next.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_handles_adjacent_css_urls(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/a.png', 'PNG');
+        file_put_contents($root . '/web_resources/b (2).png', 'PNG');
+
+        $html = '<div style="background-image:url($IMS-CC-FILEBASE$/a.png),url($IMS-CC-FILEBASE$/b%20(2).png)">x</div>';
+
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertSame([], $result['unresolved']);
+        $this->assertSame(['a.png', 'b (2).png'], array_column($result['files'], 'filename'));
+        $this->assertStringContainsString(
+            'url(@@PLUGINFILE@@/a.png),url(@@PLUGINFILE@@/b%20%282%29.png)',
+            $result['html']
+        );
+    }
+
+    /**
+     * A file whose name has an unmatched opening parenthesis still resolves inside an unquoted
+     * CSS url(), where the closing parenthesis belongs to the url() rather than the name.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_resolves_unmatched_open_paren_in_css_url(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/foo(bar.png', 'PNG');
+        file_put_contents($root . '/web_resources/b.png', 'PNG');
+
+        $html = '<div style="background:url($IMS-CC-FILEBASE$/foo(bar.png),url($IMS-CC-FILEBASE$/b.png)">x</div>';
+
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertSame([], $result['unresolved']);
+        $this->assertSame(['foo(bar.png', 'b.png'], array_column($result['files'], 'filename'));
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $result['html']);
+    }
+
+    /**
+     * A query string ends at a closing parenthesis, so an unmatched "(" name with a query does
+     * not swallow the CSS that follows; a reference to a missing file followed by a long run
+     * of closing parentheses is looked up a bounded number of times, not once per ")".
+     *
+     * @return void
+     */
+    public function test_rewrite_files_bounds_query_and_paren_runs(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/foo(bar.png', 'PNG');
+        file_put_contents($root . '/web_resources/b.png', 'PNG');
+
+        $html = '<div style="background:url($IMS-CC-FILEBASE$/foo(bar.png?x=1),url($IMS-CC-FILEBASE$/b.png)">x</div>';
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+        $this->assertSame([], $result['unresolved']);
+        $this->assertSame(['foo(bar.png', 'b.png'], array_column($result['files'], 'filename'));
+        $this->assertStringContainsString('),url(@@PLUGINFILE@@/b.png)', $result['html']);
+
+        $html = '<p title=$IMS-CC-FILEBASE$/missing(' . str_repeat(')', 100000) . '>x</p>';
+        $started = microtime(true);
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+        $this->assertLessThan(2.0, microtime(true) - $started);
+        $this->assertSame($html, $result['html']);
+        $this->assertCount(1, $result['unresolved']);
+    }
+
+    /**
+     * A missing file with an unmatched "(" in an unquoted CSS url() does not swallow the url()
+     * after it: the next file is still imported, and the unresolved report names only the
+     * missing file.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_missing_paren_name_keeps_next_url(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/b.png', 'PNG');
+
+        $html = '<div style="background:url($IMS-CC-FILEBASE$/missing(foo.png),url($IMS-CC-FILEBASE$/b.png)">x</div>';
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertSame(['b.png'], array_column($result['files'], 'filename'));
+        $this->assertStringContainsString('url($IMS-CC-FILEBASE$/missing(foo.png),url(@@PLUGINFILE@@/b.png)', $result['html']);
+        $this->assertCount(1, $result['unresolved']);
+        $this->assertStringEndsWith('missing(foo.png', $result['unresolved'][0]);
+    }
+
+    /**
+     * A quoted reference to a file whose name has an unmatched "(" resolves the whole name.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_quoted_unmatched_open_paren(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/foo(bar.png', 'PNG');
+        file_put_contents($root . '/web_resources/foo', 'decoy');
+
+        $result = (new link_rewriter())->rewrite_files('<img src="$IMS-CC-FILEBASE$/foo(bar.png">', $root);
+
+        $this->assertSame([], $result['unresolved']);
+        $this->assertSame(['foo(bar.png'], array_column($result['files'], 'filename'));
+    }
+
+    /**
+     * A long run of back-to-back CSS url() references is handled in one pass, without
+     * recursion, so it cannot exhaust memory or the call stack.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_handles_long_adjacent_url_list(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/a.png', 'PNG');
+
+        $count = 20000;
+        $started = microtime(true);
+        $html = '<div style="background:' . implode(',', array_fill(0, $count, 'url($IMS-CC-FILEBASE$/a.png)')) . '">x</div>';
+
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertLessThan(2.0, microtime(true) - $started);
+        $this->assertSame($count, substr_count($result['html'], 'url(@@PLUGINFILE@@/a.png)'));
+        $this->assertCount(1, $result['files']);
+    }
+
+    /**
      * An owner-relative $IMS-CC-FILEBASE$ reference - a bare name beside the owning
      * resource, or a ../ climb into a sibling resource folder - resolves against the
      * owner directory and stores under a clean (no "/../") filearea path, even when
