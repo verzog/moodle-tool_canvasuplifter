@@ -83,6 +83,30 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * CSS url() references written back to back with no separator are each rewritten: the
+     * text after the first one's closing parenthesis is scanned for the next.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_handles_adjacent_css_urls(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/a.png', 'PNG');
+        file_put_contents($root . '/web_resources/b (2).png', 'PNG');
+
+        $html = '<div style="background-image:url($IMS-CC-FILEBASE$/a.png),url($IMS-CC-FILEBASE$/b%20(2).png)">x</div>';
+
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertSame([], $result['unresolved']);
+        $this->assertSame(['a.png', 'b (2).png'], array_column($result['files'], 'filename'));
+        $this->assertStringContainsString(
+            'url(@@PLUGINFILE@@/a.png),url(@@PLUGINFILE@@/b%20%282%29.png)',
+            $result['html']
+        );
+    }
+
+    /**
      * An owner-relative $IMS-CC-FILEBASE$ reference - a bare name beside the owning
      * resource, or a ../ climb into a sibling resource folder - resolves against the
      * owner directory and stores under a clean (no "/../") filearea path, even when

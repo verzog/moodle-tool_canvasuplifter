@@ -155,11 +155,16 @@ class link_rewriter {
             }
             return $this->pluginfile_url($filepath, $filename);
         };
-        $rewritten = preg_replace_callback($pattern, function ($matches) use ($callback) {
-            return $callback($matches) . self::split_unbalanced_paren($matches[1])[1];
-        }, $html);
+        // The text after a reference's closing parenthesis can hold another reference with no
+        // separator between them, as in url($IMS-CC-FILEBASE$/a.png),url($IMS-CC-FILEBASE$/b.png),
+        // so it is scanned again rather than copied through.
+        $rewrite = function (string $text) use (&$rewrite, $pattern, $callback): string {
+            return preg_replace_callback($pattern, function ($matches) use (&$rewrite, $callback) {
+                return $callback($matches) . $rewrite(self::split_unbalanced_paren($matches[1])[1]);
+            }, $text) ?? $text;
+        };
 
-        return ['html' => $rewritten ?? $html, 'files' => $files, 'unresolved' => array_keys($unresolved)];
+        return ['html' => $rewrite($html), 'files' => $files, 'unresolved' => array_keys($unresolved)];
     }
 
     /**
