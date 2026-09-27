@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\ilias_cleaner;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests stripping ILIAS viewer chrome from exported pages.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\build\ilias_cleaner;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\ilias_cleaner
  */
+#[CoversClass(\tool_canvasuplifter\local\build\ilias_cleaner::class)]
 final class ilias_cleaner_test extends \basic_testcase {
     /**
      * A folder/landing page: the "Activities" navigation column, its sibling

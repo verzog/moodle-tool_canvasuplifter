@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\parser\outcomes_parser;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the learning-outcomes parser.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\parser\outcomes_parser;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\outcomes_parser
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\outcomes_parser::class)]
 final class outcomes_parser_test extends \basic_testcase {
     /**
      * A Canvas learning_outcomes.xml (outcome nested in a group, with a mastery

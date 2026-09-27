@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\model\qti_question;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Unit tests for the qti_question model.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\model\qti_question;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\model\qti_question
  */
+#[CoversClass(\tool_canvasuplifter\local\model\qti_question::class)]
 final class qti_question_test extends \basic_testcase {
     /**
      * Build a question with the given type and answer texts.

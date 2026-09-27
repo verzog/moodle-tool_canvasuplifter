@@ -20,6 +20,8 @@ use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\parser\manifest_parser;
 use tool_canvasuplifter\local\parser\source_detector;
 use tool_canvasuplifter\local\model\course_model;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Tests for the course builder.
@@ -27,8 +29,8 @@ use tool_canvasuplifter\local\model\course_model;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\course_builder
  */
+#[CoversClass(\tool_canvasuplifter\local\build\course_builder::class)]
 final class course_builder_test extends \advanced_testcase {
     /**
      * Write a minimal one-page Canvas package to a temporary directory.
@@ -2192,8 +2194,8 @@ XML;
      * @param string $source The detected source constant.
      * @param string $expected The expected course full name.
      * @return void
-     * @dataProvider default_course_name_provider
      */
+    #[DataProvider('default_course_name_provider')]
     public function test_titleless_course_named_after_source(string $source, string $expected): void {
         global $DB;
         $this->resetAfterTest(true);

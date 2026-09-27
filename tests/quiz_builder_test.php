@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\parser\manifest_parser;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * End-to-end test for the QTI quiz builder.
@@ -25,8 +26,8 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\quiz_builder
  */
+#[CoversClass(\tool_canvasuplifter\local\build\quiz_builder::class)]
 final class quiz_builder_test extends \advanced_testcase {
     /**
      * Write a package whose QTI assessment is referenced from the course tree.

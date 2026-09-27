@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\ingest\package;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests unpacking and locating the manifest, including deeply nested and
@@ -25,8 +26,8 @@ use tool_canvasuplifter\local\ingest\package;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\ingest\package
  */
+#[CoversClass(\tool_canvasuplifter\local\ingest\package::class)]
 final class package_test extends \advanced_testcase {
     /**
      * Write a zip with the given path => contents entries.

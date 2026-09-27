@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\parser\manifest_parser;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * End-to-end test that a Canvas external-tool assignment is built as a hidden
@@ -26,8 +27,8 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\lti_builder
  */
+#[CoversClass(\tool_canvasuplifter\local\build\lti_builder::class)]
 final class lti_launch_build_test extends \advanced_testcase {
     /**
      * Write a package with a single external-tool assignment: an

@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\form\upload_form;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the package upload form's built-in chunked-upload field.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\form\upload_form;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\form\upload_form
  */
+#[CoversClass(\tool_canvasuplifter\form\upload_form::class)]
 final class upload_form_test extends \advanced_testcase {
     /**
      * The chunked uploader is bundled, so it is always available and the form

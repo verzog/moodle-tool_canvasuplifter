@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\parser\events_parser;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the calendar-events parser.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\parser\events_parser;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\events_parser
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\events_parser::class)]
 final class events_parser_test extends \basic_testcase {
     /**
      * Wrap event bodies in a Canvas events.xml document.

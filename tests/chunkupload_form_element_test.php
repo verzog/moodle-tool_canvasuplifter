@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\chunkupload\form_element;
 use tool_canvasuplifter\chunkupload\state_type;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the bundled chunked-upload form element's file API.
@@ -25,8 +26,8 @@ use tool_canvasuplifter\chunkupload\state_type;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\chunkupload\form_element
  */
+#[CoversClass(\tool_canvasuplifter\chunkupload\form_element::class)]
 final class chunkupload_form_element_test extends \advanced_testcase {
     /**
      * Insert a chunk-tracking row with an on-disk file when a state requires it.

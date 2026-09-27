@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\job_manager;
 use tool_canvasuplifter\task\analyse_package_task;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests the asynchronous analyse task: it extracts a stored package, builds the
@@ -26,9 +27,9 @@ use tool_canvasuplifter\task\analyse_package_task;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\task\analyse_package_task
- * @covers     \tool_canvasuplifter\task\package_job_task
  */
+#[CoversClass(\tool_canvasuplifter\task\analyse_package_task::class)]
+#[CoversClass(\tool_canvasuplifter\task\package_job_task::class)]
 final class analyse_package_task_test extends \advanced_testcase {
     /**
      * Zip a minimal one-page Canvas package and store it in the plugin's file

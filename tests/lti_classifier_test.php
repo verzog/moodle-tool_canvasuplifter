@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\parser\lti_classifier;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests the Moodle/STACK LTI link classifier.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\parser\lti_classifier;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\lti_classifier
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\lti_classifier::class)]
 final class lti_classifier_test extends \basic_testcase {
     /**
      * A launch URL pointing at a Moodle enrol_lti or mod/lti endpoint is recognised as

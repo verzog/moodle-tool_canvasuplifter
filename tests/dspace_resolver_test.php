@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\ingest\dspace_resolver;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests resolving a Common Cartridge download from a DSpace 7 repository page.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\ingest\dspace_resolver;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\ingest\dspace_resolver
  */
+#[CoversClass(\tool_canvasuplifter\local\ingest\dspace_resolver::class)]
 final class dspace_resolver_test extends \basic_testcase {
     /** @var string REST API base for the SkillsCommons backend used in fixtures. */
     private const REST = 'https://library.skillscommons.org/server/api';

@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\media_report;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the unresolved-media collector.
@@ -24,8 +25,8 @@ use tool_canvasuplifter\local\build\media_report;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\media_report
  */
+#[CoversClass(\tool_canvasuplifter\local\build\media_report::class)]
 final class media_report_test extends \basic_testcase {
     /**
      * A fresh report is empty.

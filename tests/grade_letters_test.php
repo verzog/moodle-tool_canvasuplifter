@@ -19,6 +19,7 @@ namespace tool_canvasuplifter;
 use tool_canvasuplifter\local\parser\manifest_parser;
 use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\model\course_model;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests importing a Canvas grading standard (grading_standards.xml) as Moodle
@@ -27,9 +28,9 @@ use tool_canvasuplifter\local\model\course_model;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\manifest_parser
- * @covers     \tool_canvasuplifter\local\build\course_builder
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\manifest_parser::class)]
+#[CoversClass(\tool_canvasuplifter\local\build\course_builder::class)]
 final class grade_letters_test extends \advanced_testcase {
     /**
      * Write a minimal Canvas package with the given course_settings and

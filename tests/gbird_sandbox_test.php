@@ -20,6 +20,7 @@ use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\parser\manifest_parser;
 use tool_canvasuplifter\local\parser\outcomes_parser;
 use tool_canvasuplifter\local\report\conversion_report;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Regression fixture: a broad Canvas "kitchen sink" export (GBIRD-Sandbox).
@@ -52,9 +53,9 @@ use tool_canvasuplifter\local\report\conversion_report;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\manifest_parser
- * @covers     \tool_canvasuplifter\local\report\conversion_report
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\manifest_parser::class)]
+#[CoversClass(\tool_canvasuplifter\local\report\conversion_report::class)]
 final class gbird_sandbox_test extends \advanced_testcase {
     /**
      * Parse the fixture once and return the built conversion report array.

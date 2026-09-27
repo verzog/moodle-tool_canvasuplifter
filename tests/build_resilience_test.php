@@ -20,6 +20,7 @@ use tool_canvasuplifter\local\build\lti_builder;
 use tool_canvasuplifter\local\job_manager;
 use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\task\build_course_task;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests that a failing external tool and a retried job do not corrupt the build:
@@ -29,9 +30,9 @@ use tool_canvasuplifter\task\build_course_task;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\lti_builder
- * @covers     \tool_canvasuplifter\task\build_course_task
  */
+#[CoversClass(\tool_canvasuplifter\local\build\lti_builder::class)]
+#[CoversClass(\tool_canvasuplifter\task\build_course_task::class)]
 final class build_resilience_test extends \advanced_testcase {
     /**
      * An LTI cartridge whose launch URL mod_lti tries (and fails) to re-fetch as

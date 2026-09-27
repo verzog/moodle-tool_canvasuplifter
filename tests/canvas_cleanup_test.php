@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\parser\manifest_parser;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests dropping Canvas platform boilerplate: help-guide web-links to Canvas's
@@ -25,8 +26,8 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\manifest_parser
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\manifest_parser::class)]
 final class canvas_cleanup_test extends \advanced_testcase {
     /**
      * Titles of every built (non-suppressed) item in a parsed course.

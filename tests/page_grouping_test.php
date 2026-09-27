@@ -21,6 +21,7 @@ use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\build\lesson_builder;
 use tool_canvasuplifter\local\model\item;
 use tool_canvasuplifter\local\parser\manifest_parser;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests the "combine consecutive pages into a book/lesson" build option.
@@ -28,10 +29,10 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\book_builder
- * @covers     \tool_canvasuplifter\local\build\lesson_builder
- * @covers     \tool_canvasuplifter\local\build\course_builder
  */
+#[CoversClass(\tool_canvasuplifter\local\build\book_builder::class)]
+#[CoversClass(\tool_canvasuplifter\local\build\lesson_builder::class)]
+#[CoversClass(\tool_canvasuplifter\local\build\course_builder::class)]
 final class page_grouping_test extends \advanced_testcase {
     /**
      * Build a package with one module of three consecutive pages (the first

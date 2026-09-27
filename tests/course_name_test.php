@@ -18,6 +18,8 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\build\course_builder;
 use tool_canvasuplifter\local\parser\manifest_parser;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\CoversMethod;
 
 /**
  * Tests for deriving a course name when the package has no embedded title.
@@ -25,9 +27,9 @@ use tool_canvasuplifter\local\parser\manifest_parser;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\build\course_builder::name_from_filename
- * @covers     \tool_canvasuplifter\local\parser\manifest_parser
  */
+#[CoversMethod(\tool_canvasuplifter\local\build\course_builder::class, 'name_from_filename')]
+#[CoversClass(\tool_canvasuplifter\local\parser\manifest_parser::class)]
 final class course_name_test extends \advanced_testcase {
     /**
      * Write a manifest into a fresh package dir and return that dir.

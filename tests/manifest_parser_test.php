@@ -19,6 +19,7 @@ namespace tool_canvasuplifter;
 use tool_canvasuplifter\local\parser\manifest_parser;
 use tool_canvasuplifter\local\parser\source_detector;
 use tool_canvasuplifter\local\model\item;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the manifest parser.
@@ -26,8 +27,8 @@ use tool_canvasuplifter\local\model\item;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\manifest_parser
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\manifest_parser::class)]
 final class manifest_parser_test extends \advanced_testcase {
     /**
      * Write a minimal Canvas-style package to a temporary directory.

@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\parser\qti_parser;
 use tool_canvasuplifter\local\model\qti_question;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests for the QTI parser.
@@ -25,8 +26,8 @@ use tool_canvasuplifter\local\model\qti_question;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\parser\qti_parser
  */
+#[CoversClass(\tool_canvasuplifter\local\parser\qti_parser::class)]
 final class qti_parser_test extends \basic_testcase {
     /**
      * Wrap item XML in a minimal QTI assessment document.

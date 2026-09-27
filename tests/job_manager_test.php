@@ -17,6 +17,7 @@
 namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\local\job_manager;
+use PHPUnit\Framework\Attributes\CoversMethod;
 
 /**
  * Tests the job listing helper used by import-history views (e.g. tool_automate's
@@ -25,8 +26,8 @@ use tool_canvasuplifter\local\job_manager;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\local\job_manager::list_jobs
  */
+#[CoversMethod(\tool_canvasuplifter\local\job_manager::class, 'list_jobs')]
 final class job_manager_test extends \advanced_testcase {
     /**
      * list_jobs filters by user, kind and status, and returns newest first.

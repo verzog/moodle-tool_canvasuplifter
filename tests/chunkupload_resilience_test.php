@@ -18,6 +18,7 @@ namespace tool_canvasuplifter;
 
 use tool_canvasuplifter\chunkupload\form_element;
 use tool_canvasuplifter\chunkupload\state_type;
+use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Tests the chunked uploader's resume/reconcile behaviour: get_progress
@@ -27,8 +28,8 @@ use tool_canvasuplifter\chunkupload\state_type;
  * @package    tool_canvasuplifter
  * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \tool_canvasuplifter\chunkupload\form_element
  */
+#[CoversClass(\tool_canvasuplifter\chunkupload\form_element::class)]
 final class chunkupload_resilience_test extends \advanced_testcase {
     /**
      * Insert a partial upload row and write its on-disk bytes.
