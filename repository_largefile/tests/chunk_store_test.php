@@ -20,7 +20,7 @@ namespace repository_largefile;
  * Tests for the chunked-upload store.
  *
  * @package    repository_largefile
- * @copyright  2026 Vernon Spain
+ * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \repository_largefile\chunk_store
  */

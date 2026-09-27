@@ -20,7 +20,7 @@ namespace repository_largefile\local;
  * Tests for the URL fetcher's input validation.
  *
  * @package    repository_largefile
- * @copyright  2026 Vernon Spain
+ * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \repository_largefile\local\url_fetcher
  */

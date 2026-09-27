@@ -28,7 +28,7 @@
  * or endless body cannot fill the disk.
  *
  * @package    repository_largefile
- * @copyright  2026 Vernon Spain
+ * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -38,7 +38,7 @@ namespace repository_largefile\local;
  * Streams a remote file to a temporary path for the Large file repository.
  *
  * @package    repository_largefile
- * @copyright  2026 Vernon Spain
+ * @copyright  2026 SCCA
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class url_fetcher {
