@@ -155,6 +155,27 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * A missing file with an unmatched "(" in an unquoted CSS url() does not swallow the url()
+     * after it: the next file is still imported, and the unresolved report names only the
+     * missing file.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_missing_paren_name_keeps_next_url(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/b.png', 'PNG');
+
+        $html = '<div style="background:url($IMS-CC-FILEBASE$/missing(foo.png),url($IMS-CC-FILEBASE$/b.png)">x</div>';
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertSame(['b.png'], array_column($result['files'], 'filename'));
+        $this->assertStringContainsString('url($IMS-CC-FILEBASE$/missing(foo.png),url(@@PLUGINFILE@@/b.png)', $result['html']);
+        $this->assertCount(1, $result['unresolved']);
+        $this->assertStringEndsWith('missing(foo.png', $result['unresolved'][0]);
+    }
+
+    /**
      * A long run of back-to-back CSS url() references is handled in one pass, without
      * recursion, so it cannot exhaust memory or the call stack.
      *
@@ -165,11 +186,13 @@ final class link_rewriter_test extends \advanced_testcase {
         mkdir($root . '/web_resources');
         file_put_contents($root . '/web_resources/a.png', 'PNG');
 
-        $count = 5000;
+        $count = 20000;
+        $started = microtime(true);
         $html = '<div style="background:' . implode(',', array_fill(0, $count, 'url($IMS-CC-FILEBASE$/a.png)')) . '">x</div>';
 
         $result = (new link_rewriter())->rewrite_files($html, $root);
 
+        $this->assertLessThan(2.0, microtime(true) - $started);
         $this->assertSame($count, substr_count($result['html'], 'url(@@PLUGINFILE@@/a.png)'));
         $this->assertCount(1, $result['files']);
     }

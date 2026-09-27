@@ -113,9 +113,12 @@ class link_rewriter {
         $files = [];
         $seen = [];
         $unresolved = [];
-        // Parentheses are allowed in the path (Canvas names a re-uploaded file "name (2).pdf");
-        // only an unbalanced closing one ends it, as in a CSS url($IMS-CC-FILEBASE$/a.png).
-        $pattern = '#' . self::FILEBASE_TOKEN . '([^"\'\s>]*)#i';
+        // Parentheses are allowed in the path in balanced pairs (Canvas names a re-uploaded file
+        // "name (2).pdf"), so an unbalanced closing one ends it, as in a CSS
+        // url($IMS-CC-FILEBASE$/a.png). The capture never runs into the next token, and its
+        // possessive quantifiers keep each match linear, so long url() lists scan once.
+        $char = '(?:(?!' . self::FILEBASE_TOKEN . ')[^"\'\s>()])';
+        $pattern = '#' . self::FILEBASE_TOKEN . '((?:' . $char . '|\(' . $char . '*+\))*+)#i';
         $resolve = function (string $original, string $reference) use ($packageroot, $ownerdir, &$files, &$seen, &$unresolved) {
             [$decoded, $rooted] = self::decode_reference($reference);
             if ($decoded === '') {
@@ -179,11 +182,12 @@ class link_rewriter {
     }
 
     /**
-     * Pick how much of a captured reference is the file path. Normally the reference ends at
-     * the first closing parenthesis with no matching opening one (so "a%20(2).pdf" stays whole
-     * and a CSS url($IMS-CC-FILEBASE$/a.png) ends before its ")"). When that is not a package
-     * file, a cut at the first closing parenthesis wins if it is one, as for the CSS
-     * url($IMS-CC-FILEBASE$/foo(bar.png) of a file named "foo(bar.png". At most two lookups.
+     * Pick how much of a captured reference is the file path. Normally the whole balanced
+     * capture, up to any ")" in its query string (so "a%20(2).pdf" stays whole). When that is
+     * not a package file, a cut at the first closing parenthesis wins if it is one, as for the
+     * CSS url($IMS-CC-FILEBASE$/foo(bar.png) of a file named "foo(bar.png". When neither is,
+     * the cut is kept if no file extension follows it, so the unresolved report names
+     * "missing(foo.png" rather than "missing(foo.png),url". At most two lookups.
      *
      * @param string $captured The text captured after the token.
      * @param string $packageroot Absolute path to the extracted package root.
@@ -196,13 +200,14 @@ class link_rewriter {
             return $balanced;
         }
         $first = strpos($balanced, ')');
-        if ($first !== false) {
-            $candidate = substr($balanced, 0, $first);
-            if (self::reference_exists($candidate, $packageroot, $ownerdir)) {
-                return $candidate;
-            }
+        if ($first === false) {
+            return $balanced;
         }
-        return $balanced;
+        $cut = substr($balanced, 0, $first);
+        if (self::reference_exists($cut, $packageroot, $ownerdir)) {
+            return $cut;
+        }
+        return strpos(substr($balanced, $first), '.') === false ? $cut : $balanced;
     }
 
     /**
