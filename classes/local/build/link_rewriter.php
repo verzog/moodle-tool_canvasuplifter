@@ -24,6 +24,7 @@ namespace tool_canvasuplifter\local\build;
  *  - $IMS-CC-FILEBASE$/path        embedded files (images, attachments)
  *  - $WIKI_REFERENCE$/pages/slug   links to other wiki pages
  *  - $CANVAS_OBJECT_REFERENCE$/... links to other activities
+ *  - $CANVAS_COURSE_REFERENCE$/... links to course-level Canvas pages (Modules, Grades, ...)
  *
  * This class converts file placeholders to Moodle @@PLUGINFILE@@ references
  * (and reports which package files back them, so the caller can import them),
@@ -283,6 +284,21 @@ class link_rewriter {
                 return $matches[0];
             }
             return self::join_suffix($urlmap['id:' . $id], $matches[2] ?? '');
+        }, $html) ?? $html;
+
+        // Course-level references: $CANVAS_COURSE_REFERENCE$[/<page>[/<id>]]. A link to one item
+        // ("/assignments/<id>") resolves like an object reference; otherwise the course page
+        // ("/modules", "/grades", "/assignments/syllabus", ...) resolves through its "course:" key.
+        $coursepattern = '~(?:\$CANVAS_COURSE_REFERENCE\$|%24CANVAS_COURSE_REFERENCE%24)'
+            . '(/[^"\'\s>?#]*)?([?#][^"\'\s>]*)?~i';
+        $html = preg_replace_callback($coursepattern, function ($matches) use ($urlmap) {
+            $path = trim(rawurldecode($matches[1] ?? ''), '/');
+            $segments = $path === '' ? [] : explode('/', $path);
+            $url = $urlmap['course:' . strtolower($path)] ?? null;
+            if ($url === null && count($segments) === 2) {
+                $url = $urlmap['id:' . $segments[1]] ?? null;
+            }
+            return $url === null ? $matches[0] : self::join_suffix($url, $matches[2] ?? '');
         }, $html) ?? $html;
 
         return $html;
