@@ -50,16 +50,13 @@ plugin relies on this standard Moodle mechanism rather than maintaining its own
 blocklist, so SSRF protection stays a site-configuration responsibility.
 Uploading the `.imscc` file directly avoids the server-side fetch entirely.
 
-## Also in this repository: `repository_largefile`
+## Related plugin: Large file repository
 
-The [`repository_largefile/`](repository_largefile/README.md) folder is a
-**separate, self-contained Moodle repository plugin** kept here for convenience.
-It generalises this tool's two large-file features — **import from a URL**
-(server-side fetch) and **chunked large-file upload** — into a repository plugin
-that appears in *every* file picker, including the course backup restore upload
-screen. It installs to `repository/largefile/`, not under `admin/tool/`, and is
-validated on its own (it is excluded from this plugin's `moodle-plugin-ci` run via
-`.moodle-plugin-ci.yml`). See its [README](repository_largefile/README.md).
+For packages too large for the normal file picker, the separate
+[Large file repository](https://github.com/verzog/moodle-repository_largefile)
+plugin (`repository_largefile`) adds chunked upload and import-from-URL to
+*every* Moodle file picker, including the course backup restore screen. It is
+optional: this tool has its own "Large package (chunked upload)" field.
 
 ## Requirements
 
