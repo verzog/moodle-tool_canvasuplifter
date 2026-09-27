@@ -385,19 +385,20 @@ class course_builder {
                 // questions rejected) is NOT flagged, so its skip reason is preserved even
                 // when the item also drew from a bank.
                 $handledviabank = $cmid === null && $hasbankstate && $qbb->lasthandledviabank;
-                if ($handledviabank) {
+                // Likewise an orphan the toggle built a runnable (or placeholder) quiz for exists
+                // in the course, so it is created, not skipped.
+                if ($handledviabank || ($cmid === null && $standalone)) {
                     $skipreasons = array_slice($skipreasons, 0, $skipmark);
                 }
-                if ($cmid !== null || $handledviabank) {
+                if ($cmid !== null || $handledviabank || $standalone) {
                     $createdcounts[$modelitem->kind] = ($createdcounts[$modelitem->kind] ?? 0) + 1;
                 } else {
                     $skippedcounts[$modelitem->kind] = ($skippedcounts[$modelitem->kind] ?? 0) + 1;
                     // An empty Canvas quiz nothing links to has nothing to build; report it
                     // on its own rather than as content not yet supported. One that draws from
-                    // item banks (even missing ones) or whose QTI is unreadable is not empty, nor
-                    // is one the quiz-from-bank toggle built a placeholder quiz for.
+                    // item banks (even missing ones) or whose QTI is unreadable is not empty.
                     $isbankkind = in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true);
-                    if ($isbankkind && !$standalone && $qbb instanceof questionbank_builder && $qbb->lastemptyassessment) {
+                    if ($isbankkind && $qbb instanceof questionbank_builder && $qbb->lastemptyassessment) {
                         $emptyassessments++;
                     }
                 }

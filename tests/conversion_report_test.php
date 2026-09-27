@@ -591,19 +591,23 @@ final class conversion_report_test extends \advanced_testcase {
             file_put_contents($dir . '/' . $folder . '/assessment_qti.xml', $shell);
             file_put_contents($dir . '/non_cc_assessments/' . $folder . '.xml.qti', $native);
         }
-        $notbuilt = function (string $folder, bool $quizfrombank = false) use ($dir): bool {
+        $row = function (string $folder, bool $quizfrombank = false) use ($dir): array {
             $course = new course_model();
             $orphan = new item($folder, 'Quiz');
             $orphan->kind = item::KIND_QUIZ;
             $orphan->files = [$folder . '/assessment_qti.xml'];
             $course->orphans[] = $orphan;
-            return (new conversion_report($course, $dir, '', $quizfrombank))->build()['rows'][0]['notbuilt'];
+            return (new conversion_report($course, $dir, '', $quizfrombank))->build()['rows'][0];
         };
-        $this->assertFalse($notbuilt('badnative'));
-        $this->assertFalse($notbuilt('barenative'));
-        $this->assertTrue($notbuilt('emptynative'));
-        $this->assertTrue($notbuilt('zerodraw'));
-        $this->assertFalse($notbuilt('zerodraw', true));
+        $this->assertFalse($row('badnative')['notbuilt']);
+        $this->assertFalse($row('barenative')['notbuilt']);
+        $this->assertTrue($row('emptynative')['notbuilt']);
+        $this->assertTrue($row('zerodraw')['notbuilt']);
+        // The toggle builds only a hidden placeholder quiz, so that is the reported target.
+        $placeholder = $row('zerodraw', true);
+        $this->assertFalse($placeholder['notbuilt']);
+        $this->assertSame('mod_quiz', $placeholder['target']);
+        $this->assertSame('note_assessment_placeholder', $placeholder['note']);
     }
 
     /**

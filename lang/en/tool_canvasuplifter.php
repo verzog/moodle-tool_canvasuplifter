@@ -106,6 +106,8 @@ $string['matrixsupported_no'] = 'Skipped';
 $string['matrixsupported_yes'] = 'Yes';
 $string['maxsize'] = 'Maximum file size: {$a}';
 $string['note_assessment_empty'] = 'Contains no questions (an empty Canvas quiz) and nothing links to it, so it is not created.';
+$string['note_assessment_placeholder'] = 'Contains no questions (its only item-bank draws take none), so the '
+    . '"Also build a quiz" option creates it as a hidden placeholder quiz; no question bank is created.';
 $string['note_assignment'] = 'Name, instructions, due dates and Canvas rubrics (including per-rating long descriptions) convert. CC 1.3 IMS assignment-profile packages from non-Canvas exporters are also recognised. Outcome links do not carry across.';
 $string['note_discussion'] = 'Discussion topics become forums with the prompt as the opening post; Canvas does not export the replies, so existing threads do not carry across.';
 $string['note_file'] = 'Files convert directly to file resources.';

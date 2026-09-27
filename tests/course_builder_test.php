@@ -2063,6 +2063,9 @@ XML;
         $toggled = $build('g2', true);
         $this->assertNotContains($emptywarning, $toggled['warnings']);
         $this->assertCount(1, get_fast_modinfo($toggled['courseid'])->get_instances_of('quiz'));
+        // The placeholder quiz exists, so the item counts as created, not skipped.
+        $this->assertSame(0, $toggled['skipped']);
+        $this->assertNotContains(get_string('warningskippedfornow', 'tool_canvasuplifter', 1), $toggled['warnings']);
     }
 
     /**

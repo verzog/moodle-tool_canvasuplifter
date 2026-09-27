@@ -66,8 +66,20 @@ class conversion_report {
     /** @var string Page-grouping choice to reflect: '' (off), 'book' or 'lesson'. */
     protected string $pagegrouping;
 
+    /** @var string An assessment with something to import (or one the report can't inspect). */
+    public const ASSESSMENT_HAS_CONTENT = 'content';
+
+    /** @var string An unreferenced assessment with nothing to import: it is not created. */
+    public const ASSESSMENT_EMPTY = 'empty';
+
+    /** @var string An unreferenced empty quiz the quiz-from-bank toggle builds as a placeholder. */
+    public const ASSESSMENT_PLACEHOLDER = 'placeholder';
+
     /** @var bool Whether the run will also build a runnable quiz from each standalone bank. */
     protected bool $quizfrombank;
+
+    /** @var array Memoised assessment_state() result per item identifier (it parses QTI files). */
+    private array $assessmentstates = [];
 
     /** @var array Site-configured extra patterns for the LTI classifier (see lti_classifier). */
     protected array $ltipatterns;
@@ -161,14 +173,20 @@ class conversion_report {
      */
     protected function effective_plan(item $modelitem, bool $referenced, bool $grouped = false): array {
         // An unreferenced assessment with no questions and no bank draws builds nothing: the
-        // question-bank builder skips it ("assessment contains no questions").
-        if (!$referenced && $this->assessment_is_empty($modelitem)) {
+        // question-bank builder skips it ("assessment contains no questions"). With the
+        // quiz-from-bank toggle on, one that only authored draws of zero questions gets just a
+        // hidden placeholder quiz.
+        $state = $referenced ? self::ASSESSMENT_HAS_CONTENT : $this->assessment_state($modelitem);
+        if ($state === self::ASSESSMENT_EMPTY) {
             return [
                 'target' => 'mod_qbank',
                 'confidence' => self::CONFIDENCE_NONE,
                 'note' => 'note_assessment_empty',
                 'notbuilt' => true,
             ];
+        }
+        if ($state === self::ASSESSMENT_PLACEHOLDER) {
+            return ['target' => 'mod_quiz', 'confidence' => self::CONFIDENCE_PARTIAL, 'note' => 'note_assessment_placeholder'];
         }
         if ($modelitem->kind === item::KIND_QUIZ && !$referenced) {
             return $this->plan_for(item::KIND_QUESTIONBANK);
@@ -273,23 +291,39 @@ class conversion_report {
     }
 
     /**
-     * Whether an unreferenced assessment is an empty Canvas quiz: both its QTI files (the
-     * Common Cartridge file and any native dump) are readable and hold no questions, no bare
-     * references to questions Canvas left out, and no draw of any questions. Mirrors the
-     * question-bank builder, which skips such an item as "assessment contains no questions".
-     * Needs package access; false without it (no claim is made).
+     * Classify an unreferenced assessment for the build: an empty Canvas quiz has both its QTI
+     * files (the Common Cartridge file and any native dump) readable and holding no questions,
+     * no bare references to questions Canvas left out, and no draw of any questions. Mirrors
+     * the question-bank builder, which skips such an item as "assessment contains no
+     * questions"; but with the quiz-from-bank toggle on, a quiz that authored draws (of zero
+     * questions) still gets a hidden placeholder quiz. Needs package access; without it no
+     * claim is made. Memoised per item, as it parses QTI files.
      *
      * @param item $modelitem The item.
-     * @return bool
+     * @return string One of the ASSESSMENT_* constants.
      */
-    protected function assessment_is_empty(item $modelitem): bool {
+    protected function assessment_state(item $modelitem): string {
+        $key = $modelitem->kind . '|' . $modelitem->identifier;
+        if (!isset($this->assessmentstates[$key])) {
+            $this->assessmentstates[$key] = $this->classify_assessment($modelitem);
+        }
+        return $this->assessmentstates[$key];
+    }
+
+    /**
+     * Uncached body of assessment_state().
+     *
+     * @param item $modelitem The item.
+     * @return string One of the ASSESSMENT_* constants.
+     */
+    private function classify_assessment(item $modelitem): string {
         if (
             $this->packageroot === null
             || !in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)
             || $modelitem->objectbankid !== ''
             || $this->resolve_qti($modelitem) === null
         ) {
-            return false;
+            return self::ASSESSMENT_HAS_CONTENT;
         }
         // Check both QTI files the question-bank builder reads: the Common Cartridge file and
         // the native non_cc_assessments dump (which can hold the real questions, bare references
@@ -300,17 +334,17 @@ class conversion_report {
         if ($native !== null) {
             $parses[] = (new qti_parser())->parse((string) @file_get_contents($native));
         }
+        $hasdraws = false;
         foreach ($parses as $parsed) {
             if (!self::is_empty_parse($parsed)) {
-                return false;
+                return self::ASSESSMENT_HAS_CONTENT;
             }
-            // With the quiz-from-bank toggle on, an unreferenced quiz that authored any draw
-            // (even of zero questions) still gets a hidden placeholder quiz.
-            if ($this->quizfrombank && $modelitem->kind === item::KIND_QUIZ && !empty($parsed['selections'])) {
-                return false;
-            }
+            $hasdraws = $hasdraws || !empty($parsed['selections']);
         }
-        return true;
+        if ($this->quizfrombank && $modelitem->kind === item::KIND_QUIZ && $hasdraws) {
+            return self::ASSESSMENT_PLACEHOLDER;
+        }
+        return self::ASSESSMENT_EMPTY;
     }
 
     /**
@@ -1482,7 +1516,10 @@ class conversion_report {
      */
     protected function display_title(item $modelitem, bool $referenced): string {
         $buildsasbank = $modelitem->kind === item::KIND_QUESTIONBANK
-            || ($modelitem->kind === item::KIND_QUIZ && !$referenced);
+            || (
+                $modelitem->kind === item::KIND_QUIZ && !$referenced
+                && $this->assessment_state($modelitem) !== self::ASSESSMENT_PLACEHOLDER
+            );
         if ($buildsasbank && $modelitem->banktitle !== '') {
             return $modelitem->banktitle;
         }
