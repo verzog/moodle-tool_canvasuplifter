@@ -179,11 +179,11 @@ class link_rewriter {
     }
 
     /**
-     * Pick how much of a captured reference is the file path. Normally the path ends at the
-     * first closing parenthesis with no matching opening one (so "a%20(2).pdf" stays whole and
-     * a CSS url($IMS-CC-FILEBASE$/a.png) ends before its ")"). When that path is not in the
-     * package, a cut at an earlier closing parenthesis that does name a package file wins, as
-     * for the CSS url($IMS-CC-FILEBASE$/foo(bar.png) of a file named "foo(bar.png".
+     * Pick how much of a captured reference is the file path. Normally the reference ends at
+     * the first closing parenthesis with no matching opening one (so "a%20(2).pdf" stays whole
+     * and a CSS url($IMS-CC-FILEBASE$/a.png) ends before its ")"). When that is not a package
+     * file, a cut at the first closing parenthesis wins if it is one, as for the CSS
+     * url($IMS-CC-FILEBASE$/foo(bar.png) of a file named "foo(bar.png". At most two lookups.
      *
      * @param string $captured The text captured after the token.
      * @param string $packageroot Absolute path to the extracted package root.
@@ -195,13 +195,12 @@ class link_rewriter {
         if (self::reference_exists($balanced, $packageroot, $ownerdir)) {
             return $balanced;
         }
-        $position = strpos($captured, ')');
-        while ($position !== false) {
-            $candidate = substr($captured, 0, $position);
-            if ($candidate !== $balanced && self::reference_exists($candidate, $packageroot, $ownerdir)) {
+        $first = strpos($balanced, ')');
+        if ($first !== false) {
+            $candidate = substr($balanced, 0, $first);
+            if (self::reference_exists($candidate, $packageroot, $ownerdir)) {
                 return $candidate;
             }
-            $position = strpos($captured, ')', $position + 1);
         }
         return $balanced;
     }
@@ -222,19 +221,23 @@ class link_rewriter {
     /**
      * Split a captured reference at its first closing parenthesis that has no matching opening
      * one: "a%20(2).pdf" stays whole, while the "a.png)" of a CSS url($IMS-CC-FILEBASE$/a.png)
-     * splits into "a.png" and ")".
+     * splits into "a.png" and ")". In a query string or fragment any closing parenthesis ends
+     * it (Canvas's own query strings carry none), so "foo(bar.png?x=1)" splits before ")".
      *
      * @param string $reference The captured reference.
      * @return array [reference, tail]
      */
     private static function split_unbalanced_paren(string $reference): array {
         $depth = 0;
+        $inquery = false;
         $length = strlen($reference);
         for ($i = 0; $i < $length; $i++) {
-            if ($reference[$i] === '(') {
+            if ($reference[$i] === '?' || $reference[$i] === '#') {
+                $inquery = true;
+            } else if ($reference[$i] === '(') {
                 $depth++;
             } else if ($reference[$i] === ')') {
-                if ($depth === 0) {
+                if ($depth === 0 || $inquery) {
                     return [substr($reference, 0, $i), substr($reference, $i)];
                 }
                 $depth--;

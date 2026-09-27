@@ -128,6 +128,33 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * A query string ends at a closing parenthesis, so an unmatched "(" name with a query does
+     * not swallow the CSS that follows; a reference to a missing file followed by a long run
+     * of closing parentheses is looked up a bounded number of times, not once per ")".
+     *
+     * @return void
+     */
+    public function test_rewrite_files_bounds_query_and_paren_runs(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/foo(bar.png', 'PNG');
+        file_put_contents($root . '/web_resources/b.png', 'PNG');
+
+        $html = '<div style="background:url($IMS-CC-FILEBASE$/foo(bar.png?x=1),url($IMS-CC-FILEBASE$/b.png)">x</div>';
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+        $this->assertSame([], $result['unresolved']);
+        $this->assertSame(['foo(bar.png', 'b.png'], array_column($result['files'], 'filename'));
+        $this->assertStringContainsString('),url(@@PLUGINFILE@@/b.png)', $result['html']);
+
+        $html = '<p title=$IMS-CC-FILEBASE$/missing(' . str_repeat(')', 100000) . '>x</p>';
+        $started = microtime(true);
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+        $this->assertLessThan(2.0, microtime(true) - $started);
+        $this->assertSame($html, $result['html']);
+        $this->assertCount(1, $result['unresolved']);
+    }
+
+    /**
      * A long run of back-to-back CSS url() references is handled in one pass, without
      * recursion, so it cannot exhaust memory or the call stack.
      *
