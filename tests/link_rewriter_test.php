@@ -176,6 +176,23 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * A quoted reference to a file whose name has an unmatched "(" resolves the whole name.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_quoted_unmatched_open_paren(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/foo(bar.png', 'PNG');
+        file_put_contents($root . '/web_resources/foo', 'decoy');
+
+        $result = (new link_rewriter())->rewrite_files('<img src="$IMS-CC-FILEBASE$/foo(bar.png">', $root);
+
+        $this->assertSame([], $result['unresolved']);
+        $this->assertSame(['foo(bar.png'], array_column($result['files'], 'filename'));
+    }
+
+    /**
      * A long run of back-to-back CSS url() references is handled in one pass, without
      * recursion, so it cannot exhaust memory or the call stack.
      *

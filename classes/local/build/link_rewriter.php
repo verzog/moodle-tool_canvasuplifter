@@ -113,12 +113,13 @@ class link_rewriter {
         $files = [];
         $seen = [];
         $unresolved = [];
-        // Parentheses are allowed in the path in balanced pairs (Canvas names a re-uploaded file
-        // "name (2).pdf"), so an unbalanced closing one ends it, as in a CSS
-        // url($IMS-CC-FILEBASE$/a.png). The capture never runs into the next token, and its
-        // possessive quantifiers keep each match linear, so long url() lists scan once.
+        // Parentheses are allowed in the path (Canvas names a re-uploaded file "name (2).pdf"):
+        // balanced pairs, or a lone opening one (a quoted "foo(bar.png"), so an unbalanced
+        // closing one ends it, as in a CSS url($IMS-CC-FILEBASE$/a.png). The capture never runs
+        // into the next token, and its possessive quantifiers keep each match linear, so long
+        // url() lists scan once.
         $char = '(?:(?!' . self::FILEBASE_TOKEN . ')[^"\'\s>()])';
-        $pattern = '#' . self::FILEBASE_TOKEN . '((?:' . $char . '|\(' . $char . '*+\))*+)#i';
+        $pattern = '#' . self::FILEBASE_TOKEN . '((?:' . $char . '|\(' . $char . '*+\)|\()*+)#i';
         $resolve = function (string $original, string $reference) use ($packageroot, $ownerdir, &$files, &$seen, &$unresolved) {
             [$decoded, $rooted] = self::decode_reference($reference);
             if ($decoded === '') {
