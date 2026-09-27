@@ -116,19 +116,10 @@ class link_rewriter {
         // Parentheses are allowed in the path (Canvas names a re-uploaded file "name (2).pdf");
         // only an unbalanced closing one ends it, as in a CSS url($IMS-CC-FILEBASE$/a.png).
         $pattern = '#' . self::FILEBASE_TOKEN . '([^"\'\s>]*)#i';
-        $callback = function ($matches) use ($packageroot, $ownerdir, &$files, &$seen, &$unresolved) {
-            [$reference, $tail] = self::split_unbalanced_paren($matches[1]);
-            $matches[0] = substr($matches[0], 0, strlen($matches[0]) - strlen($tail));
-            $rawpath = preg_replace('/[?#].*$/', '', $reference);
-            $decodedraw = rawurldecode((string) $rawpath);
-            // A leading slash marks a package-root reference ($IMS-CC-FILEBASE$/path),
-            // which addresses the same file regardless of who references it; a token with
-            // no leading slash (a bare "name" or a "../" climb) resolves relative to the
-            // owning resource's folder.
-            $rooted = str_starts_with($decodedraw, '/');
-            $decoded = ltrim($decodedraw, '/');
+        $resolve = function (string $original, string $reference) use ($packageroot, $ownerdir, &$files, &$seen, &$unresolved) {
+            [$decoded, $rooted] = self::decode_reference($reference);
             if ($decoded === '') {
-                return $matches[0];
+                return $original;
             }
             $hit = self::locate_filebase($packageroot, $decoded, $ownerdir);
             if ($hit === null) {
@@ -136,7 +127,7 @@ class link_rewriter {
                 // unresolved reference so the build report can surface it, keyed by the
                 // canonical missing path.
                 $unresolved[self::unresolved_key($decoded, $ownerdir, $rooted)] = true;
-                return $matches[0];
+                return $original;
             }
             [$absolute, $matched] = $hit;
             // Choose the filearea storage path. A web_resources/ hit stores under the
@@ -155,16 +146,77 @@ class link_rewriter {
             }
             return $this->pluginfile_url($filepath, $filename);
         };
-        // The text after a reference's closing parenthesis can hold another reference with no
-        // separator between them, as in url($IMS-CC-FILEBASE$/a.png),url($IMS-CC-FILEBASE$/b.png),
-        // so it is scanned again rather than copied through.
-        $rewrite = function (string $text) use (&$rewrite, $pattern, $callback): string {
-            return preg_replace_callback($pattern, function ($matches) use (&$rewrite, $callback) {
-                return $callback($matches) . $rewrite(self::split_unbalanced_paren($matches[1])[1]);
-            }, $text) ?? $text;
-        };
+        // Scan forward from the end of each reference rather than the end of the match: the
+        // rest of the match can hold another reference with no separator between them, as in
+        // url($IMS-CC-FILEBASE$/a.png),url($IMS-CC-FILEBASE$/b.png).
+        $rewritten = '';
+        $offset = 0;
+        while (preg_match($pattern, $html, $match, PREG_OFFSET_CAPTURE, $offset)) {
+            $start = $match[0][1];
+            $tokenlength = strlen($match[0][0]) - strlen($match[1][0]);
+            $reference = self::choose_reference($match[1][0], $packageroot, $ownerdir);
+            $rewritten .= substr($html, $offset, $start - $offset);
+            $rewritten .= $resolve(substr($html, $start, $tokenlength + strlen($reference)), $reference);
+            $offset = $start + $tokenlength + strlen($reference);
+        }
+        $rewritten .= substr($html, $offset);
 
-        return ['html' => $rewrite($html), 'files' => $files, 'unresolved' => array_keys($unresolved)];
+        return ['html' => $rewritten, 'files' => $files, 'unresolved' => array_keys($unresolved)];
+    }
+
+    /**
+     * Decode a captured reference into its package path, dropping any query string or fragment.
+     * A leading slash marks a package-root reference ($IMS-CC-FILEBASE$/path), which addresses
+     * the same file regardless of who references it; a token with no leading slash (a bare
+     * "name" or a "../" climb) resolves relative to the owning resource's folder.
+     *
+     * @param string $reference The captured reference.
+     * @return array [decoded path without its leading slash, whether it was rooted]
+     */
+    private static function decode_reference(string $reference): array {
+        $decodedraw = rawurldecode((string) preg_replace('/[?#].*$/', '', $reference));
+        return [ltrim($decodedraw, '/'), str_starts_with($decodedraw, '/')];
+    }
+
+    /**
+     * Pick how much of a captured reference is the file path. Normally the path ends at the
+     * first closing parenthesis with no matching opening one (so "a%20(2).pdf" stays whole and
+     * a CSS url($IMS-CC-FILEBASE$/a.png) ends before its ")"). When that path is not in the
+     * package, a cut at an earlier closing parenthesis that does name a package file wins, as
+     * for the CSS url($IMS-CC-FILEBASE$/foo(bar.png) of a file named "foo(bar.png".
+     *
+     * @param string $captured The text captured after the token.
+     * @param string $packageroot Absolute path to the extracted package root.
+     * @param string $ownerdir Package-relative folder of the owning resource.
+     * @return string The reference: a prefix of $captured.
+     */
+    private static function choose_reference(string $captured, string $packageroot, string $ownerdir): string {
+        $balanced = self::split_unbalanced_paren($captured)[0];
+        if (self::reference_exists($balanced, $packageroot, $ownerdir)) {
+            return $balanced;
+        }
+        $position = strpos($captured, ')');
+        while ($position !== false) {
+            $candidate = substr($captured, 0, $position);
+            if ($candidate !== $balanced && self::reference_exists($candidate, $packageroot, $ownerdir)) {
+                return $candidate;
+            }
+            $position = strpos($captured, ')', $position + 1);
+        }
+        return $balanced;
+    }
+
+    /**
+     * Whether a reference names a file in the package.
+     *
+     * @param string $reference The reference.
+     * @param string $packageroot Absolute path to the extracted package root.
+     * @param string $ownerdir Package-relative folder of the owning resource.
+     * @return bool
+     */
+    private static function reference_exists(string $reference, string $packageroot, string $ownerdir): bool {
+        $decoded = self::decode_reference($reference)[0];
+        return $decoded !== '' && self::locate_filebase($packageroot, $decoded, $ownerdir) !== null;
     }
 
     /**

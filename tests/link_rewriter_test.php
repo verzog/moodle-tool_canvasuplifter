@@ -107,6 +107,47 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * A file whose name has an unmatched opening parenthesis still resolves inside an unquoted
+     * CSS url(), where the closing parenthesis belongs to the url() rather than the name.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_resolves_unmatched_open_paren_in_css_url(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/foo(bar.png', 'PNG');
+        file_put_contents($root . '/web_resources/b.png', 'PNG');
+
+        $html = '<div style="background:url($IMS-CC-FILEBASE$/foo(bar.png),url($IMS-CC-FILEBASE$/b.png)">x</div>';
+
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertSame([], $result['unresolved']);
+        $this->assertSame(['foo(bar.png', 'b.png'], array_column($result['files'], 'filename'));
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $result['html']);
+    }
+
+    /**
+     * A long run of back-to-back CSS url() references is handled in one pass, without
+     * recursion, so it cannot exhaust memory or the call stack.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_handles_long_adjacent_url_list(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources');
+        file_put_contents($root . '/web_resources/a.png', 'PNG');
+
+        $count = 5000;
+        $html = '<div style="background:' . implode(',', array_fill(0, $count, 'url($IMS-CC-FILEBASE$/a.png)')) . '">x</div>';
+
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertSame($count, substr_count($result['html'], 'url(@@PLUGINFILE@@/a.png)'));
+        $this->assertCount(1, $result['files']);
+    }
+
+    /**
      * An owner-relative $IMS-CC-FILEBASE$ reference - a bare name beside the owning
      * resource, or a ../ climb into a sibling resource folder - resolves against the
      * owner directory and stores under a clean (no "/../") filearea path, even when
