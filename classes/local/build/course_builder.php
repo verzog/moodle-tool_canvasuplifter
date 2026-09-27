@@ -439,6 +439,7 @@ class course_builder {
         }
 
         // Second pass: rewrite internal page links now that every target exists.
+        $urlmap += $this->course_link_targets($course);
         $this->rewrite_internal_links($builtpagecmids, $urlmap);
         $this->rewrite_grouped_content($rewritetargets, $urlmap);
         $this->rewrite_forum_links((int) $course->id, $urlmap);
@@ -1085,6 +1086,41 @@ class course_builder {
             }
             $this->tally($cmid, item::KIND_PAGE, $createdcounts, $skippedcounts);
         }
+    }
+
+    /**
+     * Moodle equivalents of Canvas's course-level pages, keyed "course:<Canvas path>" for the
+     * $CANVAS_COURSE_REFERENCE$ links the link rewriter resolves. Pages with no Moodle
+     * counterpart (and the syllabus, which the build places at the top of the course) open the
+     * course page.
+     *
+     * @param \stdClass $course Course record.
+     * @return array Map of "course:<path>" => URL.
+     */
+    private function course_link_targets(\stdClass $course): array {
+        global $DB;
+        $id = ['id' => $course->id];
+        $courseurl = (new \moodle_url('/course/view.php', $id))->out(false);
+        $forums = (new \moodle_url('/mod/forum/index.php', $id))->out(false);
+        $newsforum = $DB->get_field('forum', 'id', ['course' => $course->id, 'type' => 'news'], IGNORE_MULTIPLE);
+        $targets = [
+            '' => $courseurl,
+            'modules' => $courseurl,
+            'pages' => $courseurl,
+            'assignments/syllabus' => $courseurl,
+            'grades' => (new \moodle_url('/grade/report/index.php', $id))->out(false),
+            'assignments' => (new \moodle_url('/mod/assign/index.php', $id))->out(false),
+            'quizzes' => (new \moodle_url('/mod/quiz/index.php', $id))->out(false),
+            'discussion_topics' => $forums,
+            'announcements' => $newsforum ? (new \moodle_url('/mod/forum/view.php', ['f' => $newsforum]))->out(false) : $forums,
+            'files' => (new \moodle_url('/mod/resource/index.php', $id))->out(false),
+            'users' => (new \moodle_url('/user/index.php', $id))->out(false),
+        ];
+        $map = [];
+        foreach ($targets as $path => $url) {
+            $map['course:' . $path] = $url;
+        }
+        return $map;
     }
 
     /**
