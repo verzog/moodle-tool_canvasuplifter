@@ -32,6 +32,9 @@ use tool_canvasuplifter\local\model\qti_question;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class question_importer {
+    /** @var string Skip reason for an assessment with no questions at all (an empty Canvas quiz). */
+    public const EMPTY_ASSESSMENT = 'assessment contains no questions';
+
     /**
      * Summarise why a set of parsed questions yielded nothing importable, for
      * the skip report: how many were parsed, how many were a supported Moodle
@@ -56,7 +59,7 @@ class question_importer {
             }
             // A truly empty assessment (e.g. an exam shell with an empty
             // <section/>) is not a conversion failure; say so plainly.
-            return 'assessment contains no questions';
+            return self::EMPTY_ASSESSMENT;
         }
         $profiles = [];
         foreach ($all as $question) {

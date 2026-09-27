@@ -160,6 +160,16 @@ class conversion_report {
      * @return array Plan {target, confidence, note}.
      */
     protected function effective_plan(item $modelitem, bool $referenced, bool $grouped = false): array {
+        // An unreferenced assessment with no questions and no bank draws builds nothing: the
+        // question-bank builder skips it ("assessment contains no questions").
+        if (!$referenced && $this->assessment_is_empty($modelitem)) {
+            return [
+                'target' => 'mod_qbank',
+                'confidence' => self::CONFIDENCE_NONE,
+                'note' => 'note_assessment_empty',
+                'notbuilt' => true,
+            ];
+        }
         if ($modelitem->kind === item::KIND_QUIZ && !$referenced) {
             return $this->plan_for(item::KIND_QUESTIONBANK);
         }
@@ -255,10 +265,41 @@ class conversion_report {
                 'target' => $plan['target'],
                 'confidence' => $plan['confidence'],
                 'note' => $plan['note'],
-                'buildsnow' => self::builds_now($modelitem->kind),
+                'buildsnow' => self::builds_now($modelitem->kind) && empty($plan['notbuilt']),
+                'notbuilt' => !empty($plan['notbuilt']),
             ];
         }
         $grouped[$key]['count']++;
+    }
+
+    /**
+     * Whether an assessment or question bank is empty: the build would evaluate no questions
+     * (after the native-dump fallback), no bare references to questions Canvas left out, and
+     * no item-bank draws of one or more questions. Mirrors the question-bank builder, which
+     * skips such an item as "assessment contains no questions". Needs package access; false
+     * without it (no claim is made).
+     *
+     * @param item $modelitem The item.
+     * @return bool
+     */
+    protected function assessment_is_empty(item $modelitem): bool {
+        if (
+            $this->packageroot === null
+            || !in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true)
+            || $this->resolve_qti($modelitem) === null
+        ) {
+            return false;
+        }
+        $parsed = $this->assessment_parse($modelitem, true, false);
+        if ($parsed['questions'] !== [] || (int) ($parsed['unresolved'] ?? 0) > 0) {
+            return false;
+        }
+        foreach (!empty($parsed['hasassessment']) ? ($parsed['selections'] ?? []) : [] as $selection) {
+            if (!isset($selection['count']) || (int) $selection['count'] > 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -373,9 +414,12 @@ class conversion_report {
         $rows = [];
         $buildsnowtotal = 0;
         $latertotal = 0;
+        $notbuilttotal = 0;
         foreach ($grouped as $row) {
             $rows[] = $row;
-            if ($row['buildsnow']) {
+            if ($row['notbuilt']) {
+                $notbuilttotal += $row['count'];
+            } else if ($row['buildsnow']) {
                 $buildsnowtotal += $row['count'];
             } else {
                 $latertotal += $row['count'];
@@ -416,6 +460,9 @@ class conversion_report {
         if ($this->course->navtoolsunimported > 0) {
             $warnings[] = 'warnreportnavtools';
         }
+        if ($notbuilttotal > 0) {
+            $warnings[] = 'warnreportemptyassessments';
+        }
         // Mirrors course_builder: with Canvas's Pages menu hidden, the section collecting
         // unreferenced content is built hidden.
         if ($this->course->pagesnavhidden) {
@@ -454,6 +501,7 @@ class conversion_report {
             'itemcount' => count($this->course->all_items()),
             'buildsnowtotal' => $buildsnowtotal,
             'latertotal' => $latertotal,
+            'notbuilttotal' => $notbuilttotal,
             'rows' => $rows,
             'sections' => $this->section_detail(),
             'orphans' => $this->orphan_detail(),
@@ -1366,9 +1414,12 @@ class conversion_report {
      * extras section.
      *
      * @param item $modelitem The orphan resource.
-     * @return string One of 'top', 'section0', 'extras'.
+     * @return string One of 'top', 'section0', 'extras', or 'none' when it is not created.
      */
     private function orphan_placement(item $modelitem): string {
+        if (!empty($this->effective_plan($modelitem, false)['notbuilt'])) {
+            return 'none';
+        }
         if ($modelitem->is_syllabus()) {
             return 'top';
         }

@@ -471,6 +471,60 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * An unreferenced Canvas quiz with no questions builds nothing (the question-bank builder
+     * skips it), so the report must not claim it builds now, must say why, and must not place
+     * it in a section. A linked empty quiz still builds (a hidden placeholder), so it is not
+     * flagged.
+     *
+     * @return void
+     */
+    public function test_empty_orphan_quiz_reports_not_built(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/quiz');
+        $qti = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Unnamed Quiz"><section ident="root_section"/>'
+            . '</assessment></questestinterop>';
+        file_put_contents($dir . '/quiz/empty.xml', $qti);
+
+        $course = new course_model();
+        $orphan = new item('q_empty', 'Unnamed Quiz');
+        $orphan->kind = item::KIND_QUIZ;
+        $orphan->files = ['quiz/empty.xml'];
+        $course->orphans[] = $orphan;
+
+        $report = (new conversion_report($course, $dir))->build();
+        $this->assertCount(1, $report['rows']);
+        $row = $report['rows'][0];
+        $this->assertFalse($row['buildsnow']);
+        $this->assertTrue($row['notbuilt']);
+        $this->assertSame('note_assessment_empty', $row['note']);
+        $this->assertSame(0, $report['buildsnowtotal']);
+        $this->assertSame(0, $report['latertotal']);
+        $this->assertSame(1, $report['notbuilttotal']);
+        $this->assertContains('warnreportemptyassessments', $report['warnings']);
+        $this->assertSame('none', $report['orphans'][0]['placement']);
+
+        // Linked from a module, the same empty quiz builds a hidden placeholder.
+        $linkedcourse = new course_model();
+        $section = new section_model('Week 1');
+        $linked = new item('q_linked', 'Unnamed Quiz');
+        $linked->kind = item::KIND_QUIZ;
+        $linked->files = ['quiz/empty.xml'];
+        $section->add_item($linked);
+        $linkedcourse->add_section($section);
+        $linkedreport = (new conversion_report($linkedcourse, $dir))->build();
+        $this->assertTrue($linkedreport['rows'][0]['buildsnow']);
+        $this->assertSame(0, $linkedreport['notbuilttotal']);
+        $this->assertNotContains('warnreportemptyassessments', $linkedreport['warnings']);
+
+        // Without package access nothing is claimed: the orphan reports as a question bank.
+        $blind = (new conversion_report($course))->build();
+        $this->assertTrue($blind['rows'][0]['buildsnow']);
+        $this->assertNotContains('warnreportemptyassessments', $blind['warnings']);
+    }
+
+    /**
      * A native Canvas assessment supplied as a .xml.qti dump also builds, so its
      * eligibility for the nudge must be recognised — matching the builders, which
      * accept .xml.qti as well as .xml.

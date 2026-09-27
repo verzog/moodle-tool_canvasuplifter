@@ -210,6 +210,7 @@ class course_builder {
         $rewritetargets = [];   // Grouped book/lesson content rows, for the link pass.
         $extraquizzes = 0;      // Runnable quizzes built from standalone banks (toggle).
         $orphanbankincomplete = 0;  // Orphan bank-backed quizzes short a draw (no runnable quiz built).
+        $emptyassessments = 0;  // Unreferenced quizzes skipped because they contain no questions.
         $totalitems = max(1, count($coursemodel->all_items()));
         $processed = 0;
 
@@ -391,6 +392,15 @@ class course_builder {
                     $createdcounts[$modelitem->kind] = ($createdcounts[$modelitem->kind] ?? 0) + 1;
                 } else {
                     $skippedcounts[$modelitem->kind] = ($skippedcounts[$modelitem->kind] ?? 0) + 1;
+                    // An empty Canvas quiz nothing links to has nothing to build; report it
+                    // on its own rather than as content not yet supported.
+                    $isbankkind = in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true);
+                    if (
+                        $isbankkind && $qbb instanceof questionbank_builder
+                        && $qbb->skipreason === question_importer::EMPTY_ASSESSMENT
+                    ) {
+                        $emptyassessments++;
+                    }
                 }
                 // When no runnable quiz was built to carry these draws (quiz_builder
                 // counts its own short draws), an orphan whose bank was missing or only
@@ -459,8 +469,11 @@ class course_builder {
         if ($coursemodel->source === source_detector::BLACKBOARD_NATIVE) {
             $warnings[] = get_string('warnblackboardnative', 'tool_canvasuplifter');
         }
-        if ($skippedtotal > 0) {
-            $warnings[] = get_string('warningskippedfornow', 'tool_canvasuplifter', $skippedtotal);
+        if ($skippedtotal - $emptyassessments > 0) {
+            $warnings[] = get_string('warningskippedfornow', 'tool_canvasuplifter', $skippedtotal - $emptyassessments);
+        }
+        if ($emptyassessments > 0) {
+            $warnings[] = get_string('warnbuildemptyassessments', 'tool_canvasuplifter', $emptyassessments);
         }
         if (($skippedcounts[item::KIND_UNKNOWN] ?? 0) > 0) {
             $warnings[] = get_string(

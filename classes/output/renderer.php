@@ -124,7 +124,10 @@ class renderer extends plugin_renderer_base {
                 s($row['kind']),
                 (int) $row['count'],
                 s($row['target']),
-                get_string($row['buildsnow'] ? 'buildsnow_yes' : 'buildsnow_later', 'tool_canvasuplifter'),
+                get_string(
+                    !empty($row['notbuilt']) ? 'buildsnow_no' : ($row['buildsnow'] ? 'buildsnow_yes' : 'buildsnow_later'),
+                    'tool_canvasuplifter'
+                ),
                 get_string('confidence_' . $row['confidence'], 'tool_canvasuplifter'),
                 get_string($row['note'], 'tool_canvasuplifter'),
             ];
@@ -293,7 +296,12 @@ class renderer extends plugin_renderer_base {
             get_string('colresourcetype', 'tool_canvasuplifter'),
             get_string('colplacement', 'tool_canvasuplifter'),
         ];
-        $placements = ['top' => 'placement_top', 'section0' => 'placement_section0', 'extras' => 'placement_extras'];
+        $placements = [
+            'top' => 'placement_top',
+            'section0' => 'placement_section0',
+            'extras' => 'placement_extras',
+            'none' => 'placement_none',
+        ];
         foreach ($orphans as $orphan) {
             $placement = $placements[$orphan['placement'] ?? 'extras'] ?? 'placement_extras';
             $table->data[] = [
