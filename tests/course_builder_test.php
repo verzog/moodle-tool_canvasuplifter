@@ -2115,6 +2115,68 @@ XML;
     }
 
     /**
+     * A Canvas link to a module ($CANVAS_OBJECT_REFERENCE$/modules/<id>) opens the section that
+     * module became, keeping any #fragment; a link to a module Canvas left out stays as it was.
+     *
+     * @return void
+     */
+    public function test_build_rewrites_links_to_canvas_modules(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        mkdir($dir . '/course_settings');
+        file_put_contents(
+            $dir . '/wiki_content/intro.html',
+            '<p><a href="$CANVAS_OBJECT_REFERENCE$/modules/mod2">Final exam</a>'
+            . '<a href="%24CANVAS_OBJECT_REFERENCE%24/modules/mod2#top">Top</a>'
+            . '<a href="$CANVAS_OBJECT_REFERENCE$/modules/gone">Gone</a></p>'
+        );
+        file_put_contents($dir . '/wiki_content/exam.html', '<p>Exam</p>');
+        file_put_contents(
+            $dir . '/imsmanifest.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root"/></organization></organizations>'
+            . '<resources>'
+            . '<resource identifier="r_intro" type="webcontent" href="wiki_content/intro.html">'
+            . '<file href="wiki_content/intro.html"/></resource>'
+            . '<resource identifier="r_exam" type="webcontent" href="wiki_content/exam.html">'
+            . '<file href="wiki_content/exam.html"/></resource>'
+            . '</resources></manifest>'
+        );
+        $module = function (string $id, string $title, string $ref): string {
+            return '<module identifier="' . $id . '"><title>' . $title . '</title><items>'
+                . '<item identifier="i_' . $ref . '"><content_type>WikiPage</content_type>'
+                . '<workflow_state>active</workflow_state><title>' . $title . '</title>'
+                . '<identifierref>' . $ref . '</identifierref></item></items></module>';
+        };
+        file_put_contents(
+            $dir . '/course_settings/module_meta.xml',
+            '<?xml version="1.0" encoding="UTF-8"?><modules xmlns="http://canvas.instructure.com/xsd/cccv1p0">'
+            . $module('mod1', 'Week 1', 'r_intro') . $module('mod2', 'Final', 'r_exam') . '</modules>'
+        );
+        $category = $this->getDataGenerator()->create_category();
+
+        $report = (new course_builder($category->id, $dir))->build((new manifest_parser($dir))->parse());
+
+        $modinfo = get_fast_modinfo($report['courseid']);
+        $sectionid = $modinfo->get_section_info(2)->id;
+        $intro = null;
+        foreach ($modinfo->get_instances_of('page') as $cm) {
+            if ($cm->get_name() === 'Week 1') {
+                $intro = $DB->get_record('page', ['id' => $cm->instance]);
+            }
+        }
+        $this->assertNotNull($intro);
+        $this->assertStringContainsString('/course/section.php?id=' . $sectionid . '"', $intro->content);
+        $this->assertStringContainsString('/course/section.php?id=' . $sectionid . '#top"', $intro->content);
+        $this->assertStringContainsString('$CANVAS_OBJECT_REFERENCE$/modules/gone', $intro->content);
+    }
+
+    /**
      * The syllabus lands in the top section with its real title; other orphans
      * go to "Additional resources".
      *
