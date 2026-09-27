@@ -46,6 +46,73 @@ final class upload_form_test extends \advanced_testcase {
     }
 
     /**
+     * Whether the built form has a given element.
+     *
+     * @param upload_form $form The form.
+     * @param string $name The element name.
+     * @return bool
+     */
+    private function has_element(upload_form $form, string $name): bool {
+        $mform = (new \ReflectionProperty($form, '_form'))->getValue($form);
+        return $mform->elementExists($name);
+    }
+
+    /**
+     * Without the Large file repository on the site, the form offers this plugin's own
+     * large-package and URL fields and no pointer to the repository.
+     *
+     * @return void
+     */
+    public function test_form_without_largefile_repository(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        if (\core_component::get_component_directory('repository_largefile') !== null) {
+            $this->markTestSkipped('repository_largefile is installed on this site.');
+        }
+
+        $this->assertFalse(upload_form::largefile_repository_available());
+        $form = new upload_form();
+        $this->assertTrue($this->has_element($form, 'packagelargefile'));
+        $this->assertTrue($this->has_element($form, 'packageurl'));
+        $this->assertFalse($this->has_element($form, 'largefilehint'));
+    }
+
+    /**
+     * With the Large file repository installed and enabled, the form points to it in the file
+     * picker instead of showing its own large-package and URL fields; disabled, it does not.
+     *
+     * @return void
+     */
+    public function test_form_defers_to_enabled_largefile_repository(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        if (\core_component::get_component_directory('repository_largefile') === null) {
+            $this->markTestSkipped('repository_largefile is not installed on this site.');
+        }
+        global $CFG;
+        require_once($CFG->dirroot . '/repository/lib.php');
+
+        $type = \repository::get_type_by_typename('largefile');
+        if (!$type) {
+            // Enable the repository type through the core API (it ships no data generator);
+            // creating the type also creates its site-wide instance.
+            (new \repository_type('largefile', [], true))->create(true);
+            $type = \repository::get_type_by_typename('largefile');
+        }
+        $type->update_visibility(true);
+        $this->assertTrue(upload_form::largefile_repository_available());
+        $form = new upload_form();
+        $this->assertTrue($this->has_element($form, 'packagefile'));
+        $this->assertTrue($this->has_element($form, 'largefilehint'));
+        $this->assertFalse($this->has_element($form, 'packagelargefile'));
+        $this->assertFalse($this->has_element($form, 'packageurl'));
+
+        $type->update_visibility(false);
+        $this->assertFalse(upload_form::largefile_repository_available());
+        $this->assertTrue($this->has_element(new upload_form(), 'packageurl'));
+    }
+
+    /**
      * With no file uploaded and no URL given, the form fails validation with an
      * error on the package field.
      *

@@ -65,10 +65,23 @@ class upload_form extends moodleform {
         );
         $mform->addHelpButton('packagefile', 'packagefile', 'tool_canvasuplifter');
 
+        // When the separate Large file repository is available here, it already offers chunked
+        // upload and URL import inside the file picker above, so point to it instead of showing
+        // this plugin's own large-package and URL fields alongside it.
+        $largefilerepository = self::largefile_repository_available();
+        if ($largefilerepository) {
+            $mform->addElement(
+                'static',
+                'largefilehint',
+                '',
+                get_string('largefilerepositoryhint', 'tool_canvasuplifter')
+            );
+        }
+
         // Extra field for very large packages that exceed PHP's per-request
         // upload ceiling. registerElementType is idempotent, so it is safe to
         // call on every form build.
-        if (self::chunkupload_available()) {
+        if (!$largefilerepository && self::chunkupload_available()) {
             \MoodleQuickForm::registerElementType(
                 'chunkupload',
                 "$CFG->dirroot/admin/tool/canvasuplifter/classes/chunkupload/form_element.php",
@@ -87,14 +100,16 @@ class upload_form extends moodleform {
             $this->chunkuploadoffered = true;
         }
 
-        $mform->addElement(
-            'text',
-            'packageurl',
-            get_string('packageurl', 'tool_canvasuplifter'),
-            ['size' => 80, 'placeholder' => 'https://']
-        );
-        $mform->setType('packageurl', PARAM_RAW_TRIMMED);
-        $mform->addHelpButton('packageurl', 'packageurl', 'tool_canvasuplifter');
+        if (!$largefilerepository) {
+            $mform->addElement(
+                'text',
+                'packageurl',
+                get_string('packageurl', 'tool_canvasuplifter'),
+                ['size' => 80, 'placeholder' => 'https://']
+            );
+            $mform->setType('packageurl', PARAM_RAW_TRIMMED);
+            $mform->addHelpButton('packageurl', 'packageurl', 'tool_canvasuplifter');
+        }
 
         $categories = \core_course_category::make_categories_list('moodle/course:create');
         $mform->addElement(
@@ -125,6 +140,30 @@ class upload_form extends moodleform {
         ];
         $mform->addGroup($buttons, 'buttonar', '', [' '], false);
         $mform->closeHeaderBefore('buttonar');
+    }
+
+    /**
+     * Whether the separate Large file repository (repository_largefile) is installed, enabled
+     * and usable by the current user in the file picker for a Common Cartridge package. It is
+     * asked through Moodle's repository API only, so the two plugins stay independent: nothing
+     * here loads or calls repository_largefile's own code, and without it the form is unchanged.
+     * The type filter matters because that repository can be restricted to other file types.
+     *
+     * @return bool
+     */
+    public static function largefile_repository_available(): bool {
+        global $CFG;
+        if (\core_component::get_component_directory('repository_largefile') === null) {
+            return false;
+        }
+        require_once($CFG->dirroot . '/repository/lib.php');
+        $instances = \repository::get_instances([
+            'currentcontext' => \context_system::instance(),
+            'onlyvisible' => true,
+            'type' => 'largefile',
+            'accepted_types' => ['.imscc', '.zip'],
+        ]);
+        return !empty($instances);
     }
 
     /**

@@ -92,6 +92,8 @@ $string['extraquizzesbuilt'] = 'Also built {$a} runnable quiz(zes) from standalo
 $string['itemcount'] = 'Content items';
 $string['itemdetailheading'] = 'Item-by-item detail';
 $string['jobstatusis'] = 'Status: {$a}.';
+$string['largefilerepositoryhint'] = 'For a large package, choose "Large file" in the file picker above: '
+    . 'it uploads the file in chunks (and resumes if interrupted) or imports it from a URL.';
 $string['lti_placeholder_note'] = 'Imported as a hidden placeholder from a Canvas LTI link. Configure or replace the external tool (set the consumer key and shared secret, or pick a preconfigured tool) and unhide the activity before students use it.';
 $string['matrixcolsupported'] = 'Converts';
 $string['matrixcoltype'] = 'Question type';
