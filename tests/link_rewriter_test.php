@@ -425,6 +425,13 @@ final class link_rewriter_test extends \advanced_testcase {
         // A page Canvas left out of the export stays untouched rather than broken further.
         $this->assertStringContainsString('$WIKI_REFERENCE$/pages/g0a416df34528ccca', $out);
 
+        // A Canvas ?query joins the activity URL's own query string with "&", not a second "?".
+        $query = (new link_rewriter())->rewrite_internal_links(
+            '<a href="$WIKI_REFERENCE$/pages/g1b5e268893bce5af?module_item_id=7#s">x</a>',
+            $urlmap
+        );
+        $this->assertStringContainsString('view.php?id=12&module_item_id=7#s"', $query);
+
         $both = ['wiki:g1' => 'https://moodle.test/slug', 'id:g1' => 'https://moodle.test/id'];
         $this->assertStringContainsString(
             'https://moodle.test/slug',

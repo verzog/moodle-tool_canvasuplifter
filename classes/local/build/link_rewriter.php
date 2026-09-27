@@ -263,12 +263,14 @@ class link_rewriter {
      * @return string The rewritten HTML.
      */
     public function rewrite_internal_links(string $html, array $urlmap): string {
-        // Wiki page references: $WIKI_REFERENCE$/pages/<slug>. Some Canvas exports address the
-        // page by its resource identifier instead of its slug, so fall back to that.
-        $wikipattern = '~(?:\$WIKI_REFERENCE\$|%24WIKI_REFERENCE%24)/pages/([^"\'\s>?#]*)~i';
+        // Wiki page references: $WIKI_REFERENCE$/pages/<slug>, plus any trailing ?query/#fragment
+        // (Canvas adds ?module_item_id=…). Some Canvas exports address the page by its resource
+        // identifier instead of its slug, so fall back to that.
+        $wikipattern = '~(?:\$WIKI_REFERENCE\$|%24WIKI_REFERENCE%24)/pages/([^"\'\s>?#]*)([?#][^"\'\s>]*)?~i';
         $html = preg_replace_callback($wikipattern, function ($matches) use ($urlmap) {
             $slug = rawurldecode($matches[1]);
-            return $urlmap['wiki:' . $slug] ?? $urlmap['id:' . $slug] ?? $matches[0];
+            $url = $urlmap['wiki:' . $slug] ?? $urlmap['id:' . $slug] ?? null;
+            return $url === null ? $matches[0] : self::join_suffix($url, $matches[2] ?? '');
         }, $html) ?? $html;
 
         // Object references: $CANVAS_OBJECT_REFERENCE$/<type>/<identifier>, plus
