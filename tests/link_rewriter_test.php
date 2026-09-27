@@ -406,6 +406,40 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * Some Canvas exports address a wiki page by its resource identifier rather than its slug
+     * ($WIKI_REFERENCE$/pages/g1b5e…); that form resolves through the identifier map, keeping
+     * any #fragment, while a slug match still wins when both exist.
+     *
+     * @return void
+     */
+    public function test_rewrite_wiki_reference_by_identifier(): void {
+        $html = '<a href="$WIKI_REFERENCE$/pages/g1b5e268893bce5af">Policy</a>'
+            . '<a href="%24WIKI_REFERENCE%24/pages/g1b5e268893bce5af#late">Late work</a>'
+            . '<a href="$WIKI_REFERENCE$/pages/g0a416df34528ccca">Missing</a>';
+        $urlmap = ['id:g1b5e268893bce5af' => 'https://moodle.test/mod/page/view.php?id=12'];
+
+        $out = (new link_rewriter())->rewrite_internal_links($html, $urlmap);
+
+        $this->assertSame(2, substr_count($out, 'href="https://moodle.test/mod/page/view.php?id=12'));
+        $this->assertStringContainsString('view.php?id=12#late"', $out);
+        // A page Canvas left out of the export stays untouched rather than broken further.
+        $this->assertStringContainsString('$WIKI_REFERENCE$/pages/g0a416df34528ccca', $out);
+
+        // A Canvas ?query joins the activity URL's own query string with "&", not a second "?".
+        $query = (new link_rewriter())->rewrite_internal_links(
+            '<a href="$WIKI_REFERENCE$/pages/g1b5e268893bce5af?module_item_id=7#s">x</a>',
+            $urlmap
+        );
+        $this->assertStringContainsString('view.php?id=12&module_item_id=7#s"', $query);
+
+        $both = ['wiki:g1' => 'https://moodle.test/slug', 'id:g1' => 'https://moodle.test/id'];
+        $this->assertStringContainsString(
+            'https://moodle.test/slug',
+            (new link_rewriter())->rewrite_internal_links('<a href="$WIKI_REFERENCE$/pages/g1">x</a>', $both)
+        );
+    }
+
+    /**
      * A relative cross-resource link (ILIAS module-to-module) that resolves to a
      * built resource becomes a $CANVAS_OBJECT_REFERENCE$ token, which the
      * internal-link pass then turns into the activity URL; query/fragment
