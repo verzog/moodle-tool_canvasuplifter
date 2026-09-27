@@ -236,6 +236,11 @@ class course_builder {
                 $sectionnum = ++$builtsections;
                 $this->prepare_section($course, $sectionnum, $sectionmodel->title);
             }
+            // A Canvas link to this module ($CANVAS_OBJECT_REFERENCE$/modules/<id>) opens the
+            // section it became, or the course page when its items all went to section 0.
+            if ($sectionmodel->canvasid !== '') {
+                $urlmap['id:' . $sectionmodel->canvasid] = $this->section_url($course, $sectionnum);
+            }
             // Whether any Canvas-required item of this module (one carrying a completion
             // requirement) failed to build; the completion pass treats a prerequisite on such a
             // module as unresolved rather than gating on the survivors alone (which would let the
@@ -1085,6 +1090,22 @@ class course_builder {
             }
             $this->tally($cmid, item::KIND_PAGE, $createdcounts, $skippedcounts);
         }
+    }
+
+    /**
+     * The Moodle URL a Canvas module link should open: the built section's own page, or the
+     * course page when the module built no section of its own (section 0).
+     *
+     * @param \stdClass $course Course record.
+     * @param int $sectionnum Section number, 0 when the module's items all went to section 0.
+     * @return string
+     */
+    private function section_url(\stdClass $course, int $sectionnum): string {
+        $section = $sectionnum > 0 ? get_fast_modinfo($course)->get_section_info($sectionnum) : null;
+        if ($section) {
+            return (new \moodle_url('/course/section.php', ['id' => $section->id]))->out(false);
+        }
+        return (new \moodle_url('/course/view.php', ['id' => $course->id]))->out(false);
     }
 
     /**
