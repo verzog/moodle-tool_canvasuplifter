@@ -273,11 +273,11 @@ class conversion_report {
     }
 
     /**
-     * Whether an assessment or question bank is empty: the build would evaluate no questions
-     * (after the native-dump fallback), no bare references to questions Canvas left out, and
-     * no item-bank draw of any questions (from either QTI file); its QTI must be readable. Mirrors the question-bank builder, which
-     * skips such an item as "assessment contains no questions". Needs package access; false
-     * without it (no claim is made).
+     * Whether an unreferenced assessment is an empty Canvas quiz: both its QTI files (the
+     * Common Cartridge file and any native dump) are readable and hold no questions, no bare
+     * references to questions Canvas left out, and no draw of any questions. Mirrors the
+     * question-bank builder, which skips such an item as "assessment contains no questions".
+     * Needs package access; false without it (no claim is made).
      *
      * @param item $modelitem The item.
      * @return bool
@@ -291,15 +291,40 @@ class conversion_report {
         ) {
             return false;
         }
-        // The quiz path adopts item-bank draws that Canvas stored only in the native dump, as
-        // the question-bank builder does for an unreferenced quiz.
-        $parsed = $this->assessment_parse($modelitem, true, true);
-        if ($parsed['questions'] !== [] || (int) ($parsed['unresolved'] ?? 0) > 0) {
-            return false;
+        // Check both QTI files the question-bank builder reads: the Common Cartridge file and
+        // the native non_cc_assessments dump (which can hold the real questions, bare references
+        // to questions Canvas left out, or item-bank draws).
+        $path = (string) $this->resolve_qti($modelitem);
+        $parses = [(new qti_parser())->parse((string) @file_get_contents($path))];
+        $native = $this->resolve_native_qti($modelitem, $path);
+        if ($native !== null) {
+            $parses[] = (new qti_parser())->parse((string) @file_get_contents($native));
         }
-        // An unreadable file (malformed, or QTI 2.x/3.x) is a conversion failure, not an empty
-        // quiz; a draw of zero questions is an authored empty draw the builders skip.
-        return !empty($parsed['hasassessment']) && !self::draws_any($parsed['selections'] ?? []);
+        foreach ($parses as $parsed) {
+            if (!self::is_empty_parse($parsed)) {
+                return false;
+            }
+            // With the quiz-from-bank toggle on, an unreferenced quiz that authored any draw
+            // (even of zero questions) still gets a hidden placeholder quiz.
+            if ($this->quizfrombank && $modelitem->kind === item::KIND_QUIZ && !empty($parsed['selections'])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Whether one parsed QTI file is a readable assessment with nothing to import: no questions,
+     * no references to questions Canvas left out, and no draw of any questions. An unreadable
+     * file (malformed, or QTI 2.x/3.x) is a conversion failure, not empty. Mirrors
+     * question_importer::is_empty_parse(), which the question-bank builder uses.
+     *
+     * @param array $parsed A qti_parser result.
+     * @return bool
+     */
+    private static function is_empty_parse(array $parsed): bool {
+        return !empty($parsed['hasassessment']) && empty($parsed['questions'])
+            && (int) ($parsed['unresolved'] ?? 0) === 0 && !self::draws_any($parsed['selections'] ?? []);
     }
 
     /**

@@ -52,6 +52,19 @@ class question_importer {
     }
 
     /**
+     * Whether one parsed QTI file is a readable assessment with nothing to import: no questions,
+     * no references to questions Canvas left out, and no draw of any questions. An unreadable
+     * file (malformed, or QTI 2.x/3.x) is a conversion failure, not empty.
+     *
+     * @param array $parsed A qti_parser result.
+     * @return bool
+     */
+    public static function is_empty_parse(array $parsed): bool {
+        return !empty($parsed['hasassessment']) && empty($parsed['questions'])
+            && (int) ($parsed['unresolved'] ?? 0) === 0 && !self::draws_any($parsed['selections'] ?? []);
+    }
+
+    /**
      * Summarise why a set of parsed questions yielded nothing importable, for
      * the skip report: how many were parsed, how many were a supported Moodle
      * type, and the Canvas profiles (or types) of those that can't convert.

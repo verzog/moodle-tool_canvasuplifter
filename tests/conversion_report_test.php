@@ -559,6 +559,54 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * The native non_cc_assessments dump counts too: an empty Common Cartridge shell is not an
+     * empty quiz when its dump is unreadable or holds bare references to questions Canvas left
+     * out. With the quiz-from-bank toggle on, a quiz that only draws zero questions still gets
+     * a placeholder quiz, so it is not reported as not created either.
+     *
+     * @return void
+     */
+    public function test_empty_orphan_quiz_checks_native_dump_and_toggle(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/non_cc_assessments');
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="x" title="Quiz"><section ident="root"/></assessment></questestinterop>';
+        $assessment = function (string $body): string {
+            return '<?xml version="1.0" encoding="utf-8"?>'
+                . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+                . '<assessment ident="x" title="Quiz"><section ident="root">' . $body
+                . '</section></assessment></questestinterop>';
+        };
+        $natives = [
+            'badnative' => '<?xml version="1.0"?><notqti><broken',
+            'barenative' => $assessment('<item ident="iabc-missing-body" />'),
+            'emptynative' => $assessment(''),
+            'zerodraw' => $assessment('<section ident="grp"><selection_ordering><selection>'
+                . '<sourcebank_ref>bank1</sourcebank_ref><selection_number>0</selection_number>'
+                . '</selection></selection_ordering></section>'),
+        ];
+        foreach ($natives as $folder => $native) {
+            mkdir($dir . '/' . $folder);
+            file_put_contents($dir . '/' . $folder . '/assessment_qti.xml', $shell);
+            file_put_contents($dir . '/non_cc_assessments/' . $folder . '.xml.qti', $native);
+        }
+        $notbuilt = function (string $folder, bool $quizfrombank = false) use ($dir): bool {
+            $course = new course_model();
+            $orphan = new item($folder, 'Quiz');
+            $orphan->kind = item::KIND_QUIZ;
+            $orphan->files = [$folder . '/assessment_qti.xml'];
+            $course->orphans[] = $orphan;
+            return (new conversion_report($course, $dir, '', $quizfrombank))->build()['rows'][0]['notbuilt'];
+        };
+        $this->assertFalse($notbuilt('badnative'));
+        $this->assertFalse($notbuilt('barenative'));
+        $this->assertTrue($notbuilt('emptynative'));
+        $this->assertTrue($notbuilt('zerodraw'));
+        $this->assertFalse($notbuilt('zerodraw', true));
+    }
+
+    /**
      * An unreferenced quiz whose Common Cartridge file is an empty shell but whose native dump
      * draws from an item bank is not empty: the question-bank builder takes those draws from
      * the dump and imports the bank, so the report must not flag it as not created.

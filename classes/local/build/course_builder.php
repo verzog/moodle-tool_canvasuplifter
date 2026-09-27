@@ -394,9 +394,10 @@ class course_builder {
                     $skippedcounts[$modelitem->kind] = ($skippedcounts[$modelitem->kind] ?? 0) + 1;
                     // An empty Canvas quiz nothing links to has nothing to build; report it
                     // on its own rather than as content not yet supported. One that draws from
-                    // item banks (even missing ones) or whose QTI is unreadable is not empty.
+                    // item banks (even missing ones) or whose QTI is unreadable is not empty, nor
+                    // is one the quiz-from-bank toggle built a placeholder quiz for.
                     $isbankkind = in_array($modelitem->kind, [item::KIND_QUIZ, item::KIND_QUESTIONBANK], true);
-                    if ($isbankkind && $qbb instanceof questionbank_builder && $qbb->lastemptyassessment) {
+                    if ($isbankkind && !$standalone && $qbb instanceof questionbank_builder && $qbb->lastemptyassessment) {
                         $emptyassessments++;
                     }
                 }

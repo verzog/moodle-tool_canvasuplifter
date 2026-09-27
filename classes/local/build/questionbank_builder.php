@@ -253,9 +253,9 @@ class questionbank_builder {
 
     /**
      * Whether an assessment is a genuinely empty Canvas quiz: readable QTI with no questions
-     * and no references to questions Canvas left out, a native dump that adds none, and no
-     * draw that takes any questions from an item bank. An unreadable file (malformed, or QTI
-     * 2.x/3.x) is not empty, so its skip stays a conversion failure.
+     * and no references to questions Canvas left out, a native dump that is just as empty and
+     * readable, and no draw that takes any questions from an item bank. An unreadable file
+     * (malformed, or QTI 2.x/3.x) is not empty, so its skip stays a conversion failure.
      *
      * @param item $modelitem The assessment item.
      * @param string $qtipath Absolute path of the resolved CC QTI file.
@@ -264,18 +264,12 @@ class questionbank_builder {
      * @return bool
      */
     private function is_empty_assessment(item $modelitem, string $qtipath, array $parsed, array $selections): bool {
-        if (
-            empty($parsed['hasassessment']) || !empty($parsed['questions'])
-            || (int) ($parsed['unresolved'] ?? 0) > 0 || question_importer::draws_any($selections)
-        ) {
+        if (!question_importer::is_empty_parse($parsed) || question_importer::draws_any($selections)) {
             return false;
         }
+        // The native dump must be just as empty, and readable: an unreadable one is a failure.
         $native = $this->locate_native_qti($modelitem, $qtipath);
-        if ($native === null) {
-            return true;
-        }
-        $nativeparsed = $this->parse_qti($native)[0];
-        return empty($nativeparsed['questions']) && (int) ($nativeparsed['unresolved'] ?? 0) === 0;
+        return $native === null || question_importer::is_empty_parse($this->parse_qti($native)[0]);
     }
 
     /**

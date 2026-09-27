@@ -2023,6 +2023,49 @@ XML;
     }
 
     /**
+     * An empty Common Cartridge shell whose native dump is unreadable is a conversion failure,
+     * not an empty quiz; and with the quiz-from-bank toggle on, a quiz that only draws zero
+     * questions gets a hidden placeholder quiz, so it is not reported as not created.
+     *
+     * @return void
+     */
+    public function test_empty_orphan_quiz_checks_native_dump_and_toggle(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/g1');
+        mkdir($dir . '/g2');
+        mkdir($dir . '/non_cc_assessments');
+        $shell = '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="x" title="Quiz"><section ident="root">%s</section></assessment></questestinterop>';
+        file_put_contents($dir . '/g1/assessment_qti.xml', sprintf($shell, ''));
+        file_put_contents($dir . '/non_cc_assessments/g1.xml.qti', '<?xml version="1.0"?><notqti><broken');
+        file_put_contents($dir . '/g2/assessment_qti.xml', sprintf(
+            $shell,
+            '<section ident="grp"><selection_ordering><selection><sourcebank_ref>bank1</sourcebank_ref>'
+            . '<selection_number>0</selection_number></selection></selection_ordering></section>'
+        ));
+        $build = function (string $folder, bool $quizfrombank) use ($dir): array {
+            $coursemodel = new course_model();
+            $orphan = new \tool_canvasuplifter\local\model\item($folder, 'Quiz');
+            $orphan->kind = \tool_canvasuplifter\local\model\item::KIND_QUIZ;
+            $orphan->files = [$folder . '/assessment_qti.xml'];
+            $coursemodel->orphans[] = $orphan;
+            $category = $this->getDataGenerator()->create_category();
+            return (new course_builder($category->id, $dir, null, 0, $quizfrombank))->build($coursemodel);
+        };
+        $emptywarning = get_string('warnbuildemptyassessments', 'tool_canvasuplifter', 1);
+
+        $this->assertNotContains($emptywarning, $build('g1', false)['warnings']);
+        $this->assertContains($emptywarning, $build('g2', false)['warnings']);
+        $toggled = $build('g2', true);
+        $this->assertNotContains($emptywarning, $toggled['warnings']);
+        $this->assertCount(1, get_fast_modinfo($toggled['courseid'])->get_instances_of('quiz'));
+    }
+
+    /**
      * The syllabus lands in the top section with its real title; other orphans
      * go to "Additional resources".
      *
