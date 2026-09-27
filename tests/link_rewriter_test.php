@@ -55,6 +55,34 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * Canvas names a re-uploaded file "name (2).pdf"; the parentheses belong to the path, so
+     * the link resolves (query string dropped), while an unquoted CSS url($IMS-CC-FILEBASE$/...)
+     * still ends at its closing parenthesis.
+     *
+     * @return void
+     */
+    public function test_rewrite_files_keeps_parentheses_in_names(): void {
+        $root = make_request_directory();
+        mkdir($root . '/web_resources/Uploaded Media', 0777, true);
+        file_put_contents($root . '/web_resources/Society.3 (2).pdf', 'PDF');
+        file_put_contents($root . '/web_resources/Uploaded Media/Lab 1 (1).pptx', 'PPTX');
+        file_put_contents($root . '/web_resources/bg.png', 'PNG');
+
+        $html = '<a href="$IMS-CC-FILEBASE$/Society.3%20(2).pdf?canvas_=1&amp;canvas_qs_wrap=1">PDF</a>'
+            . '<a href="$IMS-CC-FILEBASE$/Uploaded%20Media/Lab%201%20(1).pptx">PPTX</a>'
+            . '<div style="background:url($IMS-CC-FILEBASE$/bg.png) no-repeat">x</div>';
+
+        $result = (new link_rewriter())->rewrite_files($html, $root);
+
+        $this->assertSame([], $result['unresolved']);
+        $names = array_column($result['files'], 'filename');
+        sort($names);
+        $this->assertSame(['Lab 1 (1).pptx', 'Society.3 (2).pdf', 'bg.png'], $names);
+        $this->assertStringContainsString('url(@@PLUGINFILE@@/bg.png) no-repeat', $result['html']);
+        $this->assertStringNotContainsString('IMS-CC-FILEBASE', $result['html']);
+    }
+
+    /**
      * An owner-relative $IMS-CC-FILEBASE$ reference - a bare name beside the owning
      * resource, or a ../ climb into a sibling resource folder - resolves against the
      * owner directory and stores under a clean (no "/../") filearea path, even when

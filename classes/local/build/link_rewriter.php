@@ -113,9 +113,13 @@ class link_rewriter {
         $files = [];
         $seen = [];
         $unresolved = [];
-        $pattern = '#' . self::FILEBASE_TOKEN . '([^"\'\s>)]*)#i';
+        // Parentheses are allowed in the path (Canvas names a re-uploaded file "name (2).pdf");
+        // only an unbalanced closing one ends it, as in a CSS url($IMS-CC-FILEBASE$/a.png).
+        $pattern = '#' . self::FILEBASE_TOKEN . '([^"\'\s>]*)#i';
         $callback = function ($matches) use ($packageroot, $ownerdir, &$files, &$seen, &$unresolved) {
-            $rawpath = preg_replace('/[?#].*$/', '', $matches[1]);
+            [$reference, $tail] = self::split_unbalanced_paren($matches[1]);
+            $matches[0] = substr($matches[0], 0, strlen($matches[0]) - strlen($tail));
+            $rawpath = preg_replace('/[?#].*$/', '', $reference);
             $decodedraw = rawurldecode((string) $rawpath);
             // A leading slash marks a package-root reference ($IMS-CC-FILEBASE$/path),
             // which addresses the same file regardless of who references it; a token with
@@ -151,9 +155,35 @@ class link_rewriter {
             }
             return $this->pluginfile_url($filepath, $filename);
         };
-        $rewritten = preg_replace_callback($pattern, $callback, $html);
+        $rewritten = preg_replace_callback($pattern, function ($matches) use ($callback) {
+            return $callback($matches) . self::split_unbalanced_paren($matches[1])[1];
+        }, $html);
 
         return ['html' => $rewritten ?? $html, 'files' => $files, 'unresolved' => array_keys($unresolved)];
+    }
+
+    /**
+     * Split a captured reference at its first closing parenthesis that has no matching opening
+     * one: "a%20(2).pdf" stays whole, while the "a.png)" of a CSS url($IMS-CC-FILEBASE$/a.png)
+     * splits into "a.png" and ")".
+     *
+     * @param string $reference The captured reference.
+     * @return array [reference, tail]
+     */
+    private static function split_unbalanced_paren(string $reference): array {
+        $depth = 0;
+        $length = strlen($reference);
+        for ($i = 0; $i < $length; $i++) {
+            if ($reference[$i] === '(') {
+                $depth++;
+            } else if ($reference[$i] === ')') {
+                if ($depth === 0) {
+                    return [substr($reference, 0, $i), substr($reference, $i)];
+                }
+                $depth--;
+            }
+        }
+        return [$reference, ''];
     }
 
     /**
