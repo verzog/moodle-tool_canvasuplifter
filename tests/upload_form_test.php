@@ -79,7 +79,8 @@ final class upload_form_test extends \advanced_testcase {
 
     /**
      * With the Large file repository installed and enabled, the form points to it in the file
-     * picker instead of showing its own large-package and URL fields; disabled, it does not.
+     * picker instead of showing its own large-package field (the URL field stays); a user without
+     * the ignore-size-limits capability, or a disabled repository, keeps the built-in field.
      *
      * @return void
      */
@@ -105,11 +106,22 @@ final class upload_form_test extends \advanced_testcase {
         $this->assertTrue($this->has_element($form, 'packagefile'));
         $this->assertTrue($this->has_element($form, 'largefilehint'));
         $this->assertFalse($this->has_element($form, 'packagelargefile'));
-        $this->assertFalse($this->has_element($form, 'packageurl'));
+        // The URL field stays: this plugin's fetcher also resolves repository landing pages.
+        $this->assertTrue($this->has_element($form, 'packageurl'));
+
+        // A user the file picker still size-limits keeps the built-in chunked field.
+        $manager = $this->getDataGenerator()->create_user();
+        $roleid = $this->getDataGenerator()->create_role();
+        assign_capability('moodle/course:ignorefilesizelimits', CAP_PROHIBIT, $roleid, \context_system::instance());
+        role_assign($roleid, $manager->id, \context_system::instance());
+        $this->setUser($manager);
+        $this->assertFalse(upload_form::largefile_repository_available());
+        $this->assertTrue($this->has_element(new upload_form(), 'packagelargefile'));
+        $this->setAdminUser();
 
         $type->update_visibility(false);
         $this->assertFalse(upload_form::largefile_repository_available());
-        $this->assertTrue($this->has_element(new upload_form(), 'packageurl'));
+        $this->assertTrue($this->has_element(new upload_form(), 'packagelargefile'));
     }
 
     /**

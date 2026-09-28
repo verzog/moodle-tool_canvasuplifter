@@ -66,8 +66,9 @@ class upload_form extends moodleform {
         $mform->addHelpButton('packagefile', 'packagefile', 'tool_canvasuplifter');
 
         // When the separate Large file repository is available here, it already offers chunked
-        // upload and URL import inside the file picker above, so point to it instead of showing
-        // this plugin's own large-package and URL fields alongside it.
+        // upload inside the file picker above, so point to it instead of showing this plugin's
+        // own large-package field alongside it. The URL field stays either way: this plugin's
+        // fetcher also resolves repository landing pages, which a plain URL import does not.
         $largefilerepository = self::largefile_repository_available();
         if ($largefilerepository) {
             $mform->addElement(
@@ -100,16 +101,14 @@ class upload_form extends moodleform {
             $this->chunkuploadoffered = true;
         }
 
-        if (!$largefilerepository) {
-            $mform->addElement(
-                'text',
-                'packageurl',
-                get_string('packageurl', 'tool_canvasuplifter'),
-                ['size' => 80, 'placeholder' => 'https://']
-            );
-            $mform->setType('packageurl', PARAM_RAW_TRIMMED);
-            $mform->addHelpButton('packageurl', 'packageurl', 'tool_canvasuplifter');
-        }
+        $mform->addElement(
+            'text',
+            'packageurl',
+            get_string('packageurl', 'tool_canvasuplifter'),
+            ['size' => 80, 'placeholder' => 'https://']
+        );
+        $mform->setType('packageurl', PARAM_RAW_TRIMMED);
+        $mform->addHelpButton('packageurl', 'packageurl', 'tool_canvasuplifter');
 
         $categories = \core_course_category::make_categories_list('moodle/course:create');
         $mform->addElement(
@@ -149,11 +148,19 @@ class upload_form extends moodleform {
      * here loads or calls repository_largefile's own code, and without it the form is unchanged.
      * The type filter matters because that repository can be restricted to other file types.
      *
+     * The user must also be allowed to ignore file-size limits: the file picker still applies
+     * the upload limit to a file a repository hands it, so without that capability a large
+     * package staged by the repository would be rejected, and this plugin's own chunked field
+     * (which bypasses the picker) must stay.
+     *
      * @return bool
      */
     public static function largefile_repository_available(): bool {
         global $CFG;
         if (\core_component::get_component_directory('repository_largefile') === null) {
+            return false;
+        }
+        if (!has_capability('moodle/course:ignorefilesizelimits', \context_system::instance())) {
             return false;
         }
         require_once($CFG->dirroot . '/repository/lib.php');
