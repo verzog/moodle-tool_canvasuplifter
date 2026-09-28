@@ -46,6 +46,111 @@ final class upload_form_test extends \advanced_testcase {
     }
 
     /**
+     * Whether the built form has a given element.
+     *
+     * @param upload_form $form The form.
+     * @param string $name The element name.
+     * @return bool
+     */
+    private function has_element(upload_form $form, string $name): bool {
+        $mform = (new \ReflectionProperty($form, '_form'))->getValue($form);
+        return $mform->elementExists($name);
+    }
+
+    /**
+     * Without the Large file repository on the site, the form offers this plugin's own
+     * large-package and URL fields and no pointer to the repository.
+     *
+     * @return void
+     */
+    public function test_form_without_largefile_repository(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        if (\core_component::get_component_directory('repository_largefile') !== null) {
+            $this->markTestSkipped('repository_largefile is installed on this site.');
+        }
+
+        $this->assertFalse(upload_form::largefile_repository_available());
+        $form = new upload_form();
+        $this->assertTrue($this->has_element($form, 'packagelargefile'));
+        $this->assertTrue($this->has_element($form, 'packageurl'));
+        $this->assertFalse($this->has_element($form, 'largefilehint'));
+    }
+
+    /**
+     * With the Large file repository installed and enabled, the form points to it in the file
+     * picker instead of showing its own large-package field (the URL field stays); a user without
+     * the ignore-size-limits capability, or a disabled repository, keeps the built-in field.
+     *
+     * @return void
+     */
+    public function test_form_defers_to_enabled_largefile_repository(): void {
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        if (\core_component::get_component_directory('repository_largefile') === null) {
+            $this->markTestSkipped('repository_largefile is not installed on this site.');
+        }
+        global $CFG;
+        require_once($CFG->dirroot . '/repository/lib.php');
+
+        $type = \repository::get_type_by_typename('largefile');
+        if (!$type) {
+            // Enable the repository type through the core API (it ships no data generator);
+            // creating the type also creates its site-wide instance.
+            (new \repository_type('largefile', [], true))->create(true);
+            $type = \repository::get_type_by_typename('largefile');
+        }
+        $type->update_visibility(true);
+        $this->assertTrue(upload_form::largefile_repository_available());
+        $form = new upload_form();
+        $this->assertTrue($this->has_element($form, 'packagefile'));
+        $this->assertTrue($this->has_element($form, 'largefilehint'));
+        $this->assertFalse($this->has_element($form, 'packagelargefile'));
+        // The URL field stays: this plugin's fetcher also resolves repository landing pages.
+        $this->assertTrue($this->has_element($form, 'packageurl'));
+
+        // A user the file picker still size-limits keeps the built-in chunked field.
+        $manager = $this->getDataGenerator()->create_user();
+        $roleid = $this->getDataGenerator()->create_role();
+        assign_capability('moodle/course:ignorefilesizelimits', CAP_PROHIBIT, $roleid, \context_system::instance());
+        role_assign($roleid, $manager->id, \context_system::instance());
+        $this->setUser($manager);
+        $this->assertFalse(upload_form::largefile_repository_available());
+        $this->assertTrue($this->has_element(new upload_form(), 'packagelargefile'));
+        $this->setAdminUser();
+
+        $type->update_visibility(false);
+        $this->assertFalse(upload_form::largefile_repository_available());
+        $this->assertTrue($this->has_element(new upload_form(), 'packagelargefile'));
+    }
+
+    /**
+     * A Large file repository restricted to types that exclude .imscc (here .zip only) cannot
+     * take a normal Canvas export, so the built-in chunked field stays. Kept in its own test
+     * because repository instances, and the types they support, are cached per request.
+     *
+     * @return void
+     */
+    public function test_form_keeps_uploader_when_largefile_rejects_imscc(): void {
+        global $CFG;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        if (\core_component::get_component_directory('repository_largefile') === null) {
+            $this->markTestSkipped('repository_largefile is not installed on this site.');
+        }
+        require_once($CFG->dirroot . '/repository/lib.php');
+        if (!\repository::get_type_by_typename('largefile')) {
+            (new \repository_type('largefile', [], true))->create(true);
+        }
+        // Its type restriction is plain config, so no repository code is called here.
+        set_config('restricttypes', 1, 'largefile');
+        set_config('accept_imscc', '0', 'largefile');
+
+        $this->assertFalse(upload_form::largefile_repository_available());
+        $this->assertTrue($this->has_element(new upload_form(), 'packagelargefile'));
+    }
+
+    /**
      * With no file uploaded and no URL given, the form fails validation with an
      * error on the package field.
      *

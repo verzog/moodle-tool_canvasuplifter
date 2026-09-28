@@ -56,7 +56,16 @@ For packages too large for the normal file picker, the separate
 [Large file repository](https://github.com/verzog/moodle-repository_largefile)
 plugin (`repository_largefile`) adds chunked upload and import-from-URL to
 *every* Moodle file picker, including the course backup restore screen. It is
-optional: this tool has its own "Large package (chunked upload)" field.
+optional. When it is installed, enabled and accepts `.imscc` files, and the user
+may ignore file-size limits (site admins can; others need
+`moodle/course:ignorefilesizelimits`, because the file picker still applies the
+upload limit to files a repository hands it), this tool detects it and uses it
+instead of its own chunked uploader: the upload page drops its "Large package
+(chunked upload)" field and points to **Large file** in the package file picker.
+The "Package URL" field always stays, because this tool's fetcher also follows
+repository landing pages to the package. Without the repository, the page is
+unchanged. The two plugins only meet through Moodle's standard repository API — neither
+includes or calls the other's code — so each stays a separate work.
 
 ## Requirements
 
