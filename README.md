@@ -328,26 +328,32 @@ Status today is `MATURITY_ALPHA`. The bar to flip to `MATURITY_BETA` and
 submit to the Moodle plugin directory is one clean build of each of these
 shapes against `main`:
 
-- [ ] A Canvas course exporting **New Quizzes** alongside Classic Quizzes
+- [x] A Canvas course exporting **New Quizzes** alongside Classic Quizzes
       (Canvas writes both as QTI 1.2 with subtly different shapes).
-- [ ] A **multi-module Canvas course with cross-references** between pages
+      Validated: **CVT 120** — 14 quizzes including a New Quiz that draws its
+      questions from an item bank — built cleanly (83/83 items, 0 skipped, 524
+      questions imported), and **CVT 112L** — 20 quizzes alongside a linked
+      `quizzes.next` New Quiz — built cleanly on a live site (151/151 items,
+      0 skipped, 271/271 questions).
+- [x] A **multi-module Canvas course with cross-references** between pages
       (`$WIKI_REFERENCE$`, `$CANVAS_OBJECT_REFERENCE$`) — exercises the
       post-build link rewriter across pages, forums and assignment intros.
-      Strong data point: **ANE 260** (Canvas — 165 items: 73 files, 30
-      discussions, 22 assessments [18 standalone question banks + 4 quizzes],
-      17 assignments, 19 subheaders, 4 URLs) **built cleanly end-to-end —
-      165 of 165 items across 19 sections, 0 skipped** — with **583/583
-      questions converting**, 18 runnable quizzes seeded from the standalone
-      banks, announcements posted to the news forum, unreferenced resources
-      collected into an "Additional resources" section, and Canvas
-      unpublished → Moodle hidden states preserved. This does not fully close
-      the box on its own: ANE 260 carries no wiki pages, so the page↔page
-      link rewriter is not exercised — a page-heavy cross-linked course is
-      still wanted for that specific path. But it clears the
+      Validated: **CVT 112L** (26 pages, 31 page links, 2 module links) and
+      **CVT 205** (8 pages, 51 page links, 11 course-level links) built cleanly
+      on a live site (151/151 and 85/85, 0 skipped). Auditing every built page,
+      intro, post and question for leftover Canvas tokens surfaced three small
+      fixes — page links by identifier (#202), links to a module (#203) and
+      course-level links such as Grades or Modules (#204) — after which no
+      resolvable link is left unconverted (CVT 205 keeps 14 links to pages Canvas
+      left out of its export, which have nothing to point at). Earlier, **ANE
+      260** (165/165 items, 583/583 questions) cleared the
       multi-module-build-at-scale concern.
-- [ ] An **embedded-media-heavy course** — videos, audio, images both in
+- [x] An **embedded-media-heavy course** — videos, audio, images both in
       page bodies and in QTI question stems — exercises `file_embedder`
-      and the question-asset import path end-to-end.
+      and the question-asset import path end-to-end. Validated: **CVT 112L**
+      (150 media references in pages, 120 in quiz questions) built cleanly on a
+      live site with no missing embedded assets reported; its question images
+      import into the question file areas (117 files).
 - [x] A **non-Canvas CC export** (Blackboard, D2L Brightspace, Schoology,
       OpenStax Connexions) — exercises the IMS Assignment profile, prefixed
       namespaces, inline descriptors, and variant targets that PR #57 and #59

@@ -406,6 +406,37 @@ final class link_rewriter_test extends \advanced_testcase {
     }
 
     /**
+     * Course-level references ($CANVAS_COURSE_REFERENCE$/modules, /grades, ...) resolve through
+     * their "course:" keys, keeping any ?query/#fragment; one naming a single item
+     * (/assignments/<id>) resolves like an object reference; unknown pages stay untouched.
+     *
+     * @return void
+     */
+    public function test_rewrite_course_references(): void {
+        $urlmap = [
+            'course:' => 'https://moodle.test/course/view.php?id=4',
+            'course:modules' => 'https://moodle.test/course/view.php?id=4',
+            'course:grades' => 'https://moodle.test/grade/report/index.php?id=4',
+            'course:assignments/syllabus' => 'https://moodle.test/course/view.php?id=4',
+            'id:g123' => 'https://moodle.test/mod/assign/view.php?id=9',
+        ];
+        $html = '<a href="$CANVAS_COURSE_REFERENCE$/modules">Modules</a>'
+            . '<a href="%24CANVAS_COURSE_REFERENCE%24/grades?tab=1#top">Grades</a>'
+            . '<a href="$CANVAS_COURSE_REFERENCE$/assignments/syllabus">Syllabus</a>'
+            . '<a href="$CANVAS_COURSE_REFERENCE$/assignments/g123">Essay</a>'
+            . '<a href="$CANVAS_COURSE_REFERENCE$">Home</a>'
+            . '<a href="$CANVAS_COURSE_REFERENCE$/collaborations">Collaborations</a>';
+
+        $out = (new link_rewriter())->rewrite_internal_links($html, $urlmap);
+
+        $this->assertSame(3, substr_count($out, 'href="https://moodle.test/course/view.php?id=4"'));
+        $this->assertStringContainsString('href="https://moodle.test/grade/report/index.php?id=4&tab=1#top"', $out);
+        $this->assertStringContainsString('href="https://moodle.test/mod/assign/view.php?id=9"', $out);
+        // A Canvas page with no Moodle counterpart is left as it was.
+        $this->assertStringContainsString('$CANVAS_COURSE_REFERENCE$/collaborations', $out);
+    }
+
+    /**
      * Some Canvas exports address a wiki page by its resource identifier rather than its slug
      * ($WIKI_REFERENCE$/pages/g1b5e…); that form resolves through the identifier map, keeping
      * any #fragment, while a slug match still wins when both exist.
