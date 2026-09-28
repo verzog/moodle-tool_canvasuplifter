@@ -172,8 +172,11 @@ echo $OUTPUT->notification(
     \core\output\notification::NOTIFY_WARNING
 );
 
-// Point the admin at the built-in chunked-upload field for large packages.
-echo html_writer::tag('p', get_string('chunkuploadactive', 'tool_canvasuplifter'), ['class' => 'text-muted']);
+// Point the admin at the built-in chunked-upload field for large packages; when the Large file
+// repository replaces that field, the form carries its own pointer instead.
+if (!upload_form::largefile_repository_available()) {
+    echo html_writer::tag('p', get_string('chunkuploadactive', 'tool_canvasuplifter'), ['class' => 'text-muted']);
+}
 $form->display();
 
 echo $OUTPUT->footer();
