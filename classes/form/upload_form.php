@@ -164,13 +164,21 @@ class upload_form extends moodleform {
             return false;
         }
         require_once($CFG->dirroot . '/repository/lib.php');
-        $instances = \repository::get_instances([
-            'currentcontext' => \context_system::instance(),
-            'onlyvisible' => true,
-            'type' => 'largefile',
-            'accepted_types' => ['.imscc', '.zip'],
-        ]);
-        return !empty($instances);
+        // Each package type must be accepted on its own: the accepted_types filter matches a
+        // repository that takes any one of the listed types, and a .zip-only instance cannot
+        // take a normal .imscc export.
+        foreach (['.imscc', '.zip'] as $type) {
+            $instances = \repository::get_instances([
+                'currentcontext' => \context_system::instance(),
+                'onlyvisible' => true,
+                'type' => 'largefile',
+                'accepted_types' => [$type],
+            ]);
+            if (empty($instances)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

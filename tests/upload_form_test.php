@@ -125,6 +125,32 @@ final class upload_form_test extends \advanced_testcase {
     }
 
     /**
+     * A Large file repository restricted to types that exclude .imscc (here .zip only) cannot
+     * take a normal Canvas export, so the built-in chunked field stays. Kept in its own test
+     * because repository instances, and the types they support, are cached per request.
+     *
+     * @return void
+     */
+    public function test_form_keeps_uploader_when_largefile_rejects_imscc(): void {
+        global $CFG;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        if (\core_component::get_component_directory('repository_largefile') === null) {
+            $this->markTestSkipped('repository_largefile is not installed on this site.');
+        }
+        require_once($CFG->dirroot . '/repository/lib.php');
+        if (!\repository::get_type_by_typename('largefile')) {
+            (new \repository_type('largefile', [], true))->create(true);
+        }
+        // Its type restriction is plain config, so no repository code is called here.
+        set_config('restricttypes', 1, 'largefile');
+        set_config('accept_imscc', '0', 'largefile');
+
+        $this->assertFalse(upload_form::largefile_repository_available());
+        $this->assertTrue($this->has_element(new upload_form(), 'packagelargefile'));
+    }
+
+    /**
      * With no file uploaded and no URL given, the form fails validation with an
      * error on the package field.
      *
