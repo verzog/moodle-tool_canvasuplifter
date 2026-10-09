@@ -608,6 +608,20 @@ final class qti_parser_test extends \basic_testcase {
     }
 
     /**
+     * The native dump counts as fuller only when it has strictly more questions.
+     *
+     * @return void
+     */
+    public function test_native_is_fuller(): void {
+        $two = ['questions' => [new \stdClass(), new \stdClass()]];
+        $one = ['questions' => [new \stdClass()]];
+        $this->assertTrue(qti_parser::native_is_fuller($one, $two));
+        $this->assertFalse(qti_parser::native_is_fuller($two, $two));
+        $this->assertFalse(qti_parser::native_is_fuller($two, $one));
+        $this->assertTrue(qti_parser::native_is_fuller([], $one));
+    }
+
+    /**
      * Canvas's native dump (non_cc_assessments/*.xml.qti) labels items with
      * question_type rather than cc_profile. Those types are mapped explicitly:
      * a true_false_question becomes a two-option choice with the right answer

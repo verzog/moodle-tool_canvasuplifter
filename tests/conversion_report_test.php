@@ -935,6 +935,39 @@ final class conversion_report_test extends \advanced_testcase {
     }
 
     /**
+     * When the native dump holds more questions than the Common Cartridge copy (Canvas leaves
+     * types such as matching out of the CC file), the matrix counts the native dump, as the
+     * builders import it.
+     *
+     * @return void
+     */
+    public function test_matrix_prefers_fuller_native_dump(): void {
+        $dir = make_request_directory();
+        mkdir($dir . '/a1');
+        mkdir($dir . '/non_cc_assessments');
+        $wrap = fn(string $items): string => '<?xml version="1.0" encoding="utf-8"?>'
+            . '<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="a1" title="Partial"><section ident="s1">' . $items
+            . '</section></assessment></questestinterop>';
+        file_put_contents($dir . '/a1/assessment_qti.xml', $wrap($this->profileitem('cc.multiple_choice.v0p1', 'B')));
+        file_put_contents(
+            $dir . '/non_cc_assessments/a1.xml.qti',
+            $wrap($this->profileitem('cc.multiple_choice.v0p1', 'B') . $this->profileitem('cc.true_false.v0p1', 'A'))
+        );
+        $course = new course_model();
+        $section = new section_model('Week 1');
+        $quiz = new item('q1', 'Partial');
+        $quiz->kind = item::KIND_QUIZ;
+        $quiz->files = ['a1/assessment_qti.xml', 'non_cc_assessments/a1.xml.qti'];
+        $section->add_item($quiz);
+        $course->add_section($section);
+
+        $matrix = (new conversion_report($course, $dir))->build()['questionmatrix'];
+
+        $this->assertSame(2, $matrix['total']);
+    }
+
+    /**
      * A referenced New Quiz that draws its questions from a separate item bank via
      * <selection_ordering>/<sourcebank_ref> has the bank's question types folded
      * into the matrix — including unsupported ones — because quiz_builder imports

@@ -1321,6 +1321,16 @@ class conversion_report {
             return $empty;
         }
         $parsed = (new qti_parser())->parse((string) @file_get_contents($path));
+        // Mirror the builders: a native dump holding more questions than the CC file is the real
+        // assessment (Canvas leaves matching, fill-in-multiple-blanks, ... out of the CC copy).
+        if ($nativefallback) {
+            $native = $this->resolve_native_qti($modelitem, $path);
+            $nativeparsed = $native === null ? null : (new qti_parser())->parse((string) @file_get_contents($native));
+            $fuller = $nativeparsed !== null && qti_parser::native_is_fuller($parsed, $nativeparsed);
+            if ($fuller && $this->any_importable($nativeparsed['questions'])) {
+                return $nativeparsed;
+            }
+        }
         // Mirror the builders: fall back to the native dump when the CC file has
         // no *importable* questions (not merely no questions) — a shell may carry
         // unconvertible items while the real, importable ones live in the dump.

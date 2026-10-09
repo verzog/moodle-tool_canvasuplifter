@@ -1102,6 +1102,36 @@ XML;
     }
 
     /**
+     * When the Common Cartridge copy holds some questions but Canvas left others out of it
+     * (Common Cartridge has no matching type), the builder uses the fuller native dump, so
+     * the matching question is imported alongside the true/false one instead of being lost.
+     *
+     * @return void
+     */
+    public function test_fuller_native_dump_replaces_partial_cc_copy(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $root = $this->build_fixture_native_fallback();
+        // The CC copy keeps only the true/false question; the native dump has both.
+        file_put_contents(
+            $root . '/gnative/assessment_qti.xml',
+            '<?xml version="1.0"?><questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">'
+            . '<assessment ident="gnative" title="Week 1 Quiz"><section ident="root_section">'
+            . $this->nativetfitem() . '</section></assessment></questestinterop>'
+        );
+        $category = $this->getDataGenerator()->create_category();
+        $report = (new course_builder($category->id, $root))->build((new manifest_parser($root))->parse());
+
+        $quizzes = get_fast_modinfo($report['courseid'])->get_instances_of('quiz');
+        $this->assertCount(1, $quizzes);
+        $quiz = $DB->get_record('quiz', ['id' => reset($quizzes)->instance], '*', MUST_EXIST);
+        $this->assertEquals(2, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
+        $this->assertTrue($DB->record_exists('question', ['qtype' => 'match']));
+    }
+
+    /**
      * One multiple-choice item for an item-bank <objectbank>, keyed by ident.
      *
      * @param string $ident The item ident.

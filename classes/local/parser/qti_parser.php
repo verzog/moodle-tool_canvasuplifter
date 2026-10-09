@@ -176,6 +176,22 @@ class qti_parser {
     }
 
     /**
+     * Whether Canvas's native non_cc_assessments dump of an assessment holds more questions than
+     * its Common Cartridge QTI. Canvas writes only the question types Common Cartridge defines
+     * (multiple choice, true/false, essay, ...) to assessment_qti.xml and leaves matching,
+     * fill-in-multiple-blanks and similar questions out of it, while the native dump keeps every
+     * question. When the dump is fuller it is the real assessment, so the builders and the report
+     * use it instead of the partial Common Cartridge copy.
+     *
+     * @param array $ccparsed The parse() result of the Common Cartridge QTI.
+     * @param array $nativeparsed The parse() result of the native dump.
+     * @return bool True when the native dump has more questions.
+     */
+    public static function native_is_fuller(array $ccparsed, array $nativeparsed): bool {
+        return count($nativeparsed['questions'] ?? []) > count($ccparsed['questions'] ?? []);
+    }
+
+    /**
      * The trimmed text of the first descendant element with the given local name,
      * or '' when there is none. Namespace-agnostic, matching how the rest of the
      * parser reads Canvas's mixed-namespace QTI.
