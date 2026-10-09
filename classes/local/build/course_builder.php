@@ -447,7 +447,7 @@ class course_builder {
         }
 
         // Second pass: rewrite internal page links now that every target exists. One shared
-        // rewriter counts the links whose target is not in the export, for the report.
+        // rewriter counts the links whose target was not built, for the report.
         $this->linkrewriter = new link_rewriter();
         $urlmap += $this->course_link_targets($course);
         $this->rewrite_internal_links($builtpagecmids, $urlmap);
@@ -583,8 +583,8 @@ class course_builder {
         if (!empty($unresolvedmedia)) {
             $warnings[] = get_string('warnunresolvedmedia', 'tool_canvasuplifter', count($unresolvedmedia));
         }
-        // Links to Canvas pages or items the export did not include (a page deleted or
-        // left out of a partial export) keep their Canvas token and will not open.
+        // Links to Canvas pages or items missing from the built course (absent from the export,
+        // not imported, or a course page with no Moodle equivalent) keep their token and will not open.
         if ($this->linkrewriter->unresolvedinternal > 0) {
             $warnings[] = get_string('warnunresolvedlinks', 'tool_canvasuplifter', $this->linkrewriter->unresolvedinternal);
         }

@@ -331,8 +331,9 @@ $string['warnreportstacklti'] = 'Some external (LTI) tool links appear to delive
     . 'Moodle that hosts them.';
 $string['warnreportunclassified'] = 'Some resources could not be classified and will be skipped.';
 $string['warnunresolvedlinks'] = '{$a} link(s) in page or activity content point to Canvas pages or items that are '
-    . 'not in the export (for example a page deleted in Canvas, or left out of a partial export), so they were left '
-    . 'as-is and will not open. Search the course for "WIKI_REFERENCE" or "CANVAS_" to find and fix them.';
+    . 'not in the built course (for example a page missing from the export, an item that was not imported, or a '
+    . 'Canvas page with no Moodle equivalent), so they were left as-is and will not open. Search the course for '
+    . '"WIKI_REFERENCE" or "CANVAS_" to find and fix them.';
 $string['warnunresolvedmedia'] = '{$a} embedded asset(s) referenced in page or activity content are not present in '
     . 'the package (for example a stale cross-course image copied from another course), so those references were '
     . 'left as-is and will show as broken. See the list below and re-upload the files if the content needs them.';

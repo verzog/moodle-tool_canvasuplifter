@@ -2113,11 +2113,11 @@ XML;
         $expected = $newsforum ? '/mod/forum/view.php?f=' . $newsforum : '/mod/forum/index.php?id=' . $courseid;
         $this->assertStringContainsString($expected, $page->content);
         // Every link resolved, so the report raises no unresolved-links warning.
-        $this->assertEmpty(preg_grep('/not in the export/', $report['warnings']));
+        $this->assertEmpty(preg_grep('/not in the built course/', $report['warnings']));
     }
 
     /**
-     * Links to Canvas pages or items the export left out keep their token and are counted
+     * Links to Canvas pages or items missing from the built course keep their token and are counted
      * in one build-report warning; links that resolve are not counted.
      *
      * @return void

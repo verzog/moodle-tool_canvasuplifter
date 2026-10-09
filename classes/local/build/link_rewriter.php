@@ -261,7 +261,7 @@ class link_rewriter {
      *
      * Unresolved references (no matching entry in the map) are left untouched
      * so no information is lost, and counted in $unresolvedinternal so the build
-     * report can flag links whose target is not in the export.
+     * report can flag links whose target is not in the built course.
      *
      * @param string $html The page HTML.
      * @param array $urlmap Keys like "wiki:<slug>" or "id:<identifier>" mapped to URLs.
