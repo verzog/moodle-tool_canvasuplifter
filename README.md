@@ -107,16 +107,21 @@ Admin tools > Canvas Uplifter*.
      `mod_page`, and links between the folded pages are rewritten to point at the
      right chapter/page.
 
-### Known limitations (Phase 1)
+### Known limitations
 
-- Page link rewriting covers embedded files (`$IMS-CC-FILEBASE$`) and internal
-  links to other pages/activities (`$WIKI_REFERENCE$`,
-  `$CANVAS_OBJECT_REFERENCE$`). Links whose target isn't built yet (e.g. a
-  quiz) can't be resolved until that content type is supported, so those
-  references are left unchanged rather than pointed at a broken URL.
-- Assignments convert name, description, due/availability dates, points grade
-  and online-text/file-upload submission types. Rubrics and advanced grading
-  are not carried across.
+- Link rewriting covers embedded files (`$IMS-CC-FILEBASE$`) and internal links
+  to pages, activities, modules and course areas such as Grades or Modules
+  (`$WIKI_REFERENCE$`, `$CANVAS_OBJECT_REFERENCE$`, `$CANVAS_COURSE_REFERENCE$`).
+  A link whose target is not in the built course (for example a page missing from
+  the export) is left unchanged rather than pointed at a broken URL, and the build
+  report counts these links so a teacher can fix them.
+- Assignments convert name, description, due/availability dates, points grade,
+  online-text/file-upload submission types and their Canvas rubric (as a Moodle
+  rubric). A rubric the export does not link to any activity is reported, not
+  imported, because Canvas leaves out the association.
+- Learning outcomes import as course grade outcomes (hidden until the site's
+  "Enable outcomes" setting is on), but their alignment to rubric criteria or
+  assignments does not carry across.
 - Resources not linked from any module are imported into an "Additional
   resources" section so nothing is lost.
 - The optional "Combine consecutive pages" setting can fold runs of pages into a
@@ -133,8 +138,9 @@ Admin tools > Canvas Uplifter*.
   `RESPONSE_0` — they import as a Cloze with each dropdown inline in the question
   text. Questions Canvas itself marks `Error` (it failed to convert them when they
   were imported into Canvas) are reported, not imported. When a Canvas Common
-  Cartridge assessment ships an empty shell, the questions are recovered from
-  Canvas's native QTI dump (`non_cc_assessments`).
+  Cartridge assessment is an empty shell, or leaves out question types Common
+  Cartridge does not define (matching, fill in multiple blanks), the questions
+  are taken from Canvas's fuller native QTI dump (`non_cc_assessments`).
   Bundled media in question text — images, video, audio and attachments,
   including `$IMS-CC-FILEBASE$` references — is imported with the question, and
   internal Canvas links in question text are rewritten once their targets exist;
