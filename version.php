@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_canvasuplifter';
-$plugin->version   = 2026100901;      // YYYYMMDDXX. This release.
+$plugin->version   = 2026100902;      // YYYYMMDDXX. This release.
 $plugin->requires  = 2025041400;      // Moodle 5.0.0 (the lowest supported release).
 $plugin->supported = [500, 503];      // Supports Moodle 5.0 to 5.3 LTS inclusive.
 $plugin->maturity  = MATURITY_ALPHA;  // Canvas ordering questions import as Moodle ordering.

@@ -135,16 +135,20 @@ trait qti_source_locator {
         // draws (Canvas often stores <selection_ordering> only in the dump). Inspect it
         // whenever the CC parse is missing either — including when the CC questions convert
         // cleanly but carry no draws of their own, so bank-backed content isn't dropped.
-        if (empty($importable) || empty($selections)) {
-            $native = $this->locate_native_qti($modelitem, $qtipath);
-            if ($native !== null) {
-                [$nativeparsed, $nativesupported, $nativeimportable] = $this->parse_qti($native);
+        // It is also adopted when it simply holds more questions: Canvas leaves the types Common
+        // Cartridge lacks (matching, fill-in-multiple-blanks, ...) out of the CC file.
+        $native = $this->locate_native_qti($modelitem, $qtipath);
+        if ($native !== null) {
+            [$nativeparsed, $nativesupported, $nativeimportable] = $this->parse_qti($native);
+            $fuller = qti_parser::native_is_fuller($parsed, $nativeparsed);
+            if ($fuller || empty($importable) || empty($selections)) {
                 $nativeselections = ($nativeparsed['hasassessment'] ?? false)
                     ? ($nativeparsed['selections'] ?? []) : [];
-                if (empty($importable) && !empty($nativeimportable)) {
-                    // The real questions live in the native dump (the CC shell was empty), so
-                    // adopt it wholesale, including its draws. Native questions reference media
-                    // under the package root. Keep any CC draws when the dump has none.
+                if ((empty($importable) && !empty($nativeimportable)) || ($fuller && !empty($nativeimportable))) {
+                    // The real questions live in the native dump (the CC file was an empty shell or
+                    // left question types out), so adopt it wholesale, including its draws. Native
+                    // questions reference media under the package root. Keep any CC draws when the
+                    // dump has none.
                     $parsed = $nativeparsed;
                     $supported = $nativesupported;
                     $importable = $nativeimportable;

@@ -761,11 +761,13 @@ class manifest_parser {
         $selections = !empty($parsed['hasassessment']) ? ($parsed['selections'] ?? []) : [];
         $sources = [$this->importable_questions($qtipath, dirname($qtipath), $parsed)];
         $hasimportable = $this->qti_has_importable($parsed);
-        $native = (!$hasimportable || $selections === []) ? $this->locate_native_quiz_qti($resourceitem, $qtipath) : null;
+        $native = $this->locate_native_quiz_qti($resourceitem, $qtipath);
         if ($native !== null) {
             $nativeparsed = (new qti_parser())->parse((string) @file_get_contents($native));
             $nativeselections = !empty($nativeparsed['hasassessment']) ? ($nativeparsed['selections'] ?? []) : [];
-            if (!$hasimportable && $this->qti_has_importable($nativeparsed)) {
+            $adopt = (!$hasimportable || qti_parser::native_is_fuller($parsed, $nativeparsed))
+                && $this->qti_has_importable($nativeparsed);
+            if ($adopt) {
                 // The builders adopt the native dump; its questions reference media from the package root.
                 $sources = [$this->importable_questions($native, $this->basedir, $nativeparsed)];
                 $selections = $nativeselections !== [] ? $nativeselections : $selections;
