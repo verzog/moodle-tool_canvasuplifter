@@ -5,6 +5,44 @@ loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
 plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
 quickly.
 
+## [0.85.0] - 2026-10-09
+
+Links and reporting, checked against full real-site builds of CVT 112L, CVT 205
+and ST 110 (see the README's path to beta).
+
+- **Links between pages now resolve in more Canvas exports.** Links that address a
+  page by its identifier instead of its name now work, and keep any `?query` or
+  `#anchor` (#202). Links to a Canvas module open the section it became (#203).
+  Links to Canvas course pages (`$CANVAS_COURSE_REFERENCE$`: Modules, Grades,
+  Announcements, Syllabus or a single item) open their Moodle equivalents (#204).
+- **New build-report warning for links whose target is not in the export**, for
+  example a page deleted in Canvas. The links are left as they were and counted, so an
+  editor can find and fix them (#208).
+- **Fix: file links with brackets in the path, or CSS `url()` references side by
+  side, could break** (#196).
+- **Empty unlinked quizzes are reported as "not created"** rather than counted as
+  skipped items, with clearer wording (#197).
+- **"Additional resources" handling.**
+  - Pages nothing links to are built one by one, never grouped into a book or lesson
+    (#189).
+  - Unpublished Canvas pages outside modules import as hidden (#193).
+  - The section is hidden when Canvas hid its Pages menu (#195).
+  - Images used only in quiz questions are no longer also built as loose files (#192).
+  - The report's intro for unreferenced resources is clearer (#200).
+- **A Canvas external-tool assignment's LTI link is built once**, keeping its custom
+  parameters (#190).
+- **The syllabus is picked by name only when that is unambiguous** (#194).
+- **The Large file repository is used when it is installed.** When
+  `repository_largefile` is installed and enabled, the upload form uses it as the file
+  picker and hides the built-in chunked field. The two plugins stay separate (#206).
+  The bundled copy of `repository_largefile` has been removed; the README links to the
+  standalone plugin (#199).
+- **Maintenance.**
+  - Copyright is now 2026 Vernon Spain (#198).
+  - Tests use PHPUnit attributes, ready for PHPUnit 12 (#201).
+  - CI tests Moodle 5.3 LTS on `MOODLE_503_STABLE` as a blocking branch (#207).
+  - The README records the evidence for the path to beta (#205).
+
 ## [0.84.0] - 2026-09-26
 
 - **Canvas ordering ("put in order") questions now convert** to Moodle's core Ordering
