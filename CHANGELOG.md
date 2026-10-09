@@ -20,8 +20,9 @@ and ST 110 (see the README's path to beta).
   are left as they were and counted, so an editor can find and fix them (#208).
 - **Fix: file links with brackets in the path, or CSS `url()` references side by
   side, could break** (#196).
-- **Empty unlinked quizzes are reported as "not created"** rather than counted as
-  skipped items, with clearer wording (#197).
+- **Empty unlinked quizzes get their own warning.** The report says they were not
+  created because they have no questions, instead of grouping them with unsupported
+  content (they still count towards the skipped total) (#197).
 - **"Additional resources" handling.**
   - Pages nothing links to are built one by one, never grouped into a book or lesson
     (#189).
@@ -33,8 +34,10 @@ and ST 110 (see the README's path to beta).
   parameters (#190).
 - **The syllabus is picked by name only when that is unambiguous** (#194).
 - **The Large file repository is used when it is installed.** When
-  `repository_largefile` is installed and enabled, the upload form uses it as the file
-  picker and hides the built-in chunked field. The two plugins stay separate (#206).
+  `repository_largefile` is installed, enabled and usable by the current user (who
+  also needs `moodle/course:ignorefilesizelimits`), and it accepts both `.imscc` and
+  `.zip`, the upload form points to it and hides the built-in chunked field. Otherwise
+  the chunked field stays. The two plugins stay separate (#206).
   The bundled copy of `repository_largefile` has been removed; the README links to the
   standalone plugin (#199).
 - **Maintenance.**
