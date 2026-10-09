@@ -15,9 +15,9 @@ and ST 110 (see the README's path to beta).
   `#anchor` (#202). Links to a Canvas module open the section it became (#203).
   Links to Canvas course pages (`$CANVAS_COURSE_REFERENCE$`: Modules, Grades,
   Announcements, Syllabus or a single item) open their Moodle equivalents (#204).
-- **New build-report warning for links whose target is not in the export**, for
-  example a page deleted in Canvas. The links are left as they were and counted, so an
-  editor can find and fix them (#208).
+- **New build-report warning for links whose target is not in the built course**, for
+  example a page missing from the export or an item that was not imported. The links
+  are left as they were and counted, so an editor can find and fix them (#208).
 - **Fix: file links with brackets in the path, or CSS `url()` references side by
   side, could break** (#196).
 - **Empty unlinked quizzes are reported as "not created"** rather than counted as
