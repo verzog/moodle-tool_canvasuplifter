@@ -1,9 +1,28 @@
 # Changelog
 
 All notable changes to `tool_canvasuplifter` are documented here. The format is
-loosely based on [Keep a Changelog](https://keepachangelog.com/); while the
-plugin is pre-1.0 (`MATURITY_ALPHA`) the version line is `0.x` and may change
-quickly.
+loosely based on [Keep a Changelog](https://keepachangelog.com/). Releases
+before 1.0.0 were `MATURITY_ALPHA` (`0.x`); 1.0.0 is the first `MATURITY_BETA`
+release.
+
+## [1.0.0] - 2026-10-09
+
+First beta release. All five "Path to beta" validation builds passed (issue #182): New
+Quizzes alongside Classic Quizzes, cross-linked multi-module courses, media-heavy courses,
+non-Canvas Common Cartridge exports and an outcomes-heavy course.
+
+- **Plugin maturity is now beta** (`MATURITY_BETA`), ready to submit to the Moodle
+  Plugins directory.
+- **Fix: matching and fill-in-the-blanks quiz questions could go missing.** Canvas
+  saves each quiz twice: a Common Cartridge copy that leaves out the question types
+  Common Cartridge does not define (matching, fill in multiple blanks), and its own
+  complete copy. The complete copy was used only when the Common Cartridge copy was
+  empty, so a quiz that also had multiple-choice questions silently lost the rest. A
+  real course export lost 29 of 271 questions. The complete copy is now used whenever
+  it has more questions, in the build and in the analysis report, and the pictures
+  those questions use are no longer listed as unreferenced files (#210).
+- The README records the outcomes-heavy validation build: 15 outcomes covering all five
+  Canvas calculation methods, each imported with its mastery-rating scale (#211).
 
 ## [0.85.0] - 2026-10-09
 

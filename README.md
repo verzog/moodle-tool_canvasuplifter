@@ -2,7 +2,7 @@
 
 Imports Canvas LMS course exports (IMS Common Cartridge `.imscc`) into Moodle.
 
-> **Status: alpha, Phases 0–7 complete.** This release can both *analyse* a
+> **Status: beta (1.0), Phases 0–8 complete.** This release can both *analyse* a
 > Canvas package (report what it contains and how cleanly each part maps to
 > Moodle — run as a background task so large packages don't time out the web
 > request) and *build* a new Moodle course from it. The builder creates
@@ -322,9 +322,9 @@ Everything lives under `~/.moodle-plugin-ci` (outside the repo).
 
 ## Path to beta
 
-Status today is `MATURITY_ALPHA`. The bar to flip to `MATURITY_BETA` and
-submit to the Moodle plugin directory is one clean build of each of these
-shapes against `main`:
+**Met in 1.0.0:** the plugin is now `MATURITY_BETA`. The bar to flip from
+`MATURITY_ALPHA` and submit to the Moodle plugin directory was one clean build
+of each of these shapes against `main`:
 
 - [x] A Canvas course exporting **New Quizzes** alongside Classic Quizzes
       (Canvas writes both as QTI 1.2 with subtly different shapes).
@@ -400,9 +400,9 @@ rewriter fault: `link_rewriter` matched the token and correctly left it untouche
 when `resolve_filebase()` found nothing. See issue #111 for the follow-up on
 friendlier handling of unresolvable filebase references.
 
-Each successful build narrows the shape space; if all five land cleanly
-(or only surface small fixes), flip `version.php` to `MATURITY_BETA` and
-submit.
+All five landed cleanly (or surfaced only small fixes), so 1.0.0 flips
+`version.php` to `MATURITY_BETA`; the next step is submitting to the Moodle
+Plugins directory.
 
 ## Releasing (maintainers)
 
@@ -420,7 +420,7 @@ set before you tag — it does not run the advisory `phpcpd`/`phpmd`.
 To cut a release:
 
 1. Keep `$plugin->version` (`YYYYMMDDXX`) monotonically increasing, and set
-   `$plugin->release` (the `0.x` string) and `$plugin->maturity`.
+   `$plugin->release` (the `X.Y.Z` string) and `$plugin->maturity`.
 2. Update `CHANGELOG.md` — add a dated section for the new `release`.
 3. Land those on `main` green, then tag it — substituting the same version you
    set in `$plugin->release` in step 1 for `X.Y.Z` (e.g. `v0.45.0`):
@@ -429,10 +429,10 @@ To cut a release:
    `moodle-tool_canvasuplifter`), which is the directory name Moodle installs it
    under (`admin/tool/canvasuplifter`).
 
-`$plugin->maturity` stays `MATURITY_ALPHA` — and releases are `0.x` — until the
-**Path to beta** boxes above are met; flipping to `MATURITY_BETA` (and a first
-`1.0`) is the trigger to submit to the Moodle Plugins directory. Alpha `0.x`
-releases can be tagged and distributed as ZIPs in the meantime.
+Since 1.0.0 the plugin is `MATURITY_BETA` (the **Path to beta** boxes above are
+met) and releases follow semantic versioning: a patch release for fixes, a minor
+release for new features. `MATURITY_STABLE` is a later step, once the beta has
+run on real sites.
 
 ## Licence
 
