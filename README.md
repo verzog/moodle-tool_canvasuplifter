@@ -360,10 +360,16 @@ shapes against `main`:
       content plus 54/54 questions, 0 skipped; its `web_content*.log` build
       artifact is now filtered, with a regression fixture added). Schoology and
       OpenStax are still untried.
-- [ ] An **outcomes-heavy course** — Canvas learning outcomes now import
+- [x] An **outcomes-heavy course** — Canvas learning outcomes import
       as course grade outcomes, each backed by a scale from its mastery
-      ratings (Phase 6 / the 0.41.0 changelog). A clean build of a course
-      rich in outcomes is still needed to validate that import at scale.
+      ratings (Phase 6 / the 0.41.0 changelog). Validated: a **CVT** course
+      export with 15 outcomes (covering all five Canvas calculation methods —
+      decaying average, highest, latest, n-times mastery and simple average)
+      built cleanly on a live site (169/169 items, 0 skipped); all 15 import
+      with their mastery-rating scales. The same build surfaced a quiz bug:
+      Canvas leaves matching and fill-in-multiple-blanks questions out of its
+      Common Cartridge quiz copy, and 29 of 271 questions were silently dropped
+      until the fuller native copy was preferred (#210).
       Note this box validates outcome *import* only: the **alignment** of
       outcomes to specific rubric criteria or assignments
       (`learning_outcome_identifierref`) is a known non-carry — Canvas
