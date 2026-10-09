@@ -88,6 +88,9 @@ class course_builder {
     /** @var media_report Shared collector for embedded-media references absent from the package (per build). */
     private media_report $mediareport;
 
+    /** @var link_rewriter Shared internal-link rewriter for the second pass; counts unresolved links (per build). */
+    private link_rewriter $linkrewriter;
+
     /**
      * Constructor.
      *
@@ -443,7 +446,9 @@ class course_builder {
             $extrashidden = true;
         }
 
-        // Second pass: rewrite internal page links now that every target exists.
+        // Second pass: rewrite internal page links now that every target exists. One shared
+        // rewriter counts the links whose target is not in the export, for the report.
+        $this->linkrewriter = new link_rewriter();
         $urlmap += $this->course_link_targets($course);
         $this->rewrite_internal_links($builtpagecmids, $urlmap);
         $this->rewrite_grouped_content($rewritetargets, $urlmap);
@@ -577,6 +582,11 @@ class course_builder {
         $unresolvedmedia = $this->mediareport->references();
         if (!empty($unresolvedmedia)) {
             $warnings[] = get_string('warnunresolvedmedia', 'tool_canvasuplifter', count($unresolvedmedia));
+        }
+        // Links to Canvas pages or items the export did not include (a page deleted or
+        // left out of a partial export) keep their Canvas token and will not open.
+        if ($this->linkrewriter->unresolvedinternal > 0) {
+            $warnings[] = get_string('warnunresolvedlinks', 'tool_canvasuplifter', $this->linkrewriter->unresolvedinternal);
         }
         // Course-navigation external tools with no launch configuration in the
         // package can't be built, so flag them on the direct Build path too (the
@@ -1427,7 +1437,7 @@ class course_builder {
         if (empty($pagecmids) || empty($urlmap)) {
             return;
         }
-        $rewriter = new link_rewriter();
+        $rewriter = $this->linkrewriter;
         foreach ($pagecmids as $cmid) {
             $cm = get_coursemodule_from_id('page', $cmid, 0, false, IGNORE_MISSING);
             if (!$cm) {
@@ -1459,7 +1469,7 @@ class course_builder {
         if (empty($outcomeids) || empty($urlmap)) {
             return;
         }
-        $rewriter = new link_rewriter();
+        $rewriter = $this->linkrewriter;
         foreach ($outcomeids as $id) {
             $record = $DB->get_record('grade_outcomes', ['id' => (int) $id], 'id, description');
             if (!$record) {
@@ -1487,7 +1497,7 @@ class course_builder {
         if (empty($eventids) || empty($urlmap)) {
             return;
         }
-        $rewriter = new link_rewriter();
+        $rewriter = $this->linkrewriter;
         foreach ($eventids as $id) {
             $record = $DB->get_record('event', ['id' => (int) $id], 'id, description');
             if (!$record) {
@@ -1517,7 +1527,7 @@ class course_builder {
         if (empty($targets) || empty($urlmap)) {
             return;
         }
-        $rewriter = new link_rewriter();
+        $rewriter = $this->linkrewriter;
         foreach ($targets as $target) {
             $field = $target['field'];
             $record = $DB->get_record($target['table'], ['id' => $target['id']], 'id, ' . $field);
@@ -1547,7 +1557,7 @@ class course_builder {
         if (empty($urlmap)) {
             return;
         }
-        $rewriter = new link_rewriter();
+        $rewriter = $this->linkrewriter;
         $sql = "SELECT p.id, p.message
                   FROM {forum_posts} p
                   JOIN {forum_discussions} d ON d.firstpost = p.id
@@ -1580,7 +1590,7 @@ class course_builder {
         if (empty($urlmap)) {
             return;
         }
-        $rewriter = new link_rewriter();
+        $rewriter = $this->linkrewriter;
         foreach ($DB->get_records('assign', ['course' => $courseid], '', 'id, intro') as $assign) {
             $newintro = $rewriter->rewrite_internal_links((string) $assign->intro, $urlmap);
             if ($newintro !== $assign->intro) {
@@ -1607,7 +1617,7 @@ class course_builder {
         if (empty($urlmap)) {
             return;
         }
-        $rewriter = new link_rewriter();
+        $rewriter = $this->linkrewriter;
         foreach ($DB->get_records('quiz', ['course' => $courseid], '', 'id, intro') as $quiz) {
             $newintro = $rewriter->rewrite_internal_links((string) $quiz->intro, $urlmap);
             if ($newintro !== $quiz->intro) {
@@ -1634,7 +1644,7 @@ class course_builder {
         if (empty($urlmap)) {
             return;
         }
-        $rewriter = new link_rewriter();
+        $rewriter = $this->linkrewriter;
         foreach ($DB->get_records('lti', ['course' => $courseid], '', 'id, intro') as $lti) {
             $newintro = $rewriter->rewrite_internal_links((string) $lti->intro, $urlmap);
             if ($newintro !== $lti->intro) {
@@ -1683,7 +1693,7 @@ class course_builder {
         if (empty($questionids) || empty($urlmap)) {
             return;
         }
-        $rewriter = new link_rewriter();
+        $rewriter = $this->linkrewriter;
         [$insql, $params] = $DB->get_in_or_equal(array_values(array_unique($questionids)), SQL_PARAMS_NAMED);
 
         $this->rewrite_link_fields($rewriter, $urlmap, 'question', "id $insql", $params, ['questiontext', 'generalfeedback']);
