@@ -40,6 +40,9 @@ class link_rewriter {
     /** @var string Regex fragment matching Canvas's $IMS-CC-FILEBASE$ token, raw or URL-encoded. */
     public const FILEBASE_TOKEN = '(?:\$IMS-CC-FILEBASE\$|%24IMS-CC-FILEBASE%24)';
 
+    /** @var int Internal-link tokens rewrite_internal_links() could not resolve, counted per occurrence. */
+    public int $unresolvedinternal = 0;
+
     /**
      * Resolve a decoded, root-relative path from an $IMS-CC-FILEBASE$ token to a
      * real package file, trying the bare path and the web_resources/ location
@@ -257,7 +260,8 @@ class link_rewriter {
      * Rewrite internal wiki/object references to real Moodle activity URLs.
      *
      * Unresolved references (no matching entry in the map) are left untouched
-     * so no information is lost.
+     * so no information is lost, and counted in $unresolvedinternal so the build
+     * report can flag links whose target is not in the built course.
      *
      * @param string $html The page HTML.
      * @param array $urlmap Keys like "wiki:<slug>" or "id:<identifier>" mapped to URLs.
@@ -271,7 +275,11 @@ class link_rewriter {
         $html = preg_replace_callback($wikipattern, function ($matches) use ($urlmap) {
             $slug = rawurldecode($matches[1]);
             $url = $urlmap['wiki:' . $slug] ?? $urlmap['id:' . $slug] ?? null;
-            return $url === null ? $matches[0] : self::join_suffix($url, $matches[2] ?? '');
+            if ($url === null) {
+                $this->unresolvedinternal++;
+                return $matches[0];
+            }
+            return self::join_suffix($url, $matches[2] ?? '');
         }, $html) ?? $html;
 
         // Object references: $CANVAS_OBJECT_REFERENCE$/<type>/<identifier>, plus
@@ -281,6 +289,7 @@ class link_rewriter {
         $html = preg_replace_callback($objectpattern, function ($matches) use ($urlmap) {
             $id = rawurldecode($matches[1]);
             if (!isset($urlmap['id:' . $id])) {
+                $this->unresolvedinternal++;
                 return $matches[0];
             }
             return self::join_suffix($urlmap['id:' . $id], $matches[2] ?? '');
@@ -298,7 +307,11 @@ class link_rewriter {
             if ($url === null && count($segments) === 2) {
                 $url = $urlmap['id:' . $segments[1]] ?? null;
             }
-            return $url === null ? $matches[0] : self::join_suffix($url, $matches[2] ?? '');
+            if ($url === null) {
+                $this->unresolvedinternal++;
+                return $matches[0];
+            }
+            return self::join_suffix($url, $matches[2] ?? '');
         }, $html) ?? $html;
 
         return $html;

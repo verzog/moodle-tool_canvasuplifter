@@ -2112,6 +2112,49 @@ XML;
         $newsforum = $DB->get_field('forum', 'id', ['course' => $courseid, 'type' => 'news']);
         $expected = $newsforum ? '/mod/forum/view.php?f=' . $newsforum : '/mod/forum/index.php?id=' . $courseid;
         $this->assertStringContainsString($expected, $page->content);
+        // Every link resolved, so the report raises no unresolved-links warning.
+        $this->assertEmpty(preg_grep('/not in the built course/', $report['warnings']));
+    }
+
+    /**
+     * Links to Canvas pages or items missing from the built course keep their token and are counted
+     * in one build-report warning; links that resolve are not counted.
+     *
+     * @return void
+     */
+    public function test_build_warns_about_unresolved_internal_links(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $dir = make_request_directory();
+        mkdir($dir . '/wiki_content');
+        file_put_contents(
+            $dir . '/wiki_content/start.html',
+            '<p><a href="$WIKI_REFERENCE$/pages/deleted-page">Gone</a>'
+            . '<a href="%24CANVAS_OBJECT_REFERENCE%24/assignments/g0ne">Essay</a>'
+            . '<a href="$CANVAS_COURSE_REFERENCE$/discussion_topics/m1ss1ng">Topic</a>'
+            . '<a href="$CANVAS_COURSE_REFERENCE$/modules">Modules</a></p>'
+        );
+        file_put_contents(
+            $dir . '/imsmanifest.xml',
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            . '<manifest identifier="m" xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1">'
+            . '<organizations><organization identifier="org1"><item identifier="root">'
+            . '<item identifier="s1"><title>Week 1</title>'
+            . '<item identifier="i1" identifierref="r1"><title>Start</title></item></item>'
+            . '</item></organization></organizations>'
+            . '<resources><resource identifier="r1" type="webcontent" href="wiki_content/start.html">'
+            . '<file href="wiki_content/start.html"/></resource></resources></manifest>'
+        );
+        $category = $this->getDataGenerator()->create_category();
+
+        $report = (new course_builder($category->id, $dir))->build((new manifest_parser($dir))->parse());
+
+        $page = $DB->get_record('page', ['course' => $report['courseid']]);
+        $this->assertStringContainsString('$WIKI_REFERENCE$/pages/deleted-page', $page->content);
+        $this->assertStringNotContainsString('$CANVAS_COURSE_REFERENCE$/modules', $page->content);
+        $this->assertContains(get_string('warnunresolvedlinks', 'tool_canvasuplifter', 3), $report['warnings']);
     }
 
     /**
