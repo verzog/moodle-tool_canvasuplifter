@@ -70,8 +70,6 @@ includes or calls the other's code — so each stays a separate work.
 ## Requirements
 
 - Moodle 5.0 to 5.3 LTS (question banks are `mod_qbank` activity modules from 5.0).
-  Moodle 5.3 is tested in CI against its pre-release `main` branch until
-  `MOODLE_503_STABLE` is branched.
 - PHP 8.2, 8.3 or 8.4 (Moodle 5.0's minimum is 8.2, and 5.2 onwards needs 8.3+; the
   `sodium` extension is required by Moodle)
 
@@ -403,10 +401,9 @@ submit.
 ## Releasing (maintainers)
 
 The GitHub Actions workflow (`.github/workflows/moodle-ci.yml`) runs
-`moodle-plugin-ci` across every supported Moodle branch (5.0–5.2) on the PHP
-versions each supports (8.2–8.4), against PostgreSQL 17, MariaDB 11.4 and MySQL
-8.4, plus one non-blocking Moodle 5.3 LTS cell (`main`, PHP 8.3, PostgreSQL)
-until `MOODLE_503_STABLE` is branched. The
+`moodle-plugin-ci` across every supported Moodle branch (5.0–5.3 LTS) on the PHP
+versions each supports (8.2–8.4; 8.3+ from 5.2), against PostgreSQL 17, MariaDB
+11.4 and MySQL 8.4. The
 **blocking** checks are PHP lint, `phpcs` (the Moodle Code Checker), PHPDoc,
 `validate`, upgrade `savepoints`, Mustache lint and PHPUnit; it also runs
 `phpcpd` and `phpmd` as **advisory** (`continue-on-error`) steps. There is no
