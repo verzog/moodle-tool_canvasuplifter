@@ -397,12 +397,14 @@ final class link_rewriter_test extends \advanced_testcase {
             'id:abc123' => 'https://moodle.test/mod/assign/view.php?id=9',
         ];
 
-        $out = (new link_rewriter())->rewrite_internal_links($html, $urlmap);
+        $rewriter = new link_rewriter();
+        $out = $rewriter->rewrite_internal_links($html, $urlmap);
 
         $this->assertStringContainsString('href="https://moodle.test/mod/page/view.php?id=5"', $out);
         $this->assertStringContainsString('href="https://moodle.test/mod/assign/view.php?id=9"', $out);
-        // The unmapped reference is preserved rather than broken further.
+        // The unmapped reference is preserved rather than broken further, and counted.
         $this->assertStringContainsString('$WIKI_REFERENCE$/pages/unmapped', $out);
+        $this->assertSame(1, $rewriter->unresolvedinternal);
     }
 
     /**
