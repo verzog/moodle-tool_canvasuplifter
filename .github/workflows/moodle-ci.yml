@@ -15,9 +15,6 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # Moodle 5.3 LTS is still in development on `main`; its cell reports but does not
-    # block. When MOODLE_503_STABLE exists, switch the cell to it and drop this line.
-    continue-on-error: ${{ matrix.moodle-branch == 'main' }}
 
     services:
       postgres:
@@ -61,21 +58,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Moodle 5.0/5.1 run on PHP 8.2-8.4; Moodle 5.2 dropped 8.2 (8.3-8.4 only).
+        # Moodle 5.0/5.1 run on PHP 8.2-8.4; Moodle 5.2 and 5.3 LTS dropped 8.2 (8.3-8.4 only).
         php: ['8.2', '8.3', '8.4']
-        moodle-branch: ['MOODLE_500_STABLE', 'MOODLE_501_STABLE', 'MOODLE_502_STABLE']
+        moodle-branch: ['MOODLE_500_STABLE', 'MOODLE_501_STABLE', 'MOODLE_502_STABLE', 'MOODLE_503_STABLE']
         # mysqli -> MySQL 8.4 service (port 3307); mariadb -> MariaDB 11.4 (3306).
         database: ['pgsql', 'mariadb', 'mysqli']
         exclude:
-          # Moodle 5.2 requires PHP 8.3+, so skip the 8.2 combinations there.
+          # Moodle 5.2 and 5.3 require PHP 8.3+, so skip the 8.2 combinations there.
           - php: '8.2'
             moodle-branch: 'MOODLE_502_STABLE'
-        include:
-          # Moodle 5.3 LTS (on `main` until MOODLE_503_STABLE is branched): one cell on
-          # the lowest PHP it supports, allowed to fail (see continue-on-error above).
-          - php: '8.3'
-            moodle-branch: 'main'
-            database: 'pgsql'
+          - php: '8.2'
+            moodle-branch: 'MOODLE_503_STABLE'
+        # Moodle `main` (5.4 in development) is deliberately not tested: the plugin only
+        # declares support up to 5.3 LTS ($plugin->supported = [500, 503]).
 
     env:
       # Australian timezone so date/time tests respect AEST/AWST offsets.
