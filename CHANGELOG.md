@@ -8,6 +8,12 @@ working name `tool_canvasuplifter`; 1.0.0 is the first `MATURITY_BETA` release a
 
 ## [Unreleased]
 
+- **Analyse report lists every external tool (LTI) individually.** The conversion report now
+  shows an "External tools (LTI)" table — each tool's title, the launch URL it will carry, and
+  whether the link looks like a standard external tool or one that launches Moodle-hosted
+  content (e.g. STACK questions) — so a migrator can see each tool before the build imports
+  them as hidden placeholders. Previously these were only summarised as a count and warnings.
+
 ## [1.3.2] - 2026-11-01
 
 - **Translatable strings:** the chunked-upload AJAX endpoint now reports its error messages

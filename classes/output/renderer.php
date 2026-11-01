@@ -20,6 +20,7 @@ use html_table;
 use html_writer;
 use moodle_url;
 use plugin_renderer_base;
+use tool_courseuplift\local\parser\lti_classifier;
 
 /**
  * Renderer for the conversion report shown on the analyse status page.
@@ -97,6 +98,7 @@ class renderer extends plugin_renderer_base {
         $out .= $this->events($report['events'] ?? []);
         $out .= $this->section_detail($report['sections'] ?? []);
         $out .= $this->orphans($report['orphans'] ?? []);
+        $out .= $this->lti($report['lti'] ?? []);
         if (debugging() && !empty($report['unknowntypes'])) {
             $out .= $this->unknown_types($report['unknowntypes']);
         }
@@ -321,6 +323,43 @@ class renderer extends plugin_renderer_base {
                 s($orphan['target']),
                 s($orphan['resourcetype'] !== '' ? $orphan['resourcetype'] : '-'),
                 get_string($placement, 'tool_courseuplift'),
+            ];
+        }
+        return $out . html_writer::table($table);
+    }
+
+    /**
+     * The per-tool external-tool (LTI) listing, or '' when the package has none. Each row
+     * names a tool, the launch URL it carries, and how the link was classified, so a
+     * migrator can see every external tool before the build imports them as hidden
+     * placeholders that need their keys reconfigured by hand.
+     *
+     * @param array $tools The lti sub-report.
+     * @return string HTML.
+     */
+    private function lti(array $tools): string {
+        if (empty($tools)) {
+            return '';
+        }
+        $labels = [
+            lti_classifier::KIND_STACK => 'lticlass_stack',
+            lti_classifier::KIND_MOODLE => 'lticlass_moodle',
+            lti_classifier::KIND_NONE => 'lticlass_none',
+        ];
+        $out = $this->output->heading(get_string('ltiheading', 'tool_courseuplift'), 4);
+        $out .= html_writer::tag('p', get_string('ltiexplain', 'tool_courseuplift'));
+        $table = new html_table();
+        $table->head = [
+            get_string('coltitle', 'tool_courseuplift'),
+            get_string('collaunchurl', 'tool_courseuplift'),
+            get_string('collticlass', 'tool_courseuplift'),
+        ];
+        foreach ($tools as $tool) {
+            $label = $labels[$tool['classification']] ?? 'lticlass_none';
+            $table->data[] = [
+                s($tool['title'] !== '' ? $tool['title'] : '-'),
+                $tool['launchurl'] !== '' ? s($tool['launchurl']) : '-',
+                get_string($label, 'tool_courseuplift'),
             ];
         }
         return $out . html_writer::table($table);
