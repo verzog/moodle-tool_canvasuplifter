@@ -53,6 +53,15 @@ if (in_array($job->status, [job_manager::STATUS_QUEUED, job_manager::STATUS_RUNN
     $PAGE->set_periodic_refresh_delay(5);
 }
 
+// A printable (Save as PDF) view of a finished analyse report: use the print page
+// layout so the browser's print / Save-as-PDF produces a clean document without the
+// site chrome. Only a completed analyse job has a report to print.
+$print = optional_param('print', false, PARAM_BOOL);
+$isanalysedone = $job->status === job_manager::STATUS_DONE && $job->kind === job_manager::KIND_ANALYSE;
+if ($print && $isanalysedone) {
+    $PAGE->set_pagelayout('print');
+}
+
 echo $OUTPUT->header();
 $headingkey = $job->kind === job_manager::KIND_ANALYSE ? 'analysestatusheading' : 'buildstatusheading';
 echo $OUTPUT->heading(get_string($headingkey, 'tool_courseuplift'));
@@ -88,18 +97,43 @@ if ($job->status === job_manager::STATUS_FAILED) {
     echo $OUTPUT->notification(format_text($msg, FORMAT_PLAIN), \core\output\notification::NOTIFY_ERROR);
 }
 
-if ($job->status === job_manager::STATUS_DONE && $job->kind === job_manager::KIND_ANALYSE) {
-    // Show the conversion report and offer to build the same package.
+if ($isanalysedone) {
+    // Show the conversion report, a printable (Save as PDF) view, and offer to build.
     $report = json_decode((string) $job->report, true) ?: [];
     $renderer = $PAGE->get_renderer('tool_courseuplift');
     echo $renderer->analysis($report);
-    if (!empty($job->fileid)) {
-        echo $renderer->build_from_report_form(
-            (int) $job->fileid,
-            (int) $job->categoryid,
-            (string) ($report['pagegrouping'] ?? ''),
-            (int) ($report['quizfrombank'] ?? 0)
+    if ($print) {
+        // Printable view: a Print / Save as PDF button and a link back to the report,
+        // both hidden in the printout itself (tool_courseuplift-noprint, see styles.css).
+        $printbutton = html_writer::tag('button', get_string('analyseprint', 'tool_courseuplift'), [
+            'type' => 'button',
+            'class' => 'btn btn-primary tool_courseuplift-printbutton',
+        ]);
+        $back = html_writer::link(
+            new moodle_url('/admin/tool/courseuplift/status.php', ['jobid' => $jobid]),
+            get_string('backtoreport', 'tool_courseuplift'),
+            ['class' => 'btn btn-secondary']
         );
+        echo html_writer::div($printbutton . ' ' . $back, 'tool_courseuplift-noprint mt-3');
+        $PAGE->requires->js_call_amd('tool_courseuplift/printbutton', 'init', ['.tool_courseuplift-printbutton']);
+    } else {
+        // Offer the printable / Save-as-PDF view, then offer to build the same package.
+        echo html_writer::div(
+            html_writer::link(
+                new moodle_url('/admin/tool/courseuplift/status.php', ['jobid' => $jobid, 'print' => 1]),
+                get_string('analyseprint', 'tool_courseuplift'),
+                ['class' => 'btn btn-outline-secondary']
+            ),
+            'mt-3'
+        );
+        if (!empty($job->fileid)) {
+            echo $renderer->build_from_report_form(
+                (int) $job->fileid,
+                (int) $job->categoryid,
+                (string) ($report['pagegrouping'] ?? ''),
+                (int) ($report['quizfrombank'] ?? 0)
+            );
+        }
     }
 } else if ($job->status === job_manager::STATUS_DONE && $job->courseid) {
     $report = json_decode((string) $job->report, true) ?: [];
@@ -185,6 +219,10 @@ if ($job->status === job_manager::STATUS_DONE && $job->kind === job_manager::KIN
     );
 }
 
-echo $OUTPUT->continue_button(new moodle_url('/admin/tool/courseuplift/index.php'));
+// Omit the navigation button in the printable view; the "Back to the report" link
+// above (hidden in the printout) returns to the normal page.
+if (!$print) {
+    echo $OUTPUT->continue_button(new moodle_url('/admin/tool/courseuplift/index.php'));
+}
 
 echo $OUTPUT->footer();
