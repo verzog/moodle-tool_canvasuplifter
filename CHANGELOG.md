@@ -8,6 +8,15 @@ working name `tool_canvasuplifter`; 1.0.0 is the first `MATURITY_BETA` release a
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-01
+
+- **Translatable strings:** the chunked-upload AJAX endpoint now reports its error messages
+  through `get_string()` instead of hard-coded English, so they can be translated (#227).
+- **AMOS compatibility:** language strings that were built by concatenating several literals
+  are now each a single literal, so they import cleanly into AMOS (#229).
+- **No inline JavaScript:** the conversion error log's "Print" button moved from an inline
+  `js_amd_inline()` call into a `tool_courseuplift/printbutton` AMD module (#228).
+
 ## [1.3.1] - 2026-10-29
 
 - **Moodle 5.1 is now the minimum.** The plugin supports Moodle 5.1 to 5.3 LTS; Moodle 5.0
