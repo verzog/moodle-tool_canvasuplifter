@@ -19,6 +19,7 @@ namespace tool_courseuplift;
 use tool_courseuplift\local\model\course_model;
 use tool_courseuplift\local\model\item;
 use tool_courseuplift\local\model\section_model;
+use tool_courseuplift\local\parser\lti_classifier;
 use tool_courseuplift\local\parser\source_detector;
 use tool_courseuplift\local\report\conversion_report;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -1715,5 +1716,43 @@ final class conversion_report_test extends \advanced_testcase {
             . '<presentation><material><mattext>Enter a number</mattext></material>'
             . '<response_num ident="r1"><render_fib fibtype="Decimal"/></response_num></presentation>'
             . '<resprocessing><outcomes><decvar varname="SCORE"/></outcomes></resprocessing></item>';
+    }
+
+    /**
+     * The analyse report lists every external tool (LTI) individually — each tool's title, the
+     * launch URL it will carry, and how the link was classified — so a migrator can see them
+     * before the build imports them as hidden placeholders.
+     *
+     * @return void
+     */
+    public function test_lti_detail_lists_each_tool(): void {
+        $course = new course_model();
+        $section = new section_model('Week 1');
+
+        $standard = new item('i1', 'Publisher tool');
+        $standard->kind = item::KIND_LTI;
+        $standard->launchurl = 'https://tool.example.com/launch';
+        $section->add_item($standard);
+
+        $stack = new item('i2', 'Practice set');
+        $stack->kind = item::KIND_LTI;
+        $stack->launchurl = 'https://moodle.example.edu/enrol/lti/launch.php?id=7';
+        $section->add_item($stack);
+
+        $course->add_section($section);
+
+        $lti = (new conversion_report($course))->build()['lti'];
+
+        $this->assertCount(2, $lti);
+        $this->assertSame([
+            'title' => 'Publisher tool',
+            'launchurl' => 'https://tool.example.com/launch',
+            'classification' => lti_classifier::KIND_NONE,
+        ], $lti[0]);
+        $this->assertSame([
+            'title' => 'Practice set',
+            'launchurl' => 'https://moodle.example.edu/enrol/lti/launch.php?id=7',
+            'classification' => lti_classifier::KIND_MOODLE,
+        ], $lti[1]);
     }
 }

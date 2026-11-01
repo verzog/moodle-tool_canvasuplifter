@@ -585,6 +585,7 @@ class conversion_report {
             'questionmatrix' => $questionmatrix,
             'outcomes' => $this->outcomes_summary(),
             'events' => $this->events_summary(),
+            'lti' => $this->lti_detail(),
         ];
     }
 
@@ -1489,6 +1490,35 @@ class conversion_report {
             ];
         }
         return $orphans;
+    }
+
+    /**
+     * Per-tool detail of every external tool (LTI) in the package, so a migrator can see
+     * each one before the build imports them as hidden placeholders: its display title,
+     * the launch URL it will carry, and how the link was classified (a standard external
+     * tool, or one that appears to launch Moodle-hosted content such as STACK questions).
+     * The launch signals come from the same fields the builder and classifier use.
+     *
+     * @return array<int, array{title: string, launchurl: string, classification: string}>
+     */
+    protected function lti_detail(): array {
+        $tools = [];
+        foreach ($this->course->all_items() as $modelitem) {
+            if ($modelitem->kind !== item::KIND_LTI) {
+                continue;
+            }
+            [$launchurl, $secureurl, $title, $custom] = $this->lti_launch_signals($modelitem);
+            $classification = lti_classifier::KIND_NONE;
+            if ($launchurl !== '' || $secureurl !== '') {
+                $classification = lti_classifier::classify($launchurl, $secureurl, $title, $custom, $this->ltipatterns);
+            }
+            $tools[] = [
+                'title' => $this->display_title($modelitem, true),
+                'launchurl' => $launchurl !== '' ? $launchurl : $secureurl,
+                'classification' => $classification,
+            ];
+        }
+        return $tools;
     }
 
     /**
