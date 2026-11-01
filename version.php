@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'tool_courseuplift';
-$plugin->version   = 2026102902;      // YYYYMMDDXX.
+$plugin->version   = 2026110100;      // YYYYMMDDXX.
 $plugin->requires  = 2025100600;      // Moodle 5.1 (the lowest supported release).
 $plugin->supported = [501, 503];      // Supports Moodle 5.1 to 5.3 LTS inclusive.
 $plugin->maturity  = MATURITY_BETA;   // All five path-to-beta validation builds passed (issue #182).
-$plugin->release   = '1.3.1';
+$plugin->release   = '1.3.2';
