@@ -8,6 +8,10 @@ working name `tool_canvasuplifter`; 1.0.0 is the first `MATURITY_BETA` release a
 
 ## [Unreleased]
 
+- **Analyse report can be saved as a PDF.** The finished analysis report now offers a
+  "Print or save as PDF" view (a clean, print-only page using the browser's Save-as-PDF),
+  so the full mappability report can be kept or shared, matching the Conversion jobs error
+  log's printable view.
 - **Analyse report lists every external tool (LTI) individually.** The conversion report now
   shows an "External tools (LTI)" table — each tool's title, the launch URL it will carry, and
   whether the link looks like a standard external tool or one that launches Moodle-hosted
