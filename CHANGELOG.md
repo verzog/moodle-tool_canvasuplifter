@@ -8,6 +8,8 @@ working name `tool_canvasuplifter`; 1.0.0 is the first `MATURITY_BETA` release a
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-01
+
 - **Analyse report can be saved as a PDF.** The finished analysis report now offers a
   "Print or save as PDF" view (a clean, print-only page using the browser's Save-as-PDF),
   so the full mappability report can be kept or shared, matching the Conversion jobs error
